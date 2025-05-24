@@ -136,16 +136,18 @@ This class (provided by the TypeScript wrapper) represents a HAL component. Inst
 
 **Pin/Parameter Proxy Access:**
 `HalComponent` instances use a JavaScript Proxy to allow direct property-like access to their pins and parameters using their `nameSuffix`.
-\`\`\`javascript
+
+```javascript
 // Assuming 'comp' is a HalComponent instance
 // and 'output1' is a pin/param suffix for that component.
 
 // Set value (for OUT/IO pins or RW params)
-comp['output1'] = 10.5;
+comp["output1"] = 10.5;
 
 // Get value
-const val = comp['output1'];
-\`\`\`
+const val = comp["output1"];
+```
+
 This internally calls the native `getProperty` and `setProperty` methods of the underlying C++ `HalComponentWrapper`. Errors will be thrown if the item doesn't exist, or if you try to set a read-only item or an IN pin.
 
 ### `Pin` Class
@@ -311,7 +313,8 @@ The module exports various HAL and RTAPI constants, mirroring the enums defined 
 ### Type Definitions (Interfaces)
 
 - `interface HalPinInfo`
-  \`\`\`typescript
+
+  ```typescript
   {
   name: string; // Full name of the pin
   value: any; // Current value
@@ -320,31 +323,32 @@ The module exports various HAL and RTAPI constants, mirroring the enums defined 
   ownerId: number; // Component ID of the owner
   signalName?: string; // Name of the signal if connected, else undefined
   }
-  \`\`\`
+  ```
 
 - `interface HalSignalInfo`
-  \`\`\`typescript
+
+  ```typescript
   {
-  name: string; // Full name of the signal
-  value: any; // Current value
-  type: HalType; // HAL data type
-  driver: string | null; // Name of the driving pin, or null if no driver
-  readers: number; // Number of pins reading this signal
-  writers: number; // Number of pins writing to this signal
-  bidirs: number; // Number of IO pins connected
+    name: string; // Full name of the signal
+    value: any; // Current value
+    type: HalType; // HAL data type
+    driver: string | null; // Name of the driving pin, or null if no driver
+    readers: number; // Number of pins reading this signal
+    writers: number; // Number of pins writing to this signal
+    bidirs: number; // Number of IO pins connected
   }
-  \`\`\`
+  ```
 
 - `interface HalParamInfo`
-  \`\`\`typescript
+  ```typescript
   {
-  name: string; // Full name of the parameter
-  value: any; // Current value
-  type: HalType; // HAL data type
-  direction: HalParamDir; // Parameter direction (RO/RW)
-  ownerId: number; // Component ID of the owner
+    name: string; // Full name of the parameter
+    value: any; // Current value
+    type: HalType; // HAL data type
+    direction: HalParamDir; // Parameter direction (RO/RW)
+    ownerId: number; // Component ID of the owner
   }
-  \`\`\`
+  ```
 
 ### Current Limitations
 
