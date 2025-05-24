@@ -1,0 +1,35 @@
+{
+  "name": "@linuxcnc-node/hal",
+  "version": "0.1.0",
+  "description": "Node.js bindings for LinuxCNC HAL library",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build:ts": "tsc",
+    "build:cpp": "node-gyp configure && node-gyp build",
+    "build": "npm run build:cpp && npm run build:ts",
+    "rebuild:cpp": "node-gyp rebuild",
+    "install": "npm run rebuild:cpp",
+    "prepublishOnly": "npm run build",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Dariusz Majnert",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/b0czek/linuxcnc-node.git",
+    "directory": "hal"
+  },
+  "license": "GPL-2.0-only",
+  "devDependencies": {
+    "@types/node": "^22.15.21",
+    "node-addon-api": "^8.3.1",
+    "node-gyp": "^11.2.0",
+    "typescript": "^5.8.3"
+  },
+  "gypfile": true,
+  "binary": {
+    "module_name": "hal_addon",
+    "module_path": "./build/Release/",
+    "package_name": "{module_name}-v{version}-{node_abi}-{platform}-{arch}.tar.gz"
+  }
+}
