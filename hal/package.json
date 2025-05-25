@@ -1,6 +1,6 @@
 {
   "name": "@linuxcnc-node/hal",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Node.js bindings for LinuxCNC HAL library",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -8,8 +8,7 @@
     "build:ts": "tsc",
     "build:cpp": "node-gyp configure && node-gyp build",
     "build": "npm run build:cpp && npm run build:ts",
-    "rebuild:cpp": "node-gyp rebuild",
-    "install": "npm run rebuild:cpp",
+    "rebuild": "node-gyp rebuild",
     "prepublishOnly": "npm run build",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -22,19 +21,25 @@
     "directory": "hal"
   },
   "license": "GPL-2.0-only",
+  "dependencies": {
+    "node-addon-api": "^8.3.1"
+  },
   "devDependencies": {
     "@types/jest": "^29.5.14",
     "@types/node": "^22.15.21",
     "jest": "^29.7.0",
-    "node-addon-api": "^8.3.1",
     "node-gyp": "^11.2.0",
     "ts-jest": "^29.3.4",
     "typescript": "^5.8.3"
   },
+  "files": [
+    "dist/",
+    "src/",
+    "binding.gyp",
+    "README.md"
+  ],
   "gypfile": true,
-  "binary": {
-    "module_name": "hal_addon",
-    "module_path": "./build/Release/",
-    "package_name": "{module_name}-v{version}-{node_abi}-{platform}-{arch}.tar.gz"
-  }
+  "os": [
+    "linux"
+  ]
 }

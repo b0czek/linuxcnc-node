@@ -3,8 +3,9 @@ import { HalComponent as HalComponentClass, HalComponentInstance, Pin, Param } f
 
 let halNative: any;
 const addonPathCandidates = [
-    '../../build/Release/hal_addon.node',
-    '../../build/Debug/hal_addon.node', // Fallback for debug builds
+    '../build/Release/hal_addon.node',
+    '../../build/Release/hal_addon.node', // Fallback for debug builds
+    '../../build/Debug/hal_addon.node',
 ];
 
 for (const candidate of addonPathCandidates) {

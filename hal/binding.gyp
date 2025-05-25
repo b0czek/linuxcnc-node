@@ -8,16 +8,9 @@
       ],
       "include_dirs": [
         "<!@(node -p \"require('node-addon-api').include\")",
-        
-        # Add path to LinuxCNC headers if not in standard system include paths.
-        # Example for a typical install:
-        "../../linuxcnc/include",
-        # "/usr/include/linuxcnc" 
-        # Or, if you have a source checkout:
-        # "/path/to/linuxcnc-dev/src/hal",
-        # "/path/to/linuxcnc-dev/src/rtapi",
-        # Ensure these paths are correct for your system.
-        # If liblinuxcnchal-dev is installed, they might be in /usr/include.
+        # when linuxcnc is not installed, but compiled from source, it should be passed through the environment variable LINUXCNC_INCLUDE
+        "<!(echo $LINUXCNC_INCLUDE)"
+
       ],
       "dependencies": [
         "<!(node -p \"require('node-addon-api').gyp\")"
@@ -29,9 +22,10 @@
           "libraries": [
             "-llinuxcnchal" # Links against liblinuxcnchal.so
           ],
-          # If liblinuxcnchal.so is not in a standard library path:
+
           "library_dirs": [
-            "../../linuxcnc/lib" # Example
+            # If liblinuxcnchal.so is not in a standard library path:
+            "<!(echo $LINUXCNC_LIB)"
           ],
           "cflags_cc": [ "-std=c++17" ] # Ensure C++17 for Linux too
         }]
