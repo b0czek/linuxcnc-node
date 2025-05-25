@@ -108,7 +108,7 @@ export class HalComponent {
         }
         const param = new Param(this.proxyInstance, nameSuffix, type, direction);
         this.params[nameSuffix] = param;
-        return new Param(this.proxyInstance, nameSuffix, type, direction);
+        return param;
     }
 
     /**

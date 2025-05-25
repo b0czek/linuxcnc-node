@@ -1,10 +1,10 @@
 import { HalType, HalPinDir, HalParamDir, RtapiMsgLevel, HalPinInfo, HalSignalInfo, HalParamInfo } from './enums';
-import { HalComponent as HalComponentClass, HalComponentInstance } from './component'; // Renamed to avoid conflict
+import { HalComponent as HalComponentClass, HalComponentInstance, Pin, Param } from './component'; // Renamed to avoid conflict
 
 let halNative: any;
 const addonPathCandidates = [
-    '../build/Release/hal_addon.node',
-    '../build/Debug/hal_addon.node', // Fallback for debug builds
+    '../../build/Release/hal_addon.node',
+    '../../build/Debug/hal_addon.node', // Fallback for debug builds
 ];
 
 for (const candidate of addonPathCandidates) {
@@ -26,6 +26,7 @@ export * from './enums'; // Exports HalType, HalPinDir, etc.
 
 // --- Exported classes ---
 export { HalComponentClass as HalComponent }; // Export the class as HalComponent
+export { Pin, Param }; 
 
 // --- Module-level functions ---
 

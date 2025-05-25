@@ -11,7 +11,7 @@
         
         # Add path to LinuxCNC headers if not in standard system include paths.
         # Example for a typical install:
-        "../linuxcnc/include",
+        "../../linuxcnc/include",
         # "/usr/include/linuxcnc" 
         # Or, if you have a source checkout:
         # "/path/to/linuxcnc-dev/src/hal",
@@ -31,7 +31,7 @@
           ],
           # If liblinuxcnchal.so is not in a standard library path:
           "library_dirs": [
-            "../linuxcnc/lib" # Example
+            "../../linuxcnc/lib" # Example
           ],
           "cflags_cc": [ "-std=c++17" ] # Ensure C++17 for Linux too
         }]
