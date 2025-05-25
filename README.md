@@ -1,6 +1,6 @@
 # Node.js LinuxCNC Bindings
 
-This project provides Node.js bindings for various C++ functionalities within the LinuxCNC. The primary goal is to offer an API to the existing Python one, making it familiar for those who have worked with LinuxCNC in Python.
+This project provides Node.js bindings for various C++ functionalities within the LinuxCNC. The primary goal is to offer an API close to the existing Python one, making it familiar for those who have worked with LinuxCNC in Python.
 
 ## Project Vision
 
