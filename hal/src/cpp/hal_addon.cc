@@ -496,12 +496,6 @@ Napi::Value SetP(const Napi::CallbackInfo &info)
     if (param)
     { // It's a parameter
         type = param->type;
-        if (param->dir == HAL_RO)
-        {
-            rtapi_mutex_give(&(hal_data->mutex));
-            ThrowHalError(env, "set_p: Param '" + name + "' is Read-Only");
-            return env.Null();
-        }
         d_ptr = SHMPTR(param->data_ptr);
     }
     else
