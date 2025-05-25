@@ -9,8 +9,10 @@ union paramunion
     hal_bit_t b;
     hal_u32_t u32;
     hal_s32_t s32;
+#ifdef HAL_S64_SUPPORT
     hal_u64_t u64;
     hal_s64_t s64;
+#endif
     hal_float_t f;
 };
 

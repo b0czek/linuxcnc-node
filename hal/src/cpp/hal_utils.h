@@ -2,9 +2,6 @@
 #include <napi.h>
 #include <string>
 
-// Define User-Level API (ULAPI)
-#define ULAPI
-
 #include "rtapi.h"
 #include "hal.h"
 #include "hal_priv.h"

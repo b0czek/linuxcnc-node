@@ -314,6 +314,7 @@ void HalComponentWrapper::SetItemValueInternal(const Napi::Env &env, HalItemInte
         case HAL_U32:
             *(static_cast<hal_u32_t *>(actual_pin_data_ptr)) = js_value.ToNumber().Uint32Value();
             break;
+#ifdef HAL_S64_SUPPORT
         case HAL_S64:
             *(static_cast<hal_s64_t *>(actual_pin_data_ptr)) = js_value.ToNumber().Int64Value();
             break;
@@ -331,6 +332,7 @@ void HalComponentWrapper::SetItemValueInternal(const Napi::Env &env, HalItemInte
 
             break;
         }
+#endif
         default:
             ThrowHalError(env, "Unsupported pin type for set: " + std::to_string(item->type));
             return;
@@ -353,6 +355,7 @@ void HalComponentWrapper::SetItemValueInternal(const Napi::Env &env, HalItemInte
         case HAL_U32:
             *(static_cast<hal_u32_t *>(param_storage_ptr)) = js_value.ToNumber().Uint32Value();
             break;
+#ifdef HAL_S64_SUPPORT
         case HAL_S64:
             *(static_cast<hal_s64_t *>(param_storage_ptr)) = js_value.ToNumber().Int64Value();
             break;
@@ -369,6 +372,7 @@ void HalComponentWrapper::SetItemValueInternal(const Napi::Env &env, HalItemInte
             *(static_cast<hal_u64_t *>(param_storage_ptr)) = static_cast<uint64_t>(num);
             break;
         }
+#endif
         default:
             ThrowHalError(env, "Unsupported param type for set: " + std::to_string(item->type));
             return;
