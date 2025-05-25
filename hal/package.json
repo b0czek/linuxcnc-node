@@ -1,6 +1,6 @@
 {
   "name": "@linuxcnc-node/hal",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Node.js bindings for LinuxCNC HAL library",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -42,5 +42,20 @@
   "gypfile": true,
   "os": [
     "linux"
+  ],
+  "keywords": [
+    "linuxcnc",
+    "hal",
+    "cnc",
+    "hardware abstraction layer",
+    "machining",
+    "automation",
+    "robotics",
+    "motion control",
+    "native",
+    "addon",
+    "bindings",
+    "manufacturing",
+    "industrial"
   ]
 }
