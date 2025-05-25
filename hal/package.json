@@ -1,6 +1,6 @@
 {
   "name": "@linuxcnc-node/hal",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Node.js bindings for LinuxCNC HAL library",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
