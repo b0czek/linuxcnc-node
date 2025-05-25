@@ -19,6 +19,37 @@ The API is designed to be familiar to users of the Python `hal` module.
   - Retrieve information about all pins, signals, or parameters in the system.
 - TypeScript support with type definitions and wrapper classes.
 
+## Installation
+
+To install the `@linuxcnc-node/hal` module, use npm or yarn:
+
+```bash
+npm install @linuxcnc-node/hal
+# or
+yarn add @linuxcnc-node/hal
+```
+
+### LinuxCNC Build Requirements
+
+The module needs to compile against the LinuxCNC development headers and link against its libraries.
+
+#### Standard LinuxCNC Installations
+
+For standard LinuxCNC installations (e.g., from a Debian package or `run-in-place` after `./configure && make`):
+
+- The build script will attempt to locate the necessary files automatically.
+
+#### Custom LinuxCNC Installations
+
+For non-standard or custom LinuxCNC installations:
+
+If LinuxCNC is installed in a custom location you will need to set the following environment variables before running `npm install` or `yarn add`:
+
+- `LINUXCNC_INCLUDE`: Path to the directory containing LinuxCNC's include files (e.g., `hal.h`, `rtapi.h`).
+  Example: `export LINUXCNC_INCLUDE=/path/to/linuxcnc-dev/include`
+- `LINUXCNC_LIB`: Path to the directory containing LinuxCNC's compiled libraries (e.g., `liblinuxcnchal.so`).
+  Example: `export LINUXCNC_LIB=/path/to/linuxcnc-dev/lib`
+
 ## Usage Example
 
 ```javascript
@@ -354,6 +385,7 @@ The module exports various HAL and RTAPI constants, mirroring the enums defined 
 
 - **64-bit Integers (`HAL_S64`, `HAL_U64`):**
   JavaScript's native `number` type is an IEEE 754 double-precision float. The C++ bindings convert 64-bit HAL integers to `double` for JavaScript. This means that integers larger than `Number.MAX_SAFE_INTEGER` (2<sup>53</sup>-1) or smaller than `Number.MIN_SAFE_INTEGER` will lose precision. Full `BigInt` support for 64-bit types is not implemented.
+  - **LinuxCNC Version Fallback:** If the version of LinuxCNC that this module is compiled against does not natively support `HAL_S64` and `HAL_U64` types, this module will automatically alias `hal.HAL_S64` to `hal.HAL_S32` and `hal.HAL_U64` to `hal.HAL_U32`. In such cases, attempting to create pins or parameters with `HAL_S64` or `HAL_U64` will effectively create them as 32-bit integers.
 - **No `HAL_PORT` Support:**
   Binding, creation, and interaction with `HAL_PORT` type pins or signals are not currently implemented.
 
