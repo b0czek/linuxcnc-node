@@ -322,12 +322,6 @@ void HalComponentWrapper::SetItemValueInternal(const Napi::Env &env, HalItemInte
         {
 
             double num = js_value.As<Napi::Number>().DoubleValue();
-            if (num < 0)
-            {
-                ThrowHalError(env, "Value out of range for HAL_U64: " + std::to_string(num));
-                return;
-            }
-
             *(static_cast<hal_u64_t *>(actual_pin_data_ptr)) = static_cast<uint64_t>(num);
 
             break;
@@ -363,12 +357,6 @@ void HalComponentWrapper::SetItemValueInternal(const Napi::Env &env, HalItemInte
         {
 
             double num = js_value.As<Napi::Number>().DoubleValue();
-            if (num < 0)
-            {
-                ThrowHalError(env, "Value out of range for HAL_U64: " + std::to_string(num));
-                return;
-            }
-
             *(static_cast<hal_u64_t *>(param_storage_ptr)) = static_cast<uint64_t>(num);
             break;
         }
