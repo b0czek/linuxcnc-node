@@ -1,0 +1,17 @@
+.tooltip {
+  background-color: #fff;
+  border: 1px solid #ccc;
+  padding: 8px 12px;
+  border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  max-width: 400px;
+  font-size: 0.85em;
+  white-space: pre-wrap; /* Ensure newlines in content are respected */
+  word-break: break-all;
+}
+
+.tooltip pre {
+  margin: 0;
+  font-family: inherit;
+}
