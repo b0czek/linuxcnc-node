@@ -6,6 +6,14 @@ This is a **demonstration application (proof-of-concept)** created to explore an
 
 **Important:** This application is **not a fully polished product** and is **not intended to replace the original `halshow` program**. Instead, it serves as an experimental playground and an example of how one can interact with the LinuxCNC Hardware Abstraction Layer (HAL) from Node.js.
 
+### Light Mode
+
+![HAL Viewer - Light Mode](./docs/images/halview-light-mode.png)
+
+### Dark Mode
+
+![HAL Viewer - Dark Mode](./docs/images/halview-dark-mode.png)
+
 While developing this replica, it became apparent that a modern approach could offer several enhancements over the classic `halshow` experience. This project implements some of those ideas.
 
 ## Core Replicated Functionality (`halshow` Parity)

@@ -21,6 +21,16 @@ The project is organized into modules, each corresponding to a specific area of 
 
 _(More modules will be added in the future.)_
 
+## Examples
+
+The project includes practical examples demonstrating how to use the modules:
+
+- **`/examples/halview`**: A modern Electron-based HAL viewer application built using the `@linuxcnc-node/hal` module.
+  - Replicates core functionality of the classic `halshow` program with modern UI enhancements.
+  - Features include HAL item browsing, real-time watch lists, component-focused views, and preset management.
+  - Built with Electron, React, TypeScript, and Ant Design.
+  - **[View HAL View Example README](./examples/halview/README.md)**
+
 ## Prerequisites
 
 To build and use these bindings, your system will generally need:

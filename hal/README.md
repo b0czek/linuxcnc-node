@@ -104,6 +104,12 @@ hal.setMsgLevel(hal.MSG_ALL);
 console.log(`Current message level: ${hal.getMsgLevel()}`);
 ```
 
+## Example Application
+
+For a comprehensive example of how to use this module in a real-world application, see the **HAL View** example:
+
+- **[HAL View Example](../examples/halview/README.md)**: A modern Electron-based HAL viewer application that demonstrates advanced usage of the `@linuxcnc-node/hal` module.
+
 # API Reference
 
 The main entry point is the `hal` object imported from the module.
