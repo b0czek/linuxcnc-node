@@ -66,7 +66,6 @@ console.log(`Component Prefix: ${comp.prefix}`);
 const outFloatPin = comp.newPin("output.float", hal.HAL_FLOAT, hal.HAL_OUT);
 const inBitPin = comp.newPin("input.bit", hal.HAL_BIT, hal.HAL_IN);
 const rwS32Param = comp.newParam("param.s32", hal.HAL_S32, hal.HAL_RW);
-comp.newParam("param.u32.ro", hal.HAL_U32, hal.HAL_RO); // Read-only param
 
 // --- Making Component Ready ---
 comp.ready();
@@ -78,12 +77,6 @@ comp["param.s32"] = -100;
 
 console.log(`Value of output.float: ${comp["output.float"]}`);
 console.log(`Value of input.bit (not connected): ${comp["input.bit"]}`);
-
-try {
-  comp["param.u32.ro"] = 50; // This will throw an error
-} catch (e) {
-  console.error("Error setting RO param:", e.message);
-}
 
 // --- Using Pin/Param Objects ---
 console.log(`Pin object value: ${outFloatPin.getValue()}`); // 123.45
@@ -307,7 +300,6 @@ These functions operate on the global HAL state or on items identified by their 
   - This can set unconnected IN pins (modifying their internal `dummysig`) or RW parameters.
   - **Returns:** `true` on success, `false` on failure (error is thrown).
   - _Cannot set OUT pins or connected IN pins with this function (use direct signal manipulation or component proxy access for connected items where appropriate)._
-  - _Cannot set RO parameters._
 
 - `setSignalValue(name: string, value: string | number | boolean): boolean`
   - Sets the value of an unconnected HAL signal identified by its `name`.
