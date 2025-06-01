@@ -1,33 +1,52 @@
-import { HalType, HalPinDir, HalParamDir, RtapiMsgLevel, HalPinInfo, HalSignalInfo, HalParamInfo } from './enums';
-import { HalComponent as HalComponentClass, HalComponentInstance, Pin, Param } from './component'; // Renamed to avoid conflict
+import {
+  HalType,
+  HalPinDir,
+  HalParamDir,
+  RtapiMsgLevel,
+  HalPinInfo,
+  HalSignalInfo,
+  HalParamInfo,
+} from "./enums";
+import {
+  HalComponent as HalComponentClass,
+  HalComponentInstance,
+  Pin,
+  Param,
+  HalWatchCallback,
+  HalWatchOptions,
+  HalWatchedObject,
+} from "./component"; // Renamed to avoid conflict
 
 let halNative: any;
 const addonPathCandidates = [
-    '../build/Release/hal_addon.node',
-    '../../build/Release/hal_addon.node', // Fallback for debug builds
-    '../../build/Debug/hal_addon.node',
+  "../build/Release/hal_addon.node",
+  "../../build/Release/hal_addon.node", // Fallback for debug builds
+  "../../build/Debug/hal_addon.node",
 ];
 
 for (const candidate of addonPathCandidates) {
-    try {
-        halNative = require(candidate);
-        break; // Found and loaded
-    } catch (e) {
-        if (candidate === addonPathCandidates[addonPathCandidates.length - 1]) { // Last attempt
-            console.error("FATAL: Failed to load linuxcnc-node native addon. Please ensure it's built correctly and that LinuxCNC is in your PATH.");
-            const loadError = e as Error;
-            console.error("Details:", loadError.message);
-            throw new Error("linuxcnc-node native addon could not be loaded.");
-        }
+  try {
+    halNative = require(candidate);
+    break; // Found and loaded
+  } catch (e) {
+    if (candidate === addonPathCandidates[addonPathCandidates.length - 1]) {
+      // Last attempt
+      console.error(
+        "FATAL: Failed to load linuxcnc-node native addon. Please ensure it's built correctly and that LinuxCNC is in your PATH."
+      );
+      const loadError = e as Error;
+      console.error("Details:", loadError.message);
+      throw new Error("linuxcnc-node native addon could not be loaded.");
     }
+  }
 }
 
 // --- Exported types and enums ---
-export * from './enums'; // Exports HalType, HalPinDir, etc.
+export * from "./enums"; // Exports HalType, HalPinDir, etc.
 
 // --- Exported classes ---
 export { HalComponentClass as HalComponent }; // Export the class as HalComponent
-export { Pin, Param }; 
+export { Pin, Param };
 
 // --- Module-level functions ---
 
@@ -37,58 +56,65 @@ export { Pin, Param };
  * @param prefix Optional prefix for pin/param names. Defaults to component name.
  * @returns A HalComponent instance.
  */
-export const component = (name: string, prefix?: string): HalComponentInstance => {
-    // `halNative.HalComponent` is the N-API constructor function
-    const nativeComponentInstance = new halNative.HalComponent(name, prefix);
-    return new HalComponentClass(nativeComponentInstance, name, prefix || name) as HalComponentInstance;
+export const component = (
+  name: string,
+  prefix?: string
+): HalComponentInstance => {
+  // `halNative.HalComponent` is the N-API constructor function
+  const nativeComponentInstance = new halNative.HalComponent(name, prefix);
+  return new HalComponentClass(
+    nativeComponentInstance,
+    name,
+    prefix || name
+  ) as HalComponentInstance;
 };
 
 export const componentExists = (name: string): boolean => {
-    return halNative.component_exists(name);
+  return halNative.component_exists(name);
 };
 
 export const componentIsReady = (name: string): boolean => {
-    return halNative.component_is_ready(name);
+  return halNative.component_is_ready(name);
 };
 
 export const getMsgLevel = (): RtapiMsgLevel => {
-    return halNative.get_msg_level();
+  return halNative.get_msg_level();
 };
 
 export const setMsgLevel = (level: RtapiMsgLevel): void => {
-    halNative.set_msg_level(level);
+  halNative.set_msg_level(level);
 };
 
 export const connect = (pinName: string, signalName: string): boolean => {
-    return halNative.connect(pinName, signalName);
+  return halNative.connect(pinName, signalName);
 };
 
 export const disconnect = (pinName: string): boolean => {
-    return halNative.disconnect(pinName);
+  return halNative.disconnect(pinName);
 };
 
 export const getValue = (name: string): any => {
-    return halNative.get_value(name);
+  return halNative.get_value(name);
 };
 
 export const getInfoPins = (): HalPinInfo[] => {
-    return halNative.get_info_pins();
+  return halNative.get_info_pins();
 };
 
 export const getInfoSignals = (): HalSignalInfo[] => {
-    return halNative.get_info_signals();
+  return halNative.get_info_signals();
 };
 
 export const getInfoParams = (): HalParamInfo[] => {
-    return halNative.get_info_params();
+  return halNative.get_info_params();
 };
 
 export const newSignal = (signalName: string, type: HalType): boolean => {
-    return halNative.new_sig(signalName, type);
+  return halNative.new_sig(signalName, type);
 };
 
 export const pinHasWriter = (pinName: string): boolean => {
-    return halNative.pin_has_writer(pinName);
+  return halNative.pin_has_writer(pinName);
 };
 
 /**
@@ -96,8 +122,11 @@ export const pinHasWriter = (pinName: string): boolean => {
  * @param name The full name of the pin or parameter.
  * @param value The value to set
  */
-export const setPinParamValue = (name: string, value: string | number | boolean): boolean => {
-    return halNative.set_p(name, String(value));
+export const setPinParamValue = (
+  name: string,
+  value: string | number | boolean
+): boolean => {
+  return halNative.set_p(name, String(value));
 };
 
 /**
@@ -105,9 +134,12 @@ export const setPinParamValue = (name: string, value: string | number | boolean)
  * @param name The full name of the signal.
  * @param value The value to set
  */
-export const setSignalValue = (name: string, value: string | number | boolean): boolean => {
-    return halNative.set_s(name, String(value));
-}
+export const setSignalValue = (
+  name: string,
+  value: string | number | boolean
+): boolean => {
+  return halNative.set_s(name, String(value));
+};
 
 // Re-export constants from the native module for direct use (e.g., hal.HAL_FLOAT)
 export const HAL_BIT: HalType.BIT = halNative.HAL_BIT;
@@ -130,3 +162,9 @@ export const MSG_WARN: RtapiMsgLevel.WARN = halNative.MSG_WARN;
 export const MSG_INFO: RtapiMsgLevel.INFO = halNative.MSG_INFO;
 export const MSG_DBG: RtapiMsgLevel.DBG = halNative.MSG_DBG;
 export const MSG_ALL: RtapiMsgLevel.ALL = halNative.MSG_ALL;
+
+export type {
+  HalWatchCallback,
+  HalWatchOptions,
+  HalWatchedObject,
+} from "./component";

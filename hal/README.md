@@ -18,6 +18,7 @@ The API is designed to be familiar to users of the Python `hal` module.
   - Get and set values of arbitrary pins, parameters, or signals.
   - Retrieve information about all pins, signals, or parameters in the system.
 - TypeScript support with type definitions and wrapper classes.
+- **Monitoring**: Watch pin and parameter value changes with configurable polling intervals and callback functions.
 
 ## Installation
 
@@ -95,6 +96,34 @@ console.log("All Pins:", JSON.stringify(hal.getInfoPins(), null, 2));
 // --- Message Levels ---
 hal.setMsgLevel(hal.MSG_ALL);
 console.log(`Current message level: ${hal.getMsgLevel()}`);
+
+// --- Monitoring System ---
+// Set up monitoring with custom polling interval
+comp.setMonitoringOptions({ pollInterval: 20 }); // Check every 20ms
+
+// Watch for changes on pins and parameters
+outFloatPin.watch((newValue, oldValue, pin) => {
+  console.log(`Output pin changed: ${oldValue} -> ${newValue}`);
+});
+
+rwS32Param.watch((newValue, oldValue, param) => {
+  console.log(`Parameter changed: ${oldValue} -> ${newValue}`);
+});
+
+// Multiple callbacks can watch the same object
+const callback2 = (newValue, oldValue, object) => {
+  console.log(`Secondary callback: ${object.name} = ${newValue}`);
+};
+outFloatPin.watch(callback2);
+
+// Remove specific callbacks when no longer needed
+outFloatPin.removeWatch(callback2);
+
+// Check what's currently being monitored
+console.log("Watched objects:", comp.getWatchedObjects());
+
+// Clean up monitoring when done
+comp.destroy(); // Stops all monitoring and cleans up resources
 ```
 
 ## Example Application
@@ -164,6 +193,43 @@ This class (provided by the TypeScript wrapper) represents a HAL component. Inst
   - Retrieves a map of all `Param` objects created for this component.
   - **Returns:** An object where keys are the `nameSuffix` of the parameters and values are the corresponding `Param` instances.
 
+**Monitoring Methods:**
+
+- `setMonitoringOptions(options: HalWatchOptions): void`
+
+  - Configures the monitoring system settings.
+  - `options: HalWatchOptions`: Configuration object with `pollInterval` property (in milliseconds).
+  - The monitoring system will check for value changes at the specified interval (default: 10ms).
+
+- `getMonitoringOptions(): HalWatchOptions`
+
+  - Retrieves the current monitoring configuration.
+  - **Returns:** A copy of the current monitoring options.
+
+- `addWatch(name: string, callback: HalWatchCallback): void`
+
+  - Adds a watch callback for a pin or parameter at the component level.
+  - `name: string`: The `nameSuffix` of the pin or parameter to monitor.
+  - `callback: HalWatchCallback`: Function to call when the value changes.
+  - Automatically starts the monitoring timer if this is the first watched object.
+  - _Throws an error if no pin or parameter exists with the given name._
+
+- `removeWatch(name: string, callback: HalWatchCallback): void`
+
+  - Removes a specific watch callback for a pin or parameter.
+  - `name: string`: The `nameSuffix` of the pin or parameter.
+  - `callback: HalWatchCallback`: The exact callback function to remove.
+  - Automatically stops the monitoring timer if this was the last watched object.
+
+- `getWatchedObjects(): HalWatchedObject[]`
+
+  - Gets a list of all pins and parameters currently being monitored.
+  - **Returns:** Array of objects containing the monitored pin/parameter, last known value, and active callbacks.
+
+- `destroy(): void`
+  - Cleans up the monitoring system, stops all timers, and clears all watch callbacks.
+  - Should be called when the component is no longer needed to prevent memory leaks.
+
 **Pin/Parameter Proxy Access:**
 `HalComponent` instances use a JavaScript Proxy to allow direct property-like access to their pins and parameters using their `nameSuffix`.
 
@@ -201,6 +267,18 @@ Represents a HAL pin. Instances are returned by `component.newPin()`.
   - **Returns:** The value that was set.
   - _Throws an error if trying to set an `HAL_IN` pin._
 
+**Monitoring Methods:**
+
+- `watch(callback: HalWatchCallback): void`
+
+  - Starts monitoring this pin for value changes.
+  - `callback: HalWatchCallback`: Function called when the pin value changes. Receives `(newValue, oldValue, pinObject)`.
+  - Multiple callbacks can be registered for the same pin.
+
+- `removeWatch(callback: HalWatchCallback): void`
+  - Stops monitoring this pin with the specified callback function.
+  - `callback: HalWatchCallback`: The exact callback function to remove.
+
 ### `Param` Class
 
 Represents a HAL parameter. Instances are returned by `component.newParam()`.
@@ -220,6 +298,18 @@ Represents a HAL parameter. Instances are returned by `component.newParam()`.
   - Sets the value of this parameter.
   - `value`: The new value for the parameter.
   - **Returns:** The value that was set.
+
+**Monitoring Methods:**
+
+- `watch(callback: HalWatchCallback): void`
+
+  - Starts monitoring this parameter for value changes.
+  - `callback: HalWatchCallback`: Function called when the parameter value changes. Receives `(newValue, oldValue, paramObject)`.
+  - Multiple callbacks can be registered for the same parameter.
+
+- `removeWatch(callback: HalWatchCallback): void`
+  - Stops monitoring this parameter with the specified callback function.
+  - `callback: HalWatchCallback`: The exact callback function to remove.
 
 ### Global HAL Functions (`hal.*`)
 
@@ -378,6 +468,43 @@ The module exports various HAL and RTAPI constants, mirroring the enums defined 
     ownerId: number; // Component ID of the owner
   }
   ```
+
+**Monitoring Types:**
+
+- `type HalWatchCallback`
+
+  ```typescript
+  type HalWatchCallback = (
+    newValue: number | boolean,
+    oldValue: number | boolean,
+    object: Pin | Param
+  ) => void;
+  ```
+
+  - Callback function type for monitoring pin and parameter value changes.
+  - `newValue`: The new value of the monitored object.
+  - `oldValue`: The previous value of the monitored object.
+  - `object`: Reference to the Pin or Param object that changed.
+
+- `interface HalWatchOptions`
+
+  ```typescript
+  {
+    pollInterval?: number; // Polling interval in milliseconds (default: 10)
+  }
+  ```
+
+  - Configuration options for the monitoring system.
+
+- `interface HalWatchedObject`
+  ```typescript
+  {
+    object: Pin | Param; // The monitored pin or parameter object
+    lastValue: number | boolean; // Last known value for change detection
+    callbacks: Set<HalWatchCallback>; // Active callback functions
+  }
+  ```
+  - Internal representation of a monitored object (returned by `getWatchedObjects()`).
 
 ### Current Limitations
 
