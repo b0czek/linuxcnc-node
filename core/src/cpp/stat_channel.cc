@@ -3,7 +3,7 @@
 #include <cstring>
 #include <cmath>
 #include "timer.hh"
-// #include "tooldata.hh"
+#include "tooldata.hh"
 #include "rtapi_string.h"
 
 namespace LinuxCNC
