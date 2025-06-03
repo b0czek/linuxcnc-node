@@ -39,7 +39,7 @@ namespace LinuxCNC
         if (c_channel_)
             return true;
         const char *nml_file = GetNmlFileCStr();
-        c_channel_ = new NML(emcFormat, "emcError", "linuxcnc-node-err", nml_file);
+        c_channel_ = new NML(emcFormat, "emcError", "xemc", nml_file);
         if (!c_channel_ || !c_channel_->valid())
         {
             delete c_channel_;

@@ -104,14 +104,14 @@ namespace LinuxCNC
             return true;
 
         const char *nml_file = GetNmlFileCStr();
-        c_channel_ = new RCS_CMD_CHANNEL(emcFormat, "emcCommand", "linuxcnc-node-cmd", nml_file);
+        c_channel_ = new RCS_CMD_CHANNEL(emcFormat, "emcCommand", "xemc", nml_file);
         if (!c_channel_ || !c_channel_->valid())
         {
             delete c_channel_;
             c_channel_ = nullptr;
             return false;
         }
-        s_channel_ = new RCS_STAT_CHANNEL(emcFormat, "emcStatus", "linuxcnc-node-cmd-stat", nml_file);
+        s_channel_ = new RCS_STAT_CHANNEL(emcFormat, "emcStatus", "xemc", nml_file);
         if (!s_channel_ || !s_channel_->valid())
         {
             delete c_channel_;

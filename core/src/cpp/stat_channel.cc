@@ -3,7 +3,7 @@
 #include <cstring>
 #include <cmath>
 #include "timer.hh"
-#include "tooldata.hh"
+// #include "tooldata.hh"
 #include "rtapi_string.h"
 
 namespace LinuxCNC
@@ -53,7 +53,7 @@ namespace LinuxCNC
             return false;
         }
 
-        c_channel_ = new RCS_STAT_CHANNEL(emcFormat, "emcStatus", "linuxcnc-node", nml_file);
+        c_channel_ = new RCS_STAT_CHANNEL(emcFormat, "emcStatus", "xemc", nml_file);
         if (!c_channel_ || !c_channel_->valid())
         {
             delete c_channel_;
