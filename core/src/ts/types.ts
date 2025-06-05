@@ -9,7 +9,7 @@ import {
   ProgramUnits,
   RcsStatus,
   NmlMessageType,
-} from "./enums";
+} from "./constants";
 
 export interface Cartesian {
   x: number;

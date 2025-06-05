@@ -1,16 +1,11 @@
-// src/ts/commandChannel.ts
 import { NapiCommandChannelInstance } from "./native_type_interfaces";
 import {
   TaskMode,
   TaskState,
   TrajMode,
   SpindleDirection,
-  JogMode,
-  AutoOpType,
-  CoolantMode,
-  BrakeState,
   RcsStatus,
-} from "./enums";
+} from "./constants";
 
 export class CommandChannel {
   private nativeInstance: NapiCommandChannelInstance;
@@ -19,23 +14,23 @@ export class CommandChannel {
     this.nativeInstance = nativeInstance;
   }
 
-  private async exec<T extends (...args: any[]) => RcsStatus>(
+  private async exec<T extends (...args: any[]) => Promise<RcsStatus>>(
     cmdFunc: T,
     ...args: Parameters<T>
   ): Promise<RcsStatus> {
     try {
-      // Directly call and return, assuming native methods are synchronous for now
-      // If they were async (e.g. using Napi::AsyncWorker), this would be different
-      const status = cmdFunc.apply(this.nativeInstance, args);
+      const status = await cmdFunc.apply(this.nativeInstance, args);
       if (status !== RcsStatus.DONE && status !== RcsStatus.EXEC) {
         // EXEC can be ok for some commands that take time
         // Consider if specific commands expect EXEC or only DONE
         // For now, any non-DONE/non-EXEC is potentially an issue to warn about or handle
-        // throw new Error(`Command failed with RCS status: ${RcsStatus[status] || status}`);
+        throw new Error(
+          `Command failed with RCS status: ${RcsStatus[status] || status}`
+        );
       }
       return status;
     } catch (e: any) {
-      // Native NAPI methods throw JS errors if NAPI_THROW_ повседневный
+      // Native NAPI methods reject promises for async errors
       throw new Error(`Command native execution failed: ${e.message || e}`);
     }
   }
@@ -286,8 +281,10 @@ export class CommandChannel {
   }
 
   // --- Misc ---
-  async waitComplete(timeout?: number): Promise<RcsStatus> {
-    return this.exec(this.nativeInstance.waitComplete, timeout);
+  waitComplete(timeout?: number): RcsStatus {
+    if (!this.nativeInstance)
+      throw new Error("CommandChannel native instance not available.");
+    return this.nativeInstance.waitComplete(timeout);
   }
 
   getSerial(): number {

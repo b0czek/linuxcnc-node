@@ -8,7 +8,7 @@ import { StatChannel, StatWatcherOptions } from "./statChannel";
 import { CommandChannel } from "./commandChannel";
 import { ErrorChannel, ErrorWatcherOptions } from "./errorChannel";
 
-import { Constants, addon } from "./constants";
+import { addon } from "./constants";
 
 let nmlFilePath: string = addon.NMLFILE_DEFAULT;
 
@@ -65,8 +65,7 @@ export function createErrorChannel(
 }
 
 // Export all enums and types
-export * from "./enums";
+export * from "./constants";
 export * from "./types";
 export { StatChannel, CommandChannel, ErrorChannel };
 export { StatWatcherOptions, ErrorWatcherOptions };
-export { Constants } from "./constants";

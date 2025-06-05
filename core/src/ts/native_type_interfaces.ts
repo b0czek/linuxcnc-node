@@ -9,7 +9,7 @@ import {
   JogMode,
   AutoOpType,
   RcsStatus,
-} from "./enums";
+} from "./constants";
 
 // Interface for the NAPI addon module itself
 export interface NapiOptions {
@@ -124,53 +124,56 @@ export interface NapiStatChannelInstance {
 // Interface for the NapiCommandChannel instance
 export interface NapiCommandChannelInstance {
   // Task commands
-  setMode(mode: TaskMode): RcsStatus;
-  setState(state: TaskState): RcsStatus;
-  taskPlanSynch(): RcsStatus;
-  resetInterpreter(): RcsStatus;
-  programOpen(filePath: string): RcsStatus;
+  setMode(mode: TaskMode): Promise<RcsStatus>;
+  setState(state: TaskState): Promise<RcsStatus>;
+  taskPlanSynch(): Promise<RcsStatus>;
+  resetInterpreter(): Promise<RcsStatus>;
+  programOpen(filePath: string): Promise<RcsStatus>;
   // auto commands are mapped to specific methods for clarity
-  runProgram(startLine: number): RcsStatus; // auto(AUTO_RUN, line)
-  pauseProgram(): RcsStatus; // auto(AUTO_PAUSE)
-  resumeProgram(): RcsStatus; // auto(AUTO_RESUME)
-  stepProgram(): RcsStatus; // auto(AUTO_STEP)
-  reverseProgram(): RcsStatus; // auto(AUTO_REVERSE)
-  forwardProgram(): RcsStatus; // auto(AUTO_FORWARD)
-  abortTask(): RcsStatus;
-  setOptionalStop(enable: boolean): RcsStatus;
-  setBlockDelete(enable: boolean): RcsStatus;
-  mdi(command: string): RcsStatus;
+  runProgram(startLine: number): Promise<RcsStatus>; // auto(AUTO_RUN, line)
+  pauseProgram(): Promise<RcsStatus>; // auto(AUTO_PAUSE)
+  resumeProgram(): Promise<RcsStatus>; // auto(AUTO_RESUME)
+  stepProgram(): Promise<RcsStatus>; // auto(AUTO_STEP)
+  reverseProgram(): Promise<RcsStatus>; // auto(AUTO_REVERSE)
+  forwardProgram(): Promise<RcsStatus>; // auto(AUTO_FORWARD)
+  abortTask(): Promise<RcsStatus>;
+  setOptionalStop(enable: boolean): Promise<RcsStatus>;
+  setBlockDelete(enable: boolean): Promise<RcsStatus>;
+  mdi(command: string): Promise<RcsStatus>;
 
   // Trajectory commands
-  setTrajMode(mode: TrajMode): RcsStatus;
-  setMaxVelocity(velocity: number): RcsStatus;
-  setFeedRate(scale: number): RcsStatus;
-  setRapidRate(scale: number): RcsStatus;
-  setSpindleOverride(scale: number, spindleIndex?: number): RcsStatus;
-  overrideLimits(): RcsStatus;
-  teleopEnable(enable: boolean): RcsStatus;
-  setFeedOverrideEnable(enable: boolean): RcsStatus;
-  setSpindleOverrideEnable(enable: boolean, spindleIndex?: number): RcsStatus;
-  setFeedHoldEnable(enable: boolean): RcsStatus;
-  setAdaptiveFeedEnable(enable: boolean): RcsStatus;
+  setTrajMode(mode: TrajMode): Promise<RcsStatus>;
+  setMaxVelocity(velocity: number): Promise<RcsStatus>;
+  setFeedRate(scale: number): Promise<RcsStatus>;
+  setRapidRate(scale: number): Promise<RcsStatus>;
+  setSpindleOverride(scale: number, spindleIndex?: number): Promise<RcsStatus>;
+  overrideLimits(): Promise<RcsStatus>;
+  teleopEnable(enable: boolean): Promise<RcsStatus>;
+  setFeedOverrideEnable(enable: boolean): Promise<RcsStatus>;
+  setSpindleOverrideEnable(
+    enable: boolean,
+    spindleIndex?: number
+  ): Promise<RcsStatus>;
+  setFeedHoldEnable(enable: boolean): Promise<RcsStatus>;
+  setAdaptiveFeedEnable(enable: boolean): Promise<RcsStatus>;
 
   // Joint commands
-  homeJoint(jointIndex: number): RcsStatus; // jointIndex -1 for all
-  unhomeJoint(jointIndex: number): RcsStatus; // jointIndex -1 for all
-  jogStop(axisOrJointIndex: number, isJointJog: boolean): RcsStatus;
+  homeJoint(jointIndex: number): Promise<RcsStatus>; // jointIndex -1 for all
+  unhomeJoint(jointIndex: number): Promise<RcsStatus>; // jointIndex -1 for all
+  jogStop(axisOrJointIndex: number, isJointJog: boolean): Promise<RcsStatus>;
   jogContinuous(
     axisOrJointIndex: number,
     isJointJog: boolean,
     speed: number
-  ): RcsStatus;
+  ): Promise<RcsStatus>;
   jogIncrement(
     axisOrJointIndex: number,
     isJointJog: boolean,
     speed: number,
     increment: number
-  ): RcsStatus;
-  setMinPositionLimit(jointIndex: number, limit: number): RcsStatus;
-  setMaxPositionLimit(jointIndex: number, limit: number): RcsStatus;
+  ): Promise<RcsStatus>;
+  setMinPositionLimit(jointIndex: number, limit: number): Promise<RcsStatus>;
+  setMaxPositionLimit(jointIndex: number, limit: number): Promise<RcsStatus>;
 
   // Spindle commands
   spindleOn(
@@ -178,19 +181,19 @@ export interface NapiCommandChannelInstance {
     speed?: number,
     spindleIndex?: number,
     waitForSpeed?: boolean
-  ): RcsStatus;
-  spindleIncrease(spindleIndex?: number): RcsStatus;
-  spindleDecrease(spindleIndex?: number): RcsStatus;
-  spindleConstant(spindleIndex?: number): RcsStatus;
-  spindleOff(spindleIndex?: number): RcsStatus;
-  spindleBrake(engage: boolean, spindleIndex?: number): RcsStatus;
+  ): Promise<RcsStatus>;
+  spindleIncrease(spindleIndex?: number): Promise<RcsStatus>;
+  spindleDecrease(spindleIndex?: number): Promise<RcsStatus>;
+  spindleConstant(spindleIndex?: number): Promise<RcsStatus>;
+  spindleOff(spindleIndex?: number): Promise<RcsStatus>;
+  spindleBrake(engage: boolean, spindleIndex?: number): Promise<RcsStatus>;
 
   // Coolant commands
-  setMist(on: boolean): RcsStatus;
-  setFlood(on: boolean): RcsStatus;
+  setMist(on: boolean): Promise<RcsStatus>;
+  setFlood(on: boolean): Promise<RcsStatus>;
 
   // Tool commands
-  loadToolTable(): RcsStatus;
+  loadToolTable(): Promise<RcsStatus>;
   setToolOffset(
     toolNumber: number,
     zOffset: number,
@@ -199,20 +202,20 @@ export interface NapiCommandChannelInstance {
     frontAngle: number,
     backAngle: number,
     orientation: number
-  ): RcsStatus;
+  ): Promise<RcsStatus>;
 
   // IO commands
-  setDigitalOutput(index: number, value: boolean): RcsStatus;
-  setAnalogOutput(index: number, value: number): RcsStatus;
+  setDigitalOutput(index: number, value: boolean): Promise<RcsStatus>;
+  setAnalogOutput(index: number, value: number): Promise<RcsStatus>;
 
   // Debug & Message commands
-  setDebugLevel(level: number): RcsStatus;
-  sendOperatorError(message: string): RcsStatus;
-  sendOperatorText(message: string): RcsStatus;
-  sendOperatorDisplay(message: string): RcsStatus;
+  setDebugLevel(level: number): Promise<RcsStatus>;
+  sendOperatorError(message: string): Promise<RcsStatus>;
+  sendOperatorText(message: string): Promise<RcsStatus>;
+  sendOperatorDisplay(message: string): Promise<RcsStatus>;
 
   // Misc
-  waitComplete(timeout?: number): RcsStatus;
+  waitComplete(timeout?: number): RcsStatus; // Keep this synchronous as it was reverted
   serial: number; // For the command serial number
 }
 

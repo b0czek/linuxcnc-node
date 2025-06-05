@@ -1,4 +1,3 @@
-// src/ts/errorChannel.ts
 import { NapiErrorChannelInstance } from "./native_type_interfaces";
 import { LinuxCNCError, ErrorCallback } from "./types";
 

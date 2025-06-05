@@ -1,4 +1,3 @@
-// src/ts/statChannel.ts
 import { NapiStatChannelInstance } from "./native_type_interfaces";
 import {
   LinuxCNCStat,
@@ -17,10 +16,10 @@ import {
   MotionType,
   ProgramUnits,
   RcsStatus,
-} from "./enums";
+} from "./constants";
 import isEqual from "lodash/isEqual";
 import getPathValue from "lodash/get";
-export const DEFAULT_STAT_POLL_INTERVAL = 100; // ms
+export const DEFAULT_STAT_POLL_INTERVAL = 50; // ms
 
 export interface StatWatcherOptions {
   pollInterval?: number;
