@@ -149,4 +149,4 @@ namespace LinuxCNC
         obj.Set(key, Napi::String::New(env, value));
     }
 
-} // namespace LinuxCNC
+}

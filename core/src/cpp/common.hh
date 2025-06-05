@@ -43,7 +43,7 @@ namespace LinuxCNC
 
     // Helper to convert EmcPose to Napi::Object
     Napi::Object EmcPoseToNapiObject(Napi::Env env, const EmcPose &pose);
-    // Helper to convert Napi::Object to EmcPose (if needed for commands)
+    // Helper to convert Napi::Object to EmcPose (if ever needed for commands)
     bool NapiObjectToEmcPose(Napi::Env env, Napi::Value value, EmcPose &pose);
 
     Napi::Array DoubleArrayToNapiArray(Napi::Env env, const double *arr, size_t size);
@@ -56,4 +56,4 @@ namespace LinuxCNC
 
     void DictAddString(Napi::Env env, Napi::Object obj, const char *key, const char *value);
 
-} // namespace LinuxCNC
+}

@@ -7,6 +7,7 @@
         "src/cpp/common.cc",
         "src/cpp/stat_channel.cc",
         "src/cpp/command_channel.cc",
+        "src/cpp/command_worker.cc",
         "src/cpp/error_channel.cc"
       ],
       "include_dirs": [

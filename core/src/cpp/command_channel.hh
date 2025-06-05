@@ -4,7 +4,9 @@
 #include "rcs.hh"
 #include "emc.hh"
 #include "emc_nml.hh"
-#include "timer.hh" // For etime, esleep
+#include "timer.hh"
+#include "command_worker.hh"
+#include <memory>
 
 namespace LinuxCNC
 {
@@ -19,6 +21,9 @@ namespace LinuxCNC
     private:
         static Napi::FunctionReference constructor;
 
+        // Allow CommandWorker to access private members
+        friend class CommandWorker;
+
         RCS_CMD_CHANNEL *c_channel_ = nullptr;
         RCS_STAT_CHANNEL *s_channel_ = nullptr; // For echo checking
         int last_serial_ = 0;
@@ -26,8 +31,11 @@ namespace LinuxCNC
         bool connect();
         void disconnect();
 
-        // Helper for sending commands and waiting for echo/status
-        Napi::Value sendCommandAndWait(const Napi::CallbackInfo &info, RCS_CMD_MSG &cmd_msg, double timeout = 5.0);
+        // Helper for sending commands asynchronously
+        Napi::Value sendCommandAsync(const Napi::CallbackInfo &info, std::unique_ptr<RCS_CMD_MSG> cmd_msg, double timeout = 5.0);
+
+        // Helper methods for command completion waiting
+        RCS_STATUS waitCommandComplete();
         RCS_STATUS waitCommandComplete(double timeout);
 
         // --- NAPI Wrapped Methods ---
@@ -102,4 +110,4 @@ namespace LinuxCNC
         Napi::Value GetSerial(const Napi::CallbackInfo &info);
     };
 
-} // namespace LinuxCNC
+}
