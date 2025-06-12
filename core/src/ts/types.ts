@@ -11,14 +11,10 @@ import {
   NmlMessageType,
 } from "./constants";
 
-export interface Cartesian {
+export interface EmcPose {
   x: number;
   y: number;
   z: number;
-}
-
-export interface EmcPose {
-  tran: Cartesian;
   a: number;
   b: number;
   c: number;

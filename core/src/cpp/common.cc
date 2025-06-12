@@ -30,13 +30,10 @@ namespace LinuxCNC
 
     Napi::Object EmcPoseToNapiObject(Napi::Env env, const EmcPose &pose)
     {
-        Napi::Object tranObj = Napi::Object::New(env);
-        tranObj.Set("x", Napi::Number::New(env, pose.tran.x));
-        tranObj.Set("y", Napi::Number::New(env, pose.tran.y));
-        tranObj.Set("z", Napi::Number::New(env, pose.tran.z));
-
         Napi::Object poseObj = Napi::Object::New(env);
-        poseObj.Set("tran", tranObj);
+        poseObj.Set("x", Napi::Number::New(env, pose.tran.x));
+        poseObj.Set("y", Napi::Number::New(env, pose.tran.y));
+        poseObj.Set("z", Napi::Number::New(env, pose.tran.z));
         poseObj.Set("a", Napi::Number::New(env, pose.a));
         poseObj.Set("b", Napi::Number::New(env, pose.b));
         poseObj.Set("c", Napi::Number::New(env, pose.c));
@@ -52,10 +49,6 @@ namespace LinuxCNC
             return false;
         Napi::Object obj = value.As<Napi::Object>();
 
-        if (!obj.Has("tran") || !obj.Get("tran").IsObject())
-            return false;
-        Napi::Object tranObj = obj.Get("tran").As<Napi::Object>();
-
         auto getNumber = [&](Napi::Object o, const char *key, double &val)
         {
             if (!o.Has(key) || !o.Get(key).IsNumber())
@@ -64,11 +57,11 @@ namespace LinuxCNC
             return true;
         };
 
-        if (!getNumber(tranObj, "x", pose.tran.x))
+        if (!getNumber(obj, "x", pose.tran.x))
             return false;
-        if (!getNumber(tranObj, "y", pose.tran.y))
+        if (!getNumber(obj, "y", pose.tran.y))
             return false;
-        if (!getNumber(tranObj, "z", pose.tran.z))
+        if (!getNumber(obj, "z", pose.tran.z))
             return false;
         if (!getNumber(obj, "a", pose.a))
             return false;
