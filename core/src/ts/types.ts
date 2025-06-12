@@ -67,7 +67,7 @@ export interface TaskStat {
   activeMCodes: number[];
   activeSettings: number[]; // [feed, speed, G64 P, G64 Q]
   programUnits: ProgramUnits;
-  interpreterErrcode: number;
+  interpreterErrorCode: number;
   taskPaused: boolean;
   delayLeft: number;
   queuedMdiCommands: number;
@@ -87,7 +87,7 @@ export interface JointStat {
   output: number; // commanded position
   input: number; // actual position
   velocity: number;
-  inpos: boolean;
+  inPosition: boolean;
   homing: boolean;
   homed: boolean;
   fault: boolean;
@@ -107,7 +107,7 @@ export interface AxisStat {
 
 export interface SpindleStat {
   speed: number;
-  spindleScale: number; // override
+  override: number; // override
   cssMaximum: number;
   cssFactor: number;
   direction: -1 | 0 | 1; // reverse, off, forward
@@ -129,14 +129,14 @@ export interface TrajectoryStat {
   axisMask: number;
   mode: TrajMode;
   enabled: boolean;
-  inpos: boolean;
+  inPosition: boolean;
   queue: number;
   activeQueue: number;
   queueFull: boolean;
   id: number; // motion ID
   paused: boolean;
-  scale: number; // feed rate override
-  rapidScale: number;
+  feedrateOverride: number;
+  rapidrateOverride: number;
   position: EmcPose;
   actualPosition: EmcPose;
   velocity: number; // commanded velocity for next segment
@@ -179,8 +179,8 @@ export interface MotionStat {
   joint: JointStat[]; // Array matching EMCMOT_MAX_JOINTS
   axis: AxisStat[]; // Array matching EMCMOT_MAX_AXIS
   spindle: SpindleStat[]; // Array matching EMCMOT_MAX_SPINDLES
-  synchDi: number[]; // Digital inputs state
-  synchDo: number[]; // Digital outputs state
+  digitalInput: number[]; // Digital inputs state
+  digitalOutput: number[]; // Digital outputs state
   analogInput: number[];
   analogOutput: number[];
   debug: number;

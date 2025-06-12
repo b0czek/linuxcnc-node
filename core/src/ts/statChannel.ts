@@ -277,10 +277,10 @@ export class StatChannel {
     return this.currentStat?.io.tool.toolInSpindle;
   }
   get feedRateOverride(): number | undefined {
-    return this.currentStat?.motion.traj.scale;
+    return this.currentStat?.motion.traj.feedrateOverride;
   }
   get spindleSpeedOverride(): number | undefined {
-    return this.currentStat?.motion.spindle[0]?.spindleScale;
+    return this.currentStat?.motion.spindle[0]?.override;
   } // Assuming spindle 0
   get currentVelocity(): number | undefined {
     return this.currentStat?.motion.traj.currentVel;

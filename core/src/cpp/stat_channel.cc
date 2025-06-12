@@ -229,7 +229,7 @@ namespace LinuxCNC
         obj.Set("activeMCodes", IntArrayToNapiArray(env, task_stat.activeMCodes, ACTIVE_M_CODES));
         obj.Set("activeSettings", DoubleArrayToNapiArray(env, task_stat.activeSettings, ACTIVE_SETTINGS));
         DictAdd(env, obj, "programUnits", static_cast<int>(task_stat.programUnits));
-        DictAdd(env, obj, "interpreterErrcode", task_stat.interpreter_errcode);
+        DictAdd(env, obj, "interpreterErrorCode", task_stat.interpreter_errcode);
         DictAdd(env, obj, "taskPaused", (bool)task_stat.task_paused); // Original was int
         DictAdd(env, obj, "delayLeft", task_stat.delayLeft);
         DictAdd(env, obj, "queuedMdiCommands", task_stat.queuedMDIcommands);
@@ -244,8 +244,8 @@ namespace LinuxCNC
         obj.Set("joint", convertJointsToNapi(env, motion_stat.joint, EMCMOT_MAX_JOINTS));
         obj.Set("axis", convertAxesToNapi(env, motion_stat.axis, EMCMOT_MAX_AXIS));
         obj.Set("spindle", convertSpindlesToNapi(env, motion_stat.spindle, EMCMOT_MAX_SPINDLES));
-        obj.Set("synchDi", IntArrayToNapiArray(env, motion_stat.synch_di, EMCMOT_MAX_DIO));
-        obj.Set("synchDo", IntArrayToNapiArray(env, motion_stat.synch_do, EMCMOT_MAX_DIO));
+        obj.Set("digitalInput", IntArrayToNapiArray(env, motion_stat.synch_di, EMCMOT_MAX_DIO));
+        obj.Set("digitalOutput", IntArrayToNapiArray(env, motion_stat.synch_do, EMCMOT_MAX_DIO));
         obj.Set("analogInput", DoubleArrayToNapiArray(env, motion_stat.analog_input, EMCMOT_MAX_AIO));
         obj.Set("analogOutput", DoubleArrayToNapiArray(env, motion_stat.analog_output, EMCMOT_MAX_AIO));
         // motion_stat.misc_error can be added if needed
@@ -276,14 +276,14 @@ namespace LinuxCNC
         DictAdd(env, obj, "axisMask", traj_stat.axis_mask);
         DictAdd(env, obj, "mode", static_cast<int>(traj_stat.mode));
         DictAdd(env, obj, "enabled", (bool)traj_stat.enabled);
-        DictAdd(env, obj, "inpos", (bool)traj_stat.inpos);
+        DictAdd(env, obj, "inPosition", (bool)traj_stat.inpos);
         DictAdd(env, obj, "queue", traj_stat.queue);
         DictAdd(env, obj, "activeQueue", traj_stat.activeQueue);
         DictAdd(env, obj, "queueFull", (bool)traj_stat.queueFull);
         DictAdd(env, obj, "id", traj_stat.id);
         DictAdd(env, obj, "paused", (bool)traj_stat.paused);
-        DictAdd(env, obj, "scale", traj_stat.scale); // feedrate
-        DictAdd(env, obj, "rapidScale", traj_stat.rapid_scale);
+        DictAdd(env, obj, "feedrateOverride", traj_stat.scale);
+        DictAdd(env, obj, "rapidrateOverride", traj_stat.rapid_scale);
         obj.Set("position", EmcPoseToNapiObject(env, traj_stat.position));
         obj.Set("actualPosition", EmcPoseToNapiObject(env, traj_stat.actualPosition));
         DictAdd(env, obj, "velocity", traj_stat.velocity);
@@ -324,7 +324,7 @@ namespace LinuxCNC
             DictAdd(env, jointObj, "output", joints[i].output);
             DictAdd(env, jointObj, "input", joints[i].input);
             DictAdd(env, jointObj, "velocity", joints[i].velocity);
-            DictAdd(env, jointObj, "inpos", (bool)joints[i].inpos);
+            DictAdd(env, jointObj, "inPosition", (bool)joints[i].inpos);
             DictAdd(env, jointObj, "homing", (bool)joints[i].homing);
             DictAdd(env, jointObj, "homed", (bool)joints[i].homed);
             DictAdd(env, jointObj, "fault", (bool)joints[i].fault);
@@ -360,7 +360,7 @@ namespace LinuxCNC
         {
             Napi::Object spindleObj = Napi::Object::New(env);
             DictAdd(env, spindleObj, "speed", spindles[i].speed);
-            DictAdd(env, spindleObj, "spindleScale", spindles[i].spindle_scale);
+            DictAdd(env, spindleObj, "override", spindles[i].spindle_scale);
             DictAdd(env, spindleObj, "cssMaximum", spindles[i].css_maximum);
             DictAdd(env, spindleObj, "cssFactor", spindles[i].css_factor);
             DictAdd(env, spindleObj, "direction", spindles[i].direction);
