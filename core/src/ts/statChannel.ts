@@ -1,7 +1,7 @@
 import { NapiStatChannelInstance } from "./native_type_interfaces";
 import {
   LinuxCNCStat,
-  ToolData,
+  LinuxCNCStatPaths,
   StatPropertyWatchCallback,
   FullStatChangeCallback,
   ToolEntry,
@@ -37,7 +37,8 @@ export class StatChannel {
   private isPolling: boolean = false;
 
   private currentStat: LinuxCNCStat | null = null;
-  private watchedProperties: Map<string, WatchedProperty> = new Map();
+  private watchedProperties: Map<LinuxCNCStatPaths, WatchedProperty> =
+    new Map();
   private fullChangeCallbacks: Set<FullStatChangeCallback> = new Set();
 
   constructor(
@@ -138,7 +139,10 @@ export class StatChannel {
    * @param propertyPath A dot-separated path to the property (e.g., "task.motionLine", "motion.joint.0.homed").
    * @param callback The function to call when the property's value changes.
    */
-  addWatch(propertyPath: string, callback: StatPropertyWatchCallback): void {
+  addWatch(
+    propertyPath: LinuxCNCStatPaths,
+    callback: StatPropertyWatchCallback
+  ): void {
     let watchedInfo = this.watchedProperties.get(propertyPath);
     if (!watchedInfo) {
       const initialValue = this.currentStat
@@ -161,7 +165,10 @@ export class StatChannel {
    * @param propertyPath The property path.
    * @param callback The callback function to remove.
    */
-  removeWatch(propertyPath: string, callback: StatPropertyWatchCallback): void {
+  removeWatch(
+    propertyPath: LinuxCNCStatPaths,
+    callback: StatPropertyWatchCallback
+  ): void {
     const watchedInfo = this.watchedProperties.get(propertyPath);
     if (watchedInfo) {
       watchedInfo.callbacks.delete(callback);
@@ -203,7 +210,7 @@ export class StatChannel {
    * @param toolNumber The tool number to query.
    * @returns A Promise that resolves with the tool data.
    */
-  async toolInfo(toolNumber: number): Promise<ToolData> {
+  async toolInfo(toolNumber: number): Promise<ToolEntry> {
     if (!this.nativeInstance) {
       throw new Error("StatChannel native instance not available.");
     }

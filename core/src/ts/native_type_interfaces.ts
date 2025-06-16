@@ -1,5 +1,5 @@
 // src/ts/native_type_interfaces.ts
-import { LinuxCNCStat, ToolData, LinuxCNCError, EmcPose } from "./types";
+import { LinuxCNCStat, ToolEntry, LinuxCNCError, EmcPose } from "./types";
 import {
   TaskMode,
   TaskState,
@@ -118,7 +118,7 @@ export interface NapiOptions {
 export interface NapiStatChannelInstance {
   poll(): boolean; // Returns true if data was updated
   getCurrentFullStat(): LinuxCNCStat;
-  toolInfo(toolNumber: number): ToolData;
+  toolInfo(toolNumber: number): ToolEntry;
 }
 
 // Interface for the NapiCommandChannel instance

@@ -41,7 +41,6 @@ namespace LinuxCNC
         Napi::Array convertSpindlesToNapi(Napi::Env env, const EMC_SPINDLE_STAT spindles[], int count);
         Napi::Object convertToolStatToNapi(Napi::Env env, const EMC_TOOL_STAT &tool_stat);
         Napi::Object convertCoolantStatToNapi(Napi::Env env, const EMC_COOLANT_STAT &coolant_stat);
-        Napi::Object convertAuxStatToNapi(Napi::Env env, const EMC_AUX_STAT &aux_stat);
         Napi::Array convertToolTableToNapi(Napi::Env env); // Specific for tool_table
 
         // Exposed methods

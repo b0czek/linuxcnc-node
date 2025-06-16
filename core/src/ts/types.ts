@@ -24,23 +24,14 @@ export interface EmcPose {
 }
 
 export interface ToolEntry {
-  id: number; // toolno
-  pocketNo?: number; // Added from tooldata_get
+  toolNo: number;
+  pocketNo: number;
   offset: EmcPose;
   diameter: number;
   frontAngle: number;
   backAngle: number;
   orientation: number;
-  comment?: string; // Added from tooldata_get
-}
-
-export interface ToolData extends ToolEntry {
-  // For toolInfo results, can be more detailed
-  // Specific offsets if needed, though EmcPose is primary
-  xOffset?: number;
-  yOffset?: number;
-  zOffset?: number;
-  // ... other rotary/uvw offsets
+  comment: string;
 }
 
 export interface TaskStat {
@@ -170,10 +161,6 @@ export interface CoolantIoStat {
   flood: boolean;
 }
 
-export interface AuxIoStat {
-  estop: boolean; // Note: this is io.aux.estop, different from task.state
-}
-
 export interface MotionStat {
   traj: TrajectoryStat;
   joint: JointStat[]; // Array matching EMCMOT_MAX_JOINTS
@@ -195,7 +182,7 @@ export interface MotionStat {
 export interface IoStat {
   tool: ToolIoStat;
   coolant: CoolantIoStat;
-  aux: AuxIoStat;
+  estop: boolean;
   // debug: number;
   // reason: number;
   // fault: number;
@@ -220,11 +207,25 @@ export interface LinuxCNCError {
   message: string;
 }
 
+// utility type to generate string paths for nested objects
+type NestedPaths<T, K extends keyof T = keyof T> = K extends string
+  ? T[K] extends object
+    ? T[K] extends readonly (infer U)[]
+      ? U extends object
+        ? `${K}` | `${K}.${number}` | `${K}.${number}.${NestedPaths<U>}`
+        : `${K}` | `${K}.${number}`
+      : `${K}` | `${K}.${NestedPaths<T[K]>}`
+    : `${K}`
+  : never;
+
+// Type-safe property paths for LinuxCNCStat (dot-separated string paths)
+export type LinuxCNCStatPaths = NestedPaths<LinuxCNCStat>;
+
 // Callback types
 export type StatPropertyWatchCallback = (
   newValue: any,
   oldValue: any,
-  propertyPath: string
+  propertyPath: LinuxCNCStatPaths
 ) => void;
 export type FullStatChangeCallback = (
   newStat: LinuxCNCStat,

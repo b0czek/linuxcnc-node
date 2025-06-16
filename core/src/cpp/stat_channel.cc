@@ -140,7 +140,6 @@ namespace LinuxCNC
     }
 
     // --- Conversion helpers (implementation details) ---
-    // These will be quite long. I'll sketch one or two.
 
     Napi::Object NapiStatChannel::convertFullStatToNapiObject(Napi::Env env, const EMC_STAT &stat_to_convert)
     {
@@ -260,7 +259,8 @@ namespace LinuxCNC
         Napi::Object obj = Napi::Object::New(env);
         obj.Set("tool", convertToolStatToNapi(env, io_stat.tool));
         obj.Set("coolant", convertCoolantStatToNapi(env, io_stat.coolant));
-        obj.Set("aux", convertAuxStatToNapi(env, io_stat.aux));
+
+        DictAdd(env, obj, "estop", (bool)io_stat.aux.estop);
         // io_stat.debug, reason, fault can be added
         return obj;
     }
@@ -392,12 +392,6 @@ namespace LinuxCNC
         DictAdd(env, obj, "flood", (bool)coolant_stat.flood);
         return obj;
     }
-    Napi::Object NapiStatChannel::convertAuxStatToNapi(Napi::Env env, const EMC_AUX_STAT &aux_stat)
-    {
-        Napi::Object obj = Napi::Object::New(env);
-        DictAdd(env, obj, "estop", (bool)aux_stat.estop);
-        return obj;
-    }
 
     Napi::Array NapiStatChannel::convertToolTableToNapi(Napi::Env env)
     {
@@ -424,17 +418,12 @@ namespace LinuxCNC
             }
 
             Napi::Object toolObj = Napi::Object::New(env);
-            DictAdd(env, toolObj, "id", tdata.toolno); // toolno is 'id' in Python struct
+            DictAdd(env, toolObj, "toolNo", tdata.toolno);
             toolObj.Set("offset", EmcPoseToNapiObject(env, tdata.offset));
             DictAdd(env, toolObj, "diameter", tdata.diameter);
-            DictAdd(env, toolObj, "frontAngle", tdata.frontangle); // CamelCase
-            DictAdd(env, toolObj, "backAngle", tdata.backangle);   // CamelCase
+            DictAdd(env, toolObj, "frontAngle", tdata.frontangle);
+            DictAdd(env, toolObj, "backAngle", tdata.backangle);
             DictAdd(env, toolObj, "orientation", tdata.orientation);
-            // Pocket number and comment are not in this direct toolTable array in EMC_STAT,
-            // but are part of full CANON_TOOL_TABLE struct if accessed via toolinfo or more detailed tool data queries.
-            // The Python struct sequence `tool_fields` directly takes from `t`.
-            // For consistency with your `ToolEntry` type, we can add them if available.
-            // Here `tdata.pocketno` is available if tooldata_get populates it fully.
             DictAdd(env, toolObj, "pocketNo", tdata.pocketno);
             DictAddString(env, toolObj, "comment", tdata.comment);
 
@@ -471,31 +460,21 @@ namespace LinuxCNC
 
         if (tooldata_get(&tdata, idx) != IDX_OK)
         {
-            Napi::Error::New(env, "toolInfo: No tooldata for toolno=" + std::to_string(toolno)).ThrowAsJavaScriptException();
+            Napi::Error::New(env, "toolInfo: No tooldata for toolNo=" + std::to_string(toolno)).ThrowAsJavaScriptException();
             return env.Null();
         }
 
         Napi::Object res = Napi::Object::New(env);
-        DictAdd(env, res, "toolNo", tdata.toolno); // "toolno" in python, "toolNo" for camelCase
+        DictAdd(env, res, "toolNo", tdata.toolno);
         DictAdd(env, res, "pocketNo", tdata.pocketno);
         DictAdd(env, res, "diameter", tdata.diameter);
         DictAdd(env, res, "frontAngle", tdata.frontangle);
         DictAdd(env, res, "backAngle", tdata.backangle);
         DictAdd(env, res, "orientation", tdata.orientation);
-        // Offsets are part of the EmcPose
-        DictAdd(env, res, "xOffset", tdata.offset.tran.x); // Individual offsets for convenience
-        DictAdd(env, res, "yOffset", tdata.offset.tran.y);
-        DictAdd(env, res, "zOffset", tdata.offset.tran.z);
-        DictAdd(env, res, "aOffset", tdata.offset.a);
-        DictAdd(env, res, "bOffset", tdata.offset.b);
-        DictAdd(env, res, "cOffset", tdata.offset.c);
-        DictAdd(env, res, "uOffset", tdata.offset.u);
-        DictAdd(env, res, "vOffset", tdata.offset.v);
-        DictAdd(env, res, "wOffset", tdata.offset.w);
-        res.Set("offset", EmcPoseToNapiObject(env, tdata.offset)); // Full pose object
+        res.Set("offset", EmcPoseToNapiObject(env, tdata.offset));
         DictAddString(env, res, "comment", tdata.comment);
 
         return res;
     }
 
-} // namespace LinuxCNC
+}
