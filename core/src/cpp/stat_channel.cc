@@ -48,8 +48,6 @@ namespace LinuxCNC
         const char *nml_file = GetNmlFileCStr();
         if (strlen(nml_file) == 0)
         {
-            // This should not happen if nml path is set.
-            // Consider throwing an error or logging.
             return false;
         }
 
@@ -60,10 +58,11 @@ namespace LinuxCNC
             c_channel_ = nullptr;
             return false;
         }
-        // Initialize status_ to a zeroed state or by an initial poll
+        // Initialize status_ to a zeroed state
         memset(&status_, 0, sizeof(EMC_STAT));
         // Initial poll to populate status_
-        // Poll(Napi::CallbackInfo(Env(), NewObject())); // Call with dummy info
+        pollInternal();
+
         return true;
     }
 
@@ -76,9 +75,36 @@ namespace LinuxCNC
         }
         if (tool_mmap_initialized_)
         {
-            // tool_mmap_close(); // If tooldata.cc has a close function
             tool_mmap_initialized_ = false;
         }
+    }
+
+    bool NapiStatChannel::pollInternal()
+    {
+        if (!c_channel_ || !c_channel_->valid())
+        {
+            return false;
+        }
+
+        // Initialize tool mmap if not done yet
+        if (!tool_mmap_initialized_)
+        {
+            if (tool_mmap_user() == 0)
+            {
+                tool_mmap_initialized_ = true;
+            }
+        }
+
+        if (c_channel_->peek() == EMC_STAT_TYPE)
+        {
+            EMC_STAT *emc_status_ptr = static_cast<EMC_STAT *>(c_channel_->get_address());
+            if (emc_status_ptr)
+            {
+                memcpy(&status_, emc_status_ptr, sizeof(EMC_STAT));
+                return true; // Data was updated
+            }
+        }
+        return false; // No new data or error
     }
 
     Napi::Value NapiStatChannel::Poll(const Napi::CallbackInfo &info)
@@ -94,38 +120,8 @@ namespace LinuxCNC
             }
         }
 
-        // Initialize tool mmap if not done yet ( mimics original python logic )
-        if (!tool_mmap_initialized_)
-        {
-            // The original python code registers tool table with status_.io.tool.toolTable,
-            // but here status_ is just a copy. tooldata.hh functions directly access shared memory.
-            if (tool_mmap_user() == 0)
-            { // 0 on success
-                tool_mmap_initialized_ = true;
-            }
-            else
-            {
-                // fprintf(stderr, "NapiStatChannel::Poll: tool_mmap_user() failed. Continuing without tool mmap data.\n");
-                //  Don't set tool_mmap_initialized_ to true, so it might retry or operate without.
-                //  The tooldata_get functions might then fail or return defaults.
-            }
-        }
-
-        if (c_channel_->peek() == EMC_STAT_TYPE)
-        {
-            EMC_STAT *emc_status_ptr = static_cast<EMC_STAT *>(c_channel_->get_address());
-            if (emc_status_ptr)
-            {
-                // Compare with current status_ to see if there's a real change in content
-                // For simplicity, we assume any new message from peek() is a change.
-                // A more robust check would be memcmp or specific field comparison.
-                // The serial_number in RCS_MSG might indicate a change.
-                // For now, if peek() has data, we copy it.
-                memcpy(&status_, emc_status_ptr, sizeof(EMC_STAT));
-                return Napi::Boolean::New(env, true); // Data was updated
-            }
-        }
-        return Napi::Boolean::New(env, false); // No new data or error
+        bool updated = pollInternal();
+        return Napi::Boolean::New(env, updated);
     }
 
     Napi::Value NapiStatChannel::GetCurrentFullStat(const Napi::CallbackInfo &info)
@@ -261,7 +257,6 @@ namespace LinuxCNC
         obj.Set("coolant", convertCoolantStatToNapi(env, io_stat.coolant));
 
         DictAdd(env, obj, "estop", (bool)io_stat.aux.estop);
-        // io_stat.debug, reason, fault can be added
         return obj;
     }
 
@@ -302,7 +297,6 @@ namespace LinuxCNC
         DictAdd(env, obj, "feedOverrideEnabled", (bool)traj_stat.feed_override_enabled);
         DictAdd(env, obj, "adaptiveFeedEnabled", (bool)traj_stat.adaptive_feed_enabled);
         DictAdd(env, obj, "feedHoldEnabled", (bool)traj_stat.feed_hold_enabled);
-        // traj_stat.tag can be added if needed (it's complex)
         return obj;
     }
 

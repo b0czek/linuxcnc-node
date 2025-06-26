@@ -28,6 +28,7 @@ namespace LinuxCNC
         // Internal helper to connect to NML
         bool connect();
         void disconnect();
+        bool pollInternal(); // Internal poll without Napi dependencies
 
         // Conversion helpers
         Napi::Object convertFullStatToNapiObject(Napi::Env env, const EMC_STAT &stat_to_convert);
@@ -49,4 +50,4 @@ namespace LinuxCNC
         Napi::Value ToolInfo(const Napi::CallbackInfo &info);
     };
 
-} // namespace LinuxCNC
+}
