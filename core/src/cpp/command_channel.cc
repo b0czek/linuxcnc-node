@@ -441,7 +441,6 @@ namespace LinuxCNC
 
     Napi::Value NapiCommandChannel::RunProgram(const Napi::CallbackInfo &info)
     {
-        Napi::Env env = info.Env();
         auto msg = std::make_unique<EMC_TASK_PLAN_RUN>();
         msg->line = 0; // Default: start from beginning
         if (info.Length() > 0 && info[0].IsNumber())
@@ -832,7 +831,6 @@ namespace LinuxCNC
 
     Napi::Value NapiCommandChannel::SpindleIncrease(const Napi::CallbackInfo &info)
     {
-        Napi::Env env = info.Env();
         auto msg = std::make_unique<EMC_SPINDLE_INCREASE>();
         msg->spindle = 0;
         if (info.Length() > 0 && info[0].IsNumber())
@@ -844,7 +842,6 @@ namespace LinuxCNC
     }
     Napi::Value NapiCommandChannel::SpindleDecrease(const Napi::CallbackInfo &info)
     {
-        Napi::Env env = info.Env();
         auto msg = std::make_unique<EMC_SPINDLE_DECREASE>();
         msg->spindle = 0;
         if (info.Length() > 0 && info[0].IsNumber())
@@ -856,7 +853,6 @@ namespace LinuxCNC
     }
     Napi::Value NapiCommandChannel::SpindleConstant(const Napi::CallbackInfo &info)
     {
-        Napi::Env env = info.Env();
         auto msg = std::make_unique<EMC_SPINDLE_CONSTANT>();
         msg->spindle = 0;
         if (info.Length() > 0 && info[0].IsNumber())
@@ -868,7 +864,6 @@ namespace LinuxCNC
     }
     Napi::Value NapiCommandChannel::SpindleOff(const Napi::CallbackInfo &info)
     {
-        Napi::Env env = info.Env();
         auto msg = std::make_unique<EMC_SPINDLE_OFF>();
         msg->spindle = 0;
         if (info.Length() > 0 && info[0].IsNumber())

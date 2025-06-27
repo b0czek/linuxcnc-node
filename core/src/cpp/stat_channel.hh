@@ -21,7 +21,7 @@ namespace LinuxCNC
     private:
         static Napi::FunctionReference constructor;
 
-        RCS_STAT_CHANNEL *c_channel_ = nullptr;
+        RCS_STAT_CHANNEL *s_channel_ = nullptr;
         EMC_STAT status_{};                  // Current status, directly from NML
         bool tool_mmap_initialized_ = false; // For tool_mmap_user etc.
 

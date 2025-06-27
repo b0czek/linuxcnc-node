@@ -41,7 +41,7 @@ namespace LinuxCNC
 
     bool NapiStatChannel::connect()
     {
-        if (c_channel_)
+        if (s_channel_)
             return true; // Already connected
 
         // Ensure NML file path is set
@@ -51,15 +51,13 @@ namespace LinuxCNC
             return false;
         }
 
-        c_channel_ = new RCS_STAT_CHANNEL(emcFormat, "emcStatus", "xemc", nml_file);
-        if (!c_channel_ || !c_channel_->valid())
+        s_channel_ = new RCS_STAT_CHANNEL(emcFormat, "emcStatus", "xemc", nml_file);
+        if (!s_channel_ || !s_channel_->valid())
         {
-            delete c_channel_;
-            c_channel_ = nullptr;
+            delete s_channel_;
+            s_channel_ = nullptr;
             return false;
         }
-        // Initialize status_ to a zeroed state
-        memset(&status_, 0, sizeof(EMC_STAT));
         // Initial poll to populate status_
         pollInternal();
 
@@ -68,10 +66,10 @@ namespace LinuxCNC
 
     void NapiStatChannel::disconnect()
     {
-        if (c_channel_)
+        if (s_channel_)
         {
-            delete c_channel_;
-            c_channel_ = nullptr;
+            delete s_channel_;
+            s_channel_ = nullptr;
         }
         if (tool_mmap_initialized_)
         {
@@ -81,7 +79,7 @@ namespace LinuxCNC
 
     bool NapiStatChannel::pollInternal()
     {
-        if (!c_channel_ || !c_channel_->valid())
+        if (!s_channel_ || !s_channel_->valid())
         {
             return false;
         }
@@ -95,9 +93,9 @@ namespace LinuxCNC
             }
         }
 
-        if (c_channel_->peek() == EMC_STAT_TYPE)
+        if (s_channel_->peek() == EMC_STAT_TYPE)
         {
-            EMC_STAT *emc_status_ptr = static_cast<EMC_STAT *>(c_channel_->get_address());
+            EMC_STAT *emc_status_ptr = static_cast<EMC_STAT *>(s_channel_->get_address());
             if (emc_status_ptr)
             {
                 // Compare new data with current status to determine if it has changed
@@ -106,7 +104,7 @@ namespace LinuxCNC
                 if (data_changed)
                 {
                     // Update current status with new data
-                    memcpy(&status_, emc_status_ptr, sizeof(EMC_STAT));
+                    status_ = *emc_status_ptr;
                     return true; // Data was updated
                 }
                 return false; // Data exists but hasn't changed
@@ -118,7 +116,7 @@ namespace LinuxCNC
     Napi::Value NapiStatChannel::Poll(const Napi::CallbackInfo &info)
     {
         Napi::Env env = info.Env();
-        if (!c_channel_ || !c_channel_->valid())
+        if (!s_channel_ || !s_channel_->valid())
         {
             // Attempt to reconnect or throw error
             if (!connect())
@@ -135,7 +133,7 @@ namespace LinuxCNC
     Napi::Value NapiStatChannel::GetCurrentFullStat(const Napi::CallbackInfo &info)
     {
         Napi::Env env = info.Env();
-        if (!c_channel_ || !c_channel_->valid())
+        if (!s_channel_ || !s_channel_->valid())
         { // Ensure we are connected
             Napi::Error::New(env, "Stat channel not connected.").ThrowAsJavaScriptException();
             return env.Null();
