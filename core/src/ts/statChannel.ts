@@ -44,6 +44,8 @@ export class StatChannel {
 
   constructor(options?: StatWatcherOptions) {
     this.nativeInstance = new addon.NativeStatChannel();
+    this.currentStat = this.nativeInstance.getCurrentFullStat();
+
     this.pollInterval = options?.pollInterval ?? DEFAULT_STAT_POLL_INTERVAL;
 
     // Initial poll to populate currentStat
