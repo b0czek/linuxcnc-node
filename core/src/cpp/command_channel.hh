@@ -40,7 +40,7 @@ namespace LinuxCNC
 
         // --- NAPI Wrapped Methods ---
         // Task Commands
-        Napi::Value SetMode(const Napi::CallbackInfo &info);
+        Napi::Value SetTaskMode(const Napi::CallbackInfo &info);
         Napi::Value SetState(const Napi::CallbackInfo &info);
         Napi::Value TaskPlanSynch(const Napi::CallbackInfo &info);
         Napi::Value ResetInterpreter(const Napi::CallbackInfo &info);

@@ -93,7 +93,7 @@ export interface NapiStatChannelInstance {
 // Interface for the NapiCommandChannel instance
 export interface NapiCommandChannelInstance {
   // Task commands
-  setMode(mode: TaskMode): Promise<RcsStatus>;
+  setTaskMode(mode: TaskMode): Promise<RcsStatus>;
   setState(state: TaskState): Promise<RcsStatus>;
   taskPlanSynch(): Promise<RcsStatus>;
   resetInterpreter(): Promise<RcsStatus>;

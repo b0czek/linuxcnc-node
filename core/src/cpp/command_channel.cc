@@ -20,7 +20,7 @@ namespace LinuxCNC
         Napi::HandleScope scope(env);
         Napi::Function func = DefineClass(env, "NativeCommandChannel", {
                                                                            // Task
-                                                                           InstanceMethod("setMode", &NapiCommandChannel::SetMode),
+                                                                           InstanceMethod("setTaskMode", &NapiCommandChannel::SetTaskMode),
                                                                            InstanceMethod("setState", &NapiCommandChannel::SetState),
                                                                            InstanceMethod("taskPlanSynch", &NapiCommandChannel::TaskPlanSynch),
                                                                            InstanceMethod("resetInterpreter", &NapiCommandChannel::ResetInterpreter),
@@ -183,7 +183,7 @@ namespace LinuxCNC
         return deferred.Promise();
     }
 
-    Napi::Value NapiCommandChannel::SetMode(const Napi::CallbackInfo &info)
+    Napi::Value NapiCommandChannel::SetTaskMode(const Napi::CallbackInfo &info)
     {
         Napi::Env env = info.Env();
         if (info.Length() < 1 || !info[0].IsNumber())

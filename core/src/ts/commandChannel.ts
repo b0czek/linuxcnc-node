@@ -30,8 +30,8 @@ export class CommandChannel {
   }
 
   // --- Task Commands ---
-  async setMode(mode: TaskMode): Promise<RcsStatus> {
-    return this.exec(this.nativeInstance.setMode, mode);
+  async setTaskMode(mode: TaskMode): Promise<RcsStatus> {
+    return this.exec(this.nativeInstance.setTaskMode, mode);
   }
   async setState(state: TaskState): Promise<RcsStatus> {
     return this.exec(this.nativeInstance.setState, state);
