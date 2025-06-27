@@ -18,6 +18,8 @@ namespace LinuxCNC
     Napi::Object EmcPoseToNapiObject(Napi::Env env, const EmcPose &pose);
     // Helper to convert Napi::Object to EmcPose (if ever needed for commands)
     bool NapiObjectToEmcPose(Napi::Env env, Napi::Value value, EmcPose &pose);
+    // Helper to overlay partial EmcPose data from Napi::Object onto existing EmcPose
+    void OverlayEmcPoseFromNapiObject(Napi::Env env, Napi::Object obj, EmcPose &pose);
 
     Napi::Array DoubleArrayToNapiArray(Napi::Env env, const double *arr, size_t size);
     Napi::Array IntArrayToNapiArray(Napi::Env env, const int *arr, size_t size);

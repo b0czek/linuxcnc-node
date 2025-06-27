@@ -1,5 +1,11 @@
 // src/ts/native_type_interfaces.ts
-import { LinuxCNCStat, ToolEntry, LinuxCNCError, EmcPose } from "./types";
+import {
+  LinuxCNCStat,
+  ToolEntry,
+  LinuxCNCError,
+  EmcPose,
+  RecursivePartial,
+} from "./types";
 import { TaskMode, TaskState, TrajMode, RcsStatus } from "./constants";
 
 // Interface for the NAPI addon module itself
@@ -161,14 +167,8 @@ export interface NapiCommandChannelInstance {
 
   // Tool commands
   loadToolTable(): Promise<RcsStatus>;
-  setToolOffset(
-    toolNumber: number,
-    zOffset: number,
-    xOffset: number,
-    diameter: number,
-    frontAngle: number,
-    backAngle: number,
-    orientation: number
+  setTool(
+    toolEntry: RecursivePartial<ToolEntry> & { toolNo: number }
   ): Promise<RcsStatus>;
 
   // IO commands

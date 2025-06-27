@@ -1,5 +1,6 @@
 import { NapiCommandChannelInstance } from "./native_type_interfaces";
 import { TaskMode, TaskState, TrajMode, RcsStatus, addon } from "./constants";
+import { RecursivePartial, ToolEntry } from "./types";
 
 export class CommandChannel {
   private nativeInstance: NapiCommandChannelInstance;
@@ -226,25 +227,10 @@ export class CommandChannel {
   async loadToolTable(): Promise<RcsStatus> {
     return this.exec(this.nativeInstance.loadToolTable);
   }
-  async setToolOffset(
-    toolNumber: number,
-    zOffset: number,
-    xOffset: number,
-    diameter: number,
-    frontAngle: number,
-    backAngle: number,
-    orientation: number
+  async setTool(
+    toolEntry: RecursivePartial<ToolEntry> & { toolNo: number }
   ): Promise<RcsStatus> {
-    return this.exec(
-      this.nativeInstance.setToolOffset,
-      toolNumber,
-      zOffset,
-      xOffset,
-      diameter,
-      frontAngle,
-      backAngle,
-      orientation
-    );
+    return this.exec(this.nativeInstance.setTool, toolEntry);
   }
 
   // --- IO Commands ---

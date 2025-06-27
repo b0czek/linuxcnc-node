@@ -27,9 +27,16 @@ namespace LinuxCNC
         RCS_CMD_CHANNEL *c_channel_ = nullptr;
         RCS_STAT_CHANNEL *s_channel_ = nullptr; // For echo checking
         int last_serial_ = 0;
+        std::string ini_filename_;
+        std::string tool_table_filename_;
 
         bool connect();
         void disconnect();
+        bool parseIniFile();
+
+        // Getters for cached INI settings
+        const std::string &getIniFilename() const { return ini_filename_; }
+        const std::string &getToolTableFilename() const { return tool_table_filename_; }
 
         // Helper for sending commands asynchronously
         Napi::Value sendCommandAsync(const Napi::CallbackInfo &info, std::unique_ptr<RCS_CMD_MSG> cmd_msg, double timeout = 5.0);
@@ -92,7 +99,7 @@ namespace LinuxCNC
 
         // Tool Commands
         Napi::Value LoadToolTable(const Napi::CallbackInfo &info);
-        Napi::Value SetToolOffset(const Napi::CallbackInfo &info);
+        Napi::Value SetTool(const Napi::CallbackInfo &info);
 
         // IO Commands
         Napi::Value SetDigitalOutput(const Napi::CallbackInfo &info);

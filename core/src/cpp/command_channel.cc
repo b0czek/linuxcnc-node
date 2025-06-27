@@ -5,7 +5,13 @@
 #include <algorithm>
 #include <unistd.h>
 #include <memory>
+#include <vector>
+#include <optional>
+#include <map>
 #include "cms.hh"
+#include "tooldata.hh"
+#include "inifile.hh"
+#include <fstream>
 
 #define EMC_COMMAND_TIMEOUT_DEFAULT 5.0
 #define EMC_COMMAND_DELAY_DEFAULT 0.01
@@ -66,7 +72,7 @@ namespace LinuxCNC
                                                                            InstanceMethod("setFlood", &NapiCommandChannel::SetFlood),
                                                                            // Tool
                                                                            InstanceMethod("loadToolTable", &NapiCommandChannel::LoadToolTable),
-                                                                           InstanceMethod("setToolOffset", &NapiCommandChannel::SetToolOffset),
+                                                                           InstanceMethod("setTool", &NapiCommandChannel::SetTool),
                                                                            // IO
                                                                            InstanceMethod("setDigitalOutput", &NapiCommandChannel::SetDigitalOutput),
                                                                            InstanceMethod("setAnalogOutput", &NapiCommandChannel::SetAnalogOutput),
@@ -121,6 +127,73 @@ namespace LinuxCNC
             s_channel_ = nullptr;
             return false;
         }
+
+        // Parse INI file to cache commonly used settings
+        if (!parseIniFile())
+        {
+            // If INI parsing fails, we can still continue but SetTool might not work
+            // This is not a critical failure for basic command channel functionality
+        }
+
+        return true;
+    }
+
+    bool NapiCommandChannel::parseIniFile()
+    {
+        // Get INI filename from stat channel
+        if (!s_channel_ || !s_channel_->valid())
+        {
+            return false;
+        }
+
+        // Poll status to get current INI filename
+        if (s_channel_->peek() != EMC_STAT_TYPE)
+        {
+            return false;
+        }
+
+        EMC_STAT *emc_status_ptr = static_cast<EMC_STAT *>(s_channel_->get_address());
+        if (!emc_status_ptr)
+        {
+            return false;
+        }
+
+        ini_filename_ = std::string(emc_status_ptr->task.ini_filename);
+        if (ini_filename_.empty())
+        {
+            return false;
+        }
+
+        // Parse the INI file to get tool table filename
+        IniFile iniFile;
+        if (iniFile.Open(ini_filename_.c_str()) == false)
+        {
+            return false;
+        }
+
+        std::optional<const char *> toolTableFile;
+        if ((toolTableFile = iniFile.Find("TOOL_TABLE", "EMCIO")))
+        {
+            tool_table_filename_ = std::string(*toolTableFile);
+        }
+        else
+        {
+            iniFile.Close();
+            return false;
+        }
+
+        iniFile.Close();
+
+        // Handle relative paths - make them relative to the INI file directory
+        if (tool_table_filename_[0] != '/')
+        {
+            size_t lastSlash = ini_filename_.find_last_of('/');
+            if (lastSlash != std::string::npos)
+            {
+                tool_table_filename_ = ini_filename_.substr(0, lastSlash + 1) + tool_table_filename_;
+            }
+        }
+
         return true;
     }
 
@@ -130,6 +203,10 @@ namespace LinuxCNC
         c_channel_ = nullptr;
         delete s_channel_;
         s_channel_ = nullptr;
+
+        // Clear cached INI settings
+        ini_filename_.clear();
+        tool_table_filename_.clear();
     }
 
     Napi::Value NapiCommandChannel::sendCommandAsync(const Napi::CallbackInfo &info, std::unique_ptr<RCS_CMD_MSG> cmd_msg, double timeout)
@@ -949,36 +1026,321 @@ namespace LinuxCNC
         std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
         return sendCommandAsync(info, std::move(cmd_msg));
     }
-    Napi::Value NapiCommandChannel::SetToolOffset(const Napi::CallbackInfo &info)
+
+    // async worker for SetTool command
+    class SetToolWorker : public Napi::AsyncWorker
+    {
+    public:
+        SetToolWorker(Napi::Promise::Deferred deferred, const Napi::Object &toolEntry, const std::string &toolTableFilename)
+            : AsyncWorker(deferred.Env()), deferred_(deferred), tool_table_filename_(toolTableFilename), result_status_(RCS_STATUS::ERROR)
+        {
+            // Extract tool data from the toolEntry object
+            // toolNo is required
+            if (!toolEntry.Has("toolNo") || !toolEntry.Get("toolNo").IsNumber())
+            {
+                throw std::runtime_error("toolNo is required in toolEntry");
+            }
+            toolNo_ = toolEntry.Get("toolNo").As<Napi::Number>().Int32Value();
+
+            // Extract optional fields using std::optional
+            if (toolEntry.Has("pocketNo") && toolEntry.Get("pocketNo").IsNumber())
+                pocketNo_ = toolEntry.Get("pocketNo").As<Napi::Number>().Int32Value();
+
+            if (toolEntry.Has("diameter") && toolEntry.Get("diameter").IsNumber())
+                diameter_ = toolEntry.Get("diameter").As<Napi::Number>().DoubleValue();
+
+            if (toolEntry.Has("frontAngle") && toolEntry.Get("frontAngle").IsNumber())
+                frontAngle_ = toolEntry.Get("frontAngle").As<Napi::Number>().DoubleValue();
+
+            if (toolEntry.Has("backAngle") && toolEntry.Get("backAngle").IsNumber())
+                backAngle_ = toolEntry.Get("backAngle").As<Napi::Number>().DoubleValue();
+
+            if (toolEntry.Has("orientation") && toolEntry.Get("orientation").IsNumber())
+                orientation_ = toolEntry.Get("orientation").As<Napi::Number>().Int32Value();
+
+            if (toolEntry.Has("comment") && toolEntry.Get("comment").IsString())
+                comment_ = toolEntry.Get("comment").As<Napi::String>().Utf8Value();
+
+            // Handle offset object - extract coordinate values
+            if (toolEntry.Has("offset") && toolEntry.Get("offset").IsObject())
+            {
+                Napi::Object offsetObj = toolEntry.Get("offset").As<Napi::Object>();
+
+                // Process each coordinate type
+                for (int i = 0; i < 9; ++i)
+                {
+                    CoordType coordType = static_cast<CoordType>(i);
+                    const char *coordName = getCoordName(coordType);
+
+                    if (offsetObj.Has(coordName) && offsetObj.Get(coordName).IsNumber())
+                    {
+                        offsetCoords_[coordType] = offsetObj.Get(coordName).As<Napi::Number>().DoubleValue();
+                    }
+                }
+            }
+        }
+
+    protected:
+        void Execute() override
+        {
+            try
+            {
+                // Initialize tool mmap if not already done
+                if (tool_mmap_user() != 0)
+                {
+                    SetError("Failed to initialize tool memory map");
+                    return;
+                }
+
+                // Find the tool index
+                int idx = tooldata_find_index_for_tool(toolNo_);
+                bool isNewTool = false;
+
+                if (idx < 0)
+                {
+                    // Tool not found, look for an empty slot to insert new tool
+                    int idxmax = tooldata_last_index_get() + 1;
+
+                    idx = -1; // Reset to indicate not found
+
+                    for (int i = 0; i < idxmax; ++i)
+                    {
+                        CANON_TOOL_TABLE temp_data;
+                        if (tooldata_get(&temp_data, i) == IDX_OK)
+                        {
+                            // Check if this slot is empty
+                            if (temp_data.toolno < 0)
+                            {
+                                idx = i;
+                                isNewTool = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (idx < 0)
+                    {
+                        if (idxmax < CANON_POCKETS_MAX)
+                        {
+                            // no empty slot found, but we can create a new tool
+                            idx = idxmax;
+                            isNewTool = true;
+                        }
+                        else
+                        {
+                            SetError("Tool not found and no empty slot available for tool " + std::to_string(toolNo_));
+                            return;
+                        }
+                    }
+                }
+
+                // Get existing tool data or initialize new tool data
+                CANON_TOOL_TABLE existingData;
+                if (isNewTool)
+                {
+                    // Initialize new tool entry
+                    existingData = tooldata_entry_init();
+                    // Set the tool number as it's required for new tools
+                    existingData.toolno = toolNo_;
+                }
+                else
+                {
+                    // Get existing tool data
+                    if (tooldata_get(&existingData, idx) != IDX_OK)
+                    {
+                        SetError("Failed to get tool data for tool " + std::to_string(toolNo_));
+                        return;
+                    }
+                }
+
+                // Overlay new data on existing data
+                // Tool number is always set (required field)
+                existingData.toolno = toolNo_;
+
+                if (pocketNo_.has_value())
+                    existingData.pocketno = pocketNo_.value();
+                if (diameter_.has_value())
+                    existingData.diameter = diameter_.value();
+                if (frontAngle_.has_value())
+                    existingData.frontangle = frontAngle_.value();
+                if (backAngle_.has_value())
+                    existingData.backangle = backAngle_.value();
+                if (orientation_.has_value())
+                    existingData.orientation = orientation_.value();
+                if (comment_.has_value())
+                {
+                    strncpy(existingData.comment, comment_.value().c_str(), CANON_TOOL_COMMENT_SIZE - 1);
+                    existingData.comment[CANON_TOOL_COMMENT_SIZE - 1] = '\0';
+                }
+
+                // Apply offset coordinates that were provided
+                for (const auto &[coordType, value] : offsetCoords_)
+                {
+                    double *coordField = getCoordField(existingData, coordType);
+                    if (coordField)
+                    {
+                        *coordField = value;
+                    }
+                }
+
+                // Put the updated data back
+                if (tooldata_put(existingData, idx) == IDX_FAIL)
+                {
+                    SetError("Failed to update tool data for tool " + std::to_string(toolNo_));
+                    return;
+                }
+
+                // Save the tool table using the cached filename
+                if (tool_table_filename_.empty())
+                {
+                    SetError("Tool table filename not available - INI file may not have been parsed");
+                    return;
+                }
+
+                // Save the tool table
+                if (tooldata_save(tool_table_filename_.c_str()) != 0)
+                {
+                    SetError("Failed to save tool table to " + tool_table_filename_);
+                    return;
+                }
+                else
+                {
+                    printf("Tool table saved successfully to %s\n", tool_table_filename_.c_str());
+                }
+
+                result_status_ = RCS_STATUS::DONE;
+            }
+            catch (const std::exception &e)
+            {
+                SetError(std::string("SetTool execution failed: ") + e.what());
+            }
+        }
+
+        void OnOK() override
+        {
+            Napi::Env env = Env();
+            deferred_.Resolve(Napi::Number::New(env, static_cast<int>(result_status_)));
+        }
+
+        void OnError(const Napi::Error &error) override
+        {
+            deferred_.Reject(error.Value());
+        }
+
+    private:
+        Napi::Promise::Deferred deferred_;
+        int toolNo_;
+        std::string tool_table_filename_;
+        RCS_STATUS result_status_;
+
+        // Coordinate system using enum for type safety and cleaner code
+        enum class CoordType
+        {
+            X,
+            Y,
+            Z,
+            A,
+            B,
+            C,
+            U,
+            V,
+            W
+        };
+
+        // Use optional for fields that may or may not be provided
+        std::optional<int> pocketNo_;
+        std::optional<double> diameter_;
+        std::optional<double> frontAngle_;
+        std::optional<double> backAngle_;
+        std::optional<int> orientation_;
+        std::optional<std::string> comment_;
+        std::map<CoordType, double> offsetCoords_;
+
+        // Helper method to get coordinate field name
+        static const char *getCoordName(CoordType type)
+        {
+            static const std::map<CoordType, const char *> names = {
+                {CoordType::X, "x"}, {CoordType::Y, "y"}, {CoordType::Z, "z"}, {CoordType::A, "a"}, {CoordType::B, "b"}, {CoordType::C, "c"}, {CoordType::U, "u"}, {CoordType::V, "v"}, {CoordType::W, "w"}};
+            return names.at(type);
+        }
+
+        // Helper method to get pointer to coordinate field in CANON_TOOL_TABLE
+        static double *getCoordField(CANON_TOOL_TABLE &toolData, CoordType type)
+        {
+            switch (type)
+            {
+            case CoordType::X:
+                return &toolData.offset.tran.x;
+            case CoordType::Y:
+                return &toolData.offset.tran.y;
+            case CoordType::Z:
+                return &toolData.offset.tran.z;
+            case CoordType::A:
+                return &toolData.offset.a;
+            case CoordType::B:
+                return &toolData.offset.b;
+            case CoordType::C:
+                return &toolData.offset.c;
+            case CoordType::U:
+                return &toolData.offset.u;
+            case CoordType::V:
+                return &toolData.offset.v;
+            case CoordType::W:
+                return &toolData.offset.w;
+            default:
+                return nullptr;
+            }
+        }
+    };
+
+    Napi::Value NapiCommandChannel::SetTool(const Napi::CallbackInfo &info)
     {
         Napi::Env env = info.Env();
-        // toolNumber, zOffset, xOffset, diameter, frontAngle, backAngle, orientation
-        if (info.Length() < 7 || !info[0].IsNumber() || !info[1].IsNumber() || !info[2].IsNumber() ||
-            !info[3].IsNumber() || !info[4].IsNumber() || !info[5].IsNumber() || !info[6].IsNumber())
+
+        if (info.Length() < 1 || !info[0].IsObject())
         {
-            Napi::TypeError::New(env, "SetToolOffset requires 7 numeric arguments").ThrowAsJavaScriptException();
+            Napi::TypeError::New(env, "SetTool requires toolEntry (object)").ThrowAsJavaScriptException();
             return env.Null();
         }
-        auto msg = std::make_unique<EMC_TOOL_SET_OFFSET>();
-        msg->toolno = info[0].As<Napi::Number>().Int32Value();
-        msg->offset.tran.z = info[1].As<Napi::Number>().DoubleValue();
-        msg->offset.tran.x = info[2].As<Napi::Number>().DoubleValue();
-        msg->diameter = info[3].As<Napi::Number>().DoubleValue();
-        msg->frontangle = info[4].As<Napi::Number>().DoubleValue();
-        msg->backangle = info[5].As<Napi::Number>().DoubleValue();
-        msg->orientation = info[6].As<Napi::Number>().Int32Value();
-        // Other offsets (Y, A, B, C, U, V, W) default to 0 as per Python binding
-        msg->offset.tran.y = 0.0;
-        msg->offset.a = 0.0;
-        msg->offset.b = 0.0;
-        msg->offset.c = 0.0;
-        msg->offset.u = 0.0;
-        msg->offset.v = 0.0;
-        msg->offset.w = 0.0;
-        msg->pocket = msg->toolno; // Often pocket == toolno, though not always. Original Python binding seems to imply this for this specific command.
-                                   // Or, if toolno is always what matters for setting the offset, pocket might not be used by this specific LCNC message processor.
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+
+        Napi::Object toolEntry = info[0].As<Napi::Object>();
+
+        // Validate that toolNo is present in toolEntry
+        if (!toolEntry.Has("toolNo") || !toolEntry.Get("toolNo").IsNumber())
+        {
+            Napi::TypeError::New(env, "toolEntry must contain toolNo (number)").ThrowAsJavaScriptException();
+            return env.Null();
+        }
+
+        // Ensure we're connected and have parsed INI settings
+        if (!s_channel_ || !s_channel_->valid())
+        {
+            if (!connect())
+            {
+                Napi::Error::New(env, "Status channel not connected and failed to reconnect").ThrowAsJavaScriptException();
+                return env.Null();
+            }
+        }
+
+        // Check if we have the tool table filename cached
+        if (tool_table_filename_.empty())
+        {
+            // Try to parse INI file again
+            if (!parseIniFile())
+            {
+                Napi::Error::New(env, "Failed to get tool table filename from INI file").ThrowAsJavaScriptException();
+                return env.Null();
+            }
+        }
+
+        // Create a promise
+        auto deferred = Napi::Promise::Deferred::New(env);
+
+        // Create and queue the async worker
+        SetToolWorker *worker = new SetToolWorker(deferred, toolEntry, tool_table_filename_);
+        worker->Queue();
+
+        return deferred.Promise();
     }
 
     // IO Commands

@@ -79,6 +79,29 @@ namespace LinuxCNC
         return true;
     }
 
+    void OverlayEmcPoseFromNapiObject(Napi::Env env, Napi::Object obj, EmcPose &pose)
+    {
+        // Helper to extract a number from object if present
+        auto overlayNumber = [&](const char *key, double &target)
+        {
+            if (obj.Has(key) && obj.Get(key).IsNumber())
+            {
+                target = obj.Get(key).As<Napi::Number>().DoubleValue();
+            }
+        };
+
+        // Only update fields that are present in the object
+        overlayNumber("x", pose.tran.x);
+        overlayNumber("y", pose.tran.y);
+        overlayNumber("z", pose.tran.z);
+        overlayNumber("a", pose.a);
+        overlayNumber("b", pose.b);
+        overlayNumber("c", pose.c);
+        overlayNumber("u", pose.u);
+        overlayNumber("v", pose.v);
+        overlayNumber("w", pose.w);
+    }
+
     Napi::Array DoubleArrayToNapiArray(Napi::Env env, const double *arr, size_t size)
     {
         Napi::Array napiArr = Napi::Array::New(env, size);
