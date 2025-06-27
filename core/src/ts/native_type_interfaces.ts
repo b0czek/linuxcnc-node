@@ -1,15 +1,6 @@
 // src/ts/native_type_interfaces.ts
 import { LinuxCNCStat, ToolEntry, LinuxCNCError, EmcPose } from "./types";
-import {
-  TaskMode,
-  TaskState,
-  TrajMode,
-  CoolantMode,
-  SpindleDirection,
-  JogMode,
-  AutoOpType,
-  RcsStatus,
-} from "./constants";
+import { TaskMode, TaskState, TrajMode, RcsStatus } from "./constants";
 
 // Interface for the NAPI addon module itself
 export interface NapiOptions {
@@ -69,33 +60,6 @@ export interface NapiOptions {
   RCS_STATUS_EXEC: number;
   RCS_STATUS_ERROR: number;
 
-  SPINDLE_FORWARD: number;
-  SPINDLE_REVERSE: number;
-  SPINDLE_OFF: number;
-  SPINDLE_INCREASE: number;
-  SPINDLE_DECREASE: number;
-  SPINDLE_CONSTANT: number;
-
-  MIST_ON: number;
-  MIST_OFF: number;
-
-  FLOOD_ON: number;
-  FLOOD_OFF: number;
-
-  BRAKE_ENGAGE: number;
-  BRAKE_RELEASE: number;
-
-  JOG_STOP: number;
-  JOG_CONTINUOUS: number;
-  JOG_INCREMENT: number;
-
-  AUTO_RUN: number;
-  AUTO_PAUSE: number;
-  AUTO_RESUME: number;
-  AUTO_STEP: number;
-  AUTO_REVERSE: number;
-  AUTO_FORWARD: number;
-
   EMCMOT_MAX_JOINTS: number;
   EMCMOT_MAX_AXIS: number;
   EMCMOT_MAX_SPINDLES: number;
@@ -112,6 +76,11 @@ export interface NapiOptions {
 
   JOINT_TYPE_LINEAR: number;
   JOINT_TYPE_ANGULAR: number;
+
+  EMCMOT_ORIENT_NONE: number;
+  EMCMOT_ORIENT_COMPLETE: number;
+  EMCMOT_ORIENT_IN_PROGRESS: number;
+  EMCMOT_ORIENT_FAULTED: number;
 }
 
 // Interface for the NapiStatChannel instance
@@ -177,8 +146,7 @@ export interface NapiCommandChannelInstance {
 
   // Spindle commands
   spindleOn(
-    direction: SpindleDirection,
-    speed?: number,
+    speed: number,
     spindleIndex?: number,
     waitForSpeed?: boolean
   ): Promise<RcsStatus>;

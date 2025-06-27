@@ -5,33 +5,6 @@
 #include "emccfg.h"
 #include "emcpos.h"
 
-#define LOCAL_SPINDLE_FORWARD (1)
-#define LOCAL_SPINDLE_REVERSE (-1)
-#define LOCAL_SPINDLE_OFF (0)
-#define LOCAL_SPINDLE_INCREASE (10)
-#define LOCAL_SPINDLE_DECREASE (11)
-#define LOCAL_SPINDLE_CONSTANT (12)
-
-#define LOCAL_MIST_ON (1)
-#define LOCAL_MIST_OFF (0)
-
-#define LOCAL_FLOOD_ON (1)
-#define LOCAL_FLOOD_OFF (0)
-
-#define LOCAL_BRAKE_ENGAGE (1)
-#define LOCAL_BRAKE_RELEASE (0)
-
-#define LOCAL_JOG_STOP (0)
-#define LOCAL_JOG_CONTINUOUS (1)
-#define LOCAL_JOG_INCREMENT (2)
-
-#define LOCAL_AUTO_RUN (0)
-#define LOCAL_AUTO_PAUSE (1)
-#define LOCAL_AUTO_RESUME (2)
-#define LOCAL_AUTO_STEP (3)
-#define LOCAL_AUTO_REVERSE (4)
-#define LOCAL_AUTO_FORWARD (5)
-
 namespace LinuxCNC
 {
 

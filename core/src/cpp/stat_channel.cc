@@ -100,8 +100,16 @@ namespace LinuxCNC
             EMC_STAT *emc_status_ptr = static_cast<EMC_STAT *>(c_channel_->get_address());
             if (emc_status_ptr)
             {
-                memcpy(&status_, emc_status_ptr, sizeof(EMC_STAT));
-                return true; // Data was updated
+                // Compare new data with current status to determine if it has changed
+                bool data_changed = (memcmp(&status_, emc_status_ptr, sizeof(EMC_STAT)) != 0);
+
+                if (data_changed)
+                {
+                    // Update current status with new data
+                    memcpy(&status_, emc_status_ptr, sizeof(EMC_STAT));
+                    return true; // Data was updated
+                }
+                return false; // Data exists but hasn't changed
             }
         }
         return false; // No new data or error
@@ -135,8 +143,6 @@ namespace LinuxCNC
         return convertFullStatToNapiObject(env, status_);
     }
 
-    // --- Conversion helpers (implementation details) ---
-
     Napi::Object NapiStatChannel::convertFullStatToNapiObject(Napi::Env env, const EMC_STAT &stat_to_convert)
     {
         Napi::Object obj = Napi::Object::New(env);
@@ -148,50 +154,6 @@ namespace LinuxCNC
         obj.Set("motion", convertMotionStatToNapi(env, stat_to_convert.motion));
         obj.Set("io", convertIoStatToNapi(env, stat_to_convert.io));
         obj.Set("debug", Napi::Number::New(env, stat_to_convert.debug));
-
-        // Derived properties from Python's PyGetSetDef for stat
-        // These are added for convenience, directly mirroring the Python API surface
-        // actualPosition -> motion.traj.actualPosition (already in motion.traj)
-        // ain -> motion.analog_input (already in motion)
-        // aout -> motion.analog_output (already in motion)
-        // din -> motion.synch_di (already in motion)
-        // dout -> motion.synch_do (already in motion)
-        // gcodes -> task.activeGCodes (already in task)
-
-        Napi::Array homedArr = Napi::Array::New(env, EMCMOT_MAX_JOINTS);
-        for (int i = 0; i < EMCMOT_MAX_JOINTS; ++i)
-        {
-            homedArr.Set(i, Napi::Boolean::New(env, stat_to_convert.motion.joint[i].homed != 0));
-        }
-        obj.Set("homed", homedArr);
-
-        Napi::Array limitArr = Napi::Array::New(env, EMCMOT_MAX_JOINTS);
-        for (int i = 0; i < EMCMOT_MAX_JOINTS; i++)
-        {
-            int v = 0;
-            if (stat_to_convert.motion.joint[i].minHardLimit)
-                v |= 1;
-            if (stat_to_convert.motion.joint[i].maxHardLimit)
-                v |= 2;
-            if (stat_to_convert.motion.joint[i].minSoftLimit)
-                v |= 4;
-            if (stat_to_convert.motion.joint[i].maxSoftLimit)
-                v |= 8;
-            limitArr.Set(i, Napi::Number::New(env, v));
-        }
-        obj.Set("limit", limitArr);
-
-        // mcodes -> task.activeMCodes (already in task)
-        // g5xOffset -> task.g5x_offset (already in task)
-        // g5xIndex -> task.g5x_index (already in task)
-        // g92Offset -> task.g92_offset (already in task)
-        // position -> motion.traj.position (already in motion.traj)
-        // dtg -> motion.traj.dtg (already in motion.traj)
-        // jointPosition -> motion.joint[i].output (already in motion.joint)
-        // jointActualPosition -> motion.joint[i].input (already in motion.joint)
-        // probedPosition -> motion.traj.probedPosition (already in motion.traj)
-        // settings -> task.activeSettings (already in task)
-        // toolOffset -> task.toolOffset (already in task)
 
         obj.Set("toolTable", convertToolTableToNapi(env));
 
@@ -218,17 +180,53 @@ namespace LinuxCNC
         obj.Set("g5xOffset", EmcPoseToNapiObject(env, task_stat.g5x_offset));
         DictAdd(env, obj, "g5xIndex", task_stat.g5x_index);
         obj.Set("g92Offset", EmcPoseToNapiObject(env, task_stat.g92_offset));
-        DictAdd(env, obj, "rotationXy", task_stat.rotation_xy);
+        DictAdd(env, obj, "rotationXY", task_stat.rotation_xy);
         obj.Set("toolOffset", EmcPoseToNapiObject(env, task_stat.toolOffset));
-        obj.Set("activeGCodes", IntArrayToNapiArray(env, task_stat.activeGCodes, ACTIVE_G_CODES));
-        obj.Set("activeMCodes", IntArrayToNapiArray(env, task_stat.activeMCodes, ACTIVE_M_CODES));
-        obj.Set("activeSettings", DoubleArrayToNapiArray(env, task_stat.activeSettings, ACTIVE_SETTINGS));
+
+        Napi::Object activeGCodesObj = Napi::Object::New(env);
+        DictAdd(env, activeGCodesObj, "motionMode", task_stat.activeGCodes[1]);       // G0, G1, G2, G3, G38.2, G80, G81, G82, G83, G84, G85, G86, G87, G88, G89
+        DictAdd(env, activeGCodesObj, "gMode0", task_stat.activeGCodes[2]);           // G4, G10, G28, G30, G53, G92, G92.1, G92.2, G92.3
+        DictAdd(env, activeGCodesObj, "plane", task_stat.activeGCodes[3]);            // G17, G18, G19
+        DictAdd(env, activeGCodesObj, "cutterComp", task_stat.activeGCodes[4]);       // G40, G41, G42
+        DictAdd(env, activeGCodesObj, "units", task_stat.activeGCodes[5]);            // G20, G21
+        DictAdd(env, activeGCodesObj, "distanceMode", task_stat.activeGCodes[6]);     // G90, G91
+        DictAdd(env, activeGCodesObj, "feedRateMode", task_stat.activeGCodes[7]);     // G93, G94, G95
+        DictAdd(env, activeGCodesObj, "origin", task_stat.activeGCodes[8]);           // G54-G59.3
+        DictAdd(env, activeGCodesObj, "toolLengthOffset", task_stat.activeGCodes[9]); // G43, G49
+        DictAdd(env, activeGCodesObj, "retractMode", task_stat.activeGCodes[10]);     // G98, G99
+        DictAdd(env, activeGCodesObj, "pathControl", task_stat.activeGCodes[11]);     // G61, G61.1, G64
+        // skip index 12 as it is reserved/empty
+        DictAdd(env, activeGCodesObj, "spindleSpeedMode", task_stat.activeGCodes[13]);  // G96, G97
+        DictAdd(env, activeGCodesObj, "ijkDistanceMode", task_stat.activeGCodes[14]);   // G90.1, G91.1
+        DictAdd(env, activeGCodesObj, "latheDiameterMode", task_stat.activeGCodes[15]); // G7, G8
+        DictAdd(env, activeGCodesObj, "g92Applied", task_stat.activeGCodes[16]);        // G92.2, G92.3
+        obj.Set("activeGCodes", activeGCodesObj);
+
+        Napi::Object activeMCodesObj = Napi::Object::New(env);
+        DictAdd(env, activeMCodesObj, "stopping", task_stat.activeMCodes[1]);            // M0, M1, M2, M30, M60
+        DictAdd(env, activeMCodesObj, "spindleControl", task_stat.activeMCodes[2]);      // M3, M4, M5
+        DictAdd(env, activeMCodesObj, "toolChange", task_stat.activeMCodes[3]);          // M6
+        DictAdd(env, activeMCodesObj, "mistCoolant", task_stat.activeMCodes[4]);         // M7, M9
+        DictAdd(env, activeMCodesObj, "floodCoolant", task_stat.activeMCodes[5]);        // M8, M9
+        DictAdd(env, activeMCodesObj, "overrideControl", task_stat.activeMCodes[6]);     // M48, M49, M50, M51
+        DictAdd(env, activeMCodesObj, "adaptiveFeedControl", task_stat.activeMCodes[7]); // M52
+        DictAdd(env, activeMCodesObj, "feedHoldControl", task_stat.activeMCodes[8]);     // M53
+        obj.Set("activeMCodes", activeMCodesObj);
+
+        Napi::Object activeSettingsObj = Napi::Object::New(env);
+        DictAdd(env, activeSettingsObj, "feedRate", task_stat.activeSettings[1]);
+        DictAdd(env, activeSettingsObj, "speed", task_stat.activeSettings[2]);
+        DictAdd(env, activeSettingsObj, "blendTolerance", task_stat.activeSettings[3]);
+        DictAdd(env, activeSettingsObj, "naiveCAMTolerance", task_stat.activeSettings[4]);
+        obj.Set("activeSettings", activeSettingsObj);
+
         DictAdd(env, obj, "programUnits", static_cast<int>(task_stat.programUnits));
-        DictAdd(env, obj, "interpreterErrorCode", task_stat.interpreter_errcode);
-        DictAdd(env, obj, "taskPaused", (bool)task_stat.task_paused); // Original was int
         DictAdd(env, obj, "delayLeft", task_stat.delayLeft);
+        DictAdd(env, obj, "taskPaused", (bool)task_stat.task_paused);
+        DictAdd(env, obj, "interpreterErrorCode", task_stat.interpreter_errcode);
+
+        // not in original python library but added as it might be useful
         DictAdd(env, obj, "queuedMdiCommands", task_stat.queuedMDIcommands);
-        DictAdd(env, obj, "heartbeat", (int)task_stat.heartbeat); // Cast to int for JS Number
         return obj;
     }
 
@@ -243,9 +241,6 @@ namespace LinuxCNC
         obj.Set("digitalOutput", IntArrayToNapiArray(env, motion_stat.synch_do, EMCMOT_MAX_DIO));
         obj.Set("analogInput", DoubleArrayToNapiArray(env, motion_stat.analog_input, EMCMOT_MAX_AIO));
         obj.Set("analogOutput", DoubleArrayToNapiArray(env, motion_stat.analog_output, EMCMOT_MAX_AIO));
-        // motion_stat.misc_error can be added if needed
-        DictAdd(env, obj, "debug", motion_stat.debug);
-        DictAdd(env, obj, "numExtraJoints", motion_stat.numExtraJoints);
         // ... other motion_stat fields if needed
         return obj;
     }
@@ -268,7 +263,33 @@ namespace LinuxCNC
         DictAdd(env, obj, "cycleTime", traj_stat.cycleTime);
         DictAdd(env, obj, "joints", traj_stat.joints);
         DictAdd(env, obj, "spindles", traj_stat.spindles);
-        DictAdd(env, obj, "axisMask", traj_stat.axis_mask);
+
+        // Convert axis mask to array of available axis letters
+        Napi::Array axisArray = Napi::Array::New(env);
+        uint32_t axisMask = traj_stat.axis_mask;
+        uint32_t arrayIndex = 0;
+
+        if (axisMask & 1)
+            axisArray.Set(arrayIndex++, Napi::String::New(env, "X")); // X=1
+        if (axisMask & 2)
+            axisArray.Set(arrayIndex++, Napi::String::New(env, "Y")); // Y=2
+        if (axisMask & 4)
+            axisArray.Set(arrayIndex++, Napi::String::New(env, "Z")); // Z=4
+        if (axisMask & 8)
+            axisArray.Set(arrayIndex++, Napi::String::New(env, "A")); // A=8
+        if (axisMask & 16)
+            axisArray.Set(arrayIndex++, Napi::String::New(env, "B")); // B=16
+        if (axisMask & 32)
+            axisArray.Set(arrayIndex++, Napi::String::New(env, "C")); // C=32
+        if (axisMask & 64)
+            axisArray.Set(arrayIndex++, Napi::String::New(env, "U")); // U=64
+        if (axisMask & 128)
+            axisArray.Set(arrayIndex++, Napi::String::New(env, "V")); // V=128
+        if (axisMask & 256)
+            axisArray.Set(arrayIndex++, Napi::String::New(env, "W")); // W=256
+
+        obj.Set("availableAxes", axisArray);
+
         DictAdd(env, obj, "mode", static_cast<int>(traj_stat.mode));
         DictAdd(env, obj, "enabled", (bool)traj_stat.enabled);
         DictAdd(env, obj, "inPosition", (bool)traj_stat.inpos);
@@ -277,8 +298,8 @@ namespace LinuxCNC
         DictAdd(env, obj, "queueFull", (bool)traj_stat.queueFull);
         DictAdd(env, obj, "id", traj_stat.id);
         DictAdd(env, obj, "paused", (bool)traj_stat.paused);
-        DictAdd(env, obj, "feedrateOverride", traj_stat.scale);
-        DictAdd(env, obj, "rapidrateOverride", traj_stat.rapid_scale);
+        DictAdd(env, obj, "feedRateOverride", traj_stat.scale);
+        DictAdd(env, obj, "rapidRateOverride", traj_stat.rapid_scale);
         obj.Set("position", EmcPoseToNapiObject(env, traj_stat.position));
         obj.Set("actualPosition", EmcPoseToNapiObject(env, traj_stat.actualPosition));
         DictAdd(env, obj, "velocity", traj_stat.velocity);
@@ -376,7 +397,6 @@ namespace LinuxCNC
         DictAdd(env, obj, "pocketPrepped", tool_stat.pocketPrepped);
         DictAdd(env, obj, "toolInSpindle", tool_stat.toolInSpindle);
         DictAdd(env, obj, "toolFromPocket", tool_stat.toolFromPocket);
-        // toolTable is handled by a dedicated getter in convertFullStatToNapiObject
         return obj;
     }
     Napi::Object NapiStatChannel::convertCoolantStatToNapi(Napi::Env env, const EMC_COOLANT_STAT &coolant_stat)
@@ -404,21 +424,18 @@ namespace LinuxCNC
             CANON_TOOL_TABLE tdata;
             if (tooldata_get(&tdata, i) != IDX_OK)
             {
-                // This case might indicate an issue, or just an empty slot.
-                // The original Python code prints to stderr for unexpected idx.
-                // For now, we'll skip problematic entries.
-                // fprintf(stderr, "NapiStatChannel::convertToolTableToNapi: Error getting tool data for index %d\n", i);
+                fprintf(stderr, "NapiStatChannel::convertToolTableToNapi: Error getting tool data for index %d\n", i);
                 continue;
             }
 
             Napi::Object toolObj = Napi::Object::New(env);
             DictAdd(env, toolObj, "toolNo", tdata.toolno);
-            toolObj.Set("offset", EmcPoseToNapiObject(env, tdata.offset));
+            DictAdd(env, toolObj, "pocketNo", tdata.pocketno);
             DictAdd(env, toolObj, "diameter", tdata.diameter);
             DictAdd(env, toolObj, "frontAngle", tdata.frontangle);
             DictAdd(env, toolObj, "backAngle", tdata.backangle);
             DictAdd(env, toolObj, "orientation", tdata.orientation);
-            DictAdd(env, toolObj, "pocketNo", tdata.pocketno);
+            toolObj.Set("offset", EmcPoseToNapiObject(env, tdata.offset));
             DictAddString(env, toolObj, "comment", tdata.comment);
 
             toolList.Set(js_idx++, toolObj);

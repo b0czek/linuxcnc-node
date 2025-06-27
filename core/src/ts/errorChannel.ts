@@ -1,3 +1,4 @@
+import { addon } from "./constants";
 import { NapiErrorChannelInstance } from "./native_type_interfaces";
 import { LinuxCNCError, ErrorCallback } from "./types";
 
@@ -14,11 +15,8 @@ export class ErrorChannel {
   private isPolling: boolean = false;
   private errorCallbacks: Set<ErrorCallback> = new Set();
 
-  constructor(
-    nativeInstance: NapiErrorChannelInstance,
-    options?: ErrorWatcherOptions
-  ) {
-    this.nativeInstance = nativeInstance;
+  constructor(options?: ErrorWatcherOptions) {
+    this.nativeInstance = new addon.NativeErrorChannel();
     this.pollInterval = options?.pollInterval ?? DEFAULT_ERROR_POLL_INTERVAL;
     this.startPolling();
   }

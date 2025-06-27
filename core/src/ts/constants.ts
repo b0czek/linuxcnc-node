@@ -72,42 +72,6 @@ export enum ProgramUnits {
   CM = 3, // CANON_UNITS_CM
 }
 
-export enum SpindleDirection {
-  FORWARD = addon.SPINDLE_FORWARD,
-  REVERSE = addon.SPINDLE_REVERSE,
-  OFF = addon.SPINDLE_OFF,
-  INCREASE = addon.SPINDLE_INCREASE,
-  DECREASE = addon.SPINDLE_DECREASE,
-  CONSTANT = addon.SPINDLE_CONSTANT,
-}
-
-export enum CoolantMode {
-  MIST_ON = addon.MIST_ON,
-  MIST_OFF = addon.MIST_OFF,
-  FLOOD_ON = addon.FLOOD_ON,
-  FLOOD_OFF = addon.FLOOD_OFF,
-}
-
-export enum BrakeState {
-  ENGAGE = addon.BRAKE_ENGAGE,
-  RELEASE = addon.BRAKE_RELEASE,
-}
-
-export enum JogMode {
-  STOP = addon.JOG_STOP,
-  CONTINUOUS = addon.JOG_CONTINUOUS,
-  INCREMENT = addon.JOG_INCREMENT,
-}
-
-export enum AutoOpType {
-  RUN = addon.AUTO_RUN,
-  PAUSE = addon.AUTO_PAUSE,
-  RESUME = addon.AUTO_RESUME,
-  STEP = addon.AUTO_STEP,
-  REVERSE = addon.AUTO_REVERSE,
-  FORWARD = addon.AUTO_FORWARD,
-}
-
 export enum NmlMessageType {
   EMC_OPERATOR_ERROR = addon.EMC_OPERATOR_ERROR_TYPE,
   EMC_OPERATOR_TEXT = addon.EMC_OPERATOR_TEXT_TYPE,
@@ -120,4 +84,11 @@ export enum NmlMessageType {
 export enum JointType {
   LINEAR = addon.JOINT_TYPE_LINEAR,
   ANGULAR = addon.JOINT_TYPE_ANGULAR,
+}
+
+export enum OrientState {
+  NONE = addon.EMCMOT_ORIENT_NONE,
+  COMPLETE = addon.EMCMOT_ORIENT_COMPLETE,
+  IN_PROGRESS = addon.EMCMOT_ORIENT_IN_PROGRESS,
+  FAULTED = addon.EMCMOT_ORIENT_FAULTED,
 }

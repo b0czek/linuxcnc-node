@@ -16,6 +16,7 @@ import {
   MotionType,
   ProgramUnits,
   RcsStatus,
+  addon,
 } from "./constants";
 import isEqual from "lodash/isEqual";
 import getPathValue from "lodash/get";
@@ -41,11 +42,8 @@ export class StatChannel {
     new Map();
   private fullChangeCallbacks: Set<FullStatChangeCallback> = new Set();
 
-  constructor(
-    nativeInstance: NapiStatChannelInstance,
-    options?: StatWatcherOptions
-  ) {
-    this.nativeInstance = nativeInstance;
+  constructor(options?: StatWatcherOptions) {
+    this.nativeInstance = new addon.NativeStatChannel();
     this.pollInterval = options?.pollInterval ?? DEFAULT_STAT_POLL_INTERVAL;
 
     // Initial poll to populate currentStat
@@ -231,13 +229,6 @@ export class StatChannel {
   // --- Convenience Getters for common properties ---
   // These access the locally cached `this.currentStat`
 
-  get echoSerialNumber(): number | undefined {
-    return this.currentStat?.echoSerialNumber;
-  }
-  get overallState(): RcsStatus | undefined {
-    return this.currentStat?.state;
-  }
-
   get task(): LinuxCNCStat["task"] | undefined {
     return this.currentStat?.task;
   }
@@ -247,61 +238,7 @@ export class StatChannel {
   get io(): LinuxCNCStat["io"] | undefined {
     return this.currentStat?.io;
   }
-  get debugFlags(): number | undefined {
-    return this.currentStat?.debug;
-  }
-
-  get homed(): boolean[] | undefined {
-    return this.currentStat?.homed;
-  }
-  get limit(): number[] | undefined {
-    return this.currentStat?.limit;
-  }
   get toolTable(): ToolEntry[] | undefined {
     return this.currentStat?.toolTable;
-  }
-
-  // Example specific getters (can add many more based on common usage)
-  get taskMode(): TaskMode | undefined {
-    return this.currentStat?.task.mode;
-  }
-  get taskState(): TaskState | undefined {
-    return this.currentStat?.task.state;
-  }
-  get currentLine(): number | undefined {
-    return this.currentStat?.task.currentLine;
-  }
-  get motionLine(): number | undefined {
-    return this.currentStat?.task.motionLine;
-  }
-  get file(): string | undefined {
-    return this.currentStat?.task.file;
-  }
-  get actualPosition(): EmcPose | undefined {
-    return this.currentStat?.motion.traj.actualPosition;
-  }
-  get toolInSpindle(): number | undefined {
-    return this.currentStat?.io.tool.toolInSpindle;
-  }
-  get feedRateOverride(): number | undefined {
-    return this.currentStat?.motion.traj.feedrateOverride;
-  }
-  get spindleSpeedOverride(): number | undefined {
-    return this.currentStat?.motion.spindle[0]?.override;
-  } // Assuming spindle 0
-  get currentVelocity(): number | undefined {
-    return this.currentStat?.motion.traj.currentVel;
-  }
-  get distanceToGo(): number | undefined {
-    return this.currentStat?.motion.traj.distanceToGo;
-  }
-  get isEstop(): boolean | undefined {
-    return this.currentStat?.task.state === TaskState.ESTOP;
-  }
-  get isMachineOn(): boolean | undefined {
-    return this.currentStat?.task.state === TaskState.ON;
-  }
-  get isIdle(): boolean | undefined {
-    return this.currentStat?.task.interpState === InterpState.IDLE;
   }
 }

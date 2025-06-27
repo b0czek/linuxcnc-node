@@ -805,44 +805,29 @@ namespace LinuxCNC
     {
         Napi::Env env = info.Env();
         if (info.Length() < 1 || !info[0].IsNumber())
-        { // Direction
-            Napi::TypeError::New(env, "Spindle direction (number) expected").ThrowAsJavaScriptException();
+        { // Speed
+            Napi::TypeError::New(env, "Spindle speed (number) expected").ThrowAsJavaScriptException();
             return env.Null();
         }
 
-        int dir = info[0].As<Napi::Number>().Int32Value();
-        double speed = 0.0;
+        double speed = info[0].As<Napi::Number>().DoubleValue();
         int spindle_idx = 0;
         bool wait_for_speed = true; // Default from python binding seems to be true for M3/M4
 
         if (info.Length() > 1 && info[1].IsNumber())
-            speed = info[1].As<Napi::Number>().DoubleValue();
-        if (info.Length() > 2 && info[2].IsNumber())
-            spindle_idx = info[2].As<Napi::Number>().Int32Value();
-        if (info.Length() > 3 && info[3].IsBoolean())
-            wait_for_speed = info[3].As<Napi::Boolean>().Value();
+            spindle_idx = info[1].As<Napi::Number>().Int32Value();
+        if (info.Length() > 2 && info[2].IsBoolean())
+            wait_for_speed = info[2].As<Napi::Boolean>().Value();
 
-        // This maps to the Python spindle() command logic where dir is LOCAL_SPINDLE_      /REVERSE
-        // LOCAL_SPINDLE_OFF is handled by SpindleOff method.
-        // LOCAL_SPINDLE_INCREASE, DECREASE, CONSTANT are separate methods.
-
-        if (dir == LOCAL_SPINDLE_FORWARD || dir == LOCAL_SPINDLE_REVERSE)
-        {
-            auto msg = std::make_unique<EMC_SPINDLE_ON>();
-            msg->spindle = spindle_idx;
-            msg->speed = (dir == LOCAL_SPINDLE_REVERSE) ? -speed : speed; // Python uses dir * arg1
-            // msg.factor and msg.xoffset are for CSS, not typically set by simple M3/M4. Assuming 0.
-            msg->factor = 0;
-            msg->xoffset = 0;
-            msg->wait_for_spindle_at_speed = wait_for_speed ? 1 : 0;
-            std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-            return sendCommandAsync(info, std::move(cmd_msg));
-        }
-        else
-        {
-            Napi::Error::New(env, "Invalid direction for SpindleOn. Use SpindleOff, SpindleIncrease etc. for other operations.").ThrowAsJavaScriptException();
-            return env.Null();
-        }
+        auto msg = std::make_unique<EMC_SPINDLE_ON>();
+        msg->spindle = spindle_idx;
+        msg->speed = speed; // Speed sign determines direction
+        // msg.factor and msg.xoffset are for CSS, not typically set by simple M3/M4. Assuming 0.
+        msg->factor = 0;
+        msg->xoffset = 0;
+        msg->wait_for_spindle_at_speed = wait_for_speed ? 1 : 0;
+        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
+        return sendCommandAsync(info, std::move(cmd_msg));
     }
 
     Napi::Value NapiCommandChannel::SpindleIncrease(const Napi::CallbackInfo &info)

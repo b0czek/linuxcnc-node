@@ -1,17 +1,11 @@
 import { NapiCommandChannelInstance } from "./native_type_interfaces";
-import {
-  TaskMode,
-  TaskState,
-  TrajMode,
-  SpindleDirection,
-  RcsStatus,
-} from "./constants";
+import { TaskMode, TaskState, TrajMode, RcsStatus, addon } from "./constants";
 
 export class CommandChannel {
   private nativeInstance: NapiCommandChannelInstance;
 
-  constructor(nativeInstance: NapiCommandChannelInstance) {
-    this.nativeInstance = nativeInstance;
+  constructor() {
+    this.nativeInstance = new addon.NativeCommandChannel();
   }
 
   private async exec<T extends (...args: any[]) => Promise<RcsStatus>>(
@@ -193,14 +187,12 @@ export class CommandChannel {
 
   // --- Spindle Commands ---
   async spindleOn(
-    direction: SpindleDirection.FORWARD | SpindleDirection.REVERSE,
-    speed: number = 0,
+    speed: number,
     spindleIndex: number = 0,
     waitForSpeed: boolean = true
   ): Promise<RcsStatus> {
     return this.exec(
       this.nativeInstance.spindleOn,
-      direction,
       speed,
       spindleIndex,
       waitForSpeed

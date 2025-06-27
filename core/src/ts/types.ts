@@ -9,6 +9,8 @@ import {
   ProgramUnits,
   RcsStatus,
   NmlMessageType,
+  JointType,
+  OrientState,
 } from "./constants";
 
 export interface EmcPose {
@@ -34,6 +36,42 @@ export interface ToolEntry {
   comment: string;
 }
 
+export interface ActiveGCodes {
+  motionMode: number; // G0, G1, G2, G3, G38.2, G80, G81, G82, G83, G84, G85, G86, G87, G88, G89
+  gMode0: number; // G4, G10, G28, G30, G53, G92, G92.1, G92.2, G92.3
+  plane: number; // G17, G18, G19
+  cutterComp: number; // G40, G41, G42
+  units: number; // G20, G21
+  distanceMode: number; // G90, G91
+  feedRateMode: number; // G93, G94, G95
+  origin: number; // G54-G59.3
+  toolLengthOffset: number; // G43, G49
+  retractMode: number; // G98, G99
+  pathControl: number; // G61, G61.1, G64
+  spindleSpeedMode: number; // G96, G97
+  ijkDistanceMode: number; // G90.1, G91.1
+  latheDiameterMode: number; // G7, G8
+  g92Applied: number; // G92.2, G92.3
+}
+
+export interface ActiveMCodes {
+  stopping: number; // M0, M1, M2, M30, M60
+  spindleControl: number; // M3, M4, M5
+  toolChange: number; // M6
+  mistCoolant: number; // M7, M9
+  floodCoolant: number; // M8, M9
+  overrideControl: number; // M48, M49, M50, M51
+  adaptiveFeedControl: number; // M52
+  feedHoldControl: number; // M53
+}
+
+export interface ActiveSettings {
+  feedRate: number;
+  speed: number;
+  blendTolerance: number;
+  naiveCAMTolerance: number;
+}
+
 export interface TaskStat {
   mode: TaskMode;
   state: TaskState;
@@ -52,21 +90,20 @@ export interface TaskStat {
   g5xOffset: EmcPose;
   g5xIndex: number;
   g92Offset: EmcPose;
-  rotationXy: number;
+  rotationXY: number;
   toolOffset: EmcPose;
-  activeGCodes: number[];
-  activeMCodes: number[];
-  activeSettings: number[]; // [feed, speed, G64 P, G64 Q]
+  activeGCodes: ActiveGCodes;
+  activeMCodes: ActiveMCodes;
+  activeSettings: ActiveSettings;
   programUnits: ProgramUnits;
   interpreterErrorCode: number;
   taskPaused: boolean;
   delayLeft: number;
   queuedMdiCommands: number;
-  heartbeat: number;
 }
 
 export interface JointStat {
-  jointType: number; // 1 for linear, 2 for angular
+  jointType: JointType;
   units: number;
   backlash: number;
   minPositionLimit: number;
@@ -105,8 +142,8 @@ export interface SpindleStat {
   brake: boolean;
   increasing: -1 | 0 | 1; // decreasing, none, increasing
   enabled: boolean;
-  orientState: number; // TODO: define enum if available
-  orientFault: number; // TODO: define enum if available
+  orientState: OrientState;
+  orientFault: number; // fault code from motion.spindle-orient-fault
   spindleOverrideEnabled: boolean;
   homed: boolean;
 }
@@ -117,7 +154,7 @@ export interface TrajectoryStat {
   cycleTime: number;
   joints: number; // Number of joints configured
   spindles: number; // Number of spindles configured
-  axisMask: number;
+  availableAxes: ("X" | "Y" | "Z" | "A" | "B" | "C" | "U" | "V" | "W")[]; // Available axes as defined by [TRAJ]COORDINATES
   mode: TrajMode;
   enabled: boolean;
   inPosition: boolean;
@@ -126,8 +163,8 @@ export interface TrajectoryStat {
   queueFull: boolean;
   id: number; // motion ID
   paused: boolean;
-  feedrateOverride: number;
-  rapidrateOverride: number;
+  feedRateOverride: number;
+  rapidRateOverride: number;
   position: EmcPose;
   actualPosition: EmcPose;
   velocity: number; // commanded velocity for next segment
@@ -146,7 +183,6 @@ export interface TrajectoryStat {
   feedOverrideEnabled: boolean;
   adaptiveFeedEnabled: boolean;
   feedHoldEnabled: boolean;
-  // tag: StateTag; // Complex, handle if needed
 }
 
 export interface ToolIoStat {
@@ -170,22 +206,12 @@ export interface MotionStat {
   digitalOutput: number[]; // Digital outputs state
   analogInput: number[];
   analogOutput: number[];
-  debug: number;
-  numExtraJoints: number;
-  // miscError: number[];
-  // onSoftLimit: boolean;
-  // externalOffsetsApplied: boolean;
-  // eoffsetPose: EmcPose;
-  // joggingActive: boolean;
 }
 
 export interface IoStat {
   tool: ToolIoStat;
   coolant: CoolantIoStat;
   estop: boolean;
-  // debug: number;
-  // reason: number;
-  // fault: number;
 }
 
 export interface LinuxCNCStat {
@@ -196,9 +222,6 @@ export interface LinuxCNCStat {
   io: IoStat;
   debug: number; // Top-level debug flags
 
-  // Derived/convenience properties from Python binding, directly on root
-  homed: boolean[];
-  limit: number[]; // Bitmask: 1=minHard, 2=maxHard, 4=minSoft, 8=maxSoft
   toolTable: ToolEntry[];
 }
 
