@@ -28,7 +28,7 @@ export interface StatWatcherOptions {
 
 interface WatchedProperty {
   lastValue: any;
-  callbacks: Set<StatPropertyWatchCallback>;
+  callbacks: Set<StatPropertyWatchCallback<any>>;
 }
 
 export class StatChannel {
@@ -137,15 +137,15 @@ export class StatChannel {
    * @param propertyPath A dot-separated path to the property (e.g., "task.motionLine", "motion.joint.0.homed").
    * @param callback The function to call when the property's value changes.
    */
-  addWatch(
-    propertyPath: LinuxCNCStatPaths,
-    callback: StatPropertyWatchCallback
+  addWatch<P extends LinuxCNCStatPaths>(
+    propertyPath: P,
+    callback: StatPropertyWatchCallback<P>
   ): void {
     let watchedInfo = this.watchedProperties.get(propertyPath);
     if (!watchedInfo) {
       const initialValue = this.currentStat
         ? getPathValue(this.currentStat, propertyPath)
-        : undefined;
+        : null;
       watchedInfo = {
         lastValue:
           typeof initialValue === "object" && initialValue !== null
@@ -163,9 +163,9 @@ export class StatChannel {
    * @param propertyPath The property path.
    * @param callback The callback function to remove.
    */
-  removeWatch(
-    propertyPath: LinuxCNCStatPaths,
-    callback: StatPropertyWatchCallback
+  removeWatch<P extends LinuxCNCStatPaths>(
+    propertyPath: P,
+    callback: StatPropertyWatchCallback<P>
   ): void {
     const watchedInfo = this.watchedProperties.get(propertyPath);
     if (watchedInfo) {

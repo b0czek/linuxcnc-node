@@ -244,11 +244,26 @@ type NestedPaths<T, K extends keyof T = keyof T> = K extends string
 // Type-safe property paths for LinuxCNCStat (dot-separated string paths)
 export type LinuxCNCStatPaths = NestedPaths<LinuxCNCStat>;
 
+// Utility type to get the type of a property from a dot-separated path
+type GetPropertyType<T, P extends string> = P extends keyof T
+  ? T[P]
+  : P extends `${infer K}.${infer R}`
+  ? K extends keyof T
+    ? T[K] extends readonly (infer U)[]
+      ? R extends `${number}`
+        ? U
+        : R extends `${number}.${infer Rest}`
+        ? GetPropertyType<U, Rest>
+        : never
+      : GetPropertyType<T[K], R>
+    : never
+  : never;
+
 // Callback types
-export type StatPropertyWatchCallback = (
-  newValue: any,
-  oldValue: any,
-  propertyPath: LinuxCNCStatPaths
+export type StatPropertyWatchCallback<P extends LinuxCNCStatPaths> = (
+  newValue: GetPropertyType<LinuxCNCStat, P>,
+  oldValue: GetPropertyType<LinuxCNCStat, P> | null,
+  propertyPath: P
 ) => void;
 export type FullStatChangeCallback = (
   newStat: LinuxCNCStat,
