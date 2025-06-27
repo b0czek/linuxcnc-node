@@ -83,7 +83,6 @@ namespace LinuxCNC
         Napi::Value SpindleOn(const Napi::CallbackInfo &info); // Covers forward, reverse, speed
         Napi::Value SpindleIncrease(const Napi::CallbackInfo &info);
         Napi::Value SpindleDecrease(const Napi::CallbackInfo &info);
-        Napi::Value SpindleConstant(const Napi::CallbackInfo &info);
         Napi::Value SpindleOff(const Napi::CallbackInfo &info);
         Napi::Value SpindleBrake(const Napi::CallbackInfo &info); // engage/release
 

@@ -59,7 +59,6 @@ namespace LinuxCNC
                                                                            InstanceMethod("spindleOn", &NapiCommandChannel::SpindleOn),
                                                                            InstanceMethod("spindleIncrease", &NapiCommandChannel::SpindleIncrease),
                                                                            InstanceMethod("spindleDecrease", &NapiCommandChannel::SpindleDecrease),
-                                                                           InstanceMethod("spindleConstant", &NapiCommandChannel::SpindleConstant),
                                                                            InstanceMethod("spindleOff", &NapiCommandChannel::SpindleOff),
                                                                            InstanceMethod("spindleBrake", &NapiCommandChannel::SpindleBrake),
                                                                            // Coolant
@@ -851,17 +850,7 @@ namespace LinuxCNC
         std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
         return sendCommandAsync(info, std::move(cmd_msg));
     }
-    Napi::Value NapiCommandChannel::SpindleConstant(const Napi::CallbackInfo &info)
-    {
-        auto msg = std::make_unique<EMC_SPINDLE_CONSTANT>();
-        msg->spindle = 0;
-        if (info.Length() > 0 && info[0].IsNumber())
-        {
-            msg->spindle = info[0].As<Napi::Number>().Int32Value();
-        }
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
-    }
+
     Napi::Value NapiCommandChannel::SpindleOff(const Napi::CallbackInfo &info)
     {
         auto msg = std::make_unique<EMC_SPINDLE_OFF>();

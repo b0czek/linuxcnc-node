@@ -204,9 +204,6 @@ export class CommandChannel {
   async spindleDecrease(spindleIndex: number = 0): Promise<RcsStatus> {
     return this.exec(this.nativeInstance.spindleDecrease, spindleIndex);
   }
-  async spindleConstant(spindleIndex: number = 0): Promise<RcsStatus> {
-    return this.exec(this.nativeInstance.spindleConstant, spindleIndex);
-  }
   async spindleOff(spindleIndex: number = 0): Promise<RcsStatus> {
     return this.exec(this.nativeInstance.spindleOff, spindleIndex);
   }

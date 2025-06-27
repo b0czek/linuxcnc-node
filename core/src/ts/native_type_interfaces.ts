@@ -152,7 +152,6 @@ export interface NapiCommandChannelInstance {
   ): Promise<RcsStatus>;
   spindleIncrease(spindleIndex?: number): Promise<RcsStatus>;
   spindleDecrease(spindleIndex?: number): Promise<RcsStatus>;
-  spindleConstant(spindleIndex?: number): Promise<RcsStatus>;
   spindleOff(spindleIndex?: number): Promise<RcsStatus>;
   spindleBrake(engage: boolean, spindleIndex?: number): Promise<RcsStatus>;
 
