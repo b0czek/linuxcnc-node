@@ -2,7 +2,7 @@ import { addon } from "./constants";
 import { NapiErrorChannelInstance } from "./native_type_interfaces";
 import { LinuxCNCError, ErrorCallback } from "./types";
 
-export const DEFAULT_ERROR_POLL_INTERVAL = 250; // ms
+export const DEFAULT_ERROR_POLL_INTERVAL = 100; // ms
 
 export interface ErrorWatcherOptions {
   pollInterval?: number;
@@ -38,7 +38,7 @@ export class ErrorChannel {
     this.isPolling = true;
 
     try {
-      const error = this.nativeInstance.poll(); // Returns LinuxCNCError | null
+      const error = this.nativeInstance.poll();
       if (error) {
         this.errorCallbacks.forEach((cb) => {
           try {

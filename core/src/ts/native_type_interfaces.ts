@@ -1,9 +1,7 @@
-// src/ts/native_type_interfaces.ts
 import {
   LinuxCNCStat,
   ToolEntry,
   LinuxCNCError,
-  EmcPose,
   RecursivePartial,
 } from "./types";
 import { TaskMode, TaskState, TrajMode, RcsStatus } from "./constants";

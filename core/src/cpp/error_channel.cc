@@ -3,6 +3,8 @@
 #include <cstring>
 #include <cinttypes>
 
+#include "nml_oi.hh"
+
 namespace LinuxCNC
 {
 
@@ -79,38 +81,38 @@ namespace LinuxCNC
         char error_string[LINELEN];
         error_string[0] = '\0'; // Initialize
 
-        // #define EXTRACT_ERROR_STRING(msg_type_struct, field)                                                        \
-//     strncpy(error_string, (static_cast<msg_type_struct *>(c_channel_->get_address()))->field, LINELEN - 1); \
-//     error_string[LINELEN - 1] = 0;
+#define EXTRACT_ERROR_STRING(msg_type_struct, field)                                                        \
+    strncpy(error_string, (static_cast<msg_type_struct *>(c_channel_->get_address()))->field, LINELEN - 1); \
+    error_string[LINELEN - 1] = 0;
 
-        //         switch (type)
-        //         {
-        //         case EMC_OPERATOR_ERROR_TYPE:
-        //             EXTRACT_ERROR_STRING(EMC_OPERATOR_ERROR, error);
-        //             break;
-        //         case EMC_OPERATOR_TEXT_TYPE:
-        //             EXTRACT_ERROR_STRING(EMC_OPERATOR_TEXT, text);
-        //             break;
-        //         case EMC_OPERATOR_DISPLAY_TYPE:
-        //             EXTRACT_ERROR_STRING(EMC_OPERATOR_DISPLAY, display);
-        //             break;
-        //         case NML_ERROR_TYPE: // These are NML class types, not EMC_NML specifically
-        //             EXTRACT_ERROR_STRING(NML_ERROR, error);
-        //             break;
-        //         case NML_TEXT_TYPE:
-        //             EXTRACT_ERROR_STRING(NML_TEXT, text);
-        //             break;
-        //         case NML_DISPLAY_TYPE:
-        //             EXTRACT_ERROR_STRING(NML_DISPLAY, display);
-        //             break;
-        //         default:
-        //             snprintf(error_string, sizeof(error_string), "Unrecognized error type %" PRId32, type);
-        //             break;
-        //         }
-        // #undef EXTRACT_ERROR_STRING
+        switch (type)
+        {
+        case EMC_OPERATOR_ERROR_TYPE:
+            EXTRACT_ERROR_STRING(EMC_OPERATOR_ERROR, error);
+            break;
+        case EMC_OPERATOR_TEXT_TYPE:
+            EXTRACT_ERROR_STRING(EMC_OPERATOR_TEXT, text);
+            break;
+        case EMC_OPERATOR_DISPLAY_TYPE:
+            EXTRACT_ERROR_STRING(EMC_OPERATOR_DISPLAY, display);
+            break;
+        case NML_ERROR_TYPE: // These are NML class types, not EMC_NML specifically
+            EXTRACT_ERROR_STRING(NML_ERROR, error);
+            break;
+        case NML_TEXT_TYPE:
+            EXTRACT_ERROR_STRING(NML_TEXT, text);
+            break;
+        case NML_DISPLAY_TYPE:
+            EXTRACT_ERROR_STRING(NML_DISPLAY, display);
+            break;
+        default:
+            snprintf(error_string, sizeof(error_string), "Unrecognized error type %" PRId32, type);
+            break;
+        }
+#undef EXTRACT_ERROR_STRING
 
         errObj.Set("message", Napi::String::New(env, error_string));
         return errObj;
     }
 
-} // namespace LinuxCNC
+}

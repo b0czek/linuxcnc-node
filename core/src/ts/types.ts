@@ -13,15 +13,6 @@ import {
   OrientState,
 } from "./constants";
 
-// Utility type for recursively making all properties optional
-export type RecursivePartial<T> = {
-  [P in keyof T]?: T[P] extends (infer U)[]
-    ? RecursivePartial<U>[]
-    : T[P] extends object
-    ? RecursivePartial<T[P]>
-    : T[P];
-};
-
 export interface EmcPose {
   x: number;
   y: number;
@@ -267,6 +258,15 @@ type GetPropertyType<T, P extends string> = P extends keyof T
       : GetPropertyType<T[K], R>
     : never
   : never;
+
+// Utility type for recursively making all properties optional
+export type RecursivePartial<T> = {
+  [P in keyof T]?: T[P] extends (infer U)[]
+    ? RecursivePartial<U>[]
+    : T[P] extends object
+    ? RecursivePartial<T[P]>
+    : T[P];
+};
 
 // Callback types
 export type StatPropertyWatchCallback<P extends LinuxCNCStatPaths> = (

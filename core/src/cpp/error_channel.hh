@@ -24,4 +24,4 @@ namespace LinuxCNC
         Napi::Value Poll(const Napi::CallbackInfo &info);
     };
 
-} // namespace LinuxCNC
+}
