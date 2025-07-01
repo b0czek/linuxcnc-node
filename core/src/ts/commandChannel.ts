@@ -1,6 +1,6 @@
 import { NapiCommandChannelInstance } from "./native_type_interfaces";
 import { TaskMode, TaskState, TrajMode, RcsStatus, addon } from "./constants";
-import { RecursivePartial, ToolEntry } from "./types";
+import { DebugFlags, RecursivePartial, ToolEntry } from "./types";
 
 export class CommandChannel {
   private nativeInstance: NapiCommandChannelInstance;
@@ -242,7 +242,7 @@ export class CommandChannel {
   }
 
   // --- Debug & Message Commands ---
-  async setDebugLevel(level: number): Promise<RcsStatus> {
+  async setDebugLevel(level: DebugFlags): Promise<RcsStatus> {
     return this.exec(this.nativeInstance.setDebugLevel, level);
   }
   async sendOperatorError(message: string): Promise<RcsStatus> {

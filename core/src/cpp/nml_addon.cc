@@ -8,6 +8,8 @@
 #include "kinematics.h"
 #include "inihal.hh"
 #include "motion.h"
+#include "debugflags.h"
+#include "nml_oi.hh"
 
 // Workarond for old_inihal_data - it's defined in taskintf.cc in original source which is
 // included in milltask binary but is included in liblinuxcnc.a so I have to define it here.
@@ -39,9 +41,9 @@ Napi::Object InitAll(Napi::Env env, Napi::Object exports)
     LCNC_NODE_EXPORT_INT_CONSTANT(env, exports, EMC_OPERATOR_ERROR_TYPE);
     LCNC_NODE_EXPORT_INT_CONSTANT(env, exports, EMC_OPERATOR_TEXT_TYPE);
     LCNC_NODE_EXPORT_INT_CONSTANT(env, exports, EMC_OPERATOR_DISPLAY_TYPE);
-    // LCNC_NODE_EXPORT_INT_CONSTANT(env, exports, NML_ERROR_TYPE);
-    // LCNC_NODE_EXPORT_INT_CONSTANT(env, exports, NML_TEXT_TYPE);
-    // LCNC_NODE_EXPORT_INT_CONSTANT(env, exports, NML_DISPLAY_TYPE);
+    LCNC_NODE_EXPORT_INT_CONSTANT(env, exports, NML_ERROR_TYPE);
+    LCNC_NODE_EXPORT_INT_CONSTANT(env, exports, NML_TEXT_TYPE);
+    LCNC_NODE_EXPORT_INT_CONSTANT(env, exports, NML_DISPLAY_TYPE);
 
     // EMC_TASK_MODE
     LCNC_NODE_EXPORT_ENUM_MEMBER(env, exports, EMC_TASK_MODE::MDI, "TASK_MODE_MDI");
@@ -114,6 +116,23 @@ Napi::Object InitAll(Napi::Env env, Napi::Object exports)
     LCNC_NODE_EXPORT_INT_CONSTANT(env, exports, EMCMOT_ORIENT_COMPLETE);
     LCNC_NODE_EXPORT_INT_CONSTANT(env, exports, EMCMOT_ORIENT_IN_PROGRESS);
     LCNC_NODE_EXPORT_INT_CONSTANT(env, exports, EMCMOT_ORIENT_FAULTED);
+
+    // EMC_DEBUG
+    LCNC_NODE_EXPORT_INT_CONSTANT(env, exports, EMC_DEBUG_CONFIG);
+    LCNC_NODE_EXPORT_INT_CONSTANT(env, exports, EMC_DEBUG_VERSIONS);
+    LCNC_NODE_EXPORT_INT_CONSTANT(env, exports, EMC_DEBUG_TASK_ISSUE);
+    LCNC_NODE_EXPORT_INT_CONSTANT(env, exports, EMC_DEBUG_NML);
+    LCNC_NODE_EXPORT_INT_CONSTANT(env, exports, EMC_DEBUG_MOTION_TIME);
+    LCNC_NODE_EXPORT_INT_CONSTANT(env, exports, EMC_DEBUG_INTERP);
+    LCNC_NODE_EXPORT_INT_CONSTANT(env, exports, EMC_DEBUG_RCS);
+    LCNC_NODE_EXPORT_INT_CONSTANT(env, exports, EMC_DEBUG_INTERP_LIST);
+    LCNC_NODE_EXPORT_INT_CONSTANT(env, exports, EMC_DEBUG_IOCONTROL);
+    LCNC_NODE_EXPORT_INT_CONSTANT(env, exports, EMC_DEBUG_OWORD);
+    LCNC_NODE_EXPORT_INT_CONSTANT(env, exports, EMC_DEBUG_REMAP);
+    LCNC_NODE_EXPORT_INT_CONSTANT(env, exports, EMC_DEBUG_PYTHON);
+    LCNC_NODE_EXPORT_INT_CONSTANT(env, exports, EMC_DEBUG_NAMEDPARAM);
+    LCNC_NODE_EXPORT_INT_CONSTANT(env, exports, EMC_DEBUG_GDBONSIGNAL);
+    LCNC_NODE_EXPORT_INT_CONSTANT(env, exports, EMC_DEBUG_STATE_TAGS);
 
     return exports;
 }

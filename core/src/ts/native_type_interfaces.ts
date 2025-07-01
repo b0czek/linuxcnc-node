@@ -85,6 +85,22 @@ export interface NapiOptions {
   EMCMOT_ORIENT_COMPLETE: number;
   EMCMOT_ORIENT_IN_PROGRESS: number;
   EMCMOT_ORIENT_FAULTED: number;
+
+  EMC_DEBUG_CONFIG: number;
+  EMC_DEBUG_VERSIONS: number;
+  EMC_DEBUG_TASK_ISSUE: number;
+  EMC_DEBUG_NML: number;
+  EMC_DEBUG_MOTION_TIME: number;
+  EMC_DEBUG_INTERP: number;
+  EMC_DEBUG_RCS: number;
+  EMC_DEBUG_INTERP_LIST: number;
+  EMC_DEBUG_IOCONTROL: number;
+  EMC_DEBUG_OWORD: number;
+  EMC_DEBUG_REMAP: number;
+  EMC_DEBUG_PYTHON: number;
+  EMC_DEBUG_NAMEDPARAM: number;
+  EMC_DEBUG_GDBONSIGNAL: number;
+  EMC_DEBUG_STATE_TAGS: number;
 }
 
 // Interface for the NapiStatChannel instance
@@ -174,7 +190,7 @@ export interface NapiCommandChannelInstance {
   setAnalogOutput(index: number, value: number): Promise<RcsStatus>;
 
   // Debug & Message commands
-  setDebugLevel(level: number): Promise<RcsStatus>;
+  setDebugLevel(level: DebugFlags): Promise<RcsStatus>;
   sendOperatorError(message: string): Promise<RcsStatus>;
   sendOperatorText(message: string): Promise<RcsStatus>;
   sendOperatorDisplay(message: string): Promise<RcsStatus>;

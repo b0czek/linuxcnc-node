@@ -11,6 +11,7 @@ import {
   NmlMessageType,
   JointType,
   OrientState,
+  EmcDebug,
 } from "./constants";
 
 export interface EmcPose {
@@ -229,6 +230,8 @@ export interface LinuxCNCError {
   type: NmlMessageType;
   message: string;
 }
+
+export type DebugFlags = EmcDebug;
 
 // utility type to generate string paths for nested objects
 type NestedPaths<T, K extends keyof T = keyof T> = K extends string
