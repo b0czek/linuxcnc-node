@@ -3,6 +3,7 @@
 #include "stat_channel.hh"
 #include "command_channel.hh"
 #include "error_channel.hh"
+#include "position_logger.hh"
 #include "emc.hh"
 #include "emc_nml.hh"
 #include "kinematics.h"
@@ -33,6 +34,7 @@ Napi::Object InitAll(Napi::Env env, Napi::Object exports)
     LinuxCNC::NapiStatChannel::Init(env, exports);
     LinuxCNC::NapiCommandChannel::Init(env, exports);
     LinuxCNC::NapiErrorChannel::Init(env, exports);
+    LinuxCNC::NapiPositionLogger::Init(env, exports);
 
     // Export constants
     exports.Set(Napi::String::New(env, "NMLFILE_DEFAULT"), Napi::String::New(env, DEFAULT_EMC_NMLFILE));

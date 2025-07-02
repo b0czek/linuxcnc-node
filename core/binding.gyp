@@ -8,7 +8,8 @@
         "src/cpp/stat_channel.cc",
         "src/cpp/command_channel.cc",
         "src/cpp/command_worker.cc",
-        "src/cpp/error_channel.cc"
+        "src/cpp/error_channel.cc",
+        "src/cpp/position_logger.cc"
       ],
       "include_dirs": [
         "<!@(node -p \"require('node-addon-api').include\")"

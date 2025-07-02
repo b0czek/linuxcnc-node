@@ -4,7 +4,13 @@ import {
   LinuxCNCError,
   RecursivePartial,
 } from "./types";
-import { TaskMode, TaskState, TrajMode, RcsStatus } from "./constants";
+import {
+  TaskMode,
+  TaskState,
+  TrajMode,
+  RcsStatus,
+  EmcDebug,
+} from "./constants";
 
 // Interface for the NAPI addon module itself
 export interface NapiOptions {
@@ -13,6 +19,7 @@ export interface NapiOptions {
   NativeStatChannel: { new (): NapiStatChannelInstance };
   NativeCommandChannel: { new (): NapiCommandChannelInstance };
   NativeErrorChannel: { new (): NapiErrorChannelInstance };
+  NativePositionLogger: { new (): NapiPositionLoggerInstance };
 
   // Constants (as defined in nml_addon.cc)
   NMLFILE_DEFAULT: string;
@@ -190,7 +197,7 @@ export interface NapiCommandChannelInstance {
   setAnalogOutput(index: number, value: number): Promise<RcsStatus>;
 
   // Debug & Message commands
-  setDebugLevel(level: DebugFlags): Promise<RcsStatus>;
+  setDebugLevel(level: EmcDebug): Promise<RcsStatus>;
   sendOperatorError(message: string): Promise<RcsStatus>;
   sendOperatorText(message: string): Promise<RcsStatus>;
   sendOperatorDisplay(message: string): Promise<RcsStatus>;
@@ -203,4 +210,41 @@ export interface NapiCommandChannelInstance {
 // Interface for the NapiErrorChannel instance
 export interface NapiErrorChannelInstance {
   poll(): LinuxCNCError | null;
+}
+
+// Interface for the NapiPositionLogger instance
+export interface NapiPositionLoggerInstance {
+  setGeometry(geometry: string): void;
+  start(interval?: number, maxHistorySize?: number): void;
+  stop(): void;
+  clear(): void;
+  getCurrentPosition(): {
+    x: number;
+    y: number;
+    z: number;
+    a: number;
+    b: number;
+    c: number;
+    u: number;
+    v: number;
+    w: number;
+    motionType: number;
+  };
+  getMotionHistory(
+    startIndex?: number,
+    count?: number
+  ): Array<{
+    x: number;
+    y: number;
+    z: number;
+    a: number;
+    b: number;
+    c: number;
+    u: number;
+    v: number;
+    w: number;
+    motionType: number;
+    timestamp: number;
+  }>;
+  getHistoryCount(): number;
 }

@@ -1,6 +1,7 @@
 import { StatChannel, StatWatcherOptions } from "./statChannel";
 import { CommandChannel } from "./commandChannel";
 import { ErrorChannel, ErrorWatcherOptions } from "./errorChannel";
+import { PositionLogger } from "./positionLogger";
 
 import { addon } from "./constants";
 
@@ -27,5 +28,6 @@ export function getNmlFilePath(): string {
 // Export all enums and types
 export * from "./constants";
 export * from "./types";
-export { StatChannel, CommandChannel, ErrorChannel };
+export { StatChannel, CommandChannel, ErrorChannel, PositionLogger };
 export { StatWatcherOptions, ErrorWatcherOptions };
+export { PositionPoint, PositionLoggerOptions } from "./positionLogger";
