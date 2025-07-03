@@ -32,6 +32,7 @@ namespace LinuxCNC
 
     // Methods exposed to JavaScript
     Napi::Value SetGeometry(const Napi::CallbackInfo &info);
+    Napi::Value GetGeometry(const Napi::CallbackInfo &info);
     Napi::Value Start(const Napi::CallbackInfo &info);
     Napi::Value Stop(const Napi::CallbackInfo &info);
     Napi::Value Clear(const Napi::CallbackInfo &info);
@@ -47,6 +48,7 @@ namespace LinuxCNC
     bool connectToStatChannel();
     void disconnectFromStatChannel();
     bool pollStatChannel();
+    void initializeDefaultGeometry();
 
     // Member variables
     RCS_STAT_CHANNEL *stat_channel_;

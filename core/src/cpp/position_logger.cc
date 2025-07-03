@@ -15,6 +15,7 @@ namespace LinuxCNC
     Napi::HandleScope scope(env);
     Napi::Function func = DefineClass(env, "NativePositionLogger", {
                                                                        InstanceMethod("setGeometry", &NapiPositionLogger::SetGeometry),
+                                                                       InstanceMethod("getGeometry", &NapiPositionLogger::GetGeometry),
                                                                        InstanceMethod("start", &NapiPositionLogger::Start),
                                                                        InstanceMethod("stop", &NapiPositionLogger::Stop),
                                                                        InstanceMethod("clear", &NapiPositionLogger::Clear),
@@ -34,6 +35,9 @@ namespace LinuxCNC
   {
     // Initialize active_axes_ to all false (9 axes: x,y,z,a,b,c,u,v,w)
     active_axes_.resize(9, false);
+
+    // Initialize default geometry from trajectory axis mask
+    initializeDefaultGeometry();
   }
 
   NapiPositionLogger::~NapiPositionLogger()
@@ -99,6 +103,12 @@ namespace LinuxCNC
     }
 
     return env.Undefined();
+  }
+
+  Napi::Value NapiPositionLogger::GetGeometry(const Napi::CallbackInfo &info)
+  {
+    Napi::Env env = info.Env();
+    return Napi::String::New(env, geometry_);
   }
 
   Napi::Value NapiPositionLogger::Start(const Napi::CallbackInfo &info)
@@ -501,6 +511,96 @@ namespace LinuxCNC
     }
 
     return false;
+  }
+
+  void NapiPositionLogger::initializeDefaultGeometry()
+  {
+    // Try to connect to stat channel to get axis mask
+    if (!connectToStatChannel())
+    {
+      // If connection fails, use a default XYZ geometry
+      geometry_ = "XYZ";
+      active_axes_[0] = true; // X
+      active_axes_[1] = true; // Y
+      active_axes_[2] = true; // Z
+      return;
+    }
+
+    // Poll to get current status
+    if (!pollStatChannel())
+    {
+      // If polling fails, use default XYZ geometry
+      geometry_ = "XYZ";
+      active_axes_[0] = true; // X
+      active_axes_[1] = true; // Y
+      active_axes_[2] = true; // Z
+      return;
+    }
+
+    // Get axis mask from trajectory status
+    uint32_t axisMask = current_status_.motion.traj.axis_mask;
+    std::string geometryString = "";
+
+    // Reset active axes
+    std::fill(active_axes_.begin(), active_axes_.end(), false);
+
+    // Build geometry string based on axis mask
+    if (axisMask & 1)
+    {
+      geometryString += "X";
+      active_axes_[0] = true; // X=1
+    }
+    if (axisMask & 2)
+    {
+      geometryString += "Y";
+      active_axes_[1] = true; // Y=2
+    }
+    if (axisMask & 4)
+    {
+      geometryString += "Z";
+      active_axes_[2] = true; // Z=4
+    }
+    if (axisMask & 8)
+    {
+      geometryString += "A";
+      active_axes_[3] = true; // A=8
+    }
+    if (axisMask & 16)
+    {
+      geometryString += "B";
+      active_axes_[4] = true; // B=16
+    }
+    if (axisMask & 32)
+    {
+      geometryString += "C";
+      active_axes_[5] = true; // C=32
+    }
+    if (axisMask & 64)
+    {
+      geometryString += "U";
+      active_axes_[6] = true; // U=64
+    }
+    if (axisMask & 128)
+    {
+      geometryString += "V";
+      active_axes_[7] = true; // V=128
+    }
+    if (axisMask & 256)
+    {
+      geometryString += "W";
+      active_axes_[8] = true; // W=256
+    }
+
+    // If no axes found, default to XYZ
+    if (geometryString.empty())
+    {
+      geometryString = "XYZ";
+      active_axes_[0] = true; // X
+      active_axes_[1] = true; // Y
+      active_axes_[2] = true; // Z
+    }
+
+    geometry_ = geometryString;
   }
 
 }

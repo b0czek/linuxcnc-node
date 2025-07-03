@@ -1,5 +1,5 @@
 import { addon } from "./constants";
-import { EmcPose } from "./types";
+import { EmcPose, AvailableAxis } from "./types";
 
 export interface PositionPoint extends EmcPose {
   motionType: number;
@@ -28,10 +28,12 @@ export class PositionLogger {
 
   /**
    * Set the machine geometry to determine which axes should be logged
-   * @param geometry String containing axis letters (e.g., "XYZ", "XYZABC", "XYUV")
+   * @param geometry Array of axis identifiers (e.g., ["X", "Y", "Z"], ["X", "Y", "Z", "A", "B", "C"])
    */
-  setGeometry(geometry: string): void {
-    this.nativeLogger.setGeometry(geometry);
+  setGeometry(geometry: AvailableAxis[]): void {
+    // Convert array to string for the native implementation
+    const geometryString = geometry.join("");
+    this.nativeLogger.setGeometry(geometryString);
   }
 
   /**
@@ -104,5 +106,14 @@ export class PositionLogger {
     const actualCount = Math.min(count, totalCount);
 
     return this.getMotionHistory(startIndex, actualCount);
+  }
+
+  /**
+   * Get the current machine geometry configuration
+   * @returns Array of active axis identifiers
+   */
+  getGeometry(): AvailableAxis[] {
+    const geometryString = this.nativeLogger.getGeometry();
+    return geometryString.split("") as AvailableAxis[];
   }
 }
