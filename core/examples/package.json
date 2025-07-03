@@ -1,0 +1,31 @@
+{
+  "name": "threejs-visualization-example",
+  "version": "1.0.0",
+  "description": "3D motion visualization example using LinuxCNC Position Logger and Three.js",
+  "main": "threejs_visualization_server.ts",
+  "scripts": {
+    "start": "ts-node threejs_visualization_server.ts",
+    "build": "tsc threejs_visualization_server.ts",
+    "dev": "ts-node --watch threejs_visualization_server.ts"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "ws": "^8.14.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.20",
+    "@types/node": "^20.8.0",
+    "@types/ws": "^8.5.8",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.2.2"
+  },
+  "keywords": [
+    "linuxcnc",
+    "threejs",
+    "3d-visualization",
+    "motion-control",
+    "websocket"
+  ],
+  "author": "",
+  "license": "MIT"
+}
