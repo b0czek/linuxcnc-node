@@ -14,6 +14,8 @@ import {
   EmcDebug,
 } from "./constants";
 
+export type AvailableAxis = "X" | "Y" | "Z" | "A" | "B" | "C" | "U" | "V" | "W";
+
 export interface EmcPose {
   x: number;
   y: number;
@@ -155,7 +157,7 @@ export interface TrajectoryStat {
   cycleTime: number;
   joints: number; // Number of joints configured
   spindles: number; // Number of spindles configured
-  availableAxes: ("X" | "Y" | "Z" | "A" | "B" | "C" | "U" | "V" | "W")[]; // Available axes as defined by [TRAJ]COORDINATES
+  availableAxes: AvailableAxis[]; // Available axes as defined by [TRAJ]COORDINATES
   mode: TrajMode;
   enabled: boolean;
   inPosition: boolean;
