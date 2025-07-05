@@ -13,7 +13,6 @@ const clients = new Set<any>();
 
 // Initialize position logger
 const logger = new PositionLogger();
-logger.setGeometry(["X", "Y", "Z"] as AvailableAxis[]); // 3-axis mill configuration
 
 // HTML page with embedded Three.js visualization
 const htmlPage = `

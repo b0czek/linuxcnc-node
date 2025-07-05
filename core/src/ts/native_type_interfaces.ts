@@ -203,7 +203,7 @@ export interface NapiCommandChannelInstance {
   sendOperatorDisplay(message: string): Promise<RcsStatus>;
 
   // Misc
-  waitComplete(timeout?: number): RcsStatus; // Keep this synchronous as it was reverted
+  waitComplete(timeout?: number): RcsStatus; // Keep this synchronous
   serial: number; // For the command serial number
 }
 
@@ -214,7 +214,6 @@ export interface NapiErrorChannelInstance {
 
 // Interface for the NapiPositionLogger instance
 export interface NapiPositionLoggerInstance {
-  setGeometry(geometry: string): void;
   start(interval?: number, maxHistorySize?: number): void;
   stop(): void;
   clear(): void;

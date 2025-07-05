@@ -17,23 +17,13 @@ export interface PositionLoggerOptions {
  * Position Logger for tracking machine tool path
  *
  * This class provides functionality to log the position of a LinuxCNC machine tool
- * over time, respecting the configured machine geometry.
+ * over time.
  */
 export class PositionLogger {
   private nativeLogger: any;
 
   constructor() {
     this.nativeLogger = new addon.NativePositionLogger();
-  }
-
-  /**
-   * Set the machine geometry to determine which axes should be logged
-   * @param geometry Array of axis identifiers (e.g., ["X", "Y", "Z"], ["X", "Y", "Z", "A", "B", "C"])
-   */
-  setGeometry(geometry: AvailableAxis[]): void {
-    // Convert array to string for the native implementation
-    const geometryString = geometry.join("");
-    this.nativeLogger.setGeometry(geometryString);
   }
 
   /**
@@ -62,7 +52,6 @@ export class PositionLogger {
 
   /**
    * Get the current position of the machine
-   * Inactive axes will always return 0
    * @returns Current position with motion type
    */
   getCurrentPosition(): PositionPoint {
@@ -106,14 +95,5 @@ export class PositionLogger {
     const actualCount = Math.min(count, totalCount);
 
     return this.getMotionHistory(startIndex, actualCount);
-  }
-
-  /**
-   * Get the current machine geometry configuration
-   * @returns Array of active axis identifiers
-   */
-  getGeometry(): AvailableAxis[] {
-    const geometryString = this.nativeLogger.getGeometry();
-    return geometryString.split("") as AvailableAxis[];
   }
 }

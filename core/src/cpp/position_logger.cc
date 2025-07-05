@@ -4,6 +4,7 @@
 #include <thread>
 #include <cstring>
 #include <cmath>
+#include <optional>
 #include "tooldata.hh"
 
 namespace LinuxCNC
@@ -14,8 +15,6 @@ namespace LinuxCNC
   {
     Napi::HandleScope scope(env);
     Napi::Function func = DefineClass(env, "NativePositionLogger", {
-                                                                       InstanceMethod("setGeometry", &NapiPositionLogger::SetGeometry),
-                                                                       InstanceMethod("getGeometry", &NapiPositionLogger::GetGeometry),
                                                                        InstanceMethod("start", &NapiPositionLogger::Start),
                                                                        InstanceMethod("stop", &NapiPositionLogger::Stop),
                                                                        InstanceMethod("clear", &NapiPositionLogger::Clear),
@@ -33,11 +32,6 @@ namespace LinuxCNC
   NapiPositionLogger::NapiPositionLogger(const Napi::CallbackInfo &info)
       : Napi::ObjectWrap<NapiPositionLogger>(info), stat_channel_(nullptr), should_stop_(false), should_clear_(false), logging_interval_(DEFAULT_INTERVAL), max_history_size_(DEFAULT_MAX_HISTORY)
   {
-    // Initialize active_axes_ to all false (9 axes: x,y,z,a,b,c,u,v,w)
-    active_axes_.resize(9, false);
-
-    // Initialize default geometry from trajectory axis mask
-    initializeDefaultGeometry();
   }
 
   NapiPositionLogger::~NapiPositionLogger()
@@ -48,67 +42,6 @@ namespace LinuxCNC
       logger_thread_.join();
     }
     disconnectFromStatChannel();
-  }
-
-  Napi::Value NapiPositionLogger::SetGeometry(const Napi::CallbackInfo &info)
-  {
-    Napi::Env env = info.Env();
-
-    if (info.Length() < 1 || !info[0].IsString())
-    {
-      Napi::TypeError::New(env, "Expected geometry string as first argument").ThrowAsJavaScriptException();
-      return env.Null();
-    }
-
-    std::string geometry = info[0].As<Napi::String>().Utf8Value();
-    geometry_ = geometry;
-
-    // Reset active axes
-    std::fill(active_axes_.begin(), active_axes_.end(), false);
-
-    // Parse geometry string to determine active axes
-    // Geometry string contains axis letters like "XYZABC" or "XYZ" etc.
-    for (char c : geometry)
-    {
-      switch (std::toupper(c))
-      {
-      case 'X':
-        active_axes_[0] = true;
-        break;
-      case 'Y':
-        active_axes_[1] = true;
-        break;
-      case 'Z':
-        active_axes_[2] = true;
-        break;
-      case 'A':
-        active_axes_[3] = true;
-        break;
-      case 'B':
-        active_axes_[4] = true;
-        break;
-      case 'C':
-        active_axes_[5] = true;
-        break;
-      case 'U':
-        active_axes_[6] = true;
-        break;
-      case 'V':
-        active_axes_[7] = true;
-        break;
-      case 'W':
-        active_axes_[8] = true;
-        break;
-      }
-    }
-
-    return env.Undefined();
-  }
-
-  Napi::Value NapiPositionLogger::GetGeometry(const Napi::CallbackInfo &info)
-  {
-    Napi::Env env = info.Env();
-    return Napi::String::New(env, geometry_);
   }
 
   Napi::Value NapiPositionLogger::Start(const Napi::CallbackInfo &info)
@@ -184,7 +117,14 @@ namespace LinuxCNC
   {
     Napi::Env env = info.Env();
 
-    PositionPoint current = getCurrentPositionInternal();
+    // Get position from last element of vector
+    std::lock_guard<std::mutex> lock(history_mutex_);
+    if (position_history_.empty())
+    {
+      return env.Null();
+    }
+
+    PositionPoint current = position_history_.back();
 
     // Create JavaScript object with position data
     Napi::Object result = Napi::Object::New(env);
@@ -281,7 +221,15 @@ namespace LinuxCNC
         second_run = true;
       }
 
-      PositionPoint current = getCurrentPositionInternal();
+      auto current_opt = getCurrentPositionInternal();
+      if (!current_opt.has_value())
+      {
+        // Skip this iteration if we can't get position data
+        std::this_thread::sleep_for(std::chrono::duration<double>(logging_interval_));
+        continue;
+      }
+
+      PositionPoint current = current_opt.value();
 
       // Check if position changed significantly or if it's the first/second run
       if (first_run || second_run || isPositionChanged(current, last_position))
@@ -346,13 +294,13 @@ namespace LinuxCNC
 
   bool NapiPositionLogger::isPositionChanged(const PositionPoint &current, const PositionPoint &previous) const
   {
-    // Check if any active axis has changed beyond epsilon
+    // Check if any axis has changed beyond epsilon
     const double positions_current[] = {current.x, current.y, current.z, current.a, current.b, current.c, current.u, current.v, current.w};
     const double positions_previous[] = {previous.x, previous.y, previous.z, previous.a, previous.b, previous.c, previous.u, previous.v, previous.w};
 
     for (size_t i = 0; i < 9; ++i)
     {
-      if (active_axes_[i] && std::abs(positions_current[i] - positions_previous[i]) > POSITION_EPSILON)
+      if (std::abs(positions_current[i] - positions_previous[i]) > POSITION_EPSILON)
       {
         return true;
       }
@@ -374,20 +322,6 @@ namespace LinuxCNC
     double dy1 = a.y - b.y, dy2 = b.y - c.y;
     double dz1 = a.z - b.z, dz2 = b.z - c.z;
 
-    // Zero out inactive axes
-    if (!active_axes_[0])
-    {
-      dx1 = dx2 = 0;
-    } // X axis
-    if (!active_axes_[1])
-    {
-      dy1 = dy2 = 0;
-    } // Y axis
-    if (!active_axes_[2])
-    {
-      dz1 = dz2 = 0;
-    } // Z axis
-
     double dp = std::sqrt(dx1 * dx1 + dy1 * dy1 + dz1 * dz1);
     double dq = std::sqrt(dx2 * dx2 + dy2 * dy2 + dz2 * dz2);
 
@@ -402,21 +336,21 @@ namespace LinuxCNC
     return false;
   }
 
-  PositionPoint NapiPositionLogger::getCurrentPositionInternal()
+  std::optional<PositionPoint> NapiPositionLogger::getCurrentPositionInternal()
   {
-    PositionPoint point = {};
-    point.timestamp = std::chrono::steady_clock::now();
-
     if (!stat_channel_)
     {
-      return point;
+      return std::nullopt;
     }
 
     // Poll the stat channel to get current status
     if (!pollStatChannel())
     {
-      return point;
+      return std::nullopt;
     }
+
+    PositionPoint point = {};
+    point.timestamp = std::chrono::steady_clock::now();
 
     // Extract position data from EMC_STAT
     point.x = current_status_.motion.traj.position.tran.x - current_status_.task.toolOffset.tran.x;
@@ -431,17 +365,6 @@ namespace LinuxCNC
 
     // Get motion type
     point.motionType = current_status_.motion.traj.motion_type;
-
-    // Zero out inactive axes
-    double *positions_mut[] = {&point.x, &point.y, &point.z, &point.a, &point.b, &point.c, &point.u, &point.v, &point.w};
-
-    for (size_t i = 0; i < 9; ++i)
-    {
-      if (!active_axes_[i])
-      {
-        *positions_mut[i] = 0.0;
-      }
-    }
 
     return point;
   }
@@ -511,96 +434,6 @@ namespace LinuxCNC
     }
 
     return false;
-  }
-
-  void NapiPositionLogger::initializeDefaultGeometry()
-  {
-    // Try to connect to stat channel to get axis mask
-    if (!connectToStatChannel())
-    {
-      // If connection fails, use a default XYZ geometry
-      geometry_ = "XYZ";
-      active_axes_[0] = true; // X
-      active_axes_[1] = true; // Y
-      active_axes_[2] = true; // Z
-      return;
-    }
-
-    // Poll to get current status
-    if (!pollStatChannel())
-    {
-      // If polling fails, use default XYZ geometry
-      geometry_ = "XYZ";
-      active_axes_[0] = true; // X
-      active_axes_[1] = true; // Y
-      active_axes_[2] = true; // Z
-      return;
-    }
-
-    // Get axis mask from trajectory status
-    uint32_t axisMask = current_status_.motion.traj.axis_mask;
-    std::string geometryString = "";
-
-    // Reset active axes
-    std::fill(active_axes_.begin(), active_axes_.end(), false);
-
-    // Build geometry string based on axis mask
-    if (axisMask & 1)
-    {
-      geometryString += "X";
-      active_axes_[0] = true; // X=1
-    }
-    if (axisMask & 2)
-    {
-      geometryString += "Y";
-      active_axes_[1] = true; // Y=2
-    }
-    if (axisMask & 4)
-    {
-      geometryString += "Z";
-      active_axes_[2] = true; // Z=4
-    }
-    if (axisMask & 8)
-    {
-      geometryString += "A";
-      active_axes_[3] = true; // A=8
-    }
-    if (axisMask & 16)
-    {
-      geometryString += "B";
-      active_axes_[4] = true; // B=16
-    }
-    if (axisMask & 32)
-    {
-      geometryString += "C";
-      active_axes_[5] = true; // C=32
-    }
-    if (axisMask & 64)
-    {
-      geometryString += "U";
-      active_axes_[6] = true; // U=64
-    }
-    if (axisMask & 128)
-    {
-      geometryString += "V";
-      active_axes_[7] = true; // V=128
-    }
-    if (axisMask & 256)
-    {
-      geometryString += "W";
-      active_axes_[8] = true; // W=256
-    }
-
-    // If no axes found, default to XYZ
-    if (geometryString.empty())
-    {
-      geometryString = "XYZ";
-      active_axes_[0] = true; // X
-      active_axes_[1] = true; // Y
-      active_axes_[2] = true; // Z
-    }
-
-    geometry_ = geometryString;
   }
 
 }

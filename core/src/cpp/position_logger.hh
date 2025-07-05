@@ -6,6 +6,7 @@
 #include <mutex>
 #include <atomic>
 #include <chrono>
+#include <optional>
 #include "common.hh"
 #include "rcs.hh"
 #include "emc.hh"
@@ -31,8 +32,6 @@ namespace LinuxCNC
     static Napi::FunctionReference constructor;
 
     // Methods exposed to JavaScript
-    Napi::Value SetGeometry(const Napi::CallbackInfo &info);
-    Napi::Value GetGeometry(const Napi::CallbackInfo &info);
     Napi::Value Start(const Napi::CallbackInfo &info);
     Napi::Value Stop(const Napi::CallbackInfo &info);
     Napi::Value Clear(const Napi::CallbackInfo &info);
@@ -44,18 +43,15 @@ namespace LinuxCNC
     void LoggerThread();
     bool isPositionChanged(const PositionPoint &current, const PositionPoint &previous) const;
     bool isColinear(const PositionPoint &a, const PositionPoint &b, const PositionPoint &c) const;
-    PositionPoint getCurrentPositionInternal();
+    std::optional<PositionPoint> getCurrentPositionInternal();
     bool connectToStatChannel();
     void disconnectFromStatChannel();
     bool pollStatChannel();
-    void initializeDefaultGeometry();
 
     // Member variables
     RCS_STAT_CHANNEL *stat_channel_;
     EMC_STAT current_status_{};
     std::vector<PositionPoint> position_history_;
-    std::string geometry_;
-    std::vector<bool> active_axes_; // [x,y,z,a,b,c,u,v,w] - true if axis is active
 
     std::thread logger_thread_;
     std::atomic<bool> should_stop_;
