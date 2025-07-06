@@ -15,6 +15,7 @@ namespace LinuxCNC
         Napi::HandleScope scope(env);
         Napi::Function func = DefineClass(env, "NativeErrorChannel", {
                                                                          InstanceMethod("poll", &NapiErrorChannel::Poll),
+                                                                         InstanceMethod("disconnect", &NapiErrorChannel::Disconnect),
                                                                      });
         constructor = Napi::Persistent(func);
         constructor.SuppressDestruct();
@@ -113,6 +114,13 @@ namespace LinuxCNC
 
         errObj.Set("message", Napi::String::New(env, error_string));
         return errObj;
+    }
+
+    Napi::Value NapiErrorChannel::Disconnect(const Napi::CallbackInfo &info)
+    {
+        Napi::Env env = info.Env();
+        disconnect();
+        return env.Undefined();
     }
 
 }

@@ -22,6 +22,7 @@ namespace LinuxCNC
         void disconnect();
 
         Napi::Value Poll(const Napi::CallbackInfo &info);
+        Napi::Value Disconnect(const Napi::CallbackInfo &info);
     };
 
 }

@@ -95,5 +95,9 @@ export class ErrorChannel {
   destroy(): void {
     this.stopPolling();
     this.errorCallbacks.clear();
+    // Properly disconnect from the native NML channel
+    if (this.nativeInstance) {
+      this.nativeInstance.disconnect();
+    }
   }
 }

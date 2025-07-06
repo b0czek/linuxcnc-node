@@ -212,6 +212,7 @@ export interface NapiCommandChannelInstance {
 // Interface for the NapiErrorChannel instance
 export interface NapiErrorChannelInstance {
   poll(): LinuxCNCError | null;
+  disconnect(): void;
 }
 
 // Interface for the NapiPositionLogger instance
