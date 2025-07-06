@@ -21,8 +21,10 @@ namespace LinuxCNC
     private:
         static Napi::FunctionReference constructor;
 
-        // Allow CommandWorker to access private members
+        // Allow CommandWorker classes to access private members
         friend class CommandWorker;
+        friend class ProgramOpenWorker;
+        friend class SetToolWorker;
 
         RCS_CMD_CHANNEL *c_channel_ = nullptr;
         RCS_STAT_CHANNEL *s_channel_ = nullptr; // For echo checking
