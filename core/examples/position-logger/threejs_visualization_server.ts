@@ -295,7 +295,7 @@ const htmlPage = `
                 // Scale positions for better visualization (LinuxCNC units are typically inches or mm)
                 cylinder.position.set(
                     position.x * 10, // Scale up for visibility
-                    position.z * 10 + 10, // Z becomes Y (height), offset above surface
+                    position.z * 10 + 10 + 10, // Z becomes Y (height), offset above surface + cylinder half-height
                     -position.y * 10  // Y becomes -Z (depth into screen)
                 );
             }
@@ -306,10 +306,10 @@ const htmlPage = `
                 return;
             }
             
-            // Update trail points
+            // Update trail points - keep at original position since cylinder is now positioned higher
             trailPoints = history.map(point => new THREE.Vector3(
                 point.x * 10,
-                point.z * 10 + 10,
+                point.z * 10 + 10, // Original trail position
                 -point.y * 10
             ));
             
