@@ -18,8 +18,8 @@ import {
   RcsStatus,
   addon,
 } from "./constants";
-import isEqual from "lodash/isEqual";
-import getPathValue from "lodash/get";
+import isEqual from "fast-deep-equal";
+import delve from "dlv";
 export const DEFAULT_STAT_POLL_INTERVAL = 50; // ms
 
 export interface StatWatcherOptions {
@@ -89,7 +89,7 @@ export class StatChannel {
 
         // Notify individual property watchers
         this.watchedProperties.forEach((watchedInfo, path) => {
-          const newValue = getPathValue(newStat, path);
+          const newValue = delve(newStat, path);
           if (!isEqual(newValue, watchedInfo.lastValue)) {
             const oldValueForCallback = watchedInfo.lastValue;
             // Deep clone newValue if it's an object/array to prevent modification issues
@@ -146,7 +146,7 @@ export class StatChannel {
     let watchedInfo = this.watchedProperties.get(propertyPath);
     if (!watchedInfo) {
       const initialValue = this.currentStat
-        ? getPathValue(this.currentStat, propertyPath)
+        ? delve(this.currentStat, propertyPath)
         : null;
       watchedInfo = {
         lastValue:
