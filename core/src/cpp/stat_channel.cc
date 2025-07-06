@@ -18,6 +18,7 @@ namespace LinuxCNC
                                                                         InstanceMethod("poll", &NapiStatChannel::Poll),
                                                                         InstanceMethod("getCurrentFullStat", &NapiStatChannel::GetCurrentFullStat),
                                                                         InstanceMethod("toolInfo", &NapiStatChannel::ToolInfo),
+                                                                        InstanceMethod("disconnect", &NapiStatChannel::Disconnect),
                                                                     });
         constructor = Napi::Persistent(func);
         constructor.SuppressDestruct();
@@ -484,6 +485,13 @@ namespace LinuxCNC
         DictAddString(env, res, "comment", tdata.comment);
 
         return res;
+    }
+
+    Napi::Value NapiStatChannel::Disconnect(const Napi::CallbackInfo &info)
+    {
+        Napi::Env env = info.Env();
+        disconnect();
+        return env.Undefined();
     }
 
 }

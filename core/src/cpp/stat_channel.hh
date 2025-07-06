@@ -48,6 +48,7 @@ namespace LinuxCNC
         Napi::Value Poll(const Napi::CallbackInfo &info);               // Returns bool: true if new data was read
         Napi::Value GetCurrentFullStat(const Napi::CallbackInfo &info); // Returns the full current stat object
         Napi::Value ToolInfo(const Napi::CallbackInfo &info);
+        Napi::Value Disconnect(const Napi::CallbackInfo &info); // Disconnects from NML channel
     };
 
 }

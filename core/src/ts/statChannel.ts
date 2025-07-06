@@ -225,7 +225,10 @@ export class StatChannel {
     this.stopPolling();
     this.watchedProperties.clear();
     this.fullChangeCallbacks.clear();
-    // If the nativeInstance had a disconnect method, call it here
+    // Properly disconnect from the native NML channel
+    if (this.nativeInstance) {
+      this.nativeInstance.disconnect();
+    }
   }
 
   // --- Convenience Getters for common properties ---

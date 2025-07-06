@@ -1029,6 +1029,8 @@ export class CommandChannel {
    * Call this when done using the command channel
    */
   destroy(): void {
-    this.nativeInstance.disconnect();
+    if (this.nativeInstance) {
+      this.nativeInstance.disconnect();
+    }
   }
 }
