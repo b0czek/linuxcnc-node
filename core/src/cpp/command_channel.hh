@@ -112,6 +112,7 @@ namespace LinuxCNC
         Napi::Value SendOperatorDisplay(const Napi::CallbackInfo &info);
 
         // Misc
+        Napi::Value Disconnect(const Napi::CallbackInfo &info);
         Napi::Value WaitComplete(const Napi::CallbackInfo &info);
         Napi::Value GetSerial(const Napi::CallbackInfo &info);
     };

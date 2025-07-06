@@ -203,6 +203,7 @@ export interface NapiCommandChannelInstance {
   sendOperatorDisplay(message: string): Promise<RcsStatus>;
 
   // Misc
+  disconnect(): void;
   waitComplete(timeout?: number): RcsStatus; // Keep this synchronous
   serial: number; // For the command serial number
 }

@@ -82,6 +82,7 @@ namespace LinuxCNC
                                                                            InstanceMethod("sendOperatorText", &NapiCommandChannel::SendOperatorText),
                                                                            InstanceMethod("sendOperatorDisplay", &NapiCommandChannel::SendOperatorDisplay),
                                                                            // Misc
+                                                                           InstanceMethod("disconnect", &NapiCommandChannel::Disconnect),
                                                                            InstanceMethod("waitComplete", &NapiCommandChannel::WaitComplete),
                                                                            InstanceAccessor("serial", &NapiCommandChannel::GetSerial, nullptr),
                                                                        });
@@ -1442,6 +1443,13 @@ namespace LinuxCNC
     {
         Napi::Env env = info.Env();
         return Napi::Number::New(env, last_serial_);
+    }
+
+    Napi::Value NapiCommandChannel::Disconnect(const Napi::CallbackInfo &info)
+    {
+        Napi::Env env = info.Env();
+        disconnect();
+        return env.Undefined();
     }
 
     Napi::Value NapiCommandChannel::WaitComplete(const Napi::CallbackInfo &info)

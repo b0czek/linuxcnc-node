@@ -1029,6 +1029,6 @@ export class CommandChannel {
    * Call this when done using the command channel
    */
   destroy(): void {
-    // If nativeInstance had a disconnect or cleanup, call it here
+    this.nativeInstance.disconnect();
   }
 }
