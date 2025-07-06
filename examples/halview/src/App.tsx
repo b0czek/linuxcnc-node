@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Layout, message, ConfigProvider, theme as antdTheme, Button, InputNumber } from 'antd';
+import { Layout, message, ConfigProvider, theme as antdTheme, Button, InputNumber, Tabs } from 'antd';
 import SidebarComponent from './components/Sidebar'; 
 import WatchView from './components/WatchView';
+import GraphView from './components/GraphView';
 import HalCmdInput from './components/HalCmdInput';
 import StatusBarComponent from './components/StatusBar';
 import TooltipComponent from './components/Tooltip'; 
@@ -268,18 +269,45 @@ const App: React.FC = () => {
                 Toggle Theme ({currentTheme === 'light' ? 'Dark' : 'Light'})
             </Button>
           </Header>
-          <Content style={{ margin: '16px', overflow: 'initial', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ padding: 24, borderRadius: token.borderRadiusLG, flexGrow: 1 }}>
-              <WatchView
-                watchList={currentWatchList}
-                presets={presets}
-                onRemoveItem={handleRemoveFromWatchList}
-                onClearWatchList={handleClearWatchList}
-                onSavePreset={handleSavePreset}
-                onApplyPreset={handleApplyPreset}
-                onShowTooltip={handleShowTooltip}
-                onHideTooltip={handleHideTooltip}
-                onExecuteCommand={handleExecuteCommand}
+          <Content style={{ margin: '16px', overflow: 'initial', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 150px)' }}>
+            <div style={{ padding: 24, borderRadius: token.borderRadiusLG, flexGrow: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
+              <Tabs
+                defaultActiveKey="watch"
+                style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
+                tabBarStyle={{ flexShrink: 0 }}
+                items={[
+                  {
+                    key: 'watch',
+                    label: 'Watch',
+                    children: (
+                      <div style={{ height: '100%', overflow: 'auto' }}>
+                        <WatchView
+                          watchList={currentWatchList}
+                          presets={presets}
+                          onRemoveItem={handleRemoveFromWatchList}
+                          onClearWatchList={handleClearWatchList}
+                          onSavePreset={handleSavePreset}
+                          onApplyPreset={handleApplyPreset}
+                          onShowTooltip={handleShowTooltip}
+                          onHideTooltip={handleHideTooltip}
+                          onExecuteCommand={handleExecuteCommand}
+                        />
+                      </div>
+                    ),
+                  },
+                  {
+                    key: 'graph',
+                    label: 'Graph',
+                    children: (
+                      <div style={{ height: 'calc(100vh - 220px)', width: '100%', overflow: 'hidden' }}>
+                        <GraphView
+                          halData={fullHalData}
+                          onExecuteCommand={handleExecuteCommand}
+                        />
+                      </div>
+                    ),
+                  },
+                ]}
               />
             </div>
           </Content>
