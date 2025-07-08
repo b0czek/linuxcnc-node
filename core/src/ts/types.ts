@@ -105,28 +105,75 @@ export interface TaskStat {
   queuedMdiCommands: number;
 }
 
+/**
+ * Joint status information for a single joint in the LinuxCNC system.
+ * Each joint has various properties related to position, limits, errors, and state.
+ */
 export interface JointStat {
+  /** Type of axis configuration. LINEAR=1, ANGULAR=2. Reflects [JOINT_n]TYPE configuration parameter. */
   jointType: JointType;
+
+  /** Joint units per mm, or per degree for angular joints. Joint units are the same as machine units, unless set otherwise by [JOINT_n]UNITS configuration parameter. */
   units: number;
+
+  /** Backlash in machine units. Configuration parameter, reflects [JOINT_n]BACKLASH. */
   backlash: number;
+
+  /** Minimum limit (soft limit) for joint motion, in machine units. Configuration parameter, reflects [JOINT_n]MIN_LIMIT. */
   minPositionLimit: number;
+
+  /** Maximum limit (soft limit) for joint motion, in machine units. Configuration parameter, reflects [JOINT_n]MAX_LIMIT. */
   maxPositionLimit: number;
+
+  /** Minimum following error. Configuration parameter, reflects [JOINT_n]MIN_FERROR. */
   minFerror: number;
+
+  /** Maximum following error. Configuration parameter, reflects [JOINT_n]FERROR. */
   maxFerror: number;
+
+  /** Current following error. */
   ferrorCurrent: number;
+
+  /** Magnitude of maximum following error encountered. */
   ferrorHighMark: number;
+
+  /** Commanded output position. */
   output: number; // commanded position
+
+  /** Current input position (actual position). */
   input: number; // actual position
+
+  /** Current velocity. */
   velocity: number;
+
+  /** True when joint is in position. */
   inPosition: boolean;
+
+  /** True when homing is in progress. */
   homing: boolean;
+
+  /** True when joint has been homed. */
   homed: boolean;
+
+  /** True when axis amplifier fault is present. */
   fault: boolean;
+
+  /** True when joint is enabled. */
   enabled: boolean;
+
+  /** True when minimum soft limit was exceeded. */
   minSoftLimit: boolean;
+
+  /** True when maximum soft limit was exceeded. */
   maxSoftLimit: boolean;
+
+  /** True when minimum hard limit is exceeded. */
   minHardLimit: boolean;
+
+  /** True when maximum hard limit is exceeded. */
   maxHardLimit: boolean;
+
+  /** True when limits are overridden. */
   overrideLimits: boolean;
 }
 
