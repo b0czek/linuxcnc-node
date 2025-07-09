@@ -375,8 +375,6 @@ namespace LinuxCNC
             Napi::Object spindleObj = Napi::Object::New(env);
             DictAdd(env, spindleObj, "speed", spindles[i].speed);
             DictAdd(env, spindleObj, "override", spindles[i].spindle_scale);
-            DictAdd(env, spindleObj, "cssMaximum", spindles[i].css_maximum);
-            DictAdd(env, spindleObj, "cssFactor", spindles[i].css_factor);
             DictAdd(env, spindleObj, "direction", spindles[i].direction);
             DictAdd(env, spindleObj, "brake", (bool)(spindles[i].brake != 0));
             DictAdd(env, spindleObj, "increasing", spindles[i].increasing);

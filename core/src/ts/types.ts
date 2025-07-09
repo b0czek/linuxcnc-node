@@ -186,8 +186,6 @@ export interface AxisStat {
 export interface SpindleStat {
   speed: number;
   override: number; // override
-  cssMaximum: number;
-  cssFactor: number;
   direction: -1 | 0 | 1; // reverse, off, forward
   brake: boolean;
   increasing: -1 | 0 | 1; // decreasing, none, increasing
