@@ -778,8 +778,5 @@ export type StatPropertyWatchCallback<P extends LinuxCNCStatPaths> = (
   oldValue: GetPropertyType<LinuxCNCStat, P> | null,
   propertyPath: P
 ) => void;
-export type FullStatChangeCallback = (
-  newStat: LinuxCNCStat,
-  oldStat: LinuxCNCStat | null
-) => void;
+
 export type ErrorCallback = (error: LinuxCNCError) => void;

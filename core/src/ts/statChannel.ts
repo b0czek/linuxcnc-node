@@ -3,7 +3,6 @@ import {
   LinuxCNCStat,
   LinuxCNCStatPaths,
   StatPropertyWatchCallback,
-  FullStatChangeCallback,
   ToolEntry,
   EmcPose,
 } from "./types";
@@ -47,7 +46,6 @@ export class StatChannel {
   private currentStat: LinuxCNCStat | null = null;
   private watchedProperties: Map<LinuxCNCStatPaths, WatchedProperty> =
     new Map();
-  private fullChangeCallbacks: Set<FullStatChangeCallback> = new Set();
 
   constructor(options?: StatWatcherOptions) {
     this.nativeInstance = new addon.NativeStatChannel();
@@ -82,17 +80,7 @@ export class StatChannel {
       const updated = this.nativeInstance.poll();
       if (updated) {
         const newStat = this.nativeInstance.getCurrentFullStat();
-        const oldStat = this.currentStat;
         this.currentStat = newStat; // Update immediately for getters
-
-        // Notify full change listeners
-        this.fullChangeCallbacks.forEach((cb) => {
-          try {
-            cb(newStat, oldStat);
-          } catch (e) {
-            console.error("Error in full StatChannel change callback:", e);
-          }
-        });
 
         // Notify individual property watchers
         this.watchedProperties.forEach((watchedInfo, path) => {
@@ -123,22 +111,6 @@ export class StatChannel {
     } finally {
       this.isPolling = false;
     }
-  }
-
-  /**
-   * Adds a callback to be invoked when any part of the LinuxCNCStat object changes.
-   * @param callback The function to call on any change.
-   */
-  onFullChange(callback: FullStatChangeCallback): void {
-    this.fullChangeCallbacks.add(callback);
-  }
-
-  /**
-   * Removes a full change callback.
-   * @param callback The callback function to remove.
-   */
-  removeFullChange(callback: FullStatChangeCallback): void {
-    this.fullChangeCallbacks.delete(callback);
   }
 
   /**
@@ -240,7 +212,7 @@ export class StatChannel {
    * Retrieves the most recent full status object.
    * @returns The current LinuxCNCStat object, or null if not yet available.
    */
-  getStat(): LinuxCNCStat | null {
+  get(): LinuxCNCStat | null {
     return this.currentStat;
   }
 
@@ -250,7 +222,6 @@ export class StatChannel {
   destroy(): void {
     this.stopPolling();
     this.watchedProperties.clear();
-    this.fullChangeCallbacks.clear();
     // Properly disconnect from the native NML channel
     if (this.nativeInstance) {
       this.nativeInstance.disconnect();
