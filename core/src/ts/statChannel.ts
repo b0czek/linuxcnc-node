@@ -26,6 +26,13 @@ export interface StatWatcherOptions {
   pollInterval?: number;
 }
 
+export interface WatchOptions {
+  /** If true, the callback will be called immediately with the current value */
+  immediate?: boolean;
+  /** If true, the callback will be automatically removed after it fires once */
+  once?: boolean;
+}
+
 interface WatchedProperty {
   lastValue: any;
   callbacks: Set<StatPropertyWatchCallback<any>>;
@@ -138,11 +145,27 @@ export class StatChannel {
    * Watches a specific property path within the LinuxCNCStat object for changes.
    * @param propertyPath A dot-separated path to the property (e.g., "task.motionLine", "motion.joint.0.homed").
    * @param callback The function to call when the property's value changes.
+   * @param options Options for the watch behavior.
    */
   addWatch<P extends LinuxCNCStatPaths>(
     propertyPath: P,
-    callback: StatPropertyWatchCallback<P>
+    callback: StatPropertyWatchCallback<P>,
+    options: WatchOptions = {}
   ): void {
+    const { immediate = false, once = false } = options;
+
+    let actualCallback = callback;
+
+    // If once is true, wrap the callback to remove itself after firing
+    if (once) {
+      actualCallback = (newValue, oldValue, path) => {
+        // Remove the wrapper callback first
+        this.removeWatch(propertyPath, actualCallback);
+        // Then call the original callback
+        callback(newValue, oldValue, path);
+      };
+    }
+
     let watchedInfo = this.watchedProperties.get(propertyPath);
     if (!watchedInfo) {
       const initialValue = this.currentStat
@@ -157,7 +180,20 @@ export class StatChannel {
       };
       this.watchedProperties.set(propertyPath, watchedInfo);
     }
-    watchedInfo.callbacks.add(callback);
+    watchedInfo.callbacks.add(actualCallback);
+
+    // Notify immediately if requested
+    if (immediate && this.currentStat) {
+      const currentValue = delve(this.currentStat, propertyPath);
+      try {
+        callback(currentValue, null, propertyPath);
+      } catch (e) {
+        console.error(
+          `Error in immediate StatChannel watch callback for ${propertyPath}:`,
+          e
+        );
+      }
+    }
   }
 
   /**
