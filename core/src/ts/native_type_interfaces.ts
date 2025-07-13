@@ -114,7 +114,6 @@ export interface NapiOptions {
 export interface NapiStatChannelInstance {
   poll(): boolean; // Returns true if data was updated
   getCurrentFullStat(): LinuxCNCStat;
-  toolInfo(toolNumber: number): ToolEntry;
   disconnect(): void; // Disconnects from NML channel
 }
 

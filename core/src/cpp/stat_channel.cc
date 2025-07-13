@@ -17,7 +17,6 @@ namespace LinuxCNC
         Napi::Function func = DefineClass(env, "NativeStatChannel", {
                                                                         InstanceMethod("poll", &NapiStatChannel::Poll),
                                                                         InstanceMethod("getCurrentFullStat", &NapiStatChannel::GetCurrentFullStat),
-                                                                        InstanceMethod("toolInfo", &NapiStatChannel::ToolInfo),
                                                                         InstanceMethod("disconnect", &NapiStatChannel::Disconnect),
                                                                     });
         constructor = Napi::Persistent(func);
@@ -438,51 +437,6 @@ namespace LinuxCNC
             toolList.Set(js_idx++, toolObj);
         }
         return toolList;
-    }
-
-    Napi::Value NapiStatChannel::ToolInfo(const Napi::CallbackInfo &info)
-    {
-        Napi::Env env = info.Env();
-        if (info.Length() < 1 || !info[0].IsNumber())
-        {
-            Napi::TypeError::New(env, "Tool number (integer) expected").ThrowAsJavaScriptException();
-            return env.Null();
-        }
-        int toolno = info[0].As<Napi::Number>().Int32Value();
-
-        if (!tool_mmap_initialized_)
-        {
-            Napi::Error::New(env, "Tool mmap not initialized. Call poll() first.").ThrowAsJavaScriptException();
-            return env.Null();
-        }
-
-        // Mimic Python's tool_0_exception
-        if (toolno == 0)
-        {
-            Napi::Error::New(env, "toolInfo: for tool in spindle, use stat.toolTable[0] or equivalent access").ThrowAsJavaScriptException();
-            return env.Null();
-        }
-
-        CANON_TOOL_TABLE tdata = tooldata_entry_init();
-        int idx = tooldata_find_index_for_tool(toolno);
-
-        if (tooldata_get(&tdata, idx) != IDX_OK)
-        {
-            Napi::Error::New(env, "toolInfo: No tooldata for toolNo=" + std::to_string(toolno)).ThrowAsJavaScriptException();
-            return env.Null();
-        }
-
-        Napi::Object res = Napi::Object::New(env);
-        DictAdd(env, res, "toolNo", tdata.toolno);
-        DictAdd(env, res, "pocketNo", tdata.pocketno);
-        DictAdd(env, res, "diameter", tdata.diameter);
-        DictAdd(env, res, "frontAngle", tdata.frontangle);
-        DictAdd(env, res, "backAngle", tdata.backangle);
-        DictAdd(env, res, "orientation", tdata.orientation);
-        res.Set("offset", EmcPoseToNapiObject(env, tdata.offset));
-        DictAddString(env, res, "comment", tdata.comment);
-
-        return res;
     }
 
     Napi::Value NapiStatChannel::Disconnect(const Napi::CallbackInfo &info)

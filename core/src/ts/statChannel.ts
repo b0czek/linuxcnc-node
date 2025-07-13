@@ -205,20 +205,6 @@ export class StatChannel {
   }
 
   /**
-   * Retrieves detailed information for a specific tool number.
-   * This is a direct call to the native addon.
-   * @param toolNumber The tool number to query.
-   * @returns A Promise that resolves with the tool data.
-   */
-  async toolInfo(toolNumber: number): Promise<ToolEntry> {
-    if (!this.nativeInstance) {
-      throw new Error("StatChannel native instance not available.");
-    }
-    // The native toolInfo might throw, so we let it propagate or catch here
-    return this.nativeInstance.toolInfo(toolNumber);
-  }
-
-  /**
    * Cleans up resources, stopping the polling timer.
    */
   destroy(): void {
