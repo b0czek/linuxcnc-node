@@ -300,7 +300,6 @@ namespace LinuxCNC
         DictAdd(env, obj, "rapidRateOverride", traj_stat.rapid_scale);
         obj.Set("position", EmcPoseToNapiObject(env, traj_stat.position));
         obj.Set("actualPosition", EmcPoseToNapiObject(env, traj_stat.actualPosition));
-        DictAdd(env, obj, "velocity", traj_stat.velocity);
         DictAdd(env, obj, "acceleration", traj_stat.acceleration);
         DictAdd(env, obj, "maxVelocity", traj_stat.maxVelocity);
         DictAdd(env, obj, "maxAcceleration", traj_stat.maxAcceleration);
@@ -312,7 +311,7 @@ namespace LinuxCNC
         DictAdd(env, obj, "motionType", traj_stat.motion_type);
         DictAdd(env, obj, "distanceToGo", traj_stat.distance_to_go);
         obj.Set("dtg", EmcPoseToNapiObject(env, traj_stat.dtg));
-        DictAdd(env, obj, "currentVel", traj_stat.current_vel);
+        DictAdd(env, obj, "currentVelocity", traj_stat.current_vel);
         DictAdd(env, obj, "feedOverrideEnabled", (bool)traj_stat.feed_override_enabled);
         DictAdd(env, obj, "adaptiveFeedEnabled", (bool)traj_stat.adaptive_feed_enabled);
         DictAdd(env, obj, "feedHoldEnabled", (bool)traj_stat.feed_hold_enabled);

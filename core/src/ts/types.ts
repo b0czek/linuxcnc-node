@@ -570,10 +570,6 @@ export interface TrajectoryStat {
   /** Current actual trajectory position in machine units. */
   actualPosition: EmcPose;
 
-  /** Commanded system velocity for next segment in machine units per second. */
-  // TODO: verify if this is always in machine units
-  velocity: number;
-
   /** Default acceleration. Reflects [TRAJ]DEFAULT_ACCELERATION INI entry. */
   acceleration: number;
 
@@ -608,7 +604,7 @@ export interface TrajectoryStat {
   dtg: EmcPose;
 
   /** Current velocity in user units per second. */
-  currentVel: number;
+  currentVelocity: number;
 
   /** Enable flag for feed override. */
   feedOverrideEnabled: boolean;
