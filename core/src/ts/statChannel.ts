@@ -146,6 +146,10 @@ export class StatChannel {
    * @param propertyPath A dot-separated path to the property (e.g., "task.motionLine", "motion.joint.0.homed").
    * @param callback The function to call when the property's value changes.
    * @param options Options for the watch behavior.
+   *
+   * Note: When both `once` and `immediate` are true, the callback will be called immediately
+   * with the current value and then automatically removed. This effectively makes it a
+   * one-time getter with callback semantics.
    */
   addWatch<P extends LinuxCNCStatPaths>(
     propertyPath: P,
@@ -186,7 +190,7 @@ export class StatChannel {
     if (immediate && this.currentStat) {
       const currentValue = delve(this.currentStat, propertyPath);
       try {
-        callback(currentValue, null, propertyPath);
+        actualCallback(currentValue, null, propertyPath);
       } catch (e) {
         console.error(
           `Error in immediate StatChannel watch callback for ${propertyPath}:`,
