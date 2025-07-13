@@ -352,8 +352,7 @@ export interface TaskStat {
   /** Current program units. One of INCH, MM, CM. */
   programUnits: ProgramUnits;
 
-  /** Current RS274NGC interpreter return code. One of INTERP_OK, INTERP_EXIT, INTERP_EXECUTE_FINISH, etc. */
-  // TODO: add enum
+  /** Current RS274NGC interpreter error code. */
   interpreterErrorCode: number;
 
   /** Task paused flag. */

@@ -23,9 +23,6 @@ value_inihal_data old_inihal_data;
 #define LCNC_NODE_EXPORT_ENUM_MEMBER(env, exports, enum_val, name_override) \
     exports.Set(Napi::String::New(env, name_override), Napi::Number::New(env, static_cast<int>(enum_val)))
 
-#define LCNC_NODE_EXPORT_LOCAL_INT_CONSTANT(env, exports, name, val) \
-    exports.Set(Napi::String::New(env, name), Napi::Number::New(env, val))
-
 Napi::Object InitAll(Napi::Env env, Napi::Object exports)
 {
     exports.Set(Napi::String::New(env, "setNmlFilePath"), Napi::Function::New(env, LinuxCNC::SetNmlFilePath));
