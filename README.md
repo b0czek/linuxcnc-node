@@ -16,8 +16,16 @@ The aim is to create a comprehensive suite of Node.js libraries that allow devel
 The project is organized into modules, each corresponding to a specific area of LinuxCNC:
 
 - **`/hal`**: Bindings for the LinuxCNC Hardware Abstraction Layer (HAL).
+
+  - Compatible with LinuxCNC 2.9 and 2.10 (as of writing this).
   - Provides functionality to create HAL components, pins, parameters, signals, and interact with the HAL environment.
   - **[View HAL Module README](./hal/README.md)**
+
+- **`/hal-2.8`**: Backported version of **`/hal`** module to work with LinuxCNC 2.8 with reduced set of functionalities.
+
+  - Provides basic HAL component creation and manipulation features, but may lack some global HAL functionalities present in the main module.
+  - Created to build a simple VCP (Virtual Control Panel) interface without using Python.
+  - **[View HAL 2.8 Module README](./hal-2.8/README.md)**
 
 _(More modules will be added in the future.)_
 
