@@ -46,7 +46,10 @@
       ],
       "defines": [ 
         "NAPI_CPP_EXCEPTIONS"
-      ]
+      ],
+      "link_settings": {
+        "libraries": []
+      }
     }
   ]
 }
