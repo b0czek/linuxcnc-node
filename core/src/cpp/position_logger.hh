@@ -11,15 +11,10 @@
 #include "rcs.hh"
 #include "emc.hh"
 #include "emc_nml.hh"
+#include "position_logger_utils.hh"
 
 namespace LinuxCNC
 {
-  struct PositionPoint
-  {
-    double x, y, z, a, b, c, u, v, w;
-    int motionType;
-    std::chrono::steady_clock::time_point timestamp;
-  };
 
   class NapiPositionLogger : public Napi::ObjectWrap<NapiPositionLogger>
   {
@@ -41,8 +36,6 @@ namespace LinuxCNC
 
     // Internal methods
     void LoggerThread();
-    bool isPositionChanged(const PositionPoint &current, const PositionPoint &previous) const;
-    bool isColinear(const PositionPoint &a, const PositionPoint &b, const PositionPoint &c) const;
     std::optional<PositionPoint> getCurrentPositionInternal();
     bool connectToStatChannel();
     void disconnectFromStatChannel();

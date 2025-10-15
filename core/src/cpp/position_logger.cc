@@ -232,7 +232,7 @@ namespace LinuxCNC
       PositionPoint current = current_opt.value();
 
       // Check if position changed significantly or if it's the first/second run
-      if (first_run || second_run || isPositionChanged(current, last_position))
+      if (first_run || second_run || PositionLoggerUtils::isPositionChanged(current, last_position))
       {
         bool should_log = true;
 
@@ -241,7 +241,7 @@ namespace LinuxCNC
         {
           // Check if current, last, and second_last are colinear
           // If they are, we might skip logging this point to reduce redundant data
-          if (isColinear(current, last_position, second_last_position) &&
+          if (PositionLoggerUtils::isColinear(current, last_position, second_last_position) &&
               current.motionType == last_position.motionType &&
               last_position.motionType == second_last_position.motionType)
           {
@@ -290,50 +290,6 @@ namespace LinuxCNC
       // Sleep for the specified interval
       std::this_thread::sleep_for(std::chrono::duration<double>(logging_interval_));
     }
-  }
-
-  bool NapiPositionLogger::isPositionChanged(const PositionPoint &current, const PositionPoint &previous) const
-  {
-    // Check if any axis has changed beyond epsilon
-    const double positions_current[] = {current.x, current.y, current.z, current.a, current.b, current.c, current.u, current.v, current.w};
-    const double positions_previous[] = {previous.x, previous.y, previous.z, previous.a, previous.b, previous.c, previous.u, previous.v, previous.w};
-
-    for (size_t i = 0; i < 9; ++i)
-    {
-      if (std::abs(positions_current[i] - positions_previous[i]) > POSITION_EPSILON)
-      {
-        return true;
-      }
-    }
-
-    // Also check if motion type changed
-    return current.motionType != previous.motionType;
-  }
-
-  bool NapiPositionLogger::isColinear(const PositionPoint &a, const PositionPoint &b, const PositionPoint &c) const
-  {
-    // Based on the original position_logger.c implementation
-    static const double epsilon = 1e-4; // 1-cos(1 deg) ~= 1e-4
-    static const double tiny = 1e-10;
-
-    // Calculate direction vectors - only consider linear axes (X,Y,Z) for colinearity
-    // This matches the original implementation which only used spatial coordinates
-    double dx1 = a.x - b.x, dx2 = b.x - c.x;
-    double dy1 = a.y - b.y, dy2 = b.y - c.y;
-    double dz1 = a.z - b.z, dz2 = b.z - c.z;
-
-    double dp = std::sqrt(dx1 * dx1 + dy1 * dy1 + dz1 * dz1);
-    double dq = std::sqrt(dx2 * dx2 + dy2 * dy2 + dz2 * dz2);
-
-    if (std::abs(dp) < tiny || std::abs(dq) < tiny)
-      return true;
-
-    double dot = (dx1 * dx2 + dy1 * dy2 + dz1 * dz2) / dp / dq;
-
-    if (std::abs(1.0 - dot) < epsilon)
-      return true;
-
-    return false;
   }
 
   std::optional<PositionPoint> NapiPositionLogger::getCurrentPositionInternal()
