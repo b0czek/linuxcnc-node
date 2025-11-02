@@ -7,33 +7,34 @@
 import {
   ErrorChannel,
   CommandChannel,
+  StatChannel,
   TaskState,
   TaskMode,
   NmlMessageType,
 } from "../../src/ts";
+import { startLinuxCNC, stopLinuxCNC, setupLinuxCNC } from "./setupLinuxCNC";
 
 describe("Integration: ErrorChannel", () => {
   let errorChannel: ErrorChannel;
   let commandChannel: CommandChannel;
+  let statChannel: StatChannel;
 
   beforeAll(async () => {
+    await startLinuxCNC();
+
     errorChannel = new ErrorChannel();
     commandChannel = new CommandChannel();
+    statChannel = new StatChannel();
 
-    // Ensure machine is in a known state
-    try {
-      await commandChannel.setState(TaskState.ESTOP_RESET);
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      await commandChannel.setState(TaskState.ON);
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    } catch (e) {
-      // May already be in correct state
-    }
-  });
+    await setupLinuxCNC(commandChannel, statChannel);
+  }, 30000);
 
-  afterAll(() => {
+  afterAll(async () => {
     errorChannel.destroy();
+    statChannel.destroy();
     commandChannel.destroy();
+
+    await stopLinuxCNC();
   });
 
   describe("Basic Error Watching", () => {
@@ -61,14 +62,13 @@ describe("Integration: ErrorChannel", () => {
       // Wait for error to be polled
       await new Promise((resolve) => setTimeout(resolve, 300));
 
-      // Check if error was received
-      if (errorReceived) {
-        expect(receivedError).toBeDefined();
-        expect(receivedError.type).toBeDefined();
-        expect(receivedError.message).toBeDefined();
-        expect(typeof receivedError.message).toBe("string");
-        expect(receivedError.message.length).toBeGreaterThan(0);
-      }
+      // Expect an error to have been received
+      expect(errorReceived).toBe(true);
+      expect(receivedError).toBeDefined();
+      expect(receivedError.type).toBeDefined();
+      expect(receivedError.message).toBeDefined();
+      expect(typeof receivedError.message).toBe("string");
+      expect(receivedError.message.length).toBeGreaterThan(0);
 
       errorChannel.removeErrorCallback(callback);
     }, 10000);
@@ -105,12 +105,12 @@ describe("Integration: ErrorChannel", () => {
       await new Promise((resolve) => setTimeout(resolve, 300));
 
       // Both callbacks should receive the same error
-      if (callback1Called && callback2Called) {
-        expect(callback1Error).toBeDefined();
-        expect(callback2Error).toBeDefined();
-        expect(callback1Error.type).toBe(callback2Error.type);
-        expect(callback1Error.message).toBe(callback2Error.message);
-      }
+      expect(callback1Called).toBe(true);
+      expect(callback2Called).toBe(true);
+      expect(callback1Error).toBeDefined();
+      expect(callback2Error).toBeDefined();
+      expect(callback1Error.type).toBe(callback2Error.type);
+      expect(callback1Error.message).toBe(callback2Error.message);
 
       // Clean up
       errorChannel.removeErrorCallback(cb1);
@@ -119,18 +119,6 @@ describe("Integration: ErrorChannel", () => {
   });
 
   describe("Message Types", () => {
-    beforeEach(async () => {
-      // Ensure machine is ON for sending messages
-      try {
-        await commandChannel.setState(TaskState.ESTOP_RESET);
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        await commandChannel.setState(TaskState.ON);
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      } catch (e) {
-        // May already be in correct state
-      }
-    });
-
     it("should receive EMC_OPERATOR_ERROR messages", async () => {
       let receivedError: any = null;
 
@@ -145,11 +133,9 @@ describe("Integration: ErrorChannel", () => {
       // Send an operator error message
       await commandChannel.sendOperatorError("Test Error Message");
       await new Promise((resolve) => setTimeout(resolve, 300));
-
-      if (receivedError) {
-        expect(receivedError.type).toBe(NmlMessageType.EMC_OPERATOR_ERROR);
-        expect(receivedError.message).toContain("Test Error Message");
-      }
+      expect(receivedError).toBeDefined();
+      expect(receivedError.type).toBe(NmlMessageType.EMC_OPERATOR_ERROR);
+      expect(receivedError.message).toContain("Test Error Message");
 
       errorChannel.removeErrorCallback(callback);
     }, 10000);
@@ -169,10 +155,9 @@ describe("Integration: ErrorChannel", () => {
       await commandChannel.sendOperatorText("Test Text Message");
       await new Promise((resolve) => setTimeout(resolve, 300));
 
-      if (receivedMessage) {
-        expect(receivedMessage.type).toBe(NmlMessageType.EMC_OPERATOR_TEXT);
-        expect(receivedMessage.message).toContain("Test Text Message");
-      }
+      expect(receivedMessage).not.toBeNull();
+      expect(receivedMessage.type).toBe(NmlMessageType.EMC_OPERATOR_TEXT);
+      expect(receivedMessage.message).toContain("Test Text Message");
 
       errorChannel.removeErrorCallback(callback);
     }, 10000);
@@ -192,44 +177,12 @@ describe("Integration: ErrorChannel", () => {
       await commandChannel.sendOperatorDisplay("Test Display Message");
       await new Promise((resolve) => setTimeout(resolve, 300));
 
-      if (receivedMessage) {
-        expect(receivedMessage.type).toBe(NmlMessageType.EMC_OPERATOR_DISPLAY);
-        expect(receivedMessage.message).toContain("Test Display Message");
-      }
+      // Expect to have received the display message
+      expect(receivedMessage).toBeDefined();
+      expect(receivedMessage.type).toBe(NmlMessageType.EMC_OPERATOR_DISPLAY);
+      expect(receivedMessage.message).toContain("Test Display Message");
 
       errorChannel.removeErrorCallback(callback);
-    }, 10000);
-  });
-
-  describe("Multiple Instances", () => {
-    it("should allow multiple ErrorChannel instances", async () => {
-      const errorChannel1 = new ErrorChannel();
-      const errorChannel2 = new ErrorChannel();
-
-      let errors1: any[] = [];
-      let errors2: any[] = [];
-
-      const callback1 = (error: any) => {
-        errors1.push(error);
-      };
-      const callback2 = (error: any) => {
-        errors2.push(error);
-      };
-
-      errorChannel1.onError(callback1);
-      errorChannel2.onError(callback2);
-
-      // Send a message
-      await commandChannel.setState(TaskState.ON);
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      await commandChannel.sendOperatorText("Multi-instance test message");
-      await new Promise((resolve) => setTimeout(resolve, 400));
-
-      // Both instances should receive the error
-      // (They're both polling the same NML channel)
-
-      errorChannel1.destroy();
-      errorChannel2.destroy();
     }, 10000);
   });
 
