@@ -1,52 +1,66 @@
-import { addon } from "./constants";
+import { EventEmitter } from "events";
+import { addon, NmlMessageType } from "./constants";
 import { NapiErrorChannelInstance } from "./native_type_interfaces";
-import { LinuxCNCError, ErrorCallback } from "./types";
+import { LinuxCNCError } from "./types";
 
 export const DEFAULT_ERROR_POLL_INTERVAL = 100; // ms
 
-export interface ErrorWatcherOptions {
+export interface ErrorChannelOptions {
   pollInterval?: number;
 }
 
-export class ErrorChannel {
+interface ErrorChannelEvents {
+  message: [message: LinuxCNCError];
+  operatorError: [message: LinuxCNCError];
+  operatorText: [message: LinuxCNCError];
+  operatorDisplay: [message: LinuxCNCError];
+  nmlError: [message: LinuxCNCError];
+  nmlText: [message: LinuxCNCError];
+  nmlDisplay: [message: LinuxCNCError];
+}
+
+export class ErrorChannel extends EventEmitter<ErrorChannelEvents> {
   private nativeInstance: NapiErrorChannelInstance;
-  private pollInterval: number;
   private poller: NodeJS.Timeout | null = null;
-  private isPolling: boolean = false;
-  private errorCallbacks: Set<ErrorCallback> = new Set();
+  private isPolling = false;
 
-  constructor(options?: ErrorWatcherOptions) {
+  constructor(options?: ErrorChannelOptions) {
+    super();
     this.nativeInstance = new addon.NativeErrorChannel();
-    this.pollInterval = options?.pollInterval ?? DEFAULT_ERROR_POLL_INTERVAL;
-    this.startPolling();
+    const pollInterval = options?.pollInterval ?? DEFAULT_ERROR_POLL_INTERVAL;
+    this.poller = setInterval(() => this.poll(), pollInterval);
   }
 
-  private startPolling(): void {
-    if (this.poller || !this.nativeInstance) return;
-    this.poller = setInterval(() => this.performPoll(), this.pollInterval);
-  }
-
-  private stopPolling(): void {
-    if (this.poller) {
-      clearInterval(this.poller);
-      this.poller = null;
-    }
-  }
-
-  private async performPoll(): Promise<void> {
+  private poll(): void {
     if (this.isPolling) return;
     this.isPolling = true;
 
     try {
       const error = this.nativeInstance.poll();
       if (error) {
-        this.errorCallbacks.forEach((cb) => {
-          try {
-            cb(error);
-          } catch (e) {
-            console.error("Error in ErrorChannel callback:", e);
-          }
-        });
+        this.emit("message", error);
+
+        // Emit specific event based on message type
+        switch (error.type) {
+          case NmlMessageType.EMC_OPERATOR_ERROR:
+            this.emit("operatorError", error);
+            break;
+          case NmlMessageType.EMC_OPERATOR_TEXT:
+            this.emit("operatorText", error);
+            break;
+          case NmlMessageType.EMC_OPERATOR_DISPLAY:
+            this.emit("operatorDisplay", error);
+            break;
+          case NmlMessageType.NML_ERROR:
+            this.emit("nmlError", error);
+            break;
+          case NmlMessageType.NML_TEXT:
+            this.emit("nmlText", error);
+            break;
+          case NmlMessageType.NML_DISPLAY:
+            this.emit("nmlDisplay", error);
+            break;
+        }
       }
     } catch (e) {
       console.error("Error during ErrorChannel poll:", e);
@@ -55,49 +69,12 @@ export class ErrorChannel {
     }
   }
 
-  /**
-   * Adds a callback to be invoked when a new error/message is received.
-   * @param callback The function to call.
-   */
-  onError(callback: ErrorCallback): void {
-    this.errorCallbacks.add(callback);
-  }
-
-  /**
-   * Removes an error callback.
-   * @param callback The callback function to remove.
-   */
-  removeErrorCallback(callback: ErrorCallback): void {
-    this.errorCallbacks.delete(callback);
-  }
-
-  /**
-   * Sets the polling interval for error checks.
-   * @param interval The new interval in milliseconds.
-   */
-  setPollInterval(interval: number): void {
-    this.pollInterval = Math.max(50, interval); // Ensure a minimum interval
-    this.stopPolling();
-    this.startPolling();
-  }
-
-  /**
-   * Gets the current polling interval.
-   * @returns The interval in milliseconds.
-   */
-  getPollInterval(): number {
-    return this.pollInterval;
-  }
-
-  /**
-   * Cleans up resources, stopping the polling timer.
-   */
   destroy(): void {
-    this.stopPolling();
-    this.errorCallbacks.clear();
-    // Properly disconnect from the native NML channel
-    if (this.nativeInstance) {
-      this.nativeInstance.disconnect();
+    if (this.poller) {
+      clearInterval(this.poller);
+      this.poller = null;
     }
+    this.removeAllListeners();
+    this.nativeInstance.disconnect();
   }
 }

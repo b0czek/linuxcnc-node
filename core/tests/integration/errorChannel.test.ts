@@ -47,7 +47,7 @@ describe("Integration: ErrorChannel", () => {
         receivedError = error;
       };
 
-      errorChannel.onError(callback);
+      errorChannel.on("message", callback);
 
       // Trigger an error by trying to move with machine off
       await commandChannel.setState(TaskState.OFF);
@@ -70,10 +70,10 @@ describe("Integration: ErrorChannel", () => {
       expect(typeof receivedError.message).toBe("string");
       expect(receivedError.message.length).toBeGreaterThan(0);
 
-      errorChannel.removeErrorCallback(callback);
+      errorChannel.off("message", callback);
     }, 10000);
 
-    it("should handle multiple error callbacks", async () => {
+    it("should handle multiple error listeners", async () => {
       let callback1Called = false;
       let callback2Called = false;
       let callback1Error: any = null;
@@ -88,8 +88,8 @@ describe("Integration: ErrorChannel", () => {
         callback2Error = error;
       };
 
-      errorChannel.onError(cb1);
-      errorChannel.onError(cb2);
+      errorChannel.on("message", cb1);
+      errorChannel.on("message", cb2);
 
       // Trigger an error
       await commandChannel.setState(TaskState.OFF);
@@ -113,22 +113,20 @@ describe("Integration: ErrorChannel", () => {
       expect(callback1Error.message).toBe(callback2Error.message);
 
       // Clean up
-      errorChannel.removeErrorCallback(cb1);
-      errorChannel.removeErrorCallback(cb2);
+      errorChannel.off("message", cb1);
+      errorChannel.off("message", cb2);
     }, 10000);
   });
 
   describe("Message Types", () => {
-    it("should receive EMC_OPERATOR_ERROR messages", async () => {
+    it("should receive EMC_OPERATOR_ERROR messages on specific event", async () => {
       let receivedError: any = null;
 
       const callback = (error: any) => {
-        if (error.message.includes("Test Error Message")) {
-          receivedError = error;
-        }
+        receivedError = error;
       };
 
-      errorChannel.onError(callback);
+      errorChannel.on("operatorError", callback);
 
       // Send an operator error message
       await commandChannel.sendOperatorError("Test Error Message");
@@ -137,19 +135,17 @@ describe("Integration: ErrorChannel", () => {
       expect(receivedError.type).toBe(NmlMessageType.EMC_OPERATOR_ERROR);
       expect(receivedError.message).toContain("Test Error Message");
 
-      errorChannel.removeErrorCallback(callback);
+      errorChannel.off("operatorError", callback);
     }, 10000);
 
-    it("should receive EMC_OPERATOR_TEXT messages", async () => {
+    it("should receive EMC_OPERATOR_TEXT messages on specific event", async () => {
       let receivedMessage: any = null;
 
       const callback = (error: any) => {
-        if (error.message.includes("Test Text Message")) {
-          receivedMessage = error;
-        }
+        receivedMessage = error;
       };
 
-      errorChannel.onError(callback);
+      errorChannel.on("operatorText", callback);
 
       // Send an operator text message
       await commandChannel.sendOperatorText("Test Text Message");
@@ -159,19 +155,17 @@ describe("Integration: ErrorChannel", () => {
       expect(receivedMessage.type).toBe(NmlMessageType.EMC_OPERATOR_TEXT);
       expect(receivedMessage.message).toContain("Test Text Message");
 
-      errorChannel.removeErrorCallback(callback);
+      errorChannel.off("operatorText", callback);
     }, 10000);
 
-    it("should receive EMC_OPERATOR_DISPLAY messages", async () => {
+    it("should receive EMC_OPERATOR_DISPLAY messages on specific event", async () => {
       let receivedMessage: any = null;
 
       const callback = (error: any) => {
-        if (error.message.includes("Test Display Message")) {
-          receivedMessage = error;
-        }
+        receivedMessage = error;
       };
 
-      errorChannel.onError(callback);
+      errorChannel.on("operatorDisplay", callback);
 
       // Send an operator display message
       await commandChannel.sendOperatorDisplay("Test Display Message");
@@ -182,7 +176,28 @@ describe("Integration: ErrorChannel", () => {
       expect(receivedMessage.type).toBe(NmlMessageType.EMC_OPERATOR_DISPLAY);
       expect(receivedMessage.message).toContain("Test Display Message");
 
-      errorChannel.removeErrorCallback(callback);
+      errorChannel.off("operatorDisplay", callback);
+    }, 10000);
+
+    it("should emit both generic 'message' and specific type events", async () => {
+      let genericReceived = false;
+      let specificReceived = false;
+
+      errorChannel.on("message", () => {
+        genericReceived = true;
+      });
+      errorChannel.on("operatorText", () => {
+        specificReceived = true;
+      });
+
+      await commandChannel.sendOperatorText("Dual Event Test");
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      expect(genericReceived).toBe(true);
+      expect(specificReceived).toBe(true);
+
+      errorChannel.removeAllListeners("message");
+      errorChannel.removeAllListeners("operatorText");
     }, 10000);
   });
 
@@ -196,7 +211,7 @@ describe("Integration: ErrorChannel", () => {
         }
       };
 
-      errorChannel.onError(callback);
+      errorChannel.on("message", callback);
 
       await commandChannel.setState(TaskState.ON);
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -213,7 +228,7 @@ describe("Integration: ErrorChannel", () => {
       // Should have received multiple messages
       expect(errors.length).toEqual(5);
 
-      errorChannel.removeErrorCallback(callback);
+      errorChannel.off("message", callback);
     }, 15000);
   });
 });

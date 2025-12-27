@@ -55,16 +55,16 @@ describe("ErrorChannel", () => {
     jest.useRealTimers();
   });
 
-  describe("callback management", () => {
-    it("should call all registered callbacks when error occurs", () => {
+  describe("event emitter functionality", () => {
+    it("should emit 'message' event when message occurs", () => {
       const errorChannel = new ErrorChannel();
       const callback1 = jest.fn();
       const callback2 = jest.fn();
       const callback3 = jest.fn();
 
-      errorChannel.onError(callback1);
-      errorChannel.onError(callback2);
-      errorChannel.onError(callback3);
+      errorChannel.on("message", callback1);
+      errorChannel.on("message", callback2);
+      errorChannel.on("message", callback3);
 
       mockNativeInstance.poll.mockReturnValue(mockError);
       jest.advanceTimersByTime(DEFAULT_ERROR_POLL_INTERVAL);
@@ -76,39 +76,45 @@ describe("ErrorChannel", () => {
       errorChannel.destroy();
     });
 
-    it("should continue calling other callbacks even if one throws an error", () => {
+    it("should emit specific message type events", () => {
       const errorChannel = new ErrorChannel();
-      const errorCallback = jest.fn().mockImplementation(() => {
-        throw new Error("Callback error");
-      });
-      const goodCallback = jest.fn();
-      const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation();
+      const operatorErrorCallback = jest.fn();
+      const operatorTextCallback = jest.fn();
+      const operatorDisplayCallback = jest.fn();
 
-      errorChannel.onError(errorCallback);
-      errorChannel.onError(goodCallback);
+      errorChannel.on("operatorError", operatorErrorCallback);
+      errorChannel.on("operatorText", operatorTextCallback);
+      errorChannel.on("operatorDisplay", operatorDisplayCallback);
 
+      // Test EMC_OPERATOR_ERROR
+      mockError.type = NmlMessageType.EMC_OPERATOR_ERROR;
       mockNativeInstance.poll.mockReturnValue(mockError);
       jest.advanceTimersByTime(DEFAULT_ERROR_POLL_INTERVAL);
+      expect(operatorErrorCallback).toHaveBeenCalledWith(mockError);
 
-      expect(errorCallback).toHaveBeenCalled();
-      expect(goodCallback).toHaveBeenCalled();
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        "Error in ErrorChannel callback:",
-        expect.any(Error)
-      );
+      // Test EMC_OPERATOR_TEXT
+      mockError.type = NmlMessageType.EMC_OPERATOR_TEXT;
+      mockNativeInstance.poll.mockReturnValue(mockError);
+      jest.advanceTimersByTime(DEFAULT_ERROR_POLL_INTERVAL);
+      expect(operatorTextCallback).toHaveBeenCalledWith(mockError);
 
-      consoleErrorSpy.mockRestore();
+      // Test EMC_OPERATOR_DISPLAY
+      mockError.type = NmlMessageType.EMC_OPERATOR_DISPLAY;
+      mockNativeInstance.poll.mockReturnValue(mockError);
+      jest.advanceTimersByTime(DEFAULT_ERROR_POLL_INTERVAL);
+      expect(operatorDisplayCallback).toHaveBeenCalledWith(mockError);
+
       errorChannel.destroy();
     });
 
-    it("should not call removed callbacks", () => {
+    it("should not call removed listeners", () => {
       const errorChannel = new ErrorChannel();
       const callback1 = jest.fn();
       const callback2 = jest.fn();
 
-      errorChannel.onError(callback1);
-      errorChannel.onError(callback2);
-      errorChannel.removeErrorCallback(callback1);
+      errorChannel.on("message", callback1);
+      errorChannel.on("message", callback2);
+      errorChannel.off("message", callback1);
 
       mockNativeInstance.poll.mockReturnValue(mockError);
       jest.advanceTimersByTime(DEFAULT_ERROR_POLL_INTERVAL);
@@ -119,64 +125,39 @@ describe("ErrorChannel", () => {
       errorChannel.destroy();
     });
 
-    it("should store callbacks in a Set (unique callbacks only)", () => {
+    it("should support once() for single-use listeners", () => {
       const errorChannel = new ErrorChannel();
       const callback = jest.fn();
 
-      errorChannel.onError(callback);
-      errorChannel.onError(callback);
-      errorChannel.onError(callback);
+      errorChannel.once("message", callback);
 
       mockNativeInstance.poll.mockReturnValue(mockError);
       jest.advanceTimersByTime(DEFAULT_ERROR_POLL_INTERVAL);
+      expect(callback).toHaveBeenCalledTimes(1);
 
-      // Set only stores unique callbacks, so should only be called once
+      // Second emission should not call the callback
+      mockNativeInstance.poll.mockReturnValue(mockError);
+      jest.advanceTimersByTime(DEFAULT_ERROR_POLL_INTERVAL);
       expect(callback).toHaveBeenCalledTimes(1);
 
       errorChannel.destroy();
     });
   });
 
-  describe("setPollInterval()", () => {
-    it("should enforce minimum interval of 50ms", () => {
-      const errorChannel = new ErrorChannel();
-
-      errorChannel.setPollInterval(10);
-      expect(errorChannel.getPollInterval()).toBe(50);
-
-      errorChannel.setPollInterval(25);
-      expect(errorChannel.getPollInterval()).toBe(50);
-
-      errorChannel.setPollInterval(50);
-      expect(errorChannel.getPollInterval()).toBe(50);
-
-      errorChannel.setPollInterval(100);
-      expect(errorChannel.getPollInterval()).toBe(100);
-
-      errorChannel.destroy();
-    });
-
-    it("should restart polling with new interval", () => {
-      const errorChannel = new ErrorChannel({ pollInterval: 100 });
+  describe("polling configuration", () => {
+    it("should use custom poll interval", () => {
+      const errorChannel = new ErrorChannel({ pollInterval: 200 });
       const callback = jest.fn();
 
-      errorChannel.onError(callback);
-
-      mockNativeInstance.poll.mockClear();
-      callback.mockClear();
-
-      // Change to longer interval
-      errorChannel.setPollInterval(500);
-
-      // Simulate an error
+      errorChannel.on("message", callback);
       mockNativeInstance.poll.mockReturnValue(mockError);
 
-      // Advance by old interval - should not poll yet
-      jest.advanceTimersByTime(100);
+      // Should not poll at default interval
+      jest.advanceTimersByTime(DEFAULT_ERROR_POLL_INTERVAL);
       expect(callback).not.toHaveBeenCalled();
 
-      // Advance to new interval
-      jest.advanceTimersByTime(400);
+      // Should poll at custom interval
+      jest.advanceTimersByTime(100);
       expect(callback).toHaveBeenCalled();
 
       errorChannel.destroy();
@@ -189,7 +170,7 @@ describe("ErrorChannel", () => {
       const callback = jest.fn();
       const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation();
 
-      errorChannel.onError(callback);
+      errorChannel.on("message", callback);
 
       mockNativeInstance.poll.mockImplementationOnce(() => {
         throw new Error("Poll error");
@@ -216,7 +197,7 @@ describe("ErrorChannel", () => {
       const errorChannel = new ErrorChannel();
       const callback = jest.fn();
 
-      errorChannel.onError(callback);
+      errorChannel.on("message", callback);
       mockNativeInstance.poll.mockClear();
 
       errorChannel.destroy();
@@ -227,6 +208,17 @@ describe("ErrorChannel", () => {
       // Poll should not be called after destroy
       expect(mockNativeInstance.poll).not.toHaveBeenCalled();
       expect(callback).not.toHaveBeenCalled();
+    });
+
+    it("should remove all listeners on destroy", () => {
+      const errorChannel = new ErrorChannel();
+      const callback = jest.fn();
+
+      errorChannel.on("message", callback);
+      expect(errorChannel.listenerCount("message")).toBe(1);
+
+      errorChannel.destroy();
+      expect(errorChannel.listenerCount("message")).toBe(0);
     });
   });
 });
