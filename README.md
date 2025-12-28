@@ -16,8 +16,13 @@ The aim is to create a comprehensive suite of Node.js libraries that allow devel
 The project is organized into modules, each corresponding to a specific area of LinuxCNC:
 
 - **`/hal`**: Bindings for the LinuxCNC Hardware Abstraction Layer (HAL).
+
   - Provides functionality to create HAL components, pins, parameters, signals, and interact with the HAL environment.
   - **[View HAL Module README](./hal/README.md)**
+
+- **`/core`**: Bindings for the LinuxCNC NML interface.
+  - Provides StatChannel for real-time status monitoring, CommandChannel for machine control, ErrorChannel for error/operator messages, and PositionLogger for high-frequency position logging.
+  - **[View Core Module README](./core/README.md)**
 
 _(More modules will be added in the future.)_
 
