@@ -17,6 +17,7 @@ The project is organized into modules, each corresponding to a specific area of 
 
 - **`/hal`**: Bindings for the LinuxCNC Hardware Abstraction Layer (HAL).
 
+  - Provides functionality to create HAL components, pins, parameters, signals, and interact with the HAL environment.
   - Compatible with LinuxCNC 2.9 and 2.10 (as of writing this).
   - Provides functionality to create HAL components, pins, parameters, signals, and interact with the HAL environment.
   - **[View HAL Module README](./hal/README.md)**
@@ -27,7 +28,9 @@ The project is organized into modules, each corresponding to a specific area of 
   - Created to build a simple VCP (Virtual Control Panel) interface without using Python.
   - **[View HAL 2.8 Module README](./hal-2.8/README.md)**
 
-_(More modules will be added in the future.)_
+- **`/core`**: Bindings for the LinuxCNC NML interface.
+  - Provides StatChannel for real-time status monitoring, CommandChannel for machine control, ErrorChannel for error/operator messages, and PositionLogger for high-frequency position logging.
+  - **[View Core Module README](./core/README.md)**
 
 ## Examples
 
