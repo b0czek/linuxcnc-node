@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import {
   StatChannel,
   DEFAULT_STAT_POLL_INTERVAL,
@@ -209,12 +210,12 @@ describe("StatChannel", () => {
     });
   });
 
-  describe("addWatch()", () => {
+  describe("on()", () => {
     it("should trigger callback only when watched property changes", () => {
       const statChannel = new StatChannel();
       const callback = jest.fn();
 
-      statChannel.addWatch("task.motionLine", callback);
+      statChannel.on("task.motionLine", callback);
 
       // Update the stat
       const updatedStat = {
@@ -234,7 +235,7 @@ describe("StatChannel", () => {
       const statChannel = new StatChannel();
       const callback = jest.fn();
 
-      statChannel.addWatch("task.motionLine", callback);
+      statChannel.on("task.motionLine", callback);
 
       // Advance timer without changing the stat
       jest.advanceTimersByTime(DEFAULT_STAT_POLL_INTERVAL);
@@ -244,82 +245,11 @@ describe("StatChannel", () => {
       statChannel.destroy();
     });
 
-    it("should call callback immediately when immediate option is true", () => {
-      const statChannel = new StatChannel();
-      const callback = jest.fn();
-
-      statChannel.addWatch("task.motionLine", callback, { immediate: true });
-
-      expect(callback).toHaveBeenCalledWith(10, null, "task.motionLine");
-
-      statChannel.destroy();
-    });
-
-    it("should remove callback after first call when once option is true", () => {
-      const statChannel = new StatChannel();
-      const callback = jest.fn();
-
-      statChannel.addWatch("task.motionLine", callback, { once: true });
-
-      // Update the stat
-      const updatedStat = {
-        ...mockStat,
-        task: { ...mockStat.task, motionLine: 20 },
-      };
-      mockNativeInstance.getCurrentFullStat.mockReturnValue(updatedStat);
-
-      jest.advanceTimersByTime(DEFAULT_STAT_POLL_INTERVAL);
-
-      expect(callback).toHaveBeenCalledTimes(1);
-
-      // Update again
-      const updatedStat2 = {
-        ...mockStat,
-        task: { ...mockStat.task, motionLine: 30 },
-      };
-      mockNativeInstance.getCurrentFullStat.mockReturnValue(updatedStat2);
-
-      jest.advanceTimersByTime(DEFAULT_STAT_POLL_INTERVAL);
-
-      // Should still be called only once
-      expect(callback).toHaveBeenCalledTimes(1);
-
-      statChannel.destroy();
-    });
-
-    it("should handle both immediate and once options together", () => {
-      const statChannel = new StatChannel();
-      const callback = jest.fn();
-
-      statChannel.addWatch("task.motionLine", callback, {
-        immediate: true,
-        once: true,
-      });
-
-      // Should be called immediately
-      expect(callback).toHaveBeenCalledTimes(1);
-      expect(callback).toHaveBeenCalledWith(10, null, "task.motionLine");
-
-      // Update the stat
-      const updatedStat = {
-        ...mockStat,
-        task: { ...mockStat.task, motionLine: 20 },
-      };
-      mockNativeInstance.getCurrentFullStat.mockReturnValue(updatedStat);
-
-      jest.advanceTimersByTime(DEFAULT_STAT_POLL_INTERVAL);
-
-      // Should not be called again
-      expect(callback).toHaveBeenCalledTimes(1);
-
-      statChannel.destroy();
-    });
-
     it("should handle object value changes with deep comparison", () => {
       const statChannel = new StatChannel();
       const callback = jest.fn();
 
-      statChannel.addWatch("motion.traj.position", callback);
+      statChannel.on("motion.traj.position", callback);
 
       // Update the stat
       const newPosition = { ...mockStat.motion.traj.position, x: 10, y: 20 };
@@ -351,8 +281,8 @@ describe("StatChannel", () => {
       const goodCallback = jest.fn();
       const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation();
 
-      statChannel.addWatch("task.motionLine", errorCallback);
-      statChannel.addWatch("task.motionLine", goodCallback);
+      statChannel.on("task.motionLine", errorCallback);
+      statChannel.on("task.motionLine", goodCallback);
 
       // Update the stat
       const updatedStat = {
@@ -370,15 +300,69 @@ describe("StatChannel", () => {
       consoleErrorSpy.mockRestore();
       statChannel.destroy();
     });
+
+    it("should support method chaining", () => {
+      const statChannel = new StatChannel();
+      const callback = jest.fn();
+
+      const result = statChannel.on("task.motionLine", callback);
+      expect(result).toBe(statChannel);
+
+      statChannel.destroy();
+    });
   });
 
-  describe("removeWatch()", () => {
+  describe("once()", () => {
+    it("should remove callback after first call", () => {
+      const statChannel = new StatChannel();
+      const callback = jest.fn();
+
+      statChannel.once("task.motionLine", callback);
+
+      // Update the stat
+      const updatedStat = {
+        ...mockStat,
+        task: { ...mockStat.task, motionLine: 20 },
+      };
+      mockNativeInstance.getCurrentFullStat.mockReturnValue(updatedStat);
+
+      jest.advanceTimersByTime(DEFAULT_STAT_POLL_INTERVAL);
+
+      expect(callback).toHaveBeenCalledTimes(1);
+
+      // Update again
+      const updatedStat2 = {
+        ...mockStat,
+        task: { ...mockStat.task, motionLine: 30 },
+      };
+      mockNativeInstance.getCurrentFullStat.mockReturnValue(updatedStat2);
+
+      jest.advanceTimersByTime(DEFAULT_STAT_POLL_INTERVAL);
+
+      // Should still be called only once
+      expect(callback).toHaveBeenCalledTimes(1);
+
+      statChannel.destroy();
+    });
+
+    it("should support method chaining", () => {
+      const statChannel = new StatChannel();
+      const callback = jest.fn();
+
+      const result = statChannel.once("task.motionLine", callback);
+      expect(result).toBe(statChannel);
+
+      statChannel.destroy();
+    });
+  });
+
+  describe("off()", () => {
     it("should remove a specific callback and not trigger it", () => {
       const statChannel = new StatChannel();
       const callback = jest.fn();
 
-      statChannel.addWatch("task.motionLine", callback);
-      statChannel.removeWatch("task.motionLine", callback);
+      statChannel.on("task.motionLine", callback);
+      statChannel.off("task.motionLine", callback);
 
       // Update the stat
       const updatedStat = {
@@ -399,9 +383,9 @@ describe("StatChannel", () => {
       const callback1 = jest.fn();
       const callback2 = jest.fn();
 
-      statChannel.addWatch("task.motionLine", callback1);
-      statChannel.addWatch("task.motionLine", callback2);
-      statChannel.removeWatch("task.motionLine", callback1);
+      statChannel.on("task.motionLine", callback1);
+      statChannel.on("task.motionLine", callback2);
+      statChannel.off("task.motionLine", callback1);
 
       // Update the stat
       const updatedStat = {
@@ -414,6 +398,40 @@ describe("StatChannel", () => {
 
       expect(callback1).not.toHaveBeenCalled();
       expect(callback2).toHaveBeenCalledWith(20, 10, "task.motionLine");
+
+      statChannel.destroy();
+    });
+
+    it("should support method chaining", () => {
+      const statChannel = new StatChannel();
+      const callback = jest.fn();
+
+      statChannel.on("task.motionLine", callback);
+      const result = statChannel.off("task.motionLine", callback);
+      expect(result).toBe(statChannel);
+
+      statChannel.destroy();
+    });
+  });
+
+  describe("removeListener()", () => {
+    it("should be an alias for off()", () => {
+      const statChannel = new StatChannel();
+      const callback = jest.fn();
+
+      statChannel.on("task.motionLine", callback);
+      statChannel.removeListener("task.motionLine", callback);
+
+      // Update the stat
+      const updatedStat = {
+        ...mockStat,
+        task: { ...mockStat.task, motionLine: 20 },
+      };
+      mockNativeInstance.getCurrentFullStat.mockReturnValue(updatedStat);
+
+      jest.advanceTimersByTime(DEFAULT_STAT_POLL_INTERVAL);
+
+      expect(callback).not.toHaveBeenCalled();
 
       statChannel.destroy();
     });

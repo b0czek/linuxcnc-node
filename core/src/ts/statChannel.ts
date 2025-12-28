@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { NapiStatChannelInstance } from "./native_type_interfaces";
 import {
   LinuxCNCStat,
@@ -25,19 +26,11 @@ export interface StatWatcherOptions {
   pollInterval?: number;
 }
 
-export interface WatchOptions {
-  /** If true, the callback will be called immediately with the current value */
-  immediate?: boolean;
-  /** If true, the callback will be automatically removed after it fires once */
-  once?: boolean;
-}
-
 interface WatchedProperty {
   lastValue: any;
-  callbacks: Set<StatPropertyWatchCallback<any>>;
 }
 
-export class StatChannel {
+export class StatChannel extends EventEmitter {
   private nativeInstance: NapiStatChannelInstance;
   private pollInterval: number;
   private poller: NodeJS.Timeout | null = null;
@@ -48,6 +41,7 @@ export class StatChannel {
     new Map();
 
   constructor(options?: StatWatcherOptions) {
+    super();
     this.nativeInstance = new addon.NativeStatChannel();
     this.currentStat = this.nativeInstance.getCurrentFullStat();
 
@@ -82,7 +76,7 @@ export class StatChannel {
         const newStat = this.nativeInstance.getCurrentFullStat();
         this.currentStat = newStat; // Update immediately for getters
 
-        // Notify individual property watchers
+        // Notify individual property watchers via EventEmitter
         this.watchedProperties.forEach((watchedInfo, path) => {
           const newValue = delve(newStat, path);
           if (!isEqual(newValue, watchedInfo.lastValue)) {
@@ -92,16 +86,24 @@ export class StatChannel {
               typeof newValue === "object" && newValue !== null
                 ? JSON.parse(JSON.stringify(newValue))
                 : newValue;
-            watchedInfo.callbacks.forEach((cb) => {
+            // Emit the event to each listener individually to handle errors
+            // Use rawListeners to get the actual listener wrappers (needed for once() to work)
+            const listeners = this.rawListeners(path);
+            for (const listener of listeners) {
               try {
-                cb(newValue, oldValueForCallback, path);
+                // Call the listener - for once() wrappers, this properly removes them
+                (listener as (...args: any[]) => void)(
+                  newValue,
+                  oldValueForCallback,
+                  path
+                );
               } catch (e) {
                 console.error(
                   `Error in StatChannel watch callback for ${path}:`,
                   e
                 );
               }
-            });
+            }
           }
         });
       }
@@ -114,80 +116,85 @@ export class StatChannel {
   }
 
   /**
-   * Watches a specific property path within the LinuxCNCStat object for changes.
-   * @param propertyPath A dot-separated path to the property (e.g., "task.motionLine", "motion.joint.0.homed").
-   * @param callback The function to call when the property's value changes.
-   * @param options Options for the watch behavior.
-   *
-   * Note: When both `once` and `immediate` are true, the callback will be called immediately
-   * with the current value and then automatically removed. This effectively makes it a
-   * one-time getter with callback semantics.
+   * Ensures that a property path is being tracked for changes.
+   * This initializes the lastValue for comparing changes.
    */
-  addWatch<P extends LinuxCNCStatPaths>(
-    propertyPath: P,
-    callback: StatPropertyWatchCallback<P>,
-    options: WatchOptions = {}
-  ): void {
-    const { immediate = false, once = false } = options;
-
-    let actualCallback = callback;
-
-    // If once is true, wrap the callback to remove itself after firing
-    if (once) {
-      actualCallback = (newValue, oldValue, path) => {
-        // Remove the wrapper callback first
-        this.removeWatch(propertyPath, actualCallback);
-        // Then call the original callback
-        callback(newValue, oldValue, path);
-      };
-    }
-
-    let watchedInfo = this.watchedProperties.get(propertyPath);
-    if (!watchedInfo) {
+  private ensureWatched(propertyPath: LinuxCNCStatPaths): void {
+    if (!this.watchedProperties.has(propertyPath)) {
       const initialValue = this.currentStat
         ? delve(this.currentStat, propertyPath)
         : null;
-      watchedInfo = {
+      this.watchedProperties.set(propertyPath, {
         lastValue:
           typeof initialValue === "object" && initialValue !== null
             ? JSON.parse(JSON.stringify(initialValue))
             : initialValue,
-        callbacks: new Set(),
-      };
-      this.watchedProperties.set(propertyPath, watchedInfo);
-    }
-    watchedInfo.callbacks.add(actualCallback);
-
-    // Notify immediately if requested
-    if (immediate && this.currentStat) {
-      const currentValue = delve(this.currentStat, propertyPath);
-      try {
-        actualCallback(currentValue, null, propertyPath);
-      } catch (e) {
-        console.error(
-          `Error in immediate StatChannel watch callback for ${propertyPath}:`,
-          e
-        );
-      }
+      });
     }
   }
 
   /**
-   * Removes a watch callback for a specific property path.
-   * @param propertyPath The property path.
-   * @param callback The callback function to remove.
+   * Registers a listener for changes to a specific property path.
+   * @param propertyPath A dot-separated path to the property (e.g., "task.motionLine", "motion.joint.0.homed").
+   * @param listener The function to call when the property's value changes.
+   * @returns this (for chaining)
    */
-  removeWatch<P extends LinuxCNCStatPaths>(
+  on<P extends LinuxCNCStatPaths>(
     propertyPath: P,
-    callback: StatPropertyWatchCallback<P>
-  ): void {
-    const watchedInfo = this.watchedProperties.get(propertyPath);
-    if (watchedInfo) {
-      watchedInfo.callbacks.delete(callback);
-      if (watchedInfo.callbacks.size === 0) {
-        this.watchedProperties.delete(propertyPath);
-      }
+    listener: StatPropertyWatchCallback<P>
+  ): this {
+    this.ensureWatched(propertyPath);
+    return super.on(propertyPath, listener as (...args: any[]) => void);
+  }
+
+  /**
+   * Registers a one-time listener for changes to a specific property path.
+   * The listener will be removed after it fires once.
+   * @param propertyPath A dot-separated path to the property.
+   * @param listener The function to call when the property's value changes.
+   * @returns this (for chaining)
+   */
+  once<P extends LinuxCNCStatPaths>(
+    propertyPath: P,
+    listener: StatPropertyWatchCallback<P>
+  ): this {
+    this.ensureWatched(propertyPath);
+    return super.once(propertyPath, listener as (...args: any[]) => void);
+  }
+
+  /**
+   * Removes a listener for a specific property path.
+   * @param propertyPath The property path.
+   * @param listener The listener function to remove.
+   * @returns this (for chaining)
+   */
+  off<P extends LinuxCNCStatPaths>(
+    propertyPath: P,
+    listener: StatPropertyWatchCallback<P>
+  ): this {
+    const result = super.off(
+      propertyPath,
+      listener as (...args: any[]) => void
+    );
+    // Clean up the watched property if no more listeners
+    if (this.listenerCount(propertyPath) === 0) {
+      this.watchedProperties.delete(propertyPath);
     }
+    return result;
+  }
+
+  /**
+   * Removes a listener for a specific property path.
+   * Alias for off().
+   * @param propertyPath The property path.
+   * @param listener The listener function to remove.
+   * @returns this (for chaining)
+   */
+  removeListener<P extends LinuxCNCStatPaths>(
+    propertyPath: P,
+    listener: StatPropertyWatchCallback<P>
+  ): this {
+    return this.off(propertyPath, listener);
   }
 
   /**
@@ -222,6 +229,7 @@ export class StatChannel {
   destroy(): void {
     this.stopPolling();
     this.watchedProperties.clear();
+    this.removeAllListeners();
     // Properly disconnect from the native NML channel
     if (this.nativeInstance) {
       this.nativeInstance.disconnect();
