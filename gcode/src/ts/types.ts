@@ -395,4 +395,12 @@ export interface ParseOptions {
   iniPath: string;
   /** Progress callback, called periodically during parsing */
   onProgress?: (progress: ParseProgress) => void;
+  /**
+   * Target number of progress updates during parsing.
+   * The actual interval is calculated based on file size to achieve
+   * approximately this many updates. Default is 40.
+   * Set to 0 to disable progress callbacks entirely.
+   * @default 40
+   */
+  progressUpdates?: number;
 }

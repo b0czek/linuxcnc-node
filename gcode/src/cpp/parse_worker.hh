@@ -23,7 +23,8 @@ namespace GCodeParser
         Napi::Function &callback,
         Napi::Function &progressCallback,
         const std::string &filepath,
-        const std::string &iniPath);
+        const std::string &iniPath,
+        int progressUpdates = 40);
 
     ~ParseWorker();
 
@@ -35,6 +36,7 @@ namespace GCodeParser
   private:
     std::string filepath_;
     std::string iniPath_;
+    int progressUpdates_;
     ParseResult result_;
     Napi::FunctionReference progressCallback_;
 

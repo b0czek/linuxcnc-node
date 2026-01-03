@@ -24,12 +24,13 @@ namespace GCodeParser
 {
 
   /**
-   * parseGCode(filepath, iniPath, progressCallback, callback)
+   * parseGCode(filepath, iniPath, progressUpdates, progressCallback, callback)
    *
    * Asynchronously parse a G-code file.
    *
    * @param filepath - Path to the G-code file
    * @param iniPath - Path to the LinuxCNC INI file
+   * @param progressUpdates - Target number of progress updates (0 to disable)
    * @param progressCallback - Function called with progress updates
    * @param callback - Function called with (error, result) when complete
    */
@@ -38,9 +39,9 @@ namespace GCodeParser
     Napi::Env env = info.Env();
 
     // Validate arguments
-    if (info.Length() < 4)
+    if (info.Length() < 5)
     {
-      Napi::TypeError::New(env, "Expected 4 arguments: filepath, iniPath, progressCallback, callback")
+      Napi::TypeError::New(env, "Expected 5 arguments: filepath, iniPath, progressUpdates, progressCallback, callback")
           .ThrowAsJavaScriptException();
       return env.Undefined();
     }
@@ -59,14 +60,21 @@ namespace GCodeParser
       return env.Undefined();
     }
 
-    if (!info[2].IsFunction())
+    if (!info[2].IsNumber())
+    {
+      Napi::TypeError::New(env, "progressUpdates must be a number")
+          .ThrowAsJavaScriptException();
+      return env.Undefined();
+    }
+
+    if (!info[3].IsFunction())
     {
       Napi::TypeError::New(env, "progressCallback must be a function")
           .ThrowAsJavaScriptException();
       return env.Undefined();
     }
 
-    if (!info[3].IsFunction())
+    if (!info[4].IsFunction())
     {
       Napi::TypeError::New(env, "callback must be a function")
           .ThrowAsJavaScriptException();
@@ -75,11 +83,12 @@ namespace GCodeParser
 
     std::string filepath = info[0].As<Napi::String>().Utf8Value();
     std::string iniPath = info[1].As<Napi::String>().Utf8Value();
-    Napi::Function progressCallback = info[2].As<Napi::Function>();
-    Napi::Function callback = info[3].As<Napi::Function>();
+    int progressUpdates = info[2].As<Napi::Number>().Int32Value();
+    Napi::Function progressCallback = info[3].As<Napi::Function>();
+    Napi::Function callback = info[4].As<Napi::Function>();
 
     // Create and queue async worker
-    ParseWorker *worker = new ParseWorker(callback, progressCallback, filepath, iniPath);
+    ParseWorker *worker = new ParseWorker(callback, progressCallback, filepath, iniPath, progressUpdates);
     worker->Queue();
 
     return env.Undefined();

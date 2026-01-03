@@ -14,10 +14,12 @@ namespace GCodeParser
       Napi::Function &callback,
       Napi::Function &progressCallback,
       const std::string &filepath,
-      const std::string &iniPath)
+      const std::string &iniPath,
+      int progressUpdates)
       : Napi::AsyncProgressWorker<ParseProgress>(callback),
         filepath_(filepath),
-        iniPath_(iniPath)
+        iniPath_(iniPath),
+        progressUpdates_(progressUpdates)
   {
     if (!progressCallback.IsEmpty() && progressCallback.IsFunction())
     {
@@ -37,7 +39,7 @@ namespace GCodeParser
         progress.Send(&p, 1);
       };
 
-      result_ = parseFile(filepath_, iniPath_, progressFn);
+      result_ = parseFile(filepath_, iniPath_, progressFn, progressUpdates_);
     }
     catch (const std::exception &e)
     {

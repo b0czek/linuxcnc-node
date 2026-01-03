@@ -70,10 +70,12 @@ export async function parseGCode(
   return new Promise<GCodeParseResult>((resolve, reject) => {
     const progressCallback =
       options.onProgress || ((_progress: ParseProgress) => {});
+    const progressUpdates = options.progressUpdates ?? 40;
 
     addon.parseGCode(
       filepath,
       options.iniPath,
+      progressUpdates,
       progressCallback,
       (error: Error | null, result: GCodeParseResult) => {
         if (error) {

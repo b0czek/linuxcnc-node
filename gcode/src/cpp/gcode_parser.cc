@@ -31,7 +31,8 @@ namespace GCodeParser
   ParseResult parseFile(
       const std::string &filepath,
       const std::string &iniPath,
-      std::function<void(const ParseProgress &)> progressCallback)
+      std::function<void(const ParseProgress &)> progressCallback,
+      int progressUpdates)
   {
     // Serialize access to the interpreter
     std::lock_guard<std::mutex> lock(parser_mutex);
@@ -102,7 +103,13 @@ namespace GCodeParser
       // Execute the file
       int result = INTERP_OK;
       size_t lineCount = 0;
-      const size_t progressInterval = 50; // Report progress every N lines
+
+      // Adaptive progress interval: aim for ~progressUpdates total updates
+      // Estimate lines based on file size (~25 bytes per line average for G-code)
+      const size_t estimatedLines = std::max(ctx.totalBytes / 25, size_t(100));
+      const size_t progressInterval = progressUpdates > 0 
+          ? std::max(estimatedLines / static_cast<size_t>(progressUpdates), size_t(1))
+          : SIZE_MAX; // Effectively disable if progressUpdates is 0
 
       while (RESULT_OK(result))
       {

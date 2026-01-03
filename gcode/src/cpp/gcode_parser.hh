@@ -20,13 +20,15 @@ namespace GCodeParser
    * @param filepath Path to the G-code file
    * @param iniPath Path to the LinuxCNC INI file
    * @param progressCallback Optional callback for progress updates
+   * @param progressUpdates Target number of progress updates (0 to disable, default 40)
    * @return ParseResult containing operations and extents
    * @throws std::runtime_error on parse failure
    */
   ParseResult parseFile(
       const std::string &filepath,
       const std::string &iniPath,
-      std::function<void(const ParseProgress &)> progressCallback = nullptr);
+      std::function<void(const ParseProgress &)> progressCallback = nullptr,
+      int progressUpdates = 40);
 
 } // namespace GCodeParser
 
