@@ -82,28 +82,30 @@ namespace GCodeParser
     Callback().Call({error.Value(), env.Null()});
   }
 
-  Napi::Object ParseWorker::positionToJS(Napi::Env env, const Position &pos)
+  Napi::Float64Array ParseWorker::positionToJS(Napi::Env env, const Position &pos)
   {
-    Napi::Object obj = Napi::Object::New(env);
-    obj.Set("x", Napi::Number::New(env, pos.x));
-    obj.Set("y", Napi::Number::New(env, pos.y));
-    obj.Set("z", Napi::Number::New(env, pos.z));
-    obj.Set("a", Napi::Number::New(env, pos.a));
-    obj.Set("b", Napi::Number::New(env, pos.b));
-    obj.Set("c", Napi::Number::New(env, pos.c));
-    obj.Set("u", Napi::Number::New(env, pos.u));
-    obj.Set("v", Napi::Number::New(env, pos.v));
-    obj.Set("w", Napi::Number::New(env, pos.w));
-    return obj;
+    // Return as Float64Array(9): [x, y, z, a, b, c, u, v, w]
+    Napi::Float64Array arr = Napi::Float64Array::New(env, 9);
+    arr[0] = pos.x;
+    arr[1] = pos.y;
+    arr[2] = pos.z;
+    arr[3] = pos.a;
+    arr[4] = pos.b;
+    arr[5] = pos.c;
+    arr[6] = pos.u;
+    arr[7] = pos.v;
+    arr[8] = pos.w;
+    return arr;
   }
 
-  Napi::Object ParseWorker::position3ToJS(Napi::Env env, const Position3 &pos)
+  Napi::Float64Array ParseWorker::position3ToJS(Napi::Env env, const Position3 &pos)
   {
-    Napi::Object obj = Napi::Object::New(env);
-    obj.Set("x", Napi::Number::New(env, pos.x));
-    obj.Set("y", Napi::Number::New(env, pos.y));
-    obj.Set("z", Napi::Number::New(env, pos.z));
-    return obj;
+    // Return as Float64Array(3): [x, y, z]
+    Napi::Float64Array arr = Napi::Float64Array::New(env, 3);
+    arr[0] = pos.x;
+    arr[1] = pos.y;
+    arr[2] = pos.z;
+    return arr;
   }
 
   Napi::Object ParseWorker::toolDataToJS(Napi::Env env, const ToolData &tool)

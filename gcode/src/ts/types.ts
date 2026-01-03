@@ -61,26 +61,32 @@ export enum Units {
 
 /**
  * 9-axis position representing a complete machine pose.
+ * Stored as Float64Array for performance (avoids V8 hidden class transitions).
+ *
+ * Index mapping:
+ * - [0] = x: X-axis position
+ * - [1] = y: Y-axis position
+ * - [2] = z: Z-axis position
+ * - [3] = a: A-axis rotation (around X) in degrees
+ * - [4] = b: B-axis rotation (around Y) in degrees
+ * - [5] = c: C-axis rotation (around Z) in degrees
+ * - [6] = u: U-axis auxiliary linear position
+ * - [7] = v: V-axis auxiliary linear position
+ * - [8] = w: W-axis auxiliary linear position
  */
-export interface Position {
-  /** X-axis position */
-  x: number;
-  /** Y-axis position */
-  y: number;
-  /** Z-axis position */
-  z: number;
-  /** A-axis rotation (around X) in degrees */
-  a: number;
-  /** B-axis rotation (around Y) in degrees */
-  b: number;
-  /** C-axis rotation (around Z) in degrees */
-  c: number;
-  /** U-axis auxiliary linear position */
-  u: number;
-  /** V-axis auxiliary linear position */
-  v: number;
-  /** W-axis auxiliary linear position */
-  w: number;
+export type Position = Float64Array;
+
+/** Position array indices for readable access */
+export const enum PositionIndex {
+  X = 0,
+  Y = 1,
+  Z = 2,
+  A = 3,
+  B = 4,
+  C = 5,
+  U = 6,
+  V = 7,
+  W = 8,
 }
 
 /**
@@ -176,8 +182,8 @@ export interface RigidTapOperation {
   type: OperationType.RIGID_TAP;
   /** Source G-code line number */
   lineNumber: number;
-  /** Target tap position (only X, Y, Z are used) */
-  pos: { x: number; y: number; z: number };
+  /** Target tap position as Float64Array(3): [x, y, z] */
+  pos: Float64Array;
   /** Tap scale factor */
   scale: number;
 }
@@ -355,12 +361,13 @@ export type GCodeOperation =
 
 /**
  * Bounding box extents of the parsed G-code program.
+ * Min/max stored as Float64Array(3): [x, y, z]
  */
 export interface Extents {
-  /** Minimum coordinates encountered */
-  min: { x: number; y: number; z: number };
-  /** Maximum coordinates encountered */
-  max: { x: number; y: number; z: number };
+  /** Minimum coordinates encountered as Float64Array(3): [x, y, z] */
+  min: Float64Array;
+  /** Maximum coordinates encountered as Float64Array(3): [x, y, z] */
+  max: Float64Array;
 }
 
 /**
