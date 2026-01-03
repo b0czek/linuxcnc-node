@@ -1,0 +1,58 @@
+{
+  "name": "@linuxcnc-node/gcode",
+  "version": "1.0.0",
+  "description": "Node.js G-code parser using LinuxCNC rs274ngc interpreter",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build:ts": "tsc",
+    "build:cpp": "node-gyp configure && node-gyp build",
+    "build": "npm run build:cpp && npm run build:ts",
+    "rebuild": "node-gyp rebuild",
+    "prepublishOnly": "npm run build",
+    "test": "jest --runInBand",
+    "test:integration": "jest --runInBand --testPathPattern=tests/integration",
+    "test:coverage": "jest --coverage --runInBand"
+  },
+  "author": "Dariusz Majnert",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/b0czek/linuxcnc-node.git",
+    "directory": "gcode"
+  },
+  "license": "GPL-2.0-only",
+  "dependencies": {
+    "node-addon-api": "^8.3.1"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.15.21",
+    "jest": "^29.7.0",
+    "node-gyp": "^11.2.0",
+    "ts-jest": "^29.3.4",
+    "typescript": "^5.8.3"
+  },
+  "files": [
+    "dist/",
+    "src/cpp",
+    "binding.gyp",
+    "README.md"
+  ],
+  "gypfile": true,
+  "os": [
+    "linux"
+  ],
+  "keywords": [
+    "linuxcnc",
+    "gcode",
+    "cnc",
+    "parser",
+    "rs274ngc",
+    "interpreter",
+    "machining",
+    "cam",
+    "native",
+    "addon",
+    "bindings"
+  ]
+}

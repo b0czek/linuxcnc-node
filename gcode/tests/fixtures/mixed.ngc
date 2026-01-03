@@ -1,0 +1,65 @@
+; Comprehensive mixed operations test file
+; Tests various G-code operations together
+
+G21 ; mm mode (units change)
+G17 ; XY plane (plane change)
+G90 ; absolute mode
+
+(This is a comment in parentheses)
+; This is a semicolon comment
+
+; Tool setup
+T1 M6
+G43 H1
+
+; Work coordinate
+G54
+
+; Rapid to start
+G0 X0 Y0 Z5
+
+; Feed rate change
+F150
+
+; Linear plunge
+G1 Z-2
+
+; Square pocket with arcs at corners
+G1 X30 Y0
+G3 X35 Y5 I0 J5
+G1 X35 Y25
+G3 X30 Y30 I-5 J0
+G1 X5 Y30
+G3 X0 Y25 I0 J-5
+G1 X0 Y5
+G3 X5 Y0 I5 J0
+G1 X30 Y0
+
+; Change to inch mode temporarily
+G20
+G0 X0 Y0
+G1 Y2
+G1 X1.4
+G1 X0 Y0 
+G21 ; Back to mm
+
+; Dwell
+G4 P0.5
+
+; Plane change to XZ
+G18
+G0 X10 Z0 Y-5
+G2 X20 Z0 I5 K0 ; Arc in XZ plane
+G17 ; Back to XY
+
+; G92 offset test
+G92 X0 Y0
+G1 X5 Y5 F100
+G92.1 ; Clear G92
+
+; Retract and end
+G0 Z20
+G49
+
+(End of program)
+M2

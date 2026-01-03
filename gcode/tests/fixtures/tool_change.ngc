@@ -1,0 +1,29 @@
+; Tool change test file
+; Tests T word and M6 tool change
+
+G21 ; mm mode
+G17 ; XY plane
+G90 ; absolute mode
+
+; Start with tool 1
+T1 M6
+G43 H1 ; Tool length compensation
+
+G0 X0 Y0 Z10
+G1 Z0 F100
+G1 X20 Y0 F200
+
+; Tool change to tool 2
+G0 Z10
+T2 M6
+G43 H2
+
+G0 X0 Y20
+G1 Z0 F100
+G1 X20 Y20 F200
+
+; Retract and end
+G0 Z10
+G49 ; Cancel tool offset
+
+M2
