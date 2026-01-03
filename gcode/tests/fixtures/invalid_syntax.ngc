@@ -1,0 +1,12 @@
+; Invalid G-code syntax test file
+; This file contains intentional errors to test error handling
+
+G21
+G17
+G90
+
+; Invalid G-code - G999 doesn't exist
+G999 X10 Y10
+
+; This should cause the interpreter to fail
+M2

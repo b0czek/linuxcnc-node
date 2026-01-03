@@ -77,7 +77,7 @@ export enum Units {
 export type Position = Float64Array;
 
 /** Position array indices for readable access */
-export const enum PositionIndex {
+export enum PositionIndex {
   X = 0,
   Y = 1,
   Z = 2,

@@ -16,3 +16,8 @@ coverage/
 # OS files
 .DS_Store
 Thumbs.db
+large_1mb.ngc
+
+
+*.var
+*.var.bak
