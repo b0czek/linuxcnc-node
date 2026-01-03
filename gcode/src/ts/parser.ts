@@ -4,14 +4,29 @@
  * Provides async G-code file parsing using LinuxCNC's rs274ngc interpreter.
  */
 
-import {
-  GCodeParseResult,
-  ParseOptions,
-  ParseProgress,
-} from "./types";
+import { GCodeParseResult, ParseOptions, ParseProgress } from "./types";
 
+// Load native addon from either installed location (node_modules) or debug location
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const addon = require("../../build/Release/gcode_addon.node");
+const addon = (() => {
+  const paths = [
+    "../build/Release/gcode_addon.node", // Installed in node_modules (path relative to dist/)
+    "../../build/Release/gcode_addon.node", // Local development (path relative to src/ts/)
+  ];
+
+  for (const path of paths) {
+    try {
+      return require(path);
+    } catch {
+      // Try next path
+    }
+  }
+
+  throw new Error(
+    `Failed to load gcode_addon.node. Tried paths:\n` +
+      paths.map((p) => `  - ${p}`).join("\n")
+  );
+})();
 
 /**
  * Parse a G-code file asynchronously.
@@ -53,7 +68,8 @@ export async function parseGCode(
   }
 
   return new Promise<GCodeParseResult>((resolve, reject) => {
-    const progressCallback = options.onProgress || ((_progress: ParseProgress) => {});
+    const progressCallback =
+      options.onProgress || ((_progress: ParseProgress) => {});
 
     addon.parseGCode(
       filepath,
