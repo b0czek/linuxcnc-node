@@ -190,18 +190,21 @@ namespace GCodeParser
   struct TraverseOp
   {
     static constexpr OperationType type = OperationType::TRAVERSE;
+    int lineNumber = 0;
     Position pos;
   };
 
   struct FeedOp
   {
     static constexpr OperationType type = OperationType::FEED;
+    int lineNumber = 0;
     Position pos;
   };
 
   struct ArcOp
   {
     static constexpr OperationType type = OperationType::ARC;
+    int lineNumber = 0;
     Position pos;
     Plane plane = Plane::XY;
     ArcData arcData;
@@ -210,12 +213,14 @@ namespace GCodeParser
   struct ProbeOp
   {
     static constexpr OperationType type = OperationType::PROBE;
+    int lineNumber = 0;
     Position pos;
   };
 
   struct RigidTapOp
   {
     static constexpr OperationType type = OperationType::RIGID_TAP;
+    int lineNumber = 0;
     Position3 pos;
     double scale = 0.0;
   };
@@ -231,6 +236,7 @@ namespace GCodeParser
   struct NurbsG5Op
   {
     static constexpr OperationType type = OperationType::NURBS_G5;
+    int lineNumber = 0;
     Position pos;
     Plane plane = Plane::XY;
     NurbsG5Data nurbsData;
@@ -239,6 +245,7 @@ namespace GCodeParser
   struct NurbsG6Op
   {
     static constexpr OperationType type = OperationType::NURBS_G6;
+    int lineNumber = 0;
     Position pos;
     Plane plane = Plane::XY;
     NurbsG6Data nurbsData;

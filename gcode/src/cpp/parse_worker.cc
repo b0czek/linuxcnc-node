@@ -127,12 +127,15 @@ namespace GCodeParser
       obj.Set("type", Napi::Number::New(env, static_cast<int>(T::type)));
 
       if constexpr (std::is_same_v<T, TraverseOp>) {
+        obj.Set("lineNumber", Napi::Number::New(env, operation.lineNumber));
         obj.Set("pos", positionToJS(env, operation.pos));
       }
       else if constexpr (std::is_same_v<T, FeedOp>) {
+        obj.Set("lineNumber", Napi::Number::New(env, operation.lineNumber));
         obj.Set("pos", positionToJS(env, operation.pos));
       }
       else if constexpr (std::is_same_v<T, ArcOp>) {
+        obj.Set("lineNumber", Napi::Number::New(env, operation.lineNumber));
         obj.Set("pos", positionToJS(env, operation.pos));
         obj.Set("plane", Napi::Number::New(env, static_cast<int>(operation.plane)));
         
@@ -144,9 +147,11 @@ namespace GCodeParser
         obj.Set("arcData", arcData);
       }
       else if constexpr (std::is_same_v<T, ProbeOp>) {
+        obj.Set("lineNumber", Napi::Number::New(env, operation.lineNumber));
         obj.Set("pos", positionToJS(env, operation.pos));
       }
       else if constexpr (std::is_same_v<T, RigidTapOp>) {
+        obj.Set("lineNumber", Napi::Number::New(env, operation.lineNumber));
         obj.Set("pos", position3ToJS(env, operation.pos));
         obj.Set("scale", Napi::Number::New(env, operation.scale));
       }
@@ -156,6 +161,7 @@ namespace GCodeParser
         obj.Set("plane", Napi::Number::New(env, static_cast<int>(operation.plane)));
       }
       else if constexpr (std::is_same_v<T, NurbsG5Op>) {
+        obj.Set("lineNumber", Napi::Number::New(env, operation.lineNumber));
         obj.Set("pos", positionToJS(env, operation.pos));
         obj.Set("plane", Napi::Number::New(env, static_cast<int>(operation.plane)));
         
@@ -175,6 +181,7 @@ namespace GCodeParser
         obj.Set("nurbsData", nurbsData);
       }
       else if constexpr (std::is_same_v<T, NurbsG6Op>) {
+        obj.Set("lineNumber", Napi::Number::New(env, operation.lineNumber));
         obj.Set("pos", positionToJS(env, operation.pos));
         obj.Set("plane", Napi::Number::New(env, static_cast<int>(operation.plane)));
         

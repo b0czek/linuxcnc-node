@@ -86,14 +86,12 @@ namespace GCodeParser
 // Motion Functions
 // ============================================================================
 
-void STRAIGHT_TRAVERSE(int /*lineno*/,
+void STRAIGHT_TRAVERSE(int lineno,
                        double x, double y, double z,
                        double a, double b, double c,
                        double u, double v, double w)
 {
   GET_CTX();
-
-
 
   if (!ctx->metric)
   {
@@ -105,6 +103,7 @@ void STRAIGHT_TRAVERSE(int /*lineno*/,
     w *= 25.4;
   }
   GCodeParser::TraverseOp op;
+  op.lineNumber = lineno;
   op.pos = {x, y, z, a, b, c, u, v, w};
 
   ctx->currentPosition = op.pos;
@@ -112,7 +111,7 @@ void STRAIGHT_TRAVERSE(int /*lineno*/,
   ctx->addOperation(std::move(op));
 }
 
-void STRAIGHT_FEED(int /*lineno*/,
+void STRAIGHT_FEED(int lineno,
                    double x, double y, double z,
                    double a, double b, double c,
                    double u, double v, double w)
@@ -129,6 +128,7 @@ void STRAIGHT_FEED(int /*lineno*/,
     w *= 25.4;
   }
   GCodeParser::FeedOp op;
+  op.lineNumber = lineno;
   op.pos = {x, y, z, a, b, c, u, v, w};
 
   ctx->currentPosition = op.pos;
@@ -136,7 +136,7 @@ void STRAIGHT_FEED(int /*lineno*/,
   ctx->addOperation(std::move(op));
 }
 
-void ARC_FEED(int /*lineno*/,
+void ARC_FEED(int lineno,
               double first_end, double second_end,
               double first_axis, double second_axis,
               int rotation, double axis_end_point,
@@ -144,8 +144,6 @@ void ARC_FEED(int /*lineno*/,
               double u, double v, double w)
 {
   GET_CTX();
-
-
 
   if (!ctx->metric)
   {
@@ -159,6 +157,7 @@ void ARC_FEED(int /*lineno*/,
     w *= 25.4;
   }
   GCodeParser::ArcOp op;
+  op.lineNumber = lineno;
   op.plane = ctx->currentPlane;
 
   // Set end position based on plane
@@ -204,7 +203,7 @@ void ARC_FEED(int /*lineno*/,
   ctx->addOperation(std::move(op));
 }
 
-void STRAIGHT_PROBE(int /*lineno*/,
+void STRAIGHT_PROBE(int lineno,
                     double x, double y, double z,
                     double a, double b, double c,
                     double u, double v, double w,
@@ -222,6 +221,7 @@ void STRAIGHT_PROBE(int /*lineno*/,
     w *= 25.4;
   }
   GCodeParser::ProbeOp op;
+  op.lineNumber = lineno;
   op.pos = {x, y, z, a, b, c, u, v, w};
 
   ctx->currentPosition = op.pos;
@@ -229,7 +229,7 @@ void STRAIGHT_PROBE(int /*lineno*/,
   ctx->addOperation(std::move(op));
 }
 
-void RIGID_TAP(int /*lineno*/, double x, double y, double z, double scale)
+void RIGID_TAP(int lineno, double x, double y, double z, double scale)
 {
   GET_CTX();
 
@@ -240,6 +240,7 @@ void RIGID_TAP(int /*lineno*/, double x, double y, double z, double scale)
     z *= 25.4;
   }
   GCodeParser::RigidTapOp op;
+  op.lineNumber = lineno;
   op.pos = {x, y, z};
   op.scale = scale;
 
@@ -267,7 +268,7 @@ void DWELL(double seconds)
 // NURBS Functions
 // ============================================================================
 
-void NURBS_G5_FEED(int /*lineno*/,
+void NURBS_G5_FEED(int lineno,
                    const std::vector<NURBS_CONTROL_POINT> &nurbs_control_points,
                    unsigned int nurbs_order,
                    CANON_PLANE plane)
@@ -275,6 +276,8 @@ void NURBS_G5_FEED(int /*lineno*/,
   GET_CTX();
 
   GCodeParser::NurbsG5Op op;
+  op.lineNumber = lineno;
+
   
   // Convert plane
   switch (plane)
@@ -340,7 +343,7 @@ void NURBS_G5_FEED(int /*lineno*/,
   ctx->addOperation(std::move(op));
 }
 
-void NURBS_G6_FEED(int /*lineno*/,
+void NURBS_G6_FEED(int lineno,
                    const std::vector<NURBS_G6_CONTROL_POINT> &nurbs_control_points,
                    unsigned int k,
                    double /*feedrate*/,
@@ -350,6 +353,7 @@ void NURBS_G6_FEED(int /*lineno*/,
   GET_CTX();
 
   GCodeParser::NurbsG6Op op;
+  op.lineNumber = lineno;
   
   switch (plane)
   {

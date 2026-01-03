@@ -112,6 +112,8 @@ export interface ToolData {
  */
 export interface TraverseOperation {
   type: OperationType.TRAVERSE;
+  /** Source G-code line number */
+  lineNumber: number;
   /** Target position */
   pos: Position;
 }
@@ -121,6 +123,8 @@ export interface TraverseOperation {
  */
 export interface FeedOperation {
   type: OperationType.FEED;
+  /** Source G-code line number */
+  lineNumber: number;
   /** Target position */
   pos: Position;
 }
@@ -131,6 +135,8 @@ export interface FeedOperation {
  */
 export interface ArcOperation {
   type: OperationType.ARC;
+  /** Source G-code line number */
+  lineNumber: number;
   /** Target position */
   pos: Position;
   /** Plane in which the arc lies */
@@ -157,6 +163,8 @@ export interface ArcOperation {
  */
 export interface ProbeOperation {
   type: OperationType.PROBE;
+  /** Source G-code line number */
+  lineNumber: number;
   /** Target probe position */
   pos: Position;
 }
@@ -166,6 +174,8 @@ export interface ProbeOperation {
  */
 export interface RigidTapOperation {
   type: OperationType.RIGID_TAP;
+  /** Source G-code line number */
+  lineNumber: number;
   /** Target tap position (only X, Y, Z are used) */
   pos: { x: number; y: number; z: number };
   /** Tap scale factor */
@@ -190,6 +200,8 @@ export interface DwellOperation {
  */
 export interface NurbsG5Operation {
   type: OperationType.NURBS_G5;
+  /** Source G-code line number */
+  lineNumber: number;
   /** Target position */
   pos: Position;
   /** Plane in which the NURBS curve lies */
@@ -212,6 +224,8 @@ export interface NurbsG5Operation {
  */
 export interface NurbsG6Operation {
   type: OperationType.NURBS_G6;
+  /** Source G-code line number */
+  lineNumber: number;
   /** Target position */
   pos: Position;
   /** Plane in which the NURBS curve lies */
