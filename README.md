@@ -29,18 +29,29 @@ The project is organized into modules, each corresponding to a specific area of 
   - **[View HAL 2.8 Module README](./hal-2.8/README.md)**
 
 - **`/core`**: Bindings for the LinuxCNC NML interface.
+
   - Provides StatChannel for real-time status monitoring, CommandChannel for machine control, ErrorChannel for error/operator messages, and PositionLogger for high-frequency position logging.
   - **[View Core Module README](./core/README.md)**
+
+- **`/gcode`**: G-code file parser using LinuxCNC's rs274ngc interpreter.
+  - Parses G-code files and extracts sequential operations (traverse, feed, arc, etc.) for toolpath visualization.
+  - Features high-performance parsing with progress reporting and machine state tracking.
+  - **[View G-code Module README](./gcode/README.md)**
 
 ## Examples
 
 The project includes practical examples demonstrating how to use the modules:
 
 - **`/examples/halview`**: A modern Electron-based HAL viewer application built using the `@linuxcnc-node/hal` module.
+
   - Replicates core functionality of the classic `halshow` program with modern UI enhancements.
   - Features include HAL item browsing, real-time watch lists, component-focused views, and preset management.
   - Built with Electron, React, TypeScript, and Ant Design.
   - **[View HAL View Example README](./examples/halview/README.md)**
+
+- **`/examples/gcode-viewer`**: A 3D G-code visualizer built using `@linuxcnc-node/gcode`.
+  - Features real-time toolpath rendering, playback simulation, and G-code line tracking.
+  - **[View G-code Viewer Example README](./examples/gcode-viewer/README.md)**
 
 ## Prerequisites
 
