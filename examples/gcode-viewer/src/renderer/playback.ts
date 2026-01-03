@@ -4,6 +4,9 @@ import { OperationType } from "@linuxcnc-node/gcode";
 import { computeArcPoints, ArcData } from "./arc-utils";
 import { highlightGcodeLine } from "./gcode-panel";
 
+// Position indices: X=0, Y=1, Z=2 (matches PositionIndex from gcode package)
+const X = 0, Y = 1, Z = 2;
+
 /**
  * Reset playback to starting position
  */
@@ -188,7 +191,7 @@ export function animatePlayback(): void {
     // Initialize arc points if needed
     if (state.currentArcPoints.length === 0) {
       const startPos = state.toolMesh.position.clone();
-      const endPos = new THREE.Vector3(op.pos.x, op.pos.y, op.pos.z);
+      const endPos = new THREE.Vector3(op.pos[X], op.pos[Y], op.pos[Z]);
       state.currentArcPoints = computeArcPoints(
         startPos,
         endPos,
@@ -242,7 +245,7 @@ export function animatePlayback(): void {
     updateProgressDisplay();
   } else if ("pos" in op && op.pos) {
     // Linear motion (TRAVERSE, FEED, etc.)
-    const targetPos = new THREE.Vector3(op.pos.x, op.pos.y, op.pos.z);
+    const targetPos = new THREE.Vector3(op.pos[X], op.pos[Y], op.pos[Z]);
     const startPos = state.toolMesh.position.clone();
     const distance = startPos.distanceTo(targetPos);
 

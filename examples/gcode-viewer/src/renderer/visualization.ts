@@ -3,6 +3,9 @@ import { state } from "./state";
 import { GCodeParseResult, OperationType } from "@linuxcnc-node/gcode";
 import { computeArcPoints } from "./arc-utils";
 
+// Position indices: X=0, Y=1, Z=2 (matches PositionIndex from gcode package)
+const X = 0, Y = 1, Z = 2;
+
 /**
  * Visualize the G-code path in the 3D scene
  */
@@ -23,11 +26,11 @@ export function visualizeGCode(result: GCodeParseResult): void {
 
   for (const op of result.operations) {
     if (op.type === OperationType.TRAVERSE || op.type === OperationType.FEED) {
-      const nextPos = new THREE.Vector3(op.pos!.x, op.pos!.y, op.pos!.z);
+      const nextPos = new THREE.Vector3(op.pos[X], op.pos[Y], op.pos[Z]);
       points.push(nextPos);
       currentPos = nextPos.clone();
     } else if (op.type === OperationType.ARC) {
-      const nextPos = new THREE.Vector3(op.pos!.x, op.pos!.y, op.pos!.z);
+      const nextPos = new THREE.Vector3(op.pos[X], op.pos[Y], op.pos[Z]);
       const arcPoints = computeArcPoints(
         currentPos,
         nextPos,
@@ -69,7 +72,7 @@ export function buildPathSegments(): void {
     const op = state.operations[i];
 
     if (op.type === OperationType.TRAVERSE || op.type === OperationType.FEED) {
-      const nextPos = new THREE.Vector3(op.pos!.x, op.pos!.y, op.pos!.z);
+      const nextPos = new THREE.Vector3(op.pos[X], op.pos[Y], op.pos[Z]);
       const length = currentPos.distanceTo(nextPos);
       state.totalPathLength += length;
       state.pathSegments.push({
@@ -86,7 +89,7 @@ export function buildPathSegments(): void {
       "arcData" in op &&
       "plane" in op
     ) {
-      const nextPos = new THREE.Vector3(op.pos!.x, op.pos!.y, op.pos!.z);
+      const nextPos = new THREE.Vector3(op.pos[X], op.pos[Y], op.pos[Z]);
       const arcPoints = computeArcPoints(
         currentPos,
         nextPos,
