@@ -1,0 +1,21 @@
+; Simple linear motion test file
+; Tests G0 rapid traverse and G1 linear feed moves
+
+G21 ; mm mode
+G17 ; XY plane
+G90 ; absolute mode
+
+; Rapid to starting position
+G0 X0 Y0 Z5
+
+; Linear moves with feed
+G1 Z0 F100
+G1 X50 Y0 F200
+G1 X50 Y50
+G1 X0 Y50
+G1 X0 Y0
+
+; Rapid retract
+G0 Z10
+
+M2 ; End program

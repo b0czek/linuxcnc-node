@@ -1,0 +1,28 @@
+; Arc motion test file
+; Tests G2 (CW) and G3 (CCW) arcs
+
+G21 ; mm mode
+G17 ; XY plane
+G90 ; absolute mode
+
+; Start position
+G0 X0 Y0 Z0
+
+; CW arc (G2) - quarter circle
+G1 X10 Y0 F100
+G2 X20 Y10 I10 J0
+
+; CCW arc (G3) - quarter circle  
+G3 X30 Y0 I0 J-10
+
+; Full circle CW
+G2 X30 Y0 I5 J0
+
+; Arc with Z motion (helix)
+G0 X0 Y0 Z0
+G2 X0 Y0 Z-5 I10 J0
+
+; Retract
+G0 Z10
+
+M2

@@ -1,0 +1,23 @@
+# Build outputs
+build/
+dist/
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+
+# Coverage
+coverage/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+large_1mb.ngc
+
+
+*.var
+*.var.bak

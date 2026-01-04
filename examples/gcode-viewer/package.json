@@ -1,0 +1,24 @@
+{
+  "name": "gcode-viewer",
+  "version": "1.0.0",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build && electron-builder"
+  },
+  "dependencies": {
+    "@linuxcnc-node/gcode": "file:../../gcode",
+    "three": "^0.160.0"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.0.2",
+    "@types/node": "^20.11.5",
+    "@types/three": "^0.160.0",
+    "electron": "^28.1.0",
+    "electron-builder": "^24.9.1",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.12",
+    "vite-plugin-electron": "^0.15.6",
+    "vite-plugin-electron-renderer": "^0.14.5"
+  }
+}
