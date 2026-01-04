@@ -25,9 +25,38 @@ export function getNmlFilePath(): string {
   return addon.getNmlFilePath();
 }
 
-// Export all enums and types
+// Export runtime enums from constants
 export * from "./constants";
-export * from "./types";
+// Re-export all type definitions from the types package
+export type {
+  LinuxCNCStat,
+  TaskStat,
+  MotionStat,
+  IoStat,
+  TrajectoryStat,
+  JointStat,
+  AxisStat,
+  SpindleStat,
+  ToolIoStat,
+  CoolantIoStat,
+  EmcPose,
+  ToolEntry,
+  ActiveGCodes,
+  ActiveMCodes,
+  ActiveSettings,
+  LinuxCNCError,
+  AvailableAxis,
+  DebugFlags,
+  LinuxCNCStatPaths,
+  RecursivePartial,
+  StatPropertyWatchCallback,
+  ErrorCallback,
+  NapiOptions,
+  NapiStatChannelInstance,
+  NapiCommandChannelInstance,
+  NapiErrorChannelInstance,
+  NapiPositionLoggerInstance,
+} from "@linuxcnc-node/types";
 export { StatChannel, CommandChannel, ErrorChannel, PositionLogger };
 export { StatWatcherOptions, ErrorChannelOptions };
 export { PositionPoint, PositionLoggerOptions } from "./positionLogger";

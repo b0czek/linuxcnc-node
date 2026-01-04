@@ -6,11 +6,8 @@
  * tagged with motion types for graphics visualization.
  */
 
-// Export all types
-export * from "./types";
-
-// Export constants
-export * from "./constants";
+// Re-export all types from the types package
+export * from "@linuxcnc-node/types";
 
 // Export parser function
 export { parseGCode } from "./parser";

@@ -1,34 +1,15 @@
 import { HalType, HalPinDir, HalParamDir } from "./enums";
+import type {
+  HalWatchCallback,
+  HalWatchOptions,
+  HalWatchedObject,
+  NativeHalComponent,
+} from "@linuxcnc-node/types";
 
 export const DEFAULT_POLL_INTERVAL = 10; // Default polling interval in milliseconds
 
-export type HalWatchCallback = (
-  newValue: number | boolean,
-  oldValue: number | boolean,
-  object: Pin | Param
-) => void;
-
-export interface HalWatchOptions {
-  pollInterval?: number;
-}
-
-export interface HalWatchedObject {
-  object: Pin | Param;
-  lastValue: number | boolean;
-  callbacks: Set<HalWatchCallback>;
-}
-
-// This interface describes the N-API HalComponent class instance
-export interface NativeHalComponent {
-  newPin(nameSuffix: string, type: HalType, direction: HalPinDir): boolean;
-  newParam(nameSuffix: string, type: HalType, direction: HalParamDir): boolean;
-  ready(): void;
-  unready(): void;
-  getProperty(name: string): number | boolean;
-  setProperty(name: string, value: number | boolean): number | boolean;
-  readonly name: string;
-  readonly prefix: string;
-}
+// Re-export types for backward compatibility
+export type { HalWatchCallback, HalWatchOptions, HalWatchedObject, NativeHalComponent };
 
 // Define the type for the proxied instance, combining HalComponent properties with the dynamic index signature
 export type HalComponentInstance = HalComponent & {

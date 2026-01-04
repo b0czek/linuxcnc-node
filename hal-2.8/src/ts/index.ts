@@ -36,6 +36,14 @@ for (const candidate of addonPathCandidates) {
 // --- Exported types and enums ---
 export * from "./enums"; // Exports HalType, HalPinDir, etc.
 
+// Re-export type definitions from the types package
+export type {
+  HalWatchCallback,
+  HalWatchOptions,
+  HalWatchedObject,
+  NativeHalComponent,
+} from "@linuxcnc-node/types";
+
 // --- Exported classes ---
 export { HalComponentClass as HalComponent }; // Export the class as HalComponent
 export { Pin, Param };
@@ -140,9 +148,3 @@ export const MSG_WARN: RtapiMsgLevel.WARN = halNative.MSG_WARN;
 export const MSG_INFO: RtapiMsgLevel.INFO = halNative.MSG_INFO;
 export const MSG_DBG: RtapiMsgLevel.DBG = halNative.MSG_DBG;
 export const MSG_ALL: RtapiMsgLevel.ALL = halNative.MSG_ALL;
-
-export type {
-  HalWatchCallback,
-  HalWatchOptions,
-  HalWatchedObject,
-} from "./component";
