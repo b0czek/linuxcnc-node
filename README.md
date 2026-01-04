@@ -15,11 +15,17 @@ The aim is to create a comprehensive suite of Node.js libraries that allow devel
 
 The project is organized into modules, each corresponding to a specific area of LinuxCNC:
 
+- **`/types`**: TypeScript type definitions for all LinuxCNC Node.js bindings (MIT licensed).
+
+  - Provides shared TypeScript interfaces, types, and enums for all packages.
+  - Licensed under MIT to allow unrestricted use in any project.
+  - Includes types for core NML interface, HAL, and G-code parser.
+  - **[View Types Package README](./types/README.md)**
+
 - **`/hal`**: Bindings for the LinuxCNC Hardware Abstraction Layer (HAL).
 
   - Provides functionality to create HAL components, pins, parameters, signals, and interact with the HAL environment.
   - Compatible with LinuxCNC 2.9 and 2.10 (as of writing this).
-  - Provides functionality to create HAL components, pins, parameters, signals, and interact with the HAL environment.
   - **[View HAL Module README](./hal/README.md)**
 
 - **`/hal-2.8`**: Backported version of **`/hal`** module to work with LinuxCNC 2.8 with reduced set of functionalities.
@@ -107,4 +113,8 @@ To use a specific module, like `@linuxcnc-node/hal`, in your Node.js project:
 
 ## License
 
-This entire project and its constituent modules are licensed under the **GPL-2.0**. A copy of the GPL-2.0 license can be found at [https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html).
+This project uses a dual licensing approach:
+
+- **`@linuxcnc-node/types`** package is licensed under the **MIT License**, allowing unrestricted use of type definitions in any project, including proprietary software.
+
+- All other modules (`@linuxcnc-node/core`, `@linuxcnc-node/hal`, `@linuxcnc-node/hal-2.8`, `@linuxcnc-node/gcode`) are licensed under **GPL-2.0-only**. A copy of the GPL-2.0 license can be found at [https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html).
