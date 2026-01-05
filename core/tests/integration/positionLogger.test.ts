@@ -90,7 +90,7 @@ describe("Integration: PositionLogger", () => {
 
       const currentPosition = positionLogger.getCurrentPosition();
 
-      expect(currentPosition).toBeDefined();
+      expect(currentPosition).not.toBeNull();
       expect(currentPosition).toHaveProperty("x");
       expect(currentPosition).toHaveProperty("y");
       expect(currentPosition).toHaveProperty("z");
@@ -102,11 +102,11 @@ describe("Integration: PositionLogger", () => {
       expect(currentPosition).toHaveProperty("w");
       expect(currentPosition).toHaveProperty("motionType");
 
-      // All position values should be numbers
-      expect(typeof currentPosition.x).toBe("number");
-      expect(typeof currentPosition.y).toBe("number");
-      expect(typeof currentPosition.z).toBe("number");
-      expect(typeof currentPosition.motionType).toBe("number");
+      // All position values should be numbers (currentPosition guaranteed non-null by assertion above)
+      expect(typeof currentPosition!.x).toBe("number");
+      expect(typeof currentPosition!.y).toBe("number");
+      expect(typeof currentPosition!.z).toBe("number");
+      expect(typeof currentPosition!.motionType).toBe("number");
 
       positionLogger.stop();
     }, 5000);
@@ -208,10 +208,10 @@ describe("Integration: PositionLogger", () => {
       const firstFive = positionLogger.getMotionHistory(0, 5);
       expect(firstFive.length).toBeLessThanOrEqual(5);
 
-      // Each point should have timestamp
+      // Each point should have position data
       firstFive.forEach((point) => {
-        expect(point).toHaveProperty("timestamp");
-        expect(typeof point.timestamp).toBe("number");
+        expect(point).toHaveProperty("x");
+        expect(typeof point.x).toBe("number");
       });
     }, 10000);
 
@@ -226,13 +226,6 @@ describe("Integration: PositionLogger", () => {
       expect(Array.isArray(recentPoints)).toBe(true);
       expect(recentPoints.length).toBeGreaterThan(0);
       expect(recentPoints.length).toBeLessThanOrEqual(10);
-
-      // Verify timestamps are in order
-      for (let i = 1; i < recentPoints.length; i++) {
-        expect(recentPoints[i].timestamp).toBeGreaterThanOrEqual(
-          recentPoints[i - 1].timestamp!
-        );
-      }
     }, 10000);
   });
 
@@ -250,7 +243,8 @@ describe("Integration: PositionLogger", () => {
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       const initialPosition = positionLogger.getCurrentPosition();
-      const initialX = initialPosition.x;
+      expect(initialPosition).not.toBeNull();
+      const initialX = initialPosition!.x;
 
       // Execute a small rapid move
       try {
@@ -260,13 +254,14 @@ describe("Integration: PositionLogger", () => {
       }
 
       const finalPosition = positionLogger.getCurrentPosition();
+      expect(finalPosition).not.toBeNull();
       const history = positionLogger.getMotionHistory();
 
       // Should have logged multiple points
       expect(history.length).toBeGreaterThan(0);
 
       console.log(
-        `Tracked ${history.length} points. Position X: ${initialX} -> ${finalPosition.x}`
+        `Tracked ${history.length} points. Position X: ${initialX} -> ${finalPosition!.x}`
       );
 
       // History should contain motion type information
@@ -285,6 +280,7 @@ describe("Integration: PositionLogger", () => {
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       const initialPosition = positionLogger.getCurrentPosition();
+      expect(initialPosition).not.toBeNull();
 
       // Execute a feed move (slower, easier to track)
       try {
@@ -315,6 +311,7 @@ describe("Integration: PositionLogger", () => {
       await new Promise((resolve) => setTimeout(resolve, 200));
 
       const initialPosition = positionLogger.getCurrentPosition();
+      expect(initialPosition).not.toBeNull();
 
       // Execute a small multi-axis move
       try {
@@ -324,13 +321,14 @@ describe("Integration: PositionLogger", () => {
       }
 
       const finalPosition = positionLogger.getCurrentPosition();
+      expect(finalPosition).not.toBeNull();
       const history = positionLogger.getMotionHistory();
 
       expect(history.length).toBeGreaterThan(0);
 
       console.log(
-        `Position changed: X ${initialPosition.x} -> ${finalPosition.x}, ` +
-          `Y ${initialPosition.y} -> ${finalPosition.y}, ` +
+        `Position changed: X ${initialPosition!.x} -> ${finalPosition!.x}, ` +
+          `Y ${initialPosition!.y} -> ${finalPosition!.y}, ` +
           `Tracked ${history.length} points`
       );
     }, 15000);
@@ -442,37 +440,13 @@ describe("Integration: PositionLogger", () => {
     }, 5000);
   });
 
-  describe("Timestamp Accuracy", () => {
-    it("should have monotonically increasing timestamps", async () => {
-      const positionLogger = new PositionLogger();
-
-      positionLogger.start({ interval: 0.01 });
-
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      const history = positionLogger.getMotionHistory();
-
-      expect(history.length).toBeGreaterThan(1);
-
-      // Verify timestamps are monotonically increasing
-      for (let i = 1; i < history.length; i++) {
-        expect(history[i].timestamp).toBeGreaterThanOrEqual(
-          history[i - 1].timestamp!
-        );
-      }
-
-      positionLogger.stop();
-    }, 10000);
-  });
-
   describe("Edge Cases", () => {
     it("should handle getting position before starting", () => {
       const logger = new PositionLogger();
 
-      // Should not throw
-      expect(() => {
-        const pos = logger.getCurrentPosition();
-      }).not.toThrow();
+      // Should not throw and should return null when not started
+      const pos = logger.getCurrentPosition();
+      expect(pos).toBeNull();
     }, 5000);
 
     it("should handle getting history when empty", () => {

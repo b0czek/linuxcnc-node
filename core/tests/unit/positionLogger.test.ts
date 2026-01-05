@@ -1,4 +1,9 @@
-import { PositionLogger, PositionPoint } from "../../src/ts/positionLogger";
+import {
+  PositionLogger,
+  PositionPoint,
+  POSITION_STRIDE,
+  PositionIndex,
+} from "../../src/ts/positionLogger";
 import { addon } from "../../src/ts/constants";
 
 // Mock the native addon
@@ -7,6 +12,41 @@ jest.mock("../../src/ts/constants", () => ({
     NativePositionLogger: jest.fn(),
   },
 }));
+
+// Helper to create a mock Float64Array for position (10 values)
+function createMockPositionArray(pos: PositionPoint): Float64Array {
+  const arr = new Float64Array(POSITION_STRIDE);
+  arr[PositionIndex.X] = pos.x;
+  arr[PositionIndex.Y] = pos.y;
+  arr[PositionIndex.Z] = pos.z;
+  arr[PositionIndex.A] = pos.a;
+  arr[PositionIndex.B] = pos.b;
+  arr[PositionIndex.C] = pos.c;
+  arr[PositionIndex.U] = pos.u;
+  arr[PositionIndex.V] = pos.v;
+  arr[PositionIndex.W] = pos.w;
+  arr[PositionIndex.MotionType] = pos.motionType;
+  return arr;
+}
+
+// Helper to create a mock Float64Array for history (10 values per point)
+function createMockHistoryArray(points: PositionPoint[]): Float64Array {
+  const arr = new Float64Array(points.length * POSITION_STRIDE);
+  points.forEach((pos, i) => {
+    const offset = i * POSITION_STRIDE;
+    arr[offset + PositionIndex.X] = pos.x;
+    arr[offset + PositionIndex.Y] = pos.y;
+    arr[offset + PositionIndex.Z] = pos.z;
+    arr[offset + PositionIndex.A] = pos.a;
+    arr[offset + PositionIndex.B] = pos.b;
+    arr[offset + PositionIndex.C] = pos.c;
+    arr[offset + PositionIndex.U] = pos.u;
+    arr[offset + PositionIndex.V] = pos.v;
+    arr[offset + PositionIndex.W] = pos.w;
+    arr[offset + PositionIndex.MotionType] = pos.motionType;
+  });
+  return arr;
+}
 
 describe("PositionLogger", () => {
   let mockNativeLogger: any;
@@ -29,13 +69,15 @@ describe("PositionLogger", () => {
       motionType: 1,
     };
 
-    // Create mock native instance
+    // Create mock native instance - returns Float64Array
     mockNativeLogger = {
       start: jest.fn(),
       stop: jest.fn(),
       clear: jest.fn(),
-      getCurrentPosition: jest.fn().mockReturnValue(mockPosition),
-      getMotionHistory: jest.fn().mockReturnValue([]),
+      getCurrentPosition: jest
+        .fn()
+        .mockReturnValue(createMockPositionArray(mockPosition)),
+      getMotionHistory: jest.fn().mockReturnValue(new Float64Array(0)),
       getHistoryCount: jest.fn().mockReturnValue(0),
     };
 
@@ -77,6 +119,22 @@ describe("PositionLogger", () => {
     });
   });
 
+  describe("getCurrentPosition()", () => {
+    it("should return null when native returns null", () => {
+      mockNativeLogger.getCurrentPosition.mockReturnValue(null);
+      const logger = new PositionLogger();
+      const pos = logger.getCurrentPosition();
+      expect(pos).toBeNull();
+    });
+
+    it("should return position object when native returns data", () => {
+      const logger = new PositionLogger();
+      const pos = logger.getCurrentPosition();
+      expect(pos).not.toBeNull();
+      expect(pos).toEqual(mockPosition);
+    });
+  });
+
   describe("getMotionHistory()", () => {
     it("should call native method without parameters when none provided", () => {
       const logger = new PositionLogger();
@@ -111,11 +169,12 @@ describe("PositionLogger", () => {
         (_, i) => ({
           ...mockPosition,
           x: i,
-          timestamp: 1000 + i * 10,
         })
       );
       mockNativeLogger.getHistoryCount.mockReturnValue(3);
-      mockNativeLogger.getMotionHistory.mockReturnValue(mockHistory);
+      mockNativeLogger.getMotionHistory.mockReturnValue(
+        createMockHistoryArray(mockHistory)
+      );
 
       const logger = new PositionLogger();
       const recent = logger.getRecentHistory(10);
@@ -130,11 +189,12 @@ describe("PositionLogger", () => {
         (_, i) => ({
           ...mockPosition,
           x: i + 95,
-          timestamp: 1000 + (i + 95) * 10,
         })
       );
       mockNativeLogger.getHistoryCount.mockReturnValue(100);
-      mockNativeLogger.getMotionHistory.mockReturnValue(mockHistory);
+      mockNativeLogger.getMotionHistory.mockReturnValue(
+        createMockHistoryArray(mockHistory)
+      );
 
       const logger = new PositionLogger();
       const recent = logger.getRecentHistory(5);
@@ -145,6 +205,7 @@ describe("PositionLogger", () => {
 
     it("should use default count of 10 when not provided", () => {
       mockNativeLogger.getHistoryCount.mockReturnValue(50);
+      mockNativeLogger.getMotionHistory.mockReturnValue(new Float64Array(0));
       const logger = new PositionLogger();
       logger.getRecentHistory();
 

@@ -30,4 +30,9 @@ export * from "./constants";
 export * from "./types";
 export { StatChannel, CommandChannel, ErrorChannel, PositionLogger };
 export { StatWatcherOptions, ErrorChannelOptions };
-export { PositionPoint, PositionLoggerOptions } from "./positionLogger";
+export {
+  PositionPoint,
+  PositionLoggerOptions,
+  POSITION_STRIDE,
+  PositionIndex,
+} from "./positionLogger";

@@ -126,18 +126,18 @@ namespace LinuxCNC
 
     PositionPoint current = position_history_.back();
 
-    // Create JavaScript object with position data
-    Napi::Object result = Napi::Object::New(env);
-    result.Set("x", Napi::Number::New(env, current.x));
-    result.Set("y", Napi::Number::New(env, current.y));
-    result.Set("z", Napi::Number::New(env, current.z));
-    result.Set("a", Napi::Number::New(env, current.a));
-    result.Set("b", Napi::Number::New(env, current.b));
-    result.Set("c", Napi::Number::New(env, current.c));
-    result.Set("u", Napi::Number::New(env, current.u));
-    result.Set("v", Napi::Number::New(env, current.v));
-    result.Set("w", Napi::Number::New(env, current.w));
-    result.Set("motionType", Napi::Number::New(env, current.motionType));
+    // Create Float64Array with 10 values: x, y, z, a, b, c, u, v, w, motionType
+    Napi::Float64Array result = Napi::Float64Array::New(env, 10);
+    result[0] = current.x;
+    result[1] = current.y;
+    result[2] = current.z;
+    result[3] = current.a;
+    result[4] = current.b;
+    result[5] = current.c;
+    result[6] = current.u;
+    result[7] = current.v;
+    result[8] = current.w;
+    result[9] = static_cast<double>(current.motionType);
 
     return result;
   }
@@ -166,30 +166,25 @@ namespace LinuxCNC
     start_index = std::min(start_index, position_history_.size());
     count = std::min(count, position_history_.size() - start_index);
 
-    Napi::Array result = Napi::Array::New(env, count);
+    // Create Float64Array with 10 values per point: x, y, z, a, b, c, u, v, w, motionType
+    constexpr size_t STRIDE = 10;
+    Napi::Float64Array result = Napi::Float64Array::New(env, count * STRIDE);
 
     for (size_t i = 0; i < count; ++i)
     {
       const PositionPoint &point = position_history_[start_index + i];
+      size_t offset = i * STRIDE;
 
-      Napi::Object pos = Napi::Object::New(env);
-      pos.Set("x", Napi::Number::New(env, point.x));
-      pos.Set("y", Napi::Number::New(env, point.y));
-      pos.Set("z", Napi::Number::New(env, point.z));
-      pos.Set("a", Napi::Number::New(env, point.a));
-      pos.Set("b", Napi::Number::New(env, point.b));
-      pos.Set("c", Napi::Number::New(env, point.c));
-      pos.Set("u", Napi::Number::New(env, point.u));
-      pos.Set("v", Napi::Number::New(env, point.v));
-      pos.Set("w", Napi::Number::New(env, point.w));
-      pos.Set("motionType", Napi::Number::New(env, point.motionType));
-
-      // Convert timestamp to milliseconds since epoch
-      auto duration = point.timestamp.time_since_epoch();
-      auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
-      pos.Set("timestamp", Napi::Number::New(env, static_cast<double>(millis)));
-
-      result[i] = pos;
+      result[offset + 0] = point.x;
+      result[offset + 1] = point.y;
+      result[offset + 2] = point.z;
+      result[offset + 3] = point.a;
+      result[offset + 4] = point.b;
+      result[offset + 5] = point.c;
+      result[offset + 6] = point.u;
+      result[offset + 7] = point.v;
+      result[offset + 8] = point.w;
+      result[offset + 9] = static_cast<double>(point.motionType);
     }
 
     return result;
