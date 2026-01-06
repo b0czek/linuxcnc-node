@@ -17,29 +17,28 @@ import {
   HalWatchedObject,
 } from "./component"; // Renamed to avoid conflict
 
-let halNative: any;
-const addonPathCandidates = [
-  "../build/Release/hal_addon.node",
-  "../../build/Release/hal_addon.node", // Fallback for debug builds
-  "../../build/Debug/hal_addon.node",
-];
+// Native addon - loaded immediately on module import
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function loadAddon(): any {
+  const paths = [
+    "../build/Release/hal_addon.node",
+    "../../build/Release/hal_addon.node", // Fallback for debug builds
+  ];
 
-for (const candidate of addonPathCandidates) {
-  try {
-    halNative = require(candidate);
-    break; // Found and loaded
-  } catch (e) {
-    if (candidate === addonPathCandidates[addonPathCandidates.length - 1]) {
-      // Last attempt
-      console.error(
-        "FATAL: Failed to load linuxcnc-node native addon. Please ensure it's built correctly and that LinuxCNC is in your PATH."
-      );
-      const loadError = e as Error;
-      console.error("Details:", loadError.message);
-      throw new Error("linuxcnc-node native addon could not be loaded.");
+  for (const path of paths) {
+    try {
+      return require(path);
+    } catch {
+      // Try next path
     }
   }
+
+  throw new Error(
+    "Failed to load linuxcnc-node hal native addon. Please ensure it's built correctly and that LinuxCNC is in your PATH."
+  );
 }
+
+const halNative = loadAddon();
 
 // --- Exported types and enums ---
 export * from "./enums"; // Exports HalType, HalPinDir, etc.

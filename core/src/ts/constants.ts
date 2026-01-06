@@ -1,30 +1,27 @@
 import { NapiOptions } from "./native_type_interfaces";
 
-// Dynamically require the native addon
+// Native addon - loaded immediately on module import
+function loadAddon(): NapiOptions {
+  const paths = [
+    "../build/Release/nml_addon.node",
+    "../../build/Release/nml_addon.node", // Fallback for debug builds
+  ];
 
-const addonPathCandidates = [
-  "../build/Release/nml_addon.node",
-  "../../build/Release/nml_addon.node", // Fallback for debug builds
-  "../../build/Debug/nml_addon.node",
-];
-
-export const addon: NapiOptions = (() => {
-  for (const candidate of addonPathCandidates) {
+  for (const path of paths) {
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
-      return require(candidate);
-    } catch (e) {
-      if (candidate === addonPathCandidates[addonPathCandidates.length - 1]) {
-        console.error(
-          "FATAL: Failed to load linuxcnc-node nml native addon. Please ensure it's built correctly and that LinuxCNC is in your PATH."
-        );
-        const loadError = e as Error;
-        console.error("Details:", loadError.message);
-        throw new Error("linuxcnc-node nml native addon could not be loaded.");
-      }
+      return require(path);
+    } catch {
+      // Try next path
     }
   }
-})();
+
+  throw new Error(
+    "Failed to load linuxcnc-node nml native addon. Please ensure it's built correctly and that LinuxCNC is in your PATH."
+  );
+}
+
+export const addon: NapiOptions = loadAddon();
 
 export enum TaskMode {
   MDI = addon.TASK_MODE_MDI,

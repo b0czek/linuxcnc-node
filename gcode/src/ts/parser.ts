@@ -6,13 +6,9 @@
 
 import { GCodeParseResult, ParseOptions, ParseProgress } from "./types";
 
-// Lazy-loaded native addon (loaded on first parseGCode call)
+// Native addon - loaded immediately on module import
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-let addon: any = null;
-
-function loadAddon() {
-  if (addon) return addon;
-
+function loadAddon(): any {
   const paths = [
     "../build/Release/gcode_addon.node", // Installed in node_modules (path relative to dist/)
     "../../build/Release/gcode_addon.node", // Local development (path relative to src/ts/)
@@ -20,8 +16,7 @@ function loadAddon() {
 
   for (const path of paths) {
     try {
-      addon = require(path);
-      return addon;
+      return require(path);
     } catch {
       // Try next path
     }
@@ -32,6 +27,8 @@ function loadAddon() {
       paths.map((p) => `  - ${p}`).join("\n")
   );
 }
+
+const addon = loadAddon();
 
 /**
  * Parse a G-code file asynchronously.
@@ -72,14 +69,12 @@ export async function parseGCode(
     throw new Error("iniPath is required in ParseOptions");
   }
 
-  const nativeAddon = loadAddon();
-
   return new Promise<GCodeParseResult>((resolve, reject) => {
     const progressCallback =
       options.onProgress || ((_progress: ParseProgress) => {});
     const progressUpdates = options.progressUpdates ?? 40;
 
-    nativeAddon.parseGCode(
+    addon.parseGCode(
       filepath,
       options.iniPath,
       progressUpdates,
