@@ -1,0 +1,27 @@
+{
+  "name": "linuxcnc-node",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Node.js bindings for LinuxCNC",
+  "workspaces": [
+    "core",
+    "gcode",
+    "hal",
+    "types"
+  ],
+  "scripts": {
+    "changeset": "changeset",
+    "version": "changeset version",
+    "publish": "changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/b0czek/linuxcnc-node.git"
+  },
+  "author": "Dariusz Majnert",
+  "license": "GPL-2.0-only"
+}
+
