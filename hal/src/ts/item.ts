@@ -16,7 +16,15 @@ import type { HalComponent } from "./component";
  * });
  * ```
  */
-export class HalItem<D extends HalPinDir | HalParamDir> extends EventEmitter {
+interface HalItemEvents {
+  change: [newValue: number | boolean, oldValue: number | boolean];
+  newListener: [event: string | symbol, listener: (...args: any[]) => void];
+  removeListener: [event: string | symbol, listener: (...args: any[]) => void];
+}
+
+export class HalItem<
+  D extends HalPinDir | HalParamDir
+> extends EventEmitter<HalItemEvents> {
   private component: HalComponent;
 
   /**

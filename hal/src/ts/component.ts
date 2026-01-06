@@ -130,6 +130,9 @@ export class HalComponent {
    * @returns The value that was set.
    */
   setValue(name: string, value: number | boolean): number | boolean {
+    if (typeof value !== "number" && typeof value !== "boolean") {
+      throw new TypeError("Value must be a number or boolean");
+    }
     return this.nativeInstance.setProperty(name, value);
   }
 
