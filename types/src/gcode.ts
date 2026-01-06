@@ -61,7 +61,6 @@ export enum Units {
 
 /**
  * 9-axis position representing a complete machine pose.
- * Stored as Float64Array for performance (avoids V8 hidden class transitions).
  *
  * Index mapping:
  * - [0] = x: X-axis position

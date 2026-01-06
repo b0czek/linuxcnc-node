@@ -4,7 +4,7 @@
  * Provides async G-code file parsing using LinuxCNC's rs274ngc interpreter.
  */
 
-import { GCodeParseResult, ParseOptions, ParseProgress } from "./types";
+import { GCodeParseResult, ParseOptions, ParseProgress } from "@linuxcnc/types";
 
 // Native addon - loaded immediately on module import
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

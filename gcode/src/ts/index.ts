@@ -6,8 +6,8 @@
  * tagged with motion types for graphics visualization.
  */
 
-// Export all types
-export * from "./types";
+// Export all types (re-exported from @linuxcnc/types)
+export * from "@linuxcnc/types";
 
 // Export constants
 export * from "./constants";
