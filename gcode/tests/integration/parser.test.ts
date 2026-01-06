@@ -6,14 +6,14 @@
  */
 
 import * as path from "path";
+import { parseGCode } from "../../src/ts";
 import {
-  parseGCode,
   GCodeParseResult,
   GCodeOperation,
   OperationType,
   PositionIndex,
   Plane,
-  Units,
+  ProgramUnits,
   TraverseOperation,
   FeedOperation,
   ArcOperation,
@@ -26,8 +26,7 @@ import {
   FeedRateChangeOperation,
   DwellOperation,
   ParseProgress,
-} from "../../src/ts";
-
+} from "@linuxcnc/types";
 // ============================================================================
 // Test Helpers
 // ============================================================================
@@ -315,11 +314,7 @@ describe("parseGCode", () => {
       );
 
       expect(toolChange).toBeDefined();
-      expect(toolChange!.tool).toBeDefined();
-      expect(toolChange!.tool).toHaveProperty("toolNumber");
-      expect(toolChange!.tool).toHaveProperty("pocketNumber");
-      expect(toolChange!.tool).toHaveProperty("diameter");
-      expect(toolChange!.tool).toHaveProperty("offset");
+      expect(toolChange!.toolNumber).toBeDefined();
     });
 
     it("should have correct tool numbers", () => {
@@ -328,7 +323,7 @@ describe("parseGCode", () => {
         OperationType.TOOL_CHANGE
       );
 
-      const toolNumbers = toolChanges.map((tc) => tc.tool.toolNumber);
+      const toolNumbers = toolChanges.map((tc) => tc.toolNumber);
       expect(toolNumbers).toContain(1);
       expect(toolNumbers).toContain(2);
     });
@@ -443,8 +438,8 @@ describe("parseGCode", () => {
       );
 
       const unitsValues = unitsChanges.map((u) => u.units);
-      expect(unitsValues).toContain(Units.MM); // G21
-      expect(unitsValues).toContain(Units.INCHES); // G20
+      expect(unitsValues).toContain(ProgramUnits.MM); // G21
+      expect(unitsValues).toContain(ProgramUnits.INCH); // G20
     });
 
     it("should detect PLANE_CHANGE operations for G17/G18/G19", () => {
