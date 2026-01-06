@@ -26,7 +26,7 @@ import {
   FeedRateChangeOperation,
   DwellOperation,
   ParseProgress,
-} from "@linuxcnc/types";
+} from "@linuxcnc-node/types";
 // ============================================================================
 // Test Helpers
 // ============================================================================

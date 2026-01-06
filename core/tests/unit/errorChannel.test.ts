@@ -2,7 +2,7 @@ import {
   ErrorChannel,
   DEFAULT_ERROR_POLL_INTERVAL,
 } from "../../src/ts/errorChannel";
-import { LinuxCNCError, NmlMessageType } from "@linuxcnc/types";
+import { LinuxCNCError, NmlMessageType } from "@linuxcnc-node/types";
 import { addon } from "../../src/ts/constants";
 
 // Mock the native addon

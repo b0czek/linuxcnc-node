@@ -1,5 +1,5 @@
 {
-  "name": "@linuxcnc/types",
+  "name": "@linuxcnc-node/types",
   "version": "1.0.0",
   "description": "TypeScript type definitions for LinuxCNC Node.js bindings",
   "main": "dist/index.js",

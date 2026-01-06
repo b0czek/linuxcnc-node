@@ -8,7 +8,7 @@ import {
   DebugFlags,
   RecursivePartial,
   ToolEntry,
-} from "@linuxcnc/types";
+} from "@linuxcnc-node/types";
 
 export class CommandChannel {
   private nativeInstance: NapiCommandChannelInstance;

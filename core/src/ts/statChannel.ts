@@ -5,7 +5,7 @@ import {
   LinuxCNCStatPaths,
   StatPropertyWatchCallback,
   ToolEntry,
-} from "@linuxcnc/types";
+} from "@linuxcnc-node/types";
 import { addon } from "./constants";
 import isEqual from "fast-deep-equal";
 import delve from "dlv";

@@ -5,7 +5,7 @@
  */
 
 import { ErrorChannel, CommandChannel, StatChannel } from "../../src/ts";
-import { TaskState, NmlMessageType } from "@linuxcnc/types";
+import { TaskState, NmlMessageType } from "@linuxcnc-node/types";
 import { startLinuxCNC, stopLinuxCNC, setupLinuxCNC } from "./setupLinuxCNC";
 
 describe("Integration: ErrorChannel", () => {

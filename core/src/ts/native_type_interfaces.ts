@@ -8,7 +8,7 @@ import {
   TrajMode,
   RcsStatus,
   EmcDebug,
-} from "@linuxcnc/types";
+} from "@linuxcnc-node/types";
 
 // Interface for the NAPI addon module itself
 export interface NapiOptions {

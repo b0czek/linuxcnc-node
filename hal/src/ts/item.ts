@@ -1,5 +1,5 @@
 import { EventEmitter } from "events";
-import type { HalType, HalPinDir, HalParamDir } from "@linuxcnc/types";
+import type { HalType, HalPinDir, HalParamDir } from "@linuxcnc-node/types";
 import type { HalComponent } from "./component";
 
 /**

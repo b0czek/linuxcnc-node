@@ -1,5 +1,5 @@
 import { PositionLogger } from "../../src/ts/positionLogger";
-import { POSITION_STRIDE, PositionLoggerIndex } from "@linuxcnc/types";
+import { POSITION_STRIDE, PositionLoggerIndex } from "@linuxcnc-node/types";
 
 const { X, Y, Z, C, MotionType } = PositionLoggerIndex;
 

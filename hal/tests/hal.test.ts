@@ -7,7 +7,7 @@ import type {
   HalPinInfo,
   HalSignalInfo,
   HalParamInfo,
-} from "@linuxcnc/types";
+} from "@linuxcnc-node/types";
 import { HalComponent as HalComponentClass } from "../src/ts/index";
 import { Pin, Param } from "../src/ts/item";
 

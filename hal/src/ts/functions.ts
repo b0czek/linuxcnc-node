@@ -4,7 +4,7 @@ import type {
   HalPinInfo,
   HalSignalInfo,
   HalParamInfo,
-} from "@linuxcnc/types";
+} from "@linuxcnc-node/types";
 import {
   halNative,
   HalTypeValue,

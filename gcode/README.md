@@ -12,7 +12,7 @@ npm install @linuxcnc-node/gcode
 
 ```typescript
 import { parseGCode } from "@linuxcnc-node/gcode";
-import { OperationType, PositionIndex } from "@linuxcnc/types";
+import { OperationType, PositionIndex } from "@linuxcnc-node/types";
 
 const result = await parseGCode("/path/to/program.ngc", {
   iniPath: "/path/to/linuxcnc.ini",

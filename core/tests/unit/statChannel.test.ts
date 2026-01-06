@@ -3,7 +3,7 @@ import {
   StatChannel,
   DEFAULT_STAT_POLL_INTERVAL,
 } from "../../src/ts/statChannel";
-import { LinuxCNCStat, PositionIndex } from "@linuxcnc/types";
+import { LinuxCNCStat, PositionIndex } from "@linuxcnc-node/types";
 import { addon } from "../../src/ts/constants";
 
 // Mock the native addon

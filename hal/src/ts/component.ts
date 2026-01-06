@@ -1,4 +1,4 @@
-import type { HalType, HalPinDir, HalParamDir } from "@linuxcnc/types";
+import type { HalType, HalPinDir, HalParamDir } from "@linuxcnc-node/types";
 import {
   halNative,
   HalTypeValue,

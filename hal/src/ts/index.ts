@@ -7,7 +7,7 @@ export type {
   HalPinInfo,
   HalSignalInfo,
   HalParamInfo,
-} from "@linuxcnc/types";
+} from "@linuxcnc-node/types";
 
 // --- Exported classes ---
 export { HalComponent } from "./component";

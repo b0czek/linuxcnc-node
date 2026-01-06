@@ -10,7 +10,7 @@ import {
   MotionType,
   PositionLoggerIndex,
   POSITION_STRIDE,
-} from "@linuxcnc/types";
+} from "@linuxcnc-node/types";
 
 const { X, Y, Z, MotionType: MotionTypeIdx } = PositionLoggerIndex;
 import { startLinuxCNC, stopLinuxCNC, setupLinuxCNC } from "./setupLinuxCNC";

@@ -3,7 +3,7 @@
   "changelog": "@changesets/cli/changelog",
   "commit": false,
   "fixed": [],
-  "linked": [["@linuxcnc/core", "@linuxcnc/gcode", "@linuxcnc/hal", "@linuxcnc/types"]],
+  "linked": [["@linuxcnc-node/core", "@linuxcnc-node/gcode", "@linuxcnc-node/hal", "@linuxcnc-node/types"]],
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",

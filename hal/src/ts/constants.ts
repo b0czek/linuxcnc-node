@@ -1,4 +1,4 @@
-// Re-export HAL types from @linuxcnc/types
+// Re-export HAL types from @linuxcnc-node/types
 export type {
   HalType,
   HalPinDir,
@@ -7,14 +7,14 @@ export type {
   HalPinInfo,
   HalSignalInfo,
   HalParamInfo,
-} from "@linuxcnc/types";
+} from "@linuxcnc-node/types";
 
 import type {
   HalType,
   HalPinDir,
   HalParamDir,
   RtapiMsgLevel,
-} from "@linuxcnc/types";
+} from "@linuxcnc-node/types";
 
 // Native addon - loaded once on module import
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

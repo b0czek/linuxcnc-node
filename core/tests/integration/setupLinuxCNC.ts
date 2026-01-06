@@ -1,5 +1,5 @@
 import { CommandChannel, StatChannel } from "../../src/ts";
-import { TaskState, TaskMode } from "@linuxcnc/types";
+import { TaskState, TaskMode } from "@linuxcnc-node/types";
 import { spawn, ChildProcess, execSync } from "child_process";
 import * as path from "path";
 
