@@ -1,0 +1,34 @@
+{
+  "name": "@linuxcnc/types",
+  "version": "1.0.0",
+  "description": "TypeScript type definitions for LinuxCNC Node.js bindings",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "author": "Dariusz Majnert",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/b0czek/linuxcnc-node.git",
+    "directory": "types"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "keywords": [
+    "linuxcnc",
+    "types",
+    "typescript",
+    "cnc",
+    "hal",
+    "machining"
+  ]
+}
+

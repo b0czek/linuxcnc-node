@@ -1,5 +1,7 @@
 # Node.js LinuxCNC Bindings
 
+> **Note:** All packages in this project are written for **LinuxCNC 2.10**.
+
 This project provides Node.js bindings for various C++ functionalities within the LinuxCNC. The primary goal is to offer an API close to the existing Python one, making it familiar for those who have worked with LinuxCNC in Python.
 
 ## Project Vision
@@ -17,8 +19,6 @@ The project is organized into modules, each corresponding to a specific area of 
 
 - **`/hal`**: Bindings for the LinuxCNC Hardware Abstraction Layer (HAL).
 
-  - Provides functionality to create HAL components, pins, parameters, signals, and interact with the HAL environment.
-  - Compatible with LinuxCNC 2.9 and 2.10 (as of writing this).
   - Provides functionality to create HAL components, pins, parameters, signals, and interact with the HAL environment.
   - **[View HAL Module README](./hal/README.md)**
 
@@ -70,41 +70,8 @@ To build and use these bindings, your system will generally need:
       - `make`.
     - These are often installed via a package like `build-essential` on Debian/Ubuntu systems.
 
-## Usage (Installing a Package)
-
-To use a specific module, like `@linuxcnc-node/hal`, in your Node.js project:
-
-1.  **Install the package:**
-
-    ```bash
-    npm install @linuxcnc-node/hal
-    # or
-    # yarn add @linuxcnc-node/hal
-    ```
-
-    This command will attempt to download and compile the native C++ addon. Ensure your LinuxCNC environment is sourced and build tools are available.
-
-2.  **Import and use in your code:**
-
-    ```javascript
-    // For the HAL module
-    const hal = require("@linuxcnc-node/hal");
-    // or in TypeScript/ESM
-    // import * as hal from '@linuxcnc-node/hal';
-
-    // Example: Create a HAL component
-    if (hal.componentExists("my-js-comp")) {
-      console.log("Component my-js-comp already exists.");
-    } else {
-      const comp = hal.component("my-js-comp");
-      console.log(`Created HAL component: ${comp.name}`);
-      // ... use other HAL functions ...
-      comp.ready();
-    }
-    ```
-
-    Refer to the specific module's README (e.g., [`./hal/README.md`](./hal/README.md)) for detailed API documentation and usage examples.
-
 ## License
 
-This entire project and its constituent modules are licensed under the **GPL-2.0**. A copy of the GPL-2.0 license can be found at [https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html).
+This project and its constituent modules are primarily licensed under the **GPL-2.0**. A copy of the GPL-2.0 license can be found at [https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html).
+
+The `@linuxcnc-node/types` package is licensed under the **MIT** license.
