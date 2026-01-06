@@ -25,14 +25,6 @@ export function getNmlFilePath(): string {
   return addon.getNmlFilePath();
 }
 
-// Export all enums and types
-export * from "./constants";
-export * from "./types";
 export { StatChannel, CommandChannel, ErrorChannel, PositionLogger };
 export { StatWatcherOptions, ErrorChannelOptions };
-export {
-  PositionPoint,
-  PositionLoggerOptions,
-  POSITION_STRIDE,
-  PositionIndex,
-} from "./positionLogger";
+export { PositionLoggerOptions } from "./positionLogger";

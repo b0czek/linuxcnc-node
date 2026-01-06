@@ -14,35 +14,65 @@ import {
   EmcDebug,
 } from "./constants";
 
-/** Available axis identifiers in the LinuxCNC coordinate system. */
-export type AvailableAxis = "X" | "Y" | "Z" | "A" | "B" | "C" | "U" | "V" | "W";
+/** Stride for position data in Float64Array: x, y, z, a, b, c, u, v, w, motionType */
+export const POSITION_STRIDE = 10;
+
+/** Index constants for position logger data in Float64Array (10 elements with MotionType) */
+export enum PositionLoggerIndex {
+  X = 0,
+  Y = 1,
+  Z = 2,
+  A = 3,
+  B = 4,
+  C = 5,
+  U = 6,
+  V = 7,
+  W = 8,
+  /** Motion type (used in position logging) */
+  MotionType = 9,
+}
+
+/** Position array indices for readable access (9 elements) */
+export enum PositionIndex {
+  X = 0,
+  Y = 1,
+  Z = 2,
+  A = 3,
+  B = 4,
+  C = 5,
+  U = 6,
+  V = 7,
+  W = 8,
+}
 
 /**
  * Position and orientation in the LinuxCNC coordinate system.
  * Represents a pose with 9 degrees of freedom (3 linear + 3 rotational + 3 auxiliary).
  * All values are in machine units.
- * Axes descriptions are assumed, but they may vary by machine configuration.
+ *
+ * This is a Float64Array with 9 elements - use PositionIndex enum for access:
+ * - [0] x: X-axis position
+ * - [1] y: Y-axis position
+ * - [2] z: Z-axis position
+ * - [3] a: A-axis rotation around X-axis in degrees
+ * - [4] b: B-axis rotation around Y-axis in degrees
+ * - [5] c: C-axis rotation around Z-axis in degrees
+ * - [6] u: U-axis auxiliary linear position
+ * - [7] v: V-axis auxiliary linear position
+ * - [8] w: W-axis auxiliary linear position
  */
-export interface EmcPose {
-  /** X-axis position in machine units. */
-  x: number;
-  /** Y-axis position in machine units. */
-  y: number;
-  /** Z-axis position in machine units. */
-  z: number;
-  /** A-axis rotation around X-axis in degrees. */
-  a: number;
-  /** B-axis rotation around Y-axis in degrees. */
-  b: number;
-  /** C-axis rotation around Z-axis in degrees. */
-  c: number;
-  /** U-axis auxiliary linear position in machine units. */
-  u: number;
-  /** V-axis auxiliary linear position in machine units. */
-  v: number;
-  /** W-axis auxiliary linear position in machine units. */
-  w: number;
-}
+export type Position = Float64Array;
+
+/**
+ * 3D position in the LinuxCNC coordinate system.
+ * Represents a point with 3 degrees of freedom (x, y, z).
+ *
+ * This is a Float64Array with 3 elements:
+ * - [0] x: X-axis position
+ * - [1] y: Y-axis position
+ * - [2] z: Z-axis position
+ */
+export type Position3 = Float64Array;
 
 /**
  * Tool table entry representing a cutting tool in the LinuxCNC system.
@@ -62,7 +92,7 @@ export interface ToolEntry {
   pocketNo: number;
 
   /** Position offset for the tool relative to the machine coordinate system. */
-  offset: EmcPose;
+  offset: Position;
 
   /** Tool diameter in machine units. Used for cutter compensation calculations. */
   diameter: number;
@@ -326,19 +356,19 @@ export interface TaskStat {
   iniFilename: string;
 
   /** Offset of the currently active coordinate system (G54-G59, etc.). */
-  g5xOffset: EmcPose;
+  g5xOffset: Position;
 
   /** Currently active coordinate system index. G54=1, G55=2, etc. */
   g5xIndex: number;
 
   /** Pose of the current G92 offset. */
-  g92Offset: EmcPose;
+  g92Offset: Position;
 
   /** Current XY rotation angle around Z axis in degrees. */
   rotationXY: number;
 
   /** Offset values of the current tool. */
-  toolOffset: EmcPose;
+  toolOffset: Position;
 
   /** Currently active G-codes for each modal group. */
   activeGCodes: ActiveGCodes;
@@ -531,7 +561,7 @@ export interface TrajectoryStat {
   spindles: number;
 
   /** Available axes as defined by [TRAJ]COORDINATES in the INI file. */
-  availableAxes: AvailableAxis[];
+  availableAxes: ("X" | "Y" | "Z" | "A" | "B" | "C" | "U" | "V" | "W")[];
 
   /** Mode of the Motion controller. One of COORD, FREE, TELEOP. */
   mode: TrajMode;
@@ -564,10 +594,10 @@ export interface TrajectoryStat {
   rapidRateOverride: number;
 
   /** Commanded trajectory position in machine units. */
-  position: EmcPose;
+  position: Position;
 
   /** Current actual trajectory position in machine units. */
-  actualPosition: EmcPose;
+  actualPosition: Position;
 
   /** Default acceleration. Reflects [TRAJ]DEFAULT_ACCELERATION INI entry. */
   acceleration: number;
@@ -579,7 +609,7 @@ export interface TrajectoryStat {
   maxAcceleration: number;
 
   /** Position where probe tripped in machine units. */
-  probedPosition: EmcPose;
+  probedPosition: Position;
 
   /** Flag indicating if probe has tripped (latch). */
   probeTripped: boolean;
@@ -600,7 +630,7 @@ export interface TrajectoryStat {
   distanceToGo: number;
 
   /** Remaining distance of current move for each axis as reported by trajectory planner. */
-  dtg: EmcPose;
+  dtg: Position;
 
   /** Current velocity in user units per second. */
   currentVelocity: number;

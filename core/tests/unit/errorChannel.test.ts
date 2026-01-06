@@ -2,8 +2,8 @@ import {
   ErrorChannel,
   DEFAULT_ERROR_POLL_INTERVAL,
 } from "../../src/ts/errorChannel";
-import { LinuxCNCError } from "../../src/ts/types";
-import { addon, NmlMessageType } from "../../src/ts/constants";
+import { LinuxCNCError, NmlMessageType } from "@linuxcnc/types";
+import { addon } from "../../src/ts/constants";
 
 // Mock the native addon
 jest.mock("../../src/ts/constants", () => ({

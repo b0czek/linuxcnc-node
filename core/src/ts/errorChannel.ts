@@ -1,7 +1,7 @@
 import { EventEmitter } from "events";
-import { addon, NmlMessageType } from "./constants";
+import { addon } from "./constants";
+import { NmlMessageType, LinuxCNCError } from "@linuxcnc/types";
 import { NapiErrorChannelInstance } from "./native_type_interfaces";
-import { LinuxCNCError } from "./types";
 
 export const DEFAULT_ERROR_POLL_INTERVAL = 100; // ms
 

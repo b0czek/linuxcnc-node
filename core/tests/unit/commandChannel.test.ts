@@ -1,5 +1,5 @@
 import { CommandChannel } from "../../src/ts/commandChannel";
-import { RcsStatus, TaskMode, TaskState } from "../../src/ts/constants";
+import { RcsStatus, TaskMode, TaskState } from "@linuxcnc/types";
 
 jest.mock("../../src/ts/constants", () => {
   // Create a mock addon with all the constants
@@ -9,23 +9,6 @@ jest.mock("../../src/ts/constants", () => {
 
   return {
     addon: mockAddon,
-    TaskMode: {
-      MDI: 1,
-      MANUAL: 2,
-      AUTO: 3,
-    },
-    TaskState: {
-      ESTOP: 1,
-      ESTOP_RESET: 2,
-      OFF: 3,
-      ON: 4,
-    },
-    RcsStatus: {
-      UNINITIALIZED: 0,
-      DONE: 1,
-      EXEC: 2,
-      ERROR: 3,
-    },
   };
 });
 

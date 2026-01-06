@@ -1,10 +1,7 @@
-import {
-  PositionLogger,
-  PositionPoint,
-  POSITION_STRIDE,
-  PositionIndex,
-} from "../../src/ts/positionLogger";
-import { addon } from "../../src/ts/constants";
+import { PositionLogger } from "../../src/ts/positionLogger";
+import { POSITION_STRIDE, PositionLoggerIndex } from "@linuxcnc/types";
+
+const { X, Y, Z, C, MotionType } = PositionLoggerIndex;
 
 // Mock the native addon
 jest.mock("../../src/ts/constants", () => ({
@@ -13,61 +10,31 @@ jest.mock("../../src/ts/constants", () => ({
   },
 }));
 
-// Helper to create a mock Float64Array for position (10 values)
-function createMockPositionArray(pos: PositionPoint): Float64Array {
-  const arr = new Float64Array(POSITION_STRIDE);
-  arr[PositionIndex.X] = pos.x;
-  arr[PositionIndex.Y] = pos.y;
-  arr[PositionIndex.Z] = pos.z;
-  arr[PositionIndex.A] = pos.a;
-  arr[PositionIndex.B] = pos.b;
-  arr[PositionIndex.C] = pos.c;
-  arr[PositionIndex.U] = pos.u;
-  arr[PositionIndex.V] = pos.v;
-  arr[PositionIndex.W] = pos.w;
-  arr[PositionIndex.MotionType] = pos.motionType;
-  return arr;
-}
+import { addon } from "../../src/ts/constants";
 
 // Helper to create a mock Float64Array for history (10 values per point)
-function createMockHistoryArray(points: PositionPoint[]): Float64Array {
-  const arr = new Float64Array(points.length * POSITION_STRIDE);
-  points.forEach((pos, i) => {
-    const offset = i * POSITION_STRIDE;
-    arr[offset + PositionIndex.X] = pos.x;
-    arr[offset + PositionIndex.Y] = pos.y;
-    arr[offset + PositionIndex.Z] = pos.z;
-    arr[offset + PositionIndex.A] = pos.a;
-    arr[offset + PositionIndex.B] = pos.b;
-    arr[offset + PositionIndex.C] = pos.c;
-    arr[offset + PositionIndex.U] = pos.u;
-    arr[offset + PositionIndex.V] = pos.v;
-    arr[offset + PositionIndex.W] = pos.w;
-    arr[offset + PositionIndex.MotionType] = pos.motionType;
+function createMockHistoryArray(pointsData: number[][]): Float64Array {
+  const arr = new Float64Array(pointsData.length * POSITION_STRIDE);
+  pointsData.forEach((data, i) => {
+    arr.set(data, i * POSITION_STRIDE);
   });
   return arr;
 }
 
 describe("PositionLogger", () => {
   let mockNativeLogger: any;
-  let mockPosition: PositionPoint;
+  let mockPositionData: number[];
 
   beforeEach(() => {
     jest.clearAllMocks();
 
-    // Create a mock position object
-    mockPosition = {
-      x: 10.5,
-      y: 20.3,
-      z: 5.0,
-      a: 0,
-      b: 0,
-      c: 45.0,
-      u: 0,
-      v: 0,
-      w: 0,
-      motionType: 1,
-    };
+    // Create a mock position data (10 values)
+    mockPositionData = new Array(POSITION_STRIDE).fill(0);
+    mockPositionData[X] = 10.5;
+    mockPositionData[Y] = 20.3;
+    mockPositionData[Z] = 5.0;
+    mockPositionData[C] = 45.0;
+    mockPositionData[MotionType] = 1;
 
     // Create mock native instance - returns Float64Array
     mockNativeLogger = {
@@ -76,7 +43,7 @@ describe("PositionLogger", () => {
       clear: jest.fn(),
       getCurrentPosition: jest
         .fn()
-        .mockReturnValue(createMockPositionArray(mockPosition)),
+        .mockReturnValue(new Float64Array(mockPositionData)),
       getMotionHistory: jest.fn().mockReturnValue(new Float64Array(0)),
       getHistoryCount: jest.fn().mockReturnValue(0),
     };
@@ -131,7 +98,10 @@ describe("PositionLogger", () => {
       const logger = new PositionLogger();
       const pos = logger.getCurrentPosition();
       expect(pos).not.toBeNull();
-      expect(pos).toEqual(mockPosition);
+      // pos is Float64Array
+      expect(pos![X]).toBe(mockPositionData[X]);
+      expect(pos![Y]).toBe(mockPositionData[Y]);
+      expect(pos![Z]).toBe(mockPositionData[Z]);
     });
   });
 
@@ -160,17 +130,15 @@ describe("PositionLogger", () => {
       mockNativeLogger.getHistoryCount.mockReturnValue(0);
       const logger = new PositionLogger();
       const recent = logger.getRecentHistory(10);
-      expect(recent).toEqual([]);
+      expect(recent.length).toBe(0);
     });
 
     it("should calculate correct startIndex when history is smaller than requested count", () => {
-      const mockHistory: PositionPoint[] = Array.from(
-        { length: 3 },
-        (_, i) => ({
-          ...mockPosition,
-          x: i,
-        })
-      );
+      const mockHistory: number[][] = Array.from({ length: 3 }, (_, i) => {
+        const point = [...mockPositionData];
+        point[X] = i;
+        return point;
+      });
       mockNativeLogger.getHistoryCount.mockReturnValue(3);
       mockNativeLogger.getMotionHistory.mockReturnValue(
         createMockHistoryArray(mockHistory)
@@ -180,17 +148,15 @@ describe("PositionLogger", () => {
       const recent = logger.getRecentHistory(10);
 
       expect(mockNativeLogger.getMotionHistory).toHaveBeenCalledWith(0, 3);
-      expect(recent.length).toBe(3);
+      expect(recent.length).toBe(3 * POSITION_STRIDE);
     });
 
     it("should calculate correct startIndex when history is larger than requested count", () => {
-      const mockHistory: PositionPoint[] = Array.from(
-        { length: 5 },
-        (_, i) => ({
-          ...mockPosition,
-          x: i + 95,
-        })
-      );
+      const mockHistory: number[][] = Array.from({ length: 5 }, (_, i) => {
+        const point = [...mockPositionData];
+        point[X] = i + 95;
+        return point;
+      });
       mockNativeLogger.getHistoryCount.mockReturnValue(100);
       mockNativeLogger.getMotionHistory.mockReturnValue(
         createMockHistoryArray(mockHistory)

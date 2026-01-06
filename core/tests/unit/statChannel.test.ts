@@ -3,7 +3,7 @@ import {
   StatChannel,
   DEFAULT_STAT_POLL_INTERVAL,
 } from "../../src/ts/statChannel";
-import { LinuxCNCStat, LinuxCNCStatPaths } from "../../src/ts/types";
+import { LinuxCNCStat, PositionIndex } from "@linuxcnc/types";
 import { addon } from "../../src/ts/constants";
 
 // Mock the native addon
@@ -11,14 +11,6 @@ jest.mock("../../src/ts/constants", () => ({
   addon: {
     NativeStatChannel: jest.fn(),
   },
-  TaskMode: {},
-  TaskState: {},
-  ExecState: {},
-  InterpState: {},
-  TrajMode: {},
-  MotionType: {},
-  ProgramUnits: {},
-  RcsStatus: {},
 }));
 
 describe("StatChannel", () => {
@@ -32,146 +24,13 @@ describe("StatChannel", () => {
     // Create a mock stat object
     mockStat = {
       task: {
-        mode: 1,
-        state: 2,
-        execState: 1,
-        interpState: 1,
-        callLevel: 0,
         motionLine: 10,
-        currentLine: 10,
-        readLine: 10,
-        file: "test.ngc",
-        command: "G0 X10",
-        program_units: 1,
-        interpreter_errcode: 0,
-        task_paused: 0,
-        delayLeft: 0,
-        activeGCodes: [
-          10, 170, 200, 210, 400, 490, 540, 610, 640, 690, 710, 800, 900, 910,
-          940, 980,
-        ],
-        activeMCodes: [0, 50, 90, 480, 530],
-        activeSettings: [0, 0, 0],
-        heartbeat: 1234,
       },
       motion: {
         traj: {
-          linearUnits: 1,
-          angularUnits: 1,
-          cycleTime: 0.001,
-          axes: 3,
-          axis_mask: 7,
-          mode: 1,
-          enabled: 1,
-          inpos: 1,
-          queue: 0,
-          activeQueue: 0,
-          queueFull: 0,
-          id: 1,
-          paused: 0,
-          scale: 1.0,
-          spindle_scale: 1.0,
-          position: { x: 0, y: 0, z: 0, a: 0, b: 0, c: 0, u: 0, v: 0, w: 0 },
-          actualPosition: {
-            x: 0,
-            y: 0,
-            z: 0,
-            a: 0,
-            b: 0,
-            c: 0,
-            u: 0,
-            v: 0,
-            w: 0,
-          },
-          velocity: 0,
-          acceleration: 0,
-          maxVelocity: 100,
-          maxAcceleration: 1000,
-          probedPosition: {
-            x: 0,
-            y: 0,
-            z: 0,
-            a: 0,
-            b: 0,
-            c: 0,
-            u: 0,
-            v: 0,
-            w: 0,
-          },
-          probe_tripped: 0,
-          probing: 0,
-          probeval: 0,
-          kinematics_type: 1,
-          motion_type: 0,
-          distance_to_go: 0,
-          dtg: { x: 0, y: 0, z: 0, a: 0, b: 0, c: 0, u: 0, v: 0, w: 0 },
-          current_vel: 0,
-          feed_override_enabled: 1,
-          spindle_override_enabled: 1,
-          adaptive_feed_enabled: 0,
-          feed_hold_enabled: 0,
+          position: new Float64Array(9),
         },
-        axis: [],
-        joint: [
-          {
-            jointType: 1,
-            units: 1,
-            backlash: 0,
-            minPositionLimit: -100,
-            maxPositionLimit: 100,
-            maxFerror: 1,
-            minFerror: 0.1,
-            ferrorCurrent: 0,
-            ferrorHighMark: 0,
-            output: 0,
-            input: 0,
-            velocity: 0,
-            inpos: 1,
-            homing: 0,
-            homed: 1,
-            fault: 0,
-            enabled: 1,
-            minSoftLimit: 0,
-            maxSoftLimit: 0,
-            minHardLimit: 0,
-            maxHardLimit: 0,
-            overrideLimits: 0,
-          },
-        ],
-        spindle: [
-          {
-            speed: 0,
-            css_maximum: 0,
-            css_factor: 0,
-            direction: 0,
-            brake: 1,
-            increasing: 0,
-            enabled: 0,
-            orient_state: 0,
-            orient_fault: 0,
-            homed: 0,
-            spindle_scale: 1.0,
-            spindle_override_enabled: 1,
-          },
-        ],
       },
-      io: {
-        tool: {
-          pocketPrepped: 0,
-          toolInSpindle: 0,
-          toolTable: [],
-        },
-        coolant: {
-          mist: 0,
-          flood: 0,
-        },
-        estop: 0,
-        estopIn: 0,
-        estopOut: 0,
-        lube: 0,
-        lubeLevel: 0,
-      },
-      toolTable: [],
     } as any;
 
     // Create mock native instance
@@ -252,7 +111,11 @@ describe("StatChannel", () => {
       statChannel.on("motion.traj.position", callback);
 
       // Update the stat
-      const newPosition = { ...mockStat.motion.traj.position, x: 10, y: 20 };
+      const newPosition = new Float64Array(9);
+      const { X, Y } = PositionIndex;
+      newPosition[X] = 10;
+      newPosition[Y] = 20;
+
       const updatedStat = {
         ...mockStat,
         motion: {

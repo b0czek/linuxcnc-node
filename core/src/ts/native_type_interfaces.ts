@@ -3,14 +3,12 @@ import {
   ToolEntry,
   LinuxCNCError,
   RecursivePartial,
-} from "./types";
-import {
   TaskMode,
   TaskState,
   TrajMode,
   RcsStatus,
   EmcDebug,
-} from "./constants";
+} from "@linuxcnc/types";
 
 // Interface for the NAPI addon module itself
 export interface NapiOptions {
