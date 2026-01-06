@@ -108,18 +108,7 @@ namespace GCodeParser
     return arr;
   }
 
-  Napi::Object ParseWorker::toolDataToJS(Napi::Env env, const ToolData &tool)
-  {
-    Napi::Object obj = Napi::Object::New(env);
-    obj.Set("toolNumber", Napi::Number::New(env, tool.toolNumber));
-    obj.Set("pocketNumber", Napi::Number::New(env, tool.pocketNumber));
-    obj.Set("diameter", Napi::Number::New(env, tool.diameter));
-    obj.Set("frontAngle", Napi::Number::New(env, tool.frontAngle));
-    obj.Set("backAngle", Napi::Number::New(env, tool.backAngle));
-    obj.Set("orientation", Napi::Number::New(env, tool.orientation));
-    obj.Set("offset", positionToJS(env, tool.offset));
-    return obj;
-  }
+
 
   Napi::Object ParseWorker::operationToJS(Napi::Env env, const Operation &op)
   {
@@ -225,7 +214,7 @@ namespace GCodeParser
         obj.Set("offset", positionToJS(env, operation.offset));
       }
       else if constexpr (std::is_same_v<T, ToolChangeOp>) {
-        obj.Set("tool", toolDataToJS(env, operation.tool));
+        obj.Set("toolNumber", Napi::Number::New(env, operation.toolNumber));
       }
       else if constexpr (std::is_same_v<T, FeedRateChangeOp>) {
         obj.Set("feedRate", Napi::Number::New(env, operation.feedRate));

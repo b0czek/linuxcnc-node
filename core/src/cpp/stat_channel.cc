@@ -175,11 +175,11 @@ namespace LinuxCNC
         DictAddString(env, obj, "file", task_stat.file);
         DictAddString(env, obj, "command", task_stat.command);
         DictAddString(env, obj, "iniFilename", task_stat.ini_filename);
-        obj.Set("g5xOffset", EmcPoseToNapiObject(env, task_stat.g5x_offset));
+        obj.Set("g5xOffset", EmcPoseToNapiFloat64Array(env, task_stat.g5x_offset));
         DictAdd(env, obj, "g5xIndex", task_stat.g5x_index);
-        obj.Set("g92Offset", EmcPoseToNapiObject(env, task_stat.g92_offset));
+        obj.Set("g92Offset", EmcPoseToNapiFloat64Array(env, task_stat.g92_offset));
         DictAdd(env, obj, "rotationXY", task_stat.rotation_xy);
-        obj.Set("toolOffset", EmcPoseToNapiObject(env, task_stat.toolOffset));
+        obj.Set("toolOffset", EmcPoseToNapiFloat64Array(env, task_stat.toolOffset));
 
         Napi::Object activeGCodesObj = Napi::Object::New(env);
         DictAdd(env, activeGCodesObj, "motionMode", task_stat.activeGCodes[1]);       // G0, G1, G2, G3, G38.2, G80, G81, G82, G83, G84, G85, G86, G87, G88, G89
@@ -298,19 +298,19 @@ namespace LinuxCNC
         DictAdd(env, obj, "paused", (bool)traj_stat.paused);
         DictAdd(env, obj, "feedRateOverride", traj_stat.scale);
         DictAdd(env, obj, "rapidRateOverride", traj_stat.rapid_scale);
-        obj.Set("position", EmcPoseToNapiObject(env, traj_stat.position));
-        obj.Set("actualPosition", EmcPoseToNapiObject(env, traj_stat.actualPosition));
+        obj.Set("position", EmcPoseToNapiFloat64Array(env, traj_stat.position));
+        obj.Set("actualPosition", EmcPoseToNapiFloat64Array(env, traj_stat.actualPosition));
         DictAdd(env, obj, "acceleration", traj_stat.acceleration);
         DictAdd(env, obj, "maxVelocity", traj_stat.maxVelocity);
         DictAdd(env, obj, "maxAcceleration", traj_stat.maxAcceleration);
-        obj.Set("probedPosition", EmcPoseToNapiObject(env, traj_stat.probedPosition));
+        obj.Set("probedPosition", EmcPoseToNapiFloat64Array(env, traj_stat.probedPosition));
         DictAdd(env, obj, "probeTripped", (bool)traj_stat.probe_tripped);
         DictAdd(env, obj, "probing", (bool)traj_stat.probing);
         DictAdd(env, obj, "probeVal", traj_stat.probeval);
         DictAdd(env, obj, "kinematicsType", traj_stat.kinematics_type);
         DictAdd(env, obj, "motionType", traj_stat.motion_type);
         DictAdd(env, obj, "distanceToGo", traj_stat.distance_to_go);
-        obj.Set("dtg", EmcPoseToNapiObject(env, traj_stat.dtg));
+        obj.Set("dtg", EmcPoseToNapiFloat64Array(env, traj_stat.dtg));
         DictAdd(env, obj, "currentVelocity", traj_stat.current_vel);
         DictAdd(env, obj, "feedOverrideEnabled", (bool)traj_stat.feed_override_enabled);
         DictAdd(env, obj, "adaptiveFeedEnabled", (bool)traj_stat.adaptive_feed_enabled);
@@ -430,7 +430,7 @@ namespace LinuxCNC
             DictAdd(env, toolObj, "frontAngle", tdata.frontangle);
             DictAdd(env, toolObj, "backAngle", tdata.backangle);
             DictAdd(env, toolObj, "orientation", tdata.orientation);
-            toolObj.Set("offset", EmcPoseToNapiObject(env, tdata.offset));
+            toolObj.Set("offset", EmcPoseToNapiFloat64Array(env, tdata.offset));
             DictAddString(env, toolObj, "comment", tdata.comment);
 
             toolList.Set(js_idx++, toolObj);

@@ -4,15 +4,15 @@
  * Tests real position logging from LinuxCNC machine movements
  */
 
+import { PositionLogger, CommandChannel, StatChannel } from "../../src/ts";
 import {
-  PositionLogger,
-  CommandChannel,
-  StatChannel,
-  TaskState,
   TaskMode,
-  TrajMode,
   MotionType,
-} from "../../src/ts";
+  PositionLoggerIndex,
+  POSITION_STRIDE,
+} from "@linuxcnc-node/types";
+
+const { X, Y, Z, MotionType: MotionTypeIdx } = PositionLoggerIndex;
 import { startLinuxCNC, stopLinuxCNC, setupLinuxCNC } from "./setupLinuxCNC";
 
 /**
@@ -49,8 +49,8 @@ describe("Integration: PositionLogger", () => {
   }, 30000);
 
   afterAll(async () => {
-    statChannel.destroy();
-    commandChannel.destroy();
+    statChannel?.destroy();
+    commandChannel?.destroy();
 
     await stopLinuxCNC();
   });
@@ -91,22 +91,13 @@ describe("Integration: PositionLogger", () => {
       const currentPosition = positionLogger.getCurrentPosition();
 
       expect(currentPosition).not.toBeNull();
-      expect(currentPosition).toHaveProperty("x");
-      expect(currentPosition).toHaveProperty("y");
-      expect(currentPosition).toHaveProperty("z");
-      expect(currentPosition).toHaveProperty("a");
-      expect(currentPosition).toHaveProperty("b");
-      expect(currentPosition).toHaveProperty("c");
-      expect(currentPosition).toHaveProperty("u");
-      expect(currentPosition).toHaveProperty("v");
-      expect(currentPosition).toHaveProperty("w");
-      expect(currentPosition).toHaveProperty("motionType");
+      expect(currentPosition!.length).toBe(10); // Check length instead of properties
 
       // All position values should be numbers (currentPosition guaranteed non-null by assertion above)
-      expect(typeof currentPosition!.x).toBe("number");
-      expect(typeof currentPosition!.y).toBe("number");
-      expect(typeof currentPosition!.z).toBe("number");
-      expect(typeof currentPosition!.motionType).toBe("number");
+      expect(typeof currentPosition![X]).toBe("number");
+      expect(typeof currentPosition![Y]).toBe("number");
+      expect(typeof currentPosition![Z]).toBe("number");
+      expect(typeof currentPosition![MotionTypeIdx]).toBe("number");
 
       positionLogger.stop();
     }, 5000);
@@ -206,13 +197,15 @@ describe("Integration: PositionLogger", () => {
 
       // Get first 5 points
       const firstFive = positionLogger.getMotionHistory(0, 5);
-      expect(firstFive.length).toBeLessThanOrEqual(5);
+      expect(firstFive.length).toBeLessThanOrEqual(5 * POSITION_STRIDE);
 
       // Each point should have position data
-      firstFive.forEach((point) => {
-        expect(point).toHaveProperty("x");
-        expect(typeof point.x).toBe("number");
-      });
+      for (let i = 0; i < firstFive.length; i += POSITION_STRIDE) {
+        // Just verify we can read values
+        expect(typeof firstFive[i + X]).toBe("number");
+        expect(typeof firstFive[i + Y]).toBe("number");
+        expect(typeof firstFive[i + MotionTypeIdx]).toBe("number");
+      }
     }, 10000);
 
     it("should retrieve recent history", async () => {
@@ -223,9 +216,9 @@ describe("Integration: PositionLogger", () => {
 
       const recentPoints = positionLogger.getRecentHistory(10);
 
-      expect(Array.isArray(recentPoints)).toBe(true);
+      expect(recentPoints.constructor.name).toBe("Float64Array");
       expect(recentPoints.length).toBeGreaterThan(0);
-      expect(recentPoints.length).toBeLessThanOrEqual(10);
+      expect(recentPoints.length).toBeLessThanOrEqual(10 * POSITION_STRIDE);
     }, 10000);
   });
 
@@ -244,7 +237,7 @@ describe("Integration: PositionLogger", () => {
 
       const initialPosition = positionLogger.getCurrentPosition();
       expect(initialPosition).not.toBeNull();
-      const initialX = initialPosition!.x;
+      const initialX = initialPosition![X];
 
       // Execute a small rapid move
       try {
@@ -261,13 +254,19 @@ describe("Integration: PositionLogger", () => {
       expect(history.length).toBeGreaterThan(0);
 
       console.log(
-        `Tracked ${history.length} points. Position X: ${initialX} -> ${finalPosition!.x}`
+        `Tracked ${history.length} points. Position X: ${initialX} -> ${
+          finalPosition![X]
+        }`
       );
 
       // History should contain motion type information
-      const hasTraverse = history.some(
-        (point) => point.motionType === MotionType.TRAVERSE
-      );
+      let hasTraverse = false;
+      for (let i = 0; i < history.length; i += POSITION_STRIDE) {
+        if (history[i + MotionTypeIdx] === MotionType.TRAVERSE) {
+          hasTraverse = true;
+          break;
+        }
+      }
       if (hasTraverse) {
         console.log("Detected TRAVERSE motion type");
       }
@@ -296,9 +295,13 @@ describe("Integration: PositionLogger", () => {
       console.log(`Tracked ${history.length} points during feed move`);
 
       // Check for FEED motion type
-      const hasFeed = history.some(
-        (point) => point.motionType === MotionType.FEED
-      );
+      let hasFeed = false;
+      for (let i = 0; i < history.length; i += POSITION_STRIDE) {
+        if (history[i + MotionTypeIdx] === MotionType.FEED) {
+          hasFeed = true;
+          break;
+        }
+      }
       if (hasFeed) {
         console.log("Detected FEED motion type");
       }
@@ -327,9 +330,9 @@ describe("Integration: PositionLogger", () => {
       expect(history.length).toBeGreaterThan(0);
 
       console.log(
-        `Position changed: X ${initialPosition!.x} -> ${finalPosition!.x}, ` +
-          `Y ${initialPosition!.y} -> ${finalPosition!.y}, ` +
-          `Tracked ${history.length} points`
+        `Position changed: X ${initialPosition![X]} -> ${finalPosition![X]}, ` +
+          `Y ${initialPosition![Y]} -> ${finalPosition![Y]}, ` +
+          `Tracked ${history.length / POSITION_STRIDE} points`
       );
     }, 15000);
 
@@ -357,10 +360,11 @@ describe("Integration: PositionLogger", () => {
 
       // All points should have motionType defined
       const recentPoints = positionLogger.getRecentHistory(5);
-      recentPoints.forEach((point) => {
-        expect(point.motionType).toBeDefined();
-        expect(typeof point.motionType).toBe("number");
-      });
+      for (let i = 0; i < recentPoints.length; i += POSITION_STRIDE) {
+        const motionType = recentPoints[i + MotionTypeIdx];
+        expect(motionType).toBeDefined();
+        expect(typeof motionType).toBe("number");
+      }
     }, 10000);
   });
 
@@ -456,10 +460,10 @@ describe("Integration: PositionLogger", () => {
       expect(count).toBe(0);
 
       const history = logger.getMotionHistory();
-      expect(history).toEqual([]);
+      expect(history.length).toBe(0);
 
       const recent = logger.getRecentHistory();
-      expect(recent).toEqual([]);
+      expect(recent.length).toBe(0);
     }, 5000);
 
     it("should handle clear when not started", () => {

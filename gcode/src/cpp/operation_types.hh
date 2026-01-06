@@ -83,16 +83,7 @@ namespace GCodeParser
     double z = 0.0;
   };
 
-  struct ToolData
-  {
-    int toolNumber = 0;
-    int pocketNumber = 0;
-    double diameter = 0.0;
-    double frontAngle = 0.0;
-    double backAngle = 0.0;
-    int orientation = 0;
-    Position offset;
-  };
+
 
   struct Extents
   {
@@ -291,7 +282,7 @@ namespace GCodeParser
   struct ToolChangeOp
   {
     static constexpr OperationType type = OperationType::TOOL_CHANGE;
-    ToolData tool;
+    int toolNumber = 0;
   };
 
   struct FeedRateChangeOp

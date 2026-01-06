@@ -1,27 +1,27 @@
-import { HalType, HalPinDir, HalParamDir } from "./enums";
+import type { HalType, HalPinDir, HalParamDir } from "@linuxcnc-node/types";
+import {
+  halNative,
+  HalTypeValue,
+  HalPinDirValue,
+  HalParamDirValue,
+} from "./constants";
+import { HalItem, Pin, Param } from "./item";
 
-export const DEFAULT_POLL_INTERVAL = 10; // Default polling interval in milliseconds
+/** Default polling interval in milliseconds for monitoring value changes */
+export const DEFAULT_POLL_INTERVAL = 10;
 
-export type HalWatchCallback = (
-  newValue: number | boolean,
-  oldValue: number | boolean,
-  object: Pin | Param
-) => void;
-
-export interface HalWatchOptions {
+/**
+ * Configuration options for the monitoring system.
+ */
+export interface HalMonitorOptions {
+  /** Polling interval in milliseconds (default: 10) */
   pollInterval?: number;
-}
-
-export interface HalWatchedObject {
-  object: Pin | Param;
-  lastValue: number | boolean;
-  callbacks: Set<HalWatchCallback>;
 }
 
 // This interface describes the N-API HalComponent class instance
 export interface NativeHalComponent {
-  newPin(nameSuffix: string, type: HalType, direction: HalPinDir): boolean;
-  newParam(nameSuffix: string, type: HalType, direction: HalParamDir): boolean;
+  newPin(nameSuffix: string, type: number, direction: number): boolean;
+  newParam(nameSuffix: string, type: number, direction: number): boolean;
   ready(): void;
   unready(): void;
   getProperty(name: string): number | boolean;
@@ -30,249 +30,301 @@ export interface NativeHalComponent {
   readonly prefix: string;
 }
 
-// Define the type for the proxied instance, combining HalComponent properties with the dynamic index signature
-export type HalComponentInstance = HalComponent & {
-  [key: string]: number | boolean;
-};
+interface WatchedItem {
+  item: HalItem<HalPinDir | HalParamDir>;
+  lastValue: number | boolean;
+}
 
+/**
+ * Represents a HAL component.
+ *
+ * This class provides functionality to create HAL components, pins, parameters,
+ * and interact with the HAL environment.
+ *
+ * @example
+ * ```typescript
+ * const comp = new HalComponent("my-component");
+ * const pin = comp.newPin("output", "float", "out");
+ * comp.ready();
+ * pin.setValue(123.45);
+ *
+ * // Listen for value changes
+ * pin.on('change', (newVal, oldVal) => {
+ *   console.log(`Changed: ${oldVal} -> ${newVal}`);
+ * });
+ * ```
+ */
 export class HalComponent {
   private nativeInstance: NativeHalComponent;
-  private proxyInstance: HalComponentInstance;
 
   private pins: { [key: string]: Pin } = {};
   private params: { [key: string]: Param } = {};
 
   // Monitoring system
-  private watchedObjects: Map<string, HalWatchedObject> = new Map();
+  private watchedItems: Map<string, WatchedItem> = new Map();
   private monitoringTimer: NodeJS.Timeout | null = null;
-  private monitoringOptions: HalWatchOptions = {
+  private monitoringOptions: HalMonitorOptions = {
     pollInterval: DEFAULT_POLL_INTERVAL,
   };
 
-  // Public readonly properties to match wiki/python
+  /**
+   * The name of the HAL component (e.g., "my-js-comp")
+   */
   public readonly name: string;
+
+  /**
+   * The prefix used for this component's pins and parameters.
+   * Defaults to the component name if not specified.
+   */
   public readonly prefix: string;
 
-  constructor(
-    nativeInstance: NativeHalComponent,
-    componentName: string,
-    componentPrefix: string
-  ) {
-    this.nativeInstance = nativeInstance;
-    this.name = componentName;
-    this.prefix = componentPrefix;
-
-    // The Proxy wraps `this` instance of HalComponent
-    this.proxyInstance = new Proxy(this, {
-      get: (
-        target: HalComponent,
-        propKey: string | symbol,
-        receiver: any
-      ): any => {
-        if (typeof propKey === "string") {
-          // Prioritize existing properties/methods of HalComponent class
-          // Reflect.has checks own and prototype chain properties
-          if (Reflect.has(target, propKey)) {
-            return Reflect.get(target, propKey, receiver);
-          }
-          // Fallback to HAL item access via native getProperty
-          try {
-            return target.nativeInstance.getProperty(propKey); // Returns number | boolean
-          } catch (e) {
-            // Native getProperty should throw if item not found
-            // console.warn(`HAL item '${propKey}' not found or error accessing:`, e);
-            throw e; // Re-throw error to be more explicit
-          }
-        }
-        return Reflect.get(target, propKey, receiver);
-      },
-      set: (
-        target: HalComponent,
-        propKey: string | symbol,
-        value: any,
-        receiver: any
-      ): boolean => {
-        if (typeof propKey === "string") {
-          // Check if the property is an own property or method of HalComponent
-          if (Reflect.has(target, propKey)) {
-            return Reflect.set(target, propKey, value, receiver);
-          }
-          // Fallback to HAL item access via native setProperty
-          try {
-            if (typeof value === "number" || typeof value === "boolean") {
-              target.nativeInstance.setProperty(propKey, value);
-              return true;
-            } else {
-              console.error(
-                `HAL item '${propKey}' can only be set to a number or boolean. Received type ${typeof value}.`
-              );
-              return false;
-            }
-          } catch (e) {
-            throw e;
-          }
-        }
-        return Reflect.set(target, propKey, value, receiver);
-      },
-    }) as HalComponentInstance;
-    return this.proxyInstance;
+  /**
+   * Creates a new HAL component.
+   *
+   * @param name - The name of the component (e.g., "my-component").
+   *               This will be registered with LinuxCNC HAL.
+   * @param prefix - Optional prefix for pins and parameters created by this component.
+   *                 If not provided, defaults to `name`.
+   */
+  constructor(name: string, prefix?: string) {
+    this.nativeInstance = new halNative.HalComponent(name, prefix);
+    this.name = name;
+    this.prefix = prefix || name;
   }
 
   /**
-   * Creates a new HAL pin for this component.
-   * @param nameSuffix The suffix for the pin name (e.g., "in1"). Full name will be "prefix.suffix".
-   * @param type The data type of the pin.
-   * @param direction The direction of the pin (IN, OUT, IO).
-   * @returns A new Pin instance.
+   * Checks if a HAL component with the given name exists in the system.
+   *
+   * @param name - The component name (e.g., "halui", "my-custom-comp").
+   * @returns `true` if the component exists, `false` otherwise.
+   */
+  static exists(name: string): boolean {
+    return halNative.component_exists(name);
+  }
+
+  /**
+   * Checks if the HAL component with the given name has been marked as ready.
+   *
+   * @param name - The component name.
+   * @returns `true` if the component exists and is ready, `false` otherwise.
+   */
+  static isReady(name: string): boolean {
+    return halNative.component_is_ready(name);
+  }
+
+  /**
+   * Gets the value of a pin or parameter by name.
+   *
+   * @param name - The nameSuffix of the pin or parameter.
+   * @returns The current value.
+   */
+  getValue(name: string): number | boolean {
+    return this.nativeInstance.getProperty(name);
+  }
+
+  /**
+   * Sets the value of a pin or parameter by name.
+   *
+   * @param name - The nameSuffix of the pin or parameter.
+   * @param value - The value to set.
+   * @returns The value that was set.
+   */
+  setValue(name: string, value: number | boolean): number | boolean {
+    if (typeof value !== "number" && typeof value !== "boolean") {
+      throw new TypeError("Value must be a number or boolean");
+    }
+    return this.nativeInstance.setProperty(name, value);
+  }
+
+  /**
+   * Creates a new HAL pin associated with this component.
+   *
+   * This method can only be called before `ready()` or after `unready()`.
+   *
+   * @param nameSuffix - The suffix for the pin name (e.g., "in1", "motor.0.pos").
+   *                     The full HAL name will be `this.prefix + "." + nameSuffix`.
+   * @param type - The data type of the pin (e.g., `"float"`, `"bit"`).
+   *               See {@link HalType} for available types.
+   * @param direction - The direction of the pin (e.g., `"in"`, `"out"`, `"io"`).
+   *                    See {@link HalPinDir} for available directions.
+   * @returns A new `Pin` object instance.
+   * @throws Error if component is ready or if pin creation fails.
    */
   newPin(nameSuffix: string, type: HalType, direction: HalPinDir): Pin {
-    const success = this.nativeInstance.newPin(nameSuffix, type, direction);
+    const success = this.nativeInstance.newPin(
+      nameSuffix,
+      HalTypeValue[type],
+      HalPinDirValue[direction]
+    );
     if (!success) {
-      // The native layer should throw an error on failure, so this might not be strictly needed
       console.error(`Failed to create pin '${nameSuffix}'`);
     }
-    const pin = new Pin(this.proxyInstance, nameSuffix, type, direction);
+    const pin = new Pin(this, nameSuffix, type, direction);
     this.pins[nameSuffix] = pin;
+    this.setupItemListeners(pin, nameSuffix);
     return pin;
   }
 
   /**
-   * Creates a new HAL parameter for this component.
-   * @param nameSuffix The suffix for the parameter name.
-   * @param type The data type of the parameter.
-   * @param direction The writability of the parameter (RO, RW).
-   * @returns A new Param instance.
+   * Creates a new HAL parameter associated with this component.
+   *
+   * This method can only be called before `ready()` or after `unready()`.
+   *
+   * @param nameSuffix - The suffix for the parameter name.
+   *                     The full HAL name will be `this.prefix + "." + nameSuffix`.
+   * @param type - The data type of the parameter. See {@link HalType} for available types.
+   * @param direction - The writability of the parameter (`"ro"` for read-only,
+   *                    `"rw"` for read-write). See {@link HalParamDir}.
+   * @returns A new `Param` object instance.
+   * @throws Error if component is ready or if parameter creation fails.
    */
   newParam(nameSuffix: string, type: HalType, direction: HalParamDir): Param {
-    const success = this.nativeInstance.newParam(nameSuffix, type, direction);
+    const success = this.nativeInstance.newParam(
+      nameSuffix,
+      HalTypeValue[type],
+      HalParamDirValue[direction]
+    );
     if (!success) {
       console.error(`Failed to create param '${nameSuffix}'`);
     }
-    const param = new Param(this.proxyInstance, nameSuffix, type, direction);
+    const param = new Param(this, nameSuffix, type, direction);
     this.params[nameSuffix] = param;
+    this.setupItemListeners(param, nameSuffix);
     return param;
   }
 
   /**
-   * Marks this component as ready and locks out adding new pins/params.
+   * Sets up auto-watch listeners for a pin or param.
+   * @private
+   */
+  private setupItemListeners(
+    item: HalItem<HalPinDir | HalParamDir>,
+    name: string
+  ): void {
+    item.on("newListener", (event) => {
+      if (event === "change" && !this.watchedItems.has(name)) {
+        this.watchedItems.set(name, {
+          item,
+          lastValue: this.getValue(name),
+        });
+        this.ensureMonitoring();
+      }
+    });
+
+    item.on("removeListener", (event) => {
+      if (event === "change" && item.listenerCount("change") === 0) {
+        this.watchedItems.delete(name);
+        this.checkStopMonitoring();
+      }
+    });
+  }
+
+  /**
+   * Marks this component as ready and available to the HAL system.
+   *
+   * Once ready, pins can be linked, and parameters can be accessed by other
+   * HAL components or tools. Pins and parameters cannot be added after `ready()`
+   * is called, unless `unready()` is called first.
    */
   ready(): void {
     this.nativeInstance.ready();
   }
 
   /**
-   * Allows a component to add pins/params after ready() has been called.
-   * ready() must be called again afterwards.
+   * Marks this component as not ready, allowing addition of more pins or parameters.
+   *
+   * `ready()` must be called again to make the component (and any new items)
+   * available to HAL.
    */
   unready(): void {
     this.nativeInstance.unready();
   }
 
   /**
-   * Retrieves all pins in this component.
-   * @returns Map of all pins in this component
+   * Retrieves a map of all `Pin` objects created for this component.
+   *
+   * @returns An object where keys are the `nameSuffix` of the pins and values
+   *          are the corresponding `Pin` instances.
    */
   getPins(): { [key: string]: Pin } {
     return this.pins;
   }
 
   /**
-   * Retrieves all parameters in this component.
-   * @returns Map of all parameters in this component
+   * Retrieves a map of all `Param` objects created for this component.
+   *
+   * @returns An object where keys are the `nameSuffix` of the parameters and
+   *          values are the corresponding `Param` instances.
    */
   getParams(): { [key: string]: Param } {
     return this.params;
   }
 
   /**
-   * Sets monitoring options for the component.
-   * @param options Options to configure monitoring behavior
+   * Gets a pin by name.
+   *
+   * @param name - The nameSuffix of the pin.
+   * @returns The Pin instance, or undefined if not found.
    */
-  setMonitoringOptions(options: HalWatchOptions): void {
+  getPin(name: string): Pin | undefined {
+    return this.pins[name];
+  }
+
+  /**
+   * Gets a param by name.
+   *
+   * @param name - The nameSuffix of the param.
+   * @returns The Param instance, or undefined if not found.
+   */
+  getParam(name: string): Param | undefined {
+    return this.params[name];
+  }
+
+  /**
+   * Configures the monitoring system settings.
+   *
+   * The monitoring system will check for value changes at the specified interval.
+   *
+   * @param options - Configuration object with `pollInterval` property (in milliseconds).
+   *                  Default polling interval is 10ms.
+   */
+  setMonitoringOptions(options: HalMonitorOptions): void {
     this.monitoringOptions = { ...this.monitoringOptions, ...options };
 
     // Restart monitoring with new options if it's currently running
-    if (this.monitoringTimer && this.watchedObjects.size > 0) {
+    if (this.monitoringTimer && this.watchedItems.size > 0) {
       this.stopMonitoring();
       this.startMonitoring();
     }
   }
 
   /**
-   * Gets current monitoring options.
-   * @returns Current monitoring options
+   * Retrieves the current monitoring configuration.
+   *
+   * @returns A copy of the current monitoring options.
    */
-  getMonitoringOptions(): HalWatchOptions {
+  getMonitoringOptions(): HalMonitorOptions {
     return { ...this.monitoringOptions };
   }
 
   /**
-   * Adds a watch callback for a pin or parameter.
-   * @param name Name of the pin or parameter to watch
-   * @param callback Function to call when value changes
+   * Starts the monitoring timer if not already running.
+   * @private
    */
-  addWatch(name: string, callback: HalWatchCallback): void {
-    // Validate name and callback
-    const object = this.pins[name] || this.params[name];
-    if (!object) {
-      throw new Error(`No pin or parameter found with name '${name}'`);
-    }
-
-    let watchedObj = this.watchedObjects.get(name);
-
-    if (!watchedObj) {
-      // Get initial value
-      const initialValue = this.proxyInstance[name] as number | boolean;
-      watchedObj = {
-        object,
-        lastValue: initialValue,
-        callbacks: new Set(),
-      };
-      this.watchedObjects.set(name, watchedObj);
-    }
-
-    watchedObj.callbacks.add(callback);
-
-    // Start monitoring if this is the first watched object
-    if (this.watchedObjects.size === 1 && !this.monitoringTimer) {
+  private ensureMonitoring(): void {
+    if (!this.monitoringTimer && this.watchedItems.size > 0) {
       this.startMonitoring();
     }
   }
 
   /**
-   * Removes a watch callback for a pin or parameter.
-   * @param name Name of the pin or parameter to unwatch
-   * @param callback Function to remove from callbacks
+   * Stops monitoring if no items are being watched.
+   * @private
    */
-  removeWatch(name: string, callback: HalWatchCallback): void {
-    const watchedObj = this.watchedObjects.get(name);
-    if (watchedObj) {
-      watchedObj.callbacks.delete(callback);
-
-      // Remove the watched object if no callbacks remain
-      if (watchedObj.callbacks.size === 0) {
-        this.watchedObjects.delete(name);
-
-        // Stop monitoring if no objects are being watched
-        if (this.watchedObjects.size === 0) {
-          this.stopMonitoring();
-        }
-      }
+  private checkStopMonitoring(): void {
+    if (this.watchedItems.size === 0) {
+      this.stopMonitoring();
     }
-  }
-
-  /**
-   * Gets the list of currently watched objects.
-   * @returns Array of watched object names and types
-   */
-  getWatchedObjects(): Array<{
-    object: Pin | Param;
-    callbackCount: number;
-  }> {
-    return Array.from(this.watchedObjects.entries()).map(([name, obj]) => ({
-      object: obj.object,
-      callbackCount: obj.callbacks.size,
-    }));
   }
 
   /**
@@ -281,7 +333,7 @@ export class HalComponent {
    */
   private startMonitoring(): void {
     if (this.monitoringTimer) {
-      return; // Already monitoring
+      return;
     }
 
     this.monitoringTimer = setInterval(() => {
@@ -301,26 +353,18 @@ export class HalComponent {
   }
 
   /**
-   * Checks all watched objects for value changes and triggers callbacks.
+   * Checks all watched items for value changes and emits 'change' events.
    * @private
    */
   private checkForChanges(): void {
-    for (const [name, watchedObj] of this.watchedObjects.entries()) {
+    for (const [name, watched] of this.watchedItems.entries()) {
       try {
-        const currentValue = this.proxyInstance[name] as number | boolean;
+        const currentValue = this.getValue(name);
 
-        if (currentValue !== watchedObj.lastValue) {
-          const oldValue = watchedObj.lastValue;
-          watchedObj.lastValue = currentValue;
-
-          // Trigger all callbacks for this object
-          for (const callback of watchedObj.callbacks) {
-            try {
-              callback(currentValue, oldValue, watchedObj.object);
-            } catch (error) {
-              console.error(`Error in watch callback for ${name}:`, error);
-            }
-          }
+        if (currentValue !== watched.lastValue) {
+          const oldValue = watched.lastValue;
+          watched.lastValue = currentValue;
+          watched.item.emit("change", currentValue, oldValue);
         }
       } catch (error) {
         console.error(`Error checking value for ${name}:`, error);
@@ -329,104 +373,20 @@ export class HalComponent {
   }
 
   /**
-   * Cleanup method to stop monitoring when component is destroyed.
+   * Cleans up the component, stops monitoring and removes all listeners.
+   *
+   * Should be called when the component is no longer needed to prevent memory leaks.
    */
-  destroy(): void {
+  dispose(): void {
     this.stopMonitoring();
-    this.watchedObjects.clear();
-  }
-}
+    this.watchedItems.clear();
 
-export class Pin {
-  private componentInstance: HalComponentInstance;
-  public readonly name: string;
-  public readonly type: HalType;
-  public readonly direction: HalPinDir;
-
-  constructor(
-    componentInstance: HalComponentInstance,
-    nameSuffix: string,
-    type: HalType,
-    direction: HalPinDir
-  ) {
-    this.componentInstance = componentInstance;
-    this.name = nameSuffix;
-    this.type = type;
-    this.direction = direction;
-  }
-
-  getValue(): number | boolean {
-    return this.componentInstance[this.name] as number | boolean;
-  }
-
-  setValue(value: number | boolean): number | boolean {
-    return (this.componentInstance[this.name] = value);
-  }
-
-  /**
-   * Starts watching this pin for value changes.
-   * @param callback Function to call when the pin value changes
-   */
-  watch(callback: HalWatchCallback): void {
-    // Get the HalComponent instance from the proxy
-    const component = this.componentInstance as HalComponent;
-    component.addWatch(this.name, callback);
-  }
-
-  /**
-   * Stops watching this pin for value changes.
-   * @param callback The specific callback function to remove
-   */
-  removeWatch(callback: HalWatchCallback): void {
-    // Get the HalComponent instance from the proxy
-    const component = this.componentInstance as HalComponent;
-    component.removeWatch(this.name, callback);
-  }
-}
-
-export class Param {
-  private componentInstance: HalComponentInstance;
-  public readonly name: string;
-  public readonly type: HalType;
-  public readonly direction: HalParamDir;
-
-  constructor(
-    componentInstance: HalComponentInstance,
-    nameSuffix: string,
-    type: HalType,
-    direction: HalParamDir
-  ) {
-    this.componentInstance = componentInstance;
-    this.name = nameSuffix;
-    this.type = type;
-    this.direction = direction;
-  }
-
-  getValue(): number | boolean {
-    return this.componentInstance[this.name] as number | boolean;
-  }
-
-  setValue(value: number | boolean): number | boolean {
-    return (this.componentInstance[this.name] = value);
-  }
-
-  /**
-   * Starts watching this parameter for value changes.
-   * @param callback Function to call when the parameter value changes
-   */
-  watch(callback: HalWatchCallback): void {
-    // Get the HalComponent instance from the proxy
-    const component = this.componentInstance as HalComponent;
-    component.addWatch(this.name, callback);
-  }
-
-  /**
-   * Stops watching this parameter for value changes.
-   * @param callback The specific callback function to remove
-   */
-  removeWatch(callback: HalWatchCallback): void {
-    // Get the HalComponent instance from the proxy
-    const component = this.componentInstance as HalComponent;
-    component.removeWatch(this.name, callback);
+    // Remove all listeners from pins and params
+    for (const pin of Object.values(this.pins)) {
+      pin.removeAllListeners();
+    }
+    for (const param of Object.values(this.params)) {
+      param.removeAllListeners();
+    }
   }
 }

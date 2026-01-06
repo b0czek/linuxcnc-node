@@ -6,11 +6,5 @@
  * tagged with motion types for graphics visualization.
  */
 
-// Export all types
-export * from "./types";
-
-// Export constants
-export * from "./constants";
-
 // Export parser function
 export { parseGCode } from "./parser";

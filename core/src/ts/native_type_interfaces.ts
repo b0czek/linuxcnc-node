@@ -3,14 +3,12 @@ import {
   ToolEntry,
   LinuxCNCError,
   RecursivePartial,
-} from "./types";
-import {
   TaskMode,
   TaskState,
   TrajMode,
   RcsStatus,
   EmcDebug,
-} from "./constants";
+} from "@linuxcnc-node/types";
 
 // Interface for the NAPI addon module itself
 export interface NapiOptions {
@@ -24,90 +22,12 @@ export interface NapiOptions {
   // Constants (as defined in nml_addon.cc)
   NMLFILE_DEFAULT: string;
 
-  TASK_MODE_MDI: number;
-  TASK_MODE_MANUAL: number;
-  TASK_MODE_AUTO: number;
-  // TASK_MODE_TELEOP: number;
-
-  TASK_STATE_ESTOP: number;
-  TASK_STATE_ESTOP_RESET: number;
-  TASK_STATE_OFF: number;
-  TASK_STATE_ON: number;
-
-  EXEC_STATE_ERROR: number;
-  EXEC_STATE_DONE: number;
-  EXEC_STATE_WAITING_FOR_MOTION: number;
-  EXEC_STATE_WAITING_FOR_MOTION_QUEUE: number;
-  EXEC_STATE_WAITING_FOR_IO: number;
-  EXEC_STATE_WAITING_FOR_MOTION_AND_IO: number;
-  EXEC_STATE_WAITING_FOR_DELAY: number;
-  EXEC_STATE_WAITING_FOR_SYSTEM_CMD: number;
-  EXEC_STATE_WAITING_FOR_SPINDLE_ORIENTED: number;
-
-  INTERP_STATE_IDLE: number;
-  INTERP_STATE_READING: number;
-  INTERP_STATE_PAUSED: number;
-  INTERP_STATE_WAITING: number;
-
-  TRAJ_MODE_FREE: number;
-  TRAJ_MODE_COORD: number;
-  TRAJ_MODE_TELEOP: number;
-
-  EMC_MOTION_TYPE_TRAVERSE: number;
-  EMC_MOTION_TYPE_FEED: number;
-  EMC_MOTION_TYPE_ARC: number;
-  EMC_MOTION_TYPE_TOOLCHANGE: number;
-  EMC_MOTION_TYPE_PROBING: number;
-  EMC_MOTION_TYPE_INDEXROTARY: number;
-  MOTION_TYPE_NONE: number;
-
-  KINEMATICS_IDENTITY: number;
-  KINEMATICS_FORWARD_ONLY: number;
-  KINEMATICS_INVERSE_ONLY: number;
-  KINEMATICS_BOTH: number;
-
-  RCS_STATUS_UNINITIALIZED: number;
-  RCS_STATUS_DONE: number;
-  RCS_STATUS_EXEC: number;
-  RCS_STATUS_ERROR: number;
-
   EMCMOT_MAX_JOINTS: number;
   EMCMOT_MAX_AXIS: number;
   EMCMOT_MAX_SPINDLES: number;
   EMCMOT_MAX_DIO: number;
   EMCMOT_MAX_AIO: number;
   EMCMOT_MAX_MISC_ERROR: number;
-
-  EMC_OPERATOR_ERROR_TYPE: number;
-  EMC_OPERATOR_TEXT_TYPE: number;
-  EMC_OPERATOR_DISPLAY_TYPE: number;
-  NML_ERROR_TYPE: number;
-  NML_TEXT_TYPE: number;
-  NML_DISPLAY_TYPE: number;
-
-  JOINT_TYPE_LINEAR: number;
-  JOINT_TYPE_ANGULAR: number;
-
-  EMCMOT_ORIENT_NONE: number;
-  EMCMOT_ORIENT_COMPLETE: number;
-  EMCMOT_ORIENT_IN_PROGRESS: number;
-  EMCMOT_ORIENT_FAULTED: number;
-
-  EMC_DEBUG_CONFIG: number;
-  EMC_DEBUG_VERSIONS: number;
-  EMC_DEBUG_TASK_ISSUE: number;
-  EMC_DEBUG_NML: number;
-  EMC_DEBUG_MOTION_TIME: number;
-  EMC_DEBUG_INTERP: number;
-  EMC_DEBUG_RCS: number;
-  EMC_DEBUG_INTERP_LIST: number;
-  EMC_DEBUG_IOCONTROL: number;
-  EMC_DEBUG_OWORD: number;
-  EMC_DEBUG_REMAP: number;
-  EMC_DEBUG_PYTHON: number;
-  EMC_DEBUG_NAMEDPARAM: number;
-  EMC_DEBUG_GDBONSIGNAL: number;
-  EMC_DEBUG_STATE_TAGS: number;
 }
 
 // Interface for the NapiStatChannel instance
@@ -219,33 +139,7 @@ export interface NapiPositionLoggerInstance {
   start(interval?: number, maxHistorySize?: number): void;
   stop(): void;
   clear(): void;
-  getCurrentPosition(): {
-    x: number;
-    y: number;
-    z: number;
-    a: number;
-    b: number;
-    c: number;
-    u: number;
-    v: number;
-    w: number;
-    motionType: number;
-  };
-  getMotionHistory(
-    startIndex?: number,
-    count?: number
-  ): Array<{
-    x: number;
-    y: number;
-    z: number;
-    a: number;
-    b: number;
-    c: number;
-    u: number;
-    v: number;
-    w: number;
-    motionType: number;
-    timestamp: number;
-  }>;
+  getCurrentPosition(): Float64Array | null;
+  getMotionHistory(startIndex?: number, count?: number): Float64Array;
   getHistoryCount(): number;
 }

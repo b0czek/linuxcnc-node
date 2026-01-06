@@ -23,6 +23,7 @@ import {
   CommandChannel,
   TaskMode,
   TaskState,
+  PositionIndex,
 } from "@linuxcnc-node/core";
 
 const stat = new StatChannel();
@@ -30,7 +31,9 @@ const cmd = new CommandChannel();
 
 // Watch for position changes
 stat.on("motion.traj.actualPosition", (pos) => {
-  console.log(`X=${pos.x} Y=${pos.y} Z=${pos.z}`);
+  // pos is now a Float64Array(9) - destructure index for readable access
+  const { X, Y, Z } = PositionIndex;
+  console.log(`X=${pos[X]} Y=${pos[Y]} Z=${pos[Z]}`);
 });
 
 // Send commands

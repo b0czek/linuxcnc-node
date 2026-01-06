@@ -5,19 +5,8 @@ import {
   LinuxCNCStatPaths,
   StatPropertyWatchCallback,
   ToolEntry,
-  EmcPose,
-} from "./types";
-import {
-  TaskMode,
-  TaskState,
-  ExecState,
-  InterpState,
-  TrajMode,
-  MotionType,
-  ProgramUnits,
-  RcsStatus,
-  addon,
-} from "./constants";
+} from "@linuxcnc-node/types";
+import { addon } from "./constants";
 import isEqual from "fast-deep-equal";
 import delve from "dlv";
 export const DEFAULT_STAT_POLL_INTERVAL = 50; // ms

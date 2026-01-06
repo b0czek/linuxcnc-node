@@ -44,7 +44,7 @@ namespace GCodeParser
     Napi::Object resultToJS(Napi::Env env);
     Napi::Float64Array positionToJS(Napi::Env env, const Position &pos);
     Napi::Float64Array position3ToJS(Napi::Env env, const Position3 &pos);
-    Napi::Object toolDataToJS(Napi::Env env, const ToolData &tool);
+
     Napi::Object operationToJS(Napi::Env env, const Operation &op);
   };
 

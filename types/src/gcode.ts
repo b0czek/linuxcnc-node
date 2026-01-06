@@ -5,6 +5,9 @@
  * LinuxCNC rs274ngc interpreter.
  */
 
+import { ProgramUnits } from "./constants";
+import { Position, Position3 } from "./core";
+
 // ============================================================================
 // Enums
 // ============================================================================
@@ -44,69 +47,6 @@ export enum Plane {
   UV = 4,
   VW = 5,
   UW = 6,
-}
-
-/**
- * Length units used in the G-code program.
- */
-export enum Units {
-  INCHES = 1,
-  MM = 2,
-  CM = 3,
-}
-
-// ============================================================================
-// Basic Types
-// ============================================================================
-
-/**
- * 9-axis position representing a complete machine pose.
- * Stored as Float64Array for performance (avoids V8 hidden class transitions).
- *
- * Index mapping:
- * - [0] = x: X-axis position
- * - [1] = y: Y-axis position
- * - [2] = z: Z-axis position
- * - [3] = a: A-axis rotation (around X) in degrees
- * - [4] = b: B-axis rotation (around Y) in degrees
- * - [5] = c: C-axis rotation (around Z) in degrees
- * - [6] = u: U-axis auxiliary linear position
- * - [7] = v: V-axis auxiliary linear position
- * - [8] = w: W-axis auxiliary linear position
- */
-export type Position = Float64Array;
-
-/** Position array indices for readable access */
-export enum PositionIndex {
-  X = 0,
-  Y = 1,
-  Z = 2,
-  A = 3,
-  B = 4,
-  C = 5,
-  U = 6,
-  V = 7,
-  W = 8,
-}
-
-/**
- * Complete tool data including geometry and offsets.
- */
-export interface ToolData {
-  /** Tool number identifier */
-  toolNumber: number;
-  /** Pocket number in the tool carousel */
-  pocketNumber: number;
-  /** Tool diameter in current length units */
-  diameter: number;
-  /** Front angle in degrees (for lathe tools) */
-  frontAngle: number;
-  /** Back angle in degrees (for lathe tools) */
-  backAngle: number;
-  /** Tool orientation code (0-9 for lathe tools) */
-  orientation: number;
-  /** Tool length offset */
-  offset: Position;
 }
 
 // ============================================================================
@@ -182,8 +122,8 @@ export interface RigidTapOperation {
   type: OperationType.RIGID_TAP;
   /** Source G-code line number */
   lineNumber: number;
-  /** Target tap position as Float64Array(3): [x, y, z] */
-  pos: Float64Array;
+  /** Target tap position as Position3: [x, y, z] */
+  pos: Position3;
   /** Tap scale factor */
   scale: number;
 }
@@ -262,7 +202,7 @@ export interface NurbsG6Operation {
 export interface UnitsChangeOperation {
   type: OperationType.UNITS_CHANGE;
   /** New active units */
-  units: Units;
+  units: ProgramUnits;
 }
 
 /**
@@ -317,8 +257,8 @@ export interface ToolOffsetOperation {
  */
 export interface ToolChangeOperation {
   type: OperationType.TOOL_CHANGE;
-  /** Complete data for the new tool */
-  tool: ToolData;
+  /** Tool number to change to */
+  toolNumber: number;
 }
 
 /**
@@ -364,10 +304,10 @@ export type GCodeOperation =
  * Min/max stored as Float64Array(3): [x, y, z]
  */
 export interface Extents {
-  /** Minimum coordinates encountered as Float64Array(3): [x, y, z] */
-  min: Float64Array;
-  /** Maximum coordinates encountered as Float64Array(3): [x, y, z] */
-  max: Float64Array;
+  /** Minimum coordinates encountered as Position3: [x, y, z] */
+  min: Position3;
+  /** Maximum coordinates encountered as Position3: [x, y, z] */
+  max: Position3;
 }
 
 /**

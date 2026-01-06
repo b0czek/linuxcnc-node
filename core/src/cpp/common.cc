@@ -28,78 +28,19 @@ namespace LinuxCNC
         return g_nmlFilePath.c_str();
     }
 
-    Napi::Object EmcPoseToNapiObject(Napi::Env env, const EmcPose &pose)
+    Napi::Float64Array EmcPoseToNapiFloat64Array(Napi::Env env, const EmcPose &pose)
     {
-        Napi::Object poseObj = Napi::Object::New(env);
-        poseObj.Set("x", Napi::Number::New(env, pose.tran.x));
-        poseObj.Set("y", Napi::Number::New(env, pose.tran.y));
-        poseObj.Set("z", Napi::Number::New(env, pose.tran.z));
-        poseObj.Set("a", Napi::Number::New(env, pose.a));
-        poseObj.Set("b", Napi::Number::New(env, pose.b));
-        poseObj.Set("c", Napi::Number::New(env, pose.c));
-        poseObj.Set("u", Napi::Number::New(env, pose.u));
-        poseObj.Set("v", Napi::Number::New(env, pose.v));
-        poseObj.Set("w", Napi::Number::New(env, pose.w));
-        return poseObj;
-    }
-
-    bool NapiObjectToEmcPose(Napi::Env env, Napi::Value value, EmcPose &pose)
-    {
-        if (!value.IsObject())
-            return false;
-        Napi::Object obj = value.As<Napi::Object>();
-
-        auto getNumber = [&](Napi::Object o, const char *key, double &val)
-        {
-            if (!o.Has(key) || !o.Get(key).IsNumber())
-                return false;
-            val = o.Get(key).As<Napi::Number>().DoubleValue();
-            return true;
-        };
-
-        if (!getNumber(obj, "x", pose.tran.x))
-            return false;
-        if (!getNumber(obj, "y", pose.tran.y))
-            return false;
-        if (!getNumber(obj, "z", pose.tran.z))
-            return false;
-        if (!getNumber(obj, "a", pose.a))
-            return false;
-        if (!getNumber(obj, "b", pose.b))
-            return false;
-        if (!getNumber(obj, "c", pose.c))
-            return false;
-        if (!getNumber(obj, "u", pose.u))
-            return false;
-        if (!getNumber(obj, "v", pose.v))
-            return false;
-        if (!getNumber(obj, "w", pose.w))
-            return false;
-
-        return true;
-    }
-
-    void OverlayEmcPoseFromNapiObject(Napi::Env env, Napi::Object obj, EmcPose &pose)
-    {
-        // Helper to extract a number from object if present
-        auto overlayNumber = [&](const char *key, double &target)
-        {
-            if (obj.Has(key) && obj.Get(key).IsNumber())
-            {
-                target = obj.Get(key).As<Napi::Number>().DoubleValue();
-            }
-        };
-
-        // Only update fields that are present in the object
-        overlayNumber("x", pose.tran.x);
-        overlayNumber("y", pose.tran.y);
-        overlayNumber("z", pose.tran.z);
-        overlayNumber("a", pose.a);
-        overlayNumber("b", pose.b);
-        overlayNumber("c", pose.c);
-        overlayNumber("u", pose.u);
-        overlayNumber("v", pose.v);
-        overlayNumber("w", pose.w);
+        Napi::Float64Array arr = Napi::Float64Array::New(env, 9);
+        arr[0] = pose.tran.x;
+        arr[1] = pose.tran.y;
+        arr[2] = pose.tran.z;
+        arr[3] = pose.a;
+        arr[4] = pose.b;
+        arr[5] = pose.c;
+        arr[6] = pose.u;
+        arr[7] = pose.v;
+        arr[8] = pose.w;
+        return arr;
     }
 
     Napi::Array DoubleArrayToNapiArray(Napi::Env env, const double *arr, size_t size)

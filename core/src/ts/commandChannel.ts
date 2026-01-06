@@ -1,6 +1,14 @@
 import { NapiCommandChannelInstance } from "./native_type_interfaces";
-import { TaskMode, TaskState, TrajMode, RcsStatus, addon } from "./constants";
-import { DebugFlags, RecursivePartial, ToolEntry } from "./types";
+import { addon } from "./constants";
+import {
+  TaskMode,
+  TaskState,
+  TrajMode,
+  RcsStatus,
+  DebugFlags,
+  RecursivePartial,
+  ToolEntry,
+} from "@linuxcnc-node/types";
 
 export class CommandChannel {
   private nativeInstance: NapiCommandChannelInstance;
