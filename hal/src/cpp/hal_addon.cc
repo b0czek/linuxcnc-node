@@ -21,12 +21,10 @@ Napi::Value HalDataContentToNapiValue(Napi::Env env, hal_type_t type, void *data
         return Napi::Number::New(env, *(static_cast<hal_s32_t *>(data_ptr)));
     case HAL_U32:
         return Napi::Number::New(env, *(static_cast<hal_u32_t *>(data_ptr)));
-#ifdef HAL_S64_SUPPORT
     case HAL_S64:
         return Napi::Number::New(env, *(static_cast<hal_s64_t *>(data_ptr)));
     case HAL_U64:
         return Napi::Number::New(env, *(static_cast<hal_u64_t *>(data_ptr)));
-#endif
     // HAL_PORT skipped
     default:
         ThrowHalError(env, "Unsupported HAL type for JS conversion: " + std::to_string(type));
@@ -76,7 +74,6 @@ int SetHalValueFromString(hal_type_t type, void *data_target_ptr, const std::str
         if (*end_ptr != '\0' && !isspace((unsigned char)*end_ptr))
             retval = -EINVAL;
         break;
-#ifdef HAL_S64_SUPPORT
     case HAL_S64:
         *(static_cast<hal_s64_t *>(data_target_ptr)) = static_cast<hal_s64_t>(strtoll(c_str_val, &end_ptr, 0));
         if (*end_ptr != '\0' && !isspace((unsigned char)*end_ptr))
@@ -87,7 +84,6 @@ int SetHalValueFromString(hal_type_t type, void *data_target_ptr, const std::str
         if (*end_ptr != '\0' && !isspace((unsigned char)*end_ptr))
             retval = -EINVAL;
         break;
-#endif
     default:
         retval = -EINVAL; // Unsupported type
     }
@@ -613,13 +609,8 @@ Napi::Object InitModule(Napi::Env env, Napi::Object exports)
     exports.Set("HAL_FLOAT", Napi::Number::New(env, HAL_FLOAT));
     exports.Set("HAL_S32", Napi::Number::New(env, HAL_S32));
     exports.Set("HAL_U32", Napi::Number::New(env, HAL_U32));
-#ifdef HAL_S64_SUPPORT
     exports.Set("HAL_S64", Napi::Number::New(env, HAL_S64));
     exports.Set("HAL_U64", Napi::Number::New(env, HAL_U64));
-#else
-    exports.Set("HAL_S64", Napi::Number::New(env, HAL_S32));
-    exports.Set("HAL_U64", Napi::Number::New(env, HAL_U32));
-#endif
 
     exports.Set("HAL_IN", Napi::Number::New(env, HAL_IN));
     exports.Set("HAL_OUT", Napi::Number::New(env, HAL_OUT));

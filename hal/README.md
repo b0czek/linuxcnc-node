@@ -510,7 +510,6 @@ The module exports various HAL and RTAPI constants, mirroring the enums defined 
 
 - **64-bit Integers (`HAL_S64`, `HAL_U64`):**
   JavaScript's native `number` type is an IEEE 754 double-precision float. The C++ bindings convert 64-bit HAL integers to `double` for JavaScript. This means that integers larger than `Number.MAX_SAFE_INTEGER` (2<sup>53</sup>-1) or smaller than `Number.MIN_SAFE_INTEGER` will lose precision. Full `BigInt` support for 64-bit types is not implemented.
-  - **LinuxCNC Version Fallback:** If the version of LinuxCNC that this module is compiled against does not natively support `HAL_S64` and `HAL_U64` types, this module will automatically alias `hal.HAL_S64` to `hal.HAL_S32` and `hal.HAL_U64` to `hal.HAL_U32`. In such cases, attempting to create pins or parameters with `HAL_S64` or `HAL_U64` will effectively create them as 32-bit integers.
 - **No `HAL_PORT` Support:**
   Binding, creation, and interaction with `HAL_PORT` type pins or signals are not currently implemented.
 
