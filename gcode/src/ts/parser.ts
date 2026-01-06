@@ -43,7 +43,8 @@ const addon = loadAddon();
  *
  * @example
  * ```typescript
- * import { parseGCode, OperationType } from "@linuxcnc-node/gcode";
+ * import { parseGCode } from "@linuxcnc-node/gcode";
+ * import { OperationType, PositionIndex } from "@linuxcnc/types";
  *
  * const result = await parseGCode("/path/to/program.ngc", {
  *   iniPath: "/path/to/machine.ini",
@@ -52,13 +53,14 @@ const addon = loadAddon();
  *   }
  * });
  *
+ * const { X, Y } = PositionIndex;
  * for (const op of result.operations) {
  *   if (op.type === OperationType.FEED) {
- *     console.log(`Feed from (${op.start.x}, ${op.start.y}) to (${op.end.x}, ${op.end.y})`);
+ *     console.log(`Feed from (${op.pos[X]}, ${op.pos[Y]})`);
  *   }
  * }
  *
- * console.log(`Extents: X ${result.extents.min.x} to ${result.extents.max.x}`);
+ * console.log(`Extents: X ${result.extents.min[X]} to ${result.extents.max[X]}`);
  * ```
  */
 export async function parseGCode(

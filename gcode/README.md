@@ -11,20 +11,22 @@ npm install @linuxcnc-node/gcode
 ## Usage
 
 ```typescript
-import { parseGCode, OperationType } from "@linuxcnc-node/gcode";
+import { parseGCode } from "@linuxcnc-node/gcode";
+import { OperationType, PositionIndex } from "@linuxcnc/types";
 
 const result = await parseGCode("/path/to/program.ngc", {
   iniPath: "/path/to/linuxcnc.ini",
-  onProgress: (p) => console.log(`${p.percent}%`),
+  onProgress: (p) => console.log(`${p.percent}% - ${p.operationCount} ops`),
 });
 
 console.log(`Parsed ${result.operations.length} ops`, result.extents);
 
+const { X, Y, Z } = PositionIndex;
 for (const op of result.operations) {
   if (op.type === OperationType.TRAVERSE) {
-    console.log(`Rapid to ${op.end.x}, ${op.end.y}, ${op.end.z}`);
+    console.log(`Rapid to ${op.pos[X]}, ${op.pos[Y]}, ${op.pos[Z]}`);
   } else if (op.type === OperationType.FEED) {
-    console.log(`Feed to ${op.end.x}, ${op.end.y} @ F${op.feedRate}`);
+    console.log(`Feed to ${op.pos[X]}, ${op.pos[Y]} @ F${op.feedRate}`);
   }
 }
 ```
@@ -35,10 +37,11 @@ for (const op of result.operations) {
 
 Returns `Promise<GCodeParseResult>`.
 
-**Options:**
+**Options (`ParseOptions`):**
 
 - `iniPath`: Path to LinuxCNC INI file (required)
-- `onProgress`: Callback `(progress: { percent: number, operationCount: number }) => void`
+- `onProgress`: Callback `(progress: ParseProgress) => void`
+- `progressUpdates`: Target number of progress updates (default: 40, set to 0 to disable)
 
 ### Types
 

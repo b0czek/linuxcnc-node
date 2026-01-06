@@ -627,35 +627,7 @@ void CHANGE_TOOL()
   CANON_TOOL_TABLE toolTable = GET_EXTERNAL_TOOL_TABLE(g_selectedTool);
 
   GCodeParser::ToolChangeOp op;
-  op.tool.toolNumber = toolTable.toolno;
-  op.tool.pocketNumber = g_selectedTool;
-  op.tool.diameter = toolTable.diameter;
-  op.tool.frontAngle = toolTable.frontangle;
-  op.tool.backAngle = toolTable.backangle;
-  op.tool.orientation = toolTable.orientation;
-
-  if (!ctx->metric)
-  {
-    op.tool.offset.x = toolTable.offset.tran.x * 25.4;
-    op.tool.offset.y = toolTable.offset.tran.y * 25.4;
-    op.tool.offset.z = toolTable.offset.tran.z * 25.4;
-    op.tool.offset.u = toolTable.offset.u * 25.4;
-    op.tool.offset.v = toolTable.offset.v * 25.4;
-    op.tool.offset.w = toolTable.offset.w * 25.4;
-    op.tool.diameter *= 25.4;
-  }
-  else
-  {
-    op.tool.offset.x = toolTable.offset.tran.x;
-    op.tool.offset.y = toolTable.offset.tran.y;
-    op.tool.offset.z = toolTable.offset.tran.z;
-    op.tool.offset.u = toolTable.offset.u;
-    op.tool.offset.v = toolTable.offset.v;
-    op.tool.offset.w = toolTable.offset.w;
-  }
-  op.tool.offset.a = toolTable.offset.a;
-  op.tool.offset.b = toolTable.offset.b;
-  op.tool.offset.c = toolTable.offset.c;
+  op.toolNumber = toolTable.toolno;
 
   ctx->addOperation(std::move(op));
 }
