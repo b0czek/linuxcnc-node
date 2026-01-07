@@ -1,5 +1,9 @@
 import * as hal from "../src/ts/index";
-import { DEFAULT_POLL_INTERVAL, HalMonitorOptions } from "../src/ts/component";
+import {
+  DEFAULT_POLL_INTERVAL,
+  HalMonitorOptions,
+  HalDelta,
+} from "../src/ts/component";
 import { Pin, Param } from "../src/ts/item";
 
 // Helper for unique names to avoid HAL conflicts between tests
@@ -275,6 +279,157 @@ describe("HAL Monitoring System Tests", () => {
 
       expect(receivedValue).toBe(12345);
       expect(pin.getValue()).toBe(12345);
+    });
+  });
+
+  describe("Delta/Batch Updates", () => {
+    let pin1: Pin;
+    let pin2: Pin;
+
+    beforeEach(() => {
+      pin1 = comp.newPin("delta-pin1", "float", "out");
+      pin2 = comp.newPin("delta-pin2", "s32", "out");
+      comp.ready();
+    });
+
+    it("should have cursor start at 0", () => {
+      expect(comp.getCursor()).toBe(0);
+    });
+
+    it("should emit 'delta' event when values change", async () => {
+      let deltaReceived: HalDelta | null = null;
+
+      // Need to attach change listeners to start monitoring
+      pin1.on("change", () => {});
+
+      comp.on("delta", (delta) => {
+        deltaReceived = delta;
+      });
+
+      comp.setValue("delta-pin1", 3.14);
+
+      await waitForCondition(() => deltaReceived !== null);
+
+      expect(deltaReceived).not.toBeNull();
+      expect(deltaReceived!.changes).toHaveLength(1);
+      expect(deltaReceived!.changes[0].name).toBe("delta-pin1");
+      expect(deltaReceived!.changes[0].value).toBeCloseTo(3.14);
+      expect(deltaReceived!.cursor).toBe(1);
+      expect(deltaReceived!.timestamp).toBeGreaterThan(0);
+    });
+
+    it("should increment cursor with each delta emit", async () => {
+      const deltas: HalDelta[] = [];
+
+      pin1.on("change", () => {});
+
+      comp.on("delta", (delta) => {
+        deltas.push(delta);
+      });
+
+      comp.setValue("delta-pin1", 1.0);
+      await waitForCondition(() => deltas.length >= 1);
+
+      comp.setValue("delta-pin1", 2.0);
+      await waitForCondition(() => deltas.length >= 2);
+
+      comp.setValue("delta-pin1", 3.0);
+      await waitForCondition(() => deltas.length >= 3);
+
+      expect(deltas[0].cursor).toBe(1);
+      expect(deltas[1].cursor).toBe(2);
+      expect(deltas[2].cursor).toBe(3);
+      expect(comp.getCursor()).toBe(3);
+    });
+
+    it("should batch multiple changes in same poll cycle into one delta", async () => {
+      const deltas: HalDelta[] = [];
+
+      // Watch both pins
+      pin1.on("change", () => {});
+      pin2.on("change", () => {});
+
+      comp.on("delta", (delta) => {
+        deltas.push(delta);
+      });
+
+      // Change both pins before poll cycle triggers
+      comp.setValue("delta-pin1", 100.5);
+      comp.setValue("delta-pin2", 42);
+
+      // Wait for a delta with both changes
+      await waitForCondition(() => deltas.some((d) => d.changes.length === 2));
+
+      const batchedDelta = deltas.find((d) => d.changes.length === 2);
+      expect(batchedDelta).toBeDefined();
+      expect(batchedDelta!.changes).toContainEqual({
+        name: "delta-pin1",
+        value: expect.closeTo(100.5, 5),
+      });
+      expect(batchedDelta!.changes).toContainEqual({
+        name: "delta-pin2",
+        value: 42,
+      });
+    });
+
+    it("should not emit delta if no values changed", async () => {
+      let deltaCount = 0;
+
+      pin1.on("change", () => {});
+      comp.on("delta", () => {
+        deltaCount++;
+      });
+
+      // Set value to trigger first delta
+      comp.setValue("delta-pin1", 1.0);
+      await waitForCondition(() => deltaCount >= 1);
+
+      const countAfterFirstChange = deltaCount;
+
+      // Wait for several poll cycles without changing value
+      await wait(100);
+
+      expect(deltaCount).toBe(countAfterFirstChange);
+    });
+
+    it("should return correct snapshot", async () => {
+      // Watch pins to include them in snapshot
+      pin1.on("change", () => {});
+      pin2.on("change", () => {});
+
+      // Set some values
+      comp.setValue("delta-pin1", 99.9);
+      comp.setValue("delta-pin2", 123);
+
+      // Wait for changes to be processed
+      await waitForCondition(() => comp.getCursor() >= 1);
+
+      const snapshot = comp.getSnapshot();
+
+      expect(snapshot.items).toHaveProperty("delta-pin1");
+      expect(snapshot.items).toHaveProperty("delta-pin2");
+      expect(snapshot.items["delta-pin1"]).toBeCloseTo(99.9);
+      expect(snapshot.items["delta-pin2"]).toBe(123);
+      expect(snapshot.cursor).toBe(comp.getCursor());
+      expect(snapshot.timestamp).toBeGreaterThan(0);
+    });
+
+    it("should have delta timestamp be reasonable", async () => {
+      let deltaReceived: HalDelta | null = null;
+      const beforeTime = Date.now();
+
+      pin1.on("change", () => {});
+      comp.on("delta", (delta) => {
+        deltaReceived = delta;
+      });
+
+      comp.setValue("delta-pin1", 1.0);
+      await waitForCondition(() => deltaReceived !== null);
+
+      const afterTime = Date.now();
+
+      expect(deltaReceived!.timestamp).toBeGreaterThanOrEqual(beforeTime);
+      expect(deltaReceived!.timestamp).toBeLessThanOrEqual(afterTime);
     });
   });
 });

@@ -1,15 +1,41 @@
-import type { HalType, HalPinDir, HalParamDir } from "@linuxcnc-node/types";
+import { EventEmitter } from "events";
+import type {
+  HalType,
+  HalPinDir,
+  HalParamDir,
+  HalValue,
+} from "@linuxcnc-node/types";
 import {
   halNative,
   HalTypeValue,
   HalPinDirValue,
   HalParamDirValue,
-  HalValue,
 } from "./constants";
 import { HalItem, Pin, Param } from "./item";
 
 /** Default polling interval in milliseconds for monitoring value changes */
 export const DEFAULT_POLL_INTERVAL = 10;
+
+/**
+ * Delta update structure for HAL items.
+ * Contains all items that changed in a single polling cycle.
+ */
+export interface HalDelta {
+  /** Changed items as flat array of name-value pairs */
+  changes: Array<{ name: string; value: HalValue }>;
+  /** Monotonic cursor for sync verification */
+  cursor: number;
+  /** Timestamp of update (ms since epoch) */
+  timestamp: number;
+}
+
+/**
+ * Events emitted by HalComponent.
+ */
+interface HalComponentEvents {
+  /** Emitted when one or more items change during a polling cycle */
+  delta: [delta: HalDelta];
+}
 
 /**
  * Configuration options for the monitoring system.
@@ -53,9 +79,14 @@ interface WatchedItem {
  * pin.on('change', (newVal, oldVal) => {
  *   console.log(`Changed: ${oldVal} -> ${newVal}`);
  * });
+ *
+ * // Listen for batch delta updates
+ * comp.on('delta', (delta) => {
+ *   console.log(`${delta.changes.length} items changed at cursor ${delta.cursor}`);
+ * });
  * ```
  */
-export class HalComponent {
+export class HalComponent extends EventEmitter<HalComponentEvents> {
   private nativeInstance: NativeHalComponent;
 
   private pins: { [key: string]: Pin } = {};
@@ -67,6 +98,9 @@ export class HalComponent {
   private monitoringOptions: HalMonitorOptions = {
     pollInterval: DEFAULT_POLL_INTERVAL,
   };
+
+  /** Monotonic cursor incremented on each batch update */
+  private cursor: number = 0;
 
   /**
    * The name of the HAL component (e.g., "my-js-comp")
@@ -88,6 +122,7 @@ export class HalComponent {
    *                 If not provided, defaults to `name`.
    */
   constructor(name: string, prefix?: string) {
+    super();
     this.nativeInstance = new halNative.HalComponent(name, prefix);
     this.name = name;
     this.prefix = prefix || name;
@@ -282,6 +317,42 @@ export class HalComponent {
   }
 
   /**
+   * Gets the current cursor value for sync operations.
+   *
+   * The cursor is monotonically increasing and increments with each delta emit.
+   *
+   * @returns The current cursor value.
+   */
+  getCursor(): number {
+    return this.cursor;
+  }
+
+  /**
+   * Gets a snapshot of all current item values.
+   *
+   * Useful for initial sync or resync after cursor mismatch.
+   *
+   * @returns Object with items map, current cursor, and timestamp.
+   */
+  getSnapshot(): {
+    items: Record<string, HalValue>;
+    cursor: number;
+    timestamp: number;
+  } {
+    const items: Record<string, HalValue> = {};
+
+    for (const [name] of this.watchedItems.entries()) {
+      items[name] = this.getValue(name);
+    }
+
+    return {
+      items,
+      cursor: this.cursor,
+      timestamp: Date.now(),
+    };
+  }
+
+  /**
    * Configures the monitoring system settings.
    *
    * The monitoring system will check for value changes at the specified interval.
@@ -354,10 +425,15 @@ export class HalComponent {
   }
 
   /**
-   * Checks all watched items for value changes and emits 'change' events.
+   * Checks all watched items for value changes and emits events.
+   *
+   * Emits individual 'change' events on each HalItem, plus a batch 'delta'
+   * event on the component with all changes aggregated.
    * @private
    */
   private checkForChanges(): void {
+    const changes: Array<{ name: string; value: HalValue }> = [];
+
     for (const [name, watched] of this.watchedItems.entries()) {
       try {
         const currentValue = this.getValue(name);
@@ -366,10 +442,22 @@ export class HalComponent {
           const oldValue = watched.lastValue;
           watched.lastValue = currentValue;
           watched.item.emit("change", currentValue, oldValue);
+          changes.push({ name, value: currentValue });
         }
       } catch (error) {
         console.error(`Error checking value for ${name}:`, error);
       }
+    }
+
+    // Emit batch delta if any changes occurred
+    if (changes.length > 0) {
+      this.cursor++;
+      const delta: HalDelta = {
+        changes,
+        cursor: this.cursor,
+        timestamp: Date.now(),
+      };
+      this.emit("delta", delta);
     }
   }
 
