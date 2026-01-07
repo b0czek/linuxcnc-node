@@ -21,6 +21,8 @@ namespace LinuxCNC
                                                                        InstanceMethod("getCurrentPosition", &NapiPositionLogger::GetCurrentPosition),
                                                                        InstanceMethod("getMotionHistory", &NapiPositionLogger::GetMotionHistory),
                                                                        InstanceMethod("getHistoryCount", &NapiPositionLogger::GetHistoryCount),
+                                                                       InstanceMethod("getDeltaSince", &NapiPositionLogger::GetDeltaSince),
+                                                                       InstanceMethod("getCurrentCursor", &NapiPositionLogger::GetCurrentCursor),
                                                                    });
 
     constructor = Napi::Persistent(func);
@@ -30,7 +32,7 @@ namespace LinuxCNC
   }
 
   NapiPositionLogger::NapiPositionLogger(const Napi::CallbackInfo &info)
-      : Napi::ObjectWrap<NapiPositionLogger>(info), stat_channel_(nullptr), should_stop_(false), should_clear_(false), logging_interval_(DEFAULT_INTERVAL), max_history_size_(DEFAULT_MAX_HISTORY)
+      : Napi::ObjectWrap<NapiPositionLogger>(info), stat_channel_(nullptr), should_stop_(false), should_clear_(false), logging_interval_(DEFAULT_INTERVAL), max_history_size_(DEFAULT_MAX_HISTORY), cursor_(0), oldest_cursor_(0)
   {
   }
 
@@ -108,6 +110,8 @@ namespace LinuxCNC
   {
     Napi::Env env = info.Env();
 
+    // Clear is handled in logger thread to avoid race conditions
+    // but we also reset cursors atomically here
     should_clear_ = true;
 
     return env.Undefined();
@@ -198,6 +202,73 @@ namespace LinuxCNC
     return Napi::Number::New(env, static_cast<uint32_t>(position_history_.size()));
   }
 
+  Napi::Value NapiPositionLogger::GetCurrentCursor(const Napi::CallbackInfo &info)
+  {
+    Napi::Env env = info.Env();
+    return Napi::Number::New(env, static_cast<uint32_t>(cursor_.load()));
+  }
+
+  Napi::Value NapiPositionLogger::GetDeltaSince(const Napi::CallbackInfo &info)
+  {
+    Napi::Env env = info.Env();
+
+    size_t requested_cursor = 0;
+    if (info.Length() > 0 && info[0].IsNumber())
+    {
+      requested_cursor = static_cast<size_t>(info[0].As<Napi::Number>().Uint32Value());
+    }
+
+    std::lock_guard<std::mutex> lock(history_mutex_);
+
+    size_t current_cursor = cursor_.load();
+    size_t oldest = oldest_cursor_.load();
+
+    // Create result object
+    Napi::Object result = Napi::Object::New(env);
+
+    // Check if requested cursor is stale (history has wrapped past it)
+    bool was_reset = requested_cursor < oldest;
+    result.Set("wasReset", Napi::Boolean::New(env, was_reset));
+    result.Set("cursor", Napi::Number::New(env, static_cast<uint32_t>(current_cursor)));
+
+    // Calculate start position in history vector
+    size_t start_cursor = was_reset ? oldest : requested_cursor;
+    size_t delta_count = current_cursor > start_cursor ? current_cursor - start_cursor : 0;
+
+    // Clamp to actual history size
+    delta_count = std::min(delta_count, position_history_.size());
+
+    // Calculate starting index in the vector
+    // The vector may not be at max capacity yet
+    size_t start_index = position_history_.size() - delta_count;
+
+    // Create Float64Array with results
+    constexpr size_t STRIDE = 10;
+    Napi::Float64Array points = Napi::Float64Array::New(env, delta_count * STRIDE);
+
+    for (size_t i = 0; i < delta_count; ++i)
+    {
+      const PositionPoint &point = position_history_[start_index + i];
+      size_t offset = i * STRIDE;
+
+      points[offset + 0] = point.x;
+      points[offset + 1] = point.y;
+      points[offset + 2] = point.z;
+      points[offset + 3] = point.a;
+      points[offset + 4] = point.b;
+      points[offset + 5] = point.c;
+      points[offset + 6] = point.u;
+      points[offset + 7] = point.v;
+      points[offset + 8] = point.w;
+      points[offset + 9] = static_cast<double>(point.motionType);
+    }
+
+    result.Set("points", points);
+    result.Set("count", Napi::Number::New(env, static_cast<uint32_t>(delta_count)));
+
+    return result;
+  }
+
   void NapiPositionLogger::LoggerThread()
   {
     PositionPoint last_position = {};
@@ -211,6 +282,8 @@ namespace LinuxCNC
       {
         std::lock_guard<std::mutex> lock(history_mutex_);
         position_history_.clear();
+        // Keep cursor monotonic - just mark everything before current as gone
+        oldest_cursor_ = cursor_.load();
         should_clear_ = false;
         first_run = true;
         second_run = true;
@@ -259,12 +332,15 @@ namespace LinuxCNC
         {
           std::lock_guard<std::mutex> lock(history_mutex_);
           position_history_.push_back(current);
+          cursor_++;
 
           // Limit history size
           if (position_history_.size() > max_history_size_)
           {
+            size_t excess = position_history_.size() - max_history_size_;
             position_history_.erase(position_history_.begin(),
-                                    position_history_.begin() + (position_history_.size() - max_history_size_));
+                                    position_history_.begin() + excess);
+            oldest_cursor_ += excess;
           }
         }
 
