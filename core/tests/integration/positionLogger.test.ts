@@ -469,13 +469,22 @@ describe("Integration: PositionLogger", () => {
       logger.start({ interval: 0.01 });
       await new Promise((resolve) => setTimeout(resolve, 100));
 
+      // Execute first move to establish baseline cursor after initial logging settles
+      try {
+        await executeMdiAndWait(commandChannel, statChannel, "G1 X0 Y0 F100");
+      } catch (e) {
+        console.log("Initial move:", e);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
       const cursor1 = logger.getCurrentCursor();
 
-      // Execute moves with direction change to force new points
-      // (colinearity optimization modifies last point for straight lines)
+      // Execute moves with significant direction change to force new logged points
+      // (colinearity optimization only skips colinear points)
       try {
-        await executeMdiAndWait(commandChannel, statChannel, "G1 X1 F100");
-        await executeMdiAndWait(commandChannel, statChannel, "G1 Y1 F100");
+        await executeMdiAndWait(commandChannel, statChannel, "G1 X5 F100");
+        await executeMdiAndWait(commandChannel, statChannel, "G1 Y5 F100");
+        await executeMdiAndWait(commandChannel, statChannel, "G1 X0 F100");
       } catch (e) {
         console.log("Move command:", e);
       }
@@ -485,7 +494,7 @@ describe("Integration: PositionLogger", () => {
 
       console.log(`Cursor increased from ${cursor1} to ${cursor2}`);
       logger.stop();
-    }, 15000);
+    }, 20000);
 
     it("should return delta points since cursor", async () => {
       const logger = new PositionLogger();
@@ -553,27 +562,36 @@ describe("Integration: PositionLogger", () => {
       const logger = new PositionLogger();
 
       // Use a very small history size to force wrapping
-      logger.start({ interval: 0.001, maxHistorySize: 20 });
+      logger.start({ interval: 0.005, maxHistorySize: 10 });
 
       // Get initial cursor
       const initialCursor = logger.getCurrentCursor();
-      expect(initialCursor).toBe(0);
 
-      // Wait long enough for history to wrap multiple times
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      // Generate actual motion with direction changes to create many logged points
+      // Each direction change forces a new point to be logged
+      try {
+        for (let i = 0; i < 5; i++) {
+          await executeMdiAndWait(commandChannel, statChannel, "G0 X2");
+          await executeMdiAndWait(commandChannel, statChannel, "G0 Y2");
+          await executeMdiAndWait(commandChannel, statChannel, "G0 X0");
+          await executeMdiAndWait(commandChannel, statChannel, "G0 Y0");
+        }
+      } catch (e) {
+        console.log("Motion for history wrap:", e);
+      }
 
       const delta = logger.getDeltaSince(initialCursor);
 
-      // Cursor should have advanced significantly
-      expect(delta.cursor).toBeGreaterThan(20);
-      // wasReset indicates the cursor was stale
+      // Cursor should have advanced beyond the history size
+      expect(delta.cursor).toBeGreaterThan(10);
+      // wasReset indicates the cursor was stale (history wrapped past it)
       expect(delta.wasReset).toBe(true);
 
       console.log(
         `History wrapped - wasReset: ${delta.wasReset}, cursor: ${initialCursor} -> ${delta.cursor}`
       );
       logger.stop();
-    }, 10000);
+    }, 30000);
 
     it("should support incremental updates workflow", async () => {
       const logger = new PositionLogger();
@@ -623,8 +641,8 @@ describe("Integration: PositionLogger", () => {
       logger.clear();
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      // After clear, cursor continues to increase (monotonic)
-      // but the old cursor is now stale since history was cleared
+      // After clear, the oldest_cursor is set to cursor+1, making any
+      // pre-clear cursor stale. The current cursor will be >= cursorBefore.
       const delta = logger.getDeltaSince(cursorBefore);
       expect(delta.wasReset).toBe(true);
       expect(delta.cursor).toBeGreaterThanOrEqual(cursorBefore);

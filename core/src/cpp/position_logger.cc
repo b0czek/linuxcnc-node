@@ -282,8 +282,9 @@ namespace LinuxCNC
       {
         std::lock_guard<std::mutex> lock(history_mutex_);
         position_history_.clear();
-        // Keep cursor monotonic - just mark everything before current as gone
-        oldest_cursor_ = cursor_.load();
+        // Keep cursor monotonic - mark everything including current cursor as gone
+        // so pre-clear cursors are detected as stale (wasReset = true)
+        oldest_cursor_ = cursor_.load() + 1;
         should_clear_ = false;
         first_run = true;
         second_run = true;
