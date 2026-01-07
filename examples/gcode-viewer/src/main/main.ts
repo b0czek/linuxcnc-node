@@ -1,7 +1,8 @@
 import { app, BrowserWindow, ipcMain, dialog } from "electron";
 import path from "path";
 import fs from "fs";
-import { parseGCode, GCodeParseResult } from "@linuxcnc-node/gcode";
+import { parseGCode } from "@linuxcnc-node/gcode";
+import { GCodeParseResult } from "@linuxcnc-node/types";
 
 process.env.DIST = path.join(__dirname, "../dist");
 process.env.PUBLIC = app.isPackaged

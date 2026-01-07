@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { GCodeOperation } from "@linuxcnc-node/gcode";
+import { GCodeOperation } from "@linuxcnc-node/types";
 
 // Path segment for progress tracking
 export interface PathSegment {

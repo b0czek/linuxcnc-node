@@ -7,10 +7,11 @@
     "build": "tsc && vite build && electron-builder"
   },
   "dependencies": {
-    "@linuxcnc-node/gcode": "file:../../gcode",
+    "@linuxcnc-node/gcode": "^2.0.0",
     "three": "^0.160.0"
   },
   "devDependencies": {
+    "@linuxcnc-node/types": "^2.0.0",
     "@electron/rebuild": "^4.0.2",
     "@types/node": "^20.11.5",
     "@types/three": "^0.160.0",

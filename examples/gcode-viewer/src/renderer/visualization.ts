@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { state } from "./state";
-import { GCodeParseResult, OperationType } from "@linuxcnc-node/gcode";
+import { GCodeParseResult, OperationType } from "@linuxcnc-node/types";
 import { computeArcPoints } from "./arc-utils";
 
 // Position indices: X=0, Y=1, Z=2 (matches PositionIndex from gcode package)

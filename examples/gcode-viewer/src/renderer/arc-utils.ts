@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { Plane } from "@linuxcnc-node/types";
 
 export interface ArcData {
   centerFirst: number;
@@ -15,7 +16,7 @@ export function computeArcPoints(
   startPos: THREE.Vector3,
   endPos: THREE.Vector3,
   arcData: ArcData,
-  plane: number,
+  plane: Plane,
   segments: number = 32
 ): THREE.Vector3[] {
   const points: THREE.Vector3[] = [];
@@ -27,17 +28,17 @@ export function computeArcPoints(
   let helixAxis: "x" | "y" | "z";
 
   switch (plane) {
-    case 1: // XY plane
+    case Plane.XY: // XY plane
       firstAxis = "x";
       secondAxis = "y";
       helixAxis = "z";
       break;
-    case 2: // YZ plane
+    case Plane.YZ: // YZ plane
       firstAxis = "y";
       secondAxis = "z";
       helixAxis = "x";
       break;
-    case 3: // XZ plane
+    case Plane.XZ: // XZ plane
       firstAxis = "x";
       secondAxis = "z";
       helixAxis = "y";

@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { state } from "./state";
-import { OperationType } from "@linuxcnc-node/gcode";
+import { OperationType } from "@linuxcnc-node/types";
 import { computeArcPoints, ArcData } from "./arc-utils";
 import { highlightGcodeLine } from "./gcode-panel";
 

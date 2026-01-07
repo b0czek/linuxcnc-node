@@ -1,4 +1,4 @@
-import { GCodeParseResult } from "@linuxcnc-node/gcode";
+import { GCodeParseResult } from "@linuxcnc-node/types";
 
 // Define the interface for the exposed Electron API
 export interface ElectronAPI {
