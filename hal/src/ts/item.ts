@@ -1,5 +1,10 @@
 import { EventEmitter } from "events";
-import type { HalType, HalPinDir, HalParamDir } from "@linuxcnc-node/types";
+import type {
+  HalType,
+  HalPinDir,
+  HalParamDir,
+  HalValue,
+} from "@linuxcnc-node/types";
 import type { HalComponent } from "./component";
 
 /**
@@ -17,7 +22,7 @@ import type { HalComponent } from "./component";
  * ```
  */
 interface HalItemEvents {
-  change: [newValue: number | boolean, oldValue: number | boolean];
+  change: [newValue: HalValue, oldValue: HalValue];
   newListener: [event: string | symbol, listener: (...args: any[]) => void];
   removeListener: [event: string | symbol, listener: (...args: any[]) => void];
 }
@@ -60,7 +65,7 @@ export class HalItem<
    *
    * @returns The item's value (number or boolean depending on type).
    */
-  getValue(): number | boolean {
+  getValue(): HalValue {
     return this.component.getValue(this.name);
   }
 
@@ -74,7 +79,7 @@ export class HalItem<
    * @returns The value that was set.
    * @throws Error if trying to set an `HAL_IN` pin or `HAL_RO` parameter.
    */
-  setValue(value: number | boolean): number | boolean {
+  setValue(value: HalValue): HalValue {
     return this.component.setValue(this.name, value);
   }
 }

@@ -4,6 +4,7 @@ import type {
   HalPinInfo,
   HalSignalInfo,
   HalParamInfo,
+  HalValue,
 } from "@linuxcnc-node/types";
 import {
   halNative,
@@ -65,7 +66,7 @@ export const disconnect = (pinName: string): boolean => {
  * @returns The value of the item (number or boolean).
  * @throws Error if the item is not found.
  */
-export const getValue = (name: string): any => {
+export const getValue = (name: string): HalValue => {
   return halNative.get_value(name);
 };
 
@@ -152,7 +153,7 @@ export const pinHasWriter = (pinName: string): boolean => {
  */
 export const setPinParamValue = (
   name: string,
-  value: string | number | boolean
+  value: string | HalValue
 ): boolean => {
   return halNative.set_p(name, String(value));
 };
@@ -169,7 +170,7 @@ export const setPinParamValue = (
  */
 export const setSignalValue = (
   name: string,
-  value: string | number | boolean
+  value: string | HalValue
 ): boolean => {
   return halNative.set_s(name, String(value));
 };

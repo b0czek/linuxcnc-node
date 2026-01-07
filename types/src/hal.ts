@@ -8,6 +8,8 @@ export type HalParamDir = "ro" | "rw";
 
 export type RtapiMsgLevel = "none" | "err" | "warn" | "info" | "dbg" | "all";
 
+export type HalValue = boolean | number;
+
 export interface HalPinInfo {
   name: string;
   value: any;

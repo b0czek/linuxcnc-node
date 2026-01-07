@@ -4,6 +4,7 @@ import {
   HalTypeValue,
   HalPinDirValue,
   HalParamDirValue,
+  HalValue,
 } from "./constants";
 import { HalItem, Pin, Param } from "./item";
 
@@ -24,15 +25,15 @@ export interface NativeHalComponent {
   newParam(nameSuffix: string, type: number, direction: number): boolean;
   ready(): void;
   unready(): void;
-  getProperty(name: string): number | boolean;
-  setProperty(name: string, value: number | boolean): number | boolean;
+  getProperty(name: string): HalValue;
+  setProperty(name: string, value: HalValue): HalValue;
   readonly name: string;
   readonly prefix: string;
 }
 
 interface WatchedItem {
   item: HalItem<HalPinDir | HalParamDir>;
-  lastValue: number | boolean;
+  lastValue: HalValue;
 }
 
 /**
@@ -118,7 +119,7 @@ export class HalComponent {
    * @param name - The nameSuffix of the pin or parameter.
    * @returns The current value.
    */
-  getValue(name: string): number | boolean {
+  getValue(name: string): HalValue {
     return this.nativeInstance.getProperty(name);
   }
 
@@ -129,7 +130,7 @@ export class HalComponent {
    * @param value - The value to set.
    * @returns The value that was set.
    */
-  setValue(name: string, value: number | boolean): number | boolean {
+  setValue(name: string, value: HalValue): HalValue {
     if (typeof value !== "number" && typeof value !== "boolean") {
       throw new TypeError("Value must be a number or boolean");
     }
