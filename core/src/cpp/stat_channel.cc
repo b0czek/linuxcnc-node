@@ -143,8 +143,8 @@ namespace LinuxCNC
     #define COMPARE_ARRAY(array, idx, path) \
         if (force || newStat.array[idx] != oldStat.array[idx]) addDelta(env, deltas, path, newStat.array[idx])
 
-    void NapiStatChannel::compareTaskStat(Napi::Env env, Napi::Array &deltas, bool force,
-                                          const EMC_TASK_STAT &newStat, const EMC_TASK_STAT &oldStat)
+    void NapiStatChannel::compareTaskStat(Napi::Env env, Napi::Array &deltas,
+                                          const EMC_TASK_STAT &newStat, const EMC_TASK_STAT &oldStat, bool force)
     {
         COMPARE_INT_CAST(mode, "task.mode");
         COMPARE_INT_CAST(state, "task.state");
@@ -210,7 +210,7 @@ namespace LinuxCNC
                                           const EMC_TRAJ_STAT &newStat, const EMC_TRAJ_STAT &oldStat, bool force)
     {
         char path[128];
-        #define TRAJ_PATH(name) snprintf(path, sizeof(path), "%s.%s", prefix, name), path
+        #define TRAJ_PATH(name) (snprintf(path, sizeof(path), "%s.%s", prefix, name), path)
         
         // Simple field comparisons
         COMPARE_FIELD(linearUnits, TRAJ_PATH("linearUnits"));
@@ -278,7 +278,7 @@ namespace LinuxCNC
                                            const EMC_JOINT_STAT &newStat, const EMC_JOINT_STAT &oldStat, bool force)
     {
         char path[128];
-        #define JOINT_PATH(name) snprintf(path, sizeof(path), "%s.%s", prefix, name), path
+        #define JOINT_PATH(name) (snprintf(path, sizeof(path), "%s.%s", prefix, name), path)
         
         COMPARE_INT_CAST(jointType, JOINT_PATH("jointType"));
         COMPARE_FIELD(units, JOINT_PATH("units"));
@@ -310,7 +310,7 @@ namespace LinuxCNC
                                              const EMC_SPINDLE_STAT &newStat, const EMC_SPINDLE_STAT &oldStat, bool force)
     {
         char path[128];
-        #define SPINDLE_PATH(name) snprintf(path, sizeof(path), "%s.%s", prefix, name), path
+        #define SPINDLE_PATH(name) (snprintf(path, sizeof(path), "%s.%s", prefix, name), path)
         
         COMPARE_FIELD(speed, SPINDLE_PATH("speed"));
         COMPARE_FIELD(direction, SPINDLE_PATH("direction"));
@@ -333,7 +333,7 @@ namespace LinuxCNC
                                           const EMC_AXIS_STAT &newStat, const EMC_AXIS_STAT &oldStat, bool force)
     {
         char path[128];
-        #define AXIS_PATH(name) snprintf(path, sizeof(path), "%s.%s", prefix, name), path
+        #define AXIS_PATH(name) (snprintf(path, sizeof(path), "%s.%s", prefix, name), path)
         
         COMPARE_FIELD(minPositionLimit, AXIS_PATH("minPositionLimit"));
         COMPARE_FIELD(maxPositionLimit, AXIS_PATH("maxPositionLimit"));
@@ -559,7 +559,7 @@ namespace LinuxCNC
             CANON_TOOL_TABLE &oldData = prev_tool_table_[i];
 
             // Helper macros for tool table fields
-            #define TOOL_PATH(idx, name) snprintf(path, sizeof(path), "toolTable.%d.%s", idx, name), path
+            #define TOOL_PATH(idx, name) (snprintf(path, sizeof(path), "toolTable.%d.%s", idx, name), path)
 
             // Compare fields
             if (force || tdata.toolno != oldData.toolno) 
