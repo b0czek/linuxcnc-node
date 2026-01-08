@@ -442,7 +442,7 @@ namespace LinuxCNC
         
         bool updated = pollInternal();
         
-        if (updated && (force || has_prev_status_)) {
+        if (force || (updated && has_prev_status_)) {
             // Compare and generate deltas (force emits all fields)
             if (force || status_.echo_serial_number != prev_status_.echo_serial_number)
                 addDelta(env, deltas, "echoSerialNumber", (int)status_.echo_serial_number);
@@ -460,7 +460,7 @@ namespace LinuxCNC
         }
         
         // If we have updated data, copy current to previous for next comparison
-        if (updated) {
+        if (updated || force) {
             prev_status_ = status_;
             has_prev_status_ = true;
         }
