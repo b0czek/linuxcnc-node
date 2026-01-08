@@ -16,7 +16,7 @@ namespace LinuxCNC
         Napi::HandleScope scope(env);
         Napi::Function func = DefineClass(env, "NativeStatChannel", {
                                                                         InstanceMethod("poll", &NapiStatChannel::Poll),
-                                                                        InstanceMethod("getCurrentFullStat", &NapiStatChannel::GetCurrentFullStat),
+                                                                        InstanceMethod("getCursor", &NapiStatChannel::GetCursor),
                                                                         InstanceMethod("disconnect", &NapiStatChannel::Disconnect),
                                                                     });
         constructor = Napi::Persistent(func);
@@ -113,9 +113,319 @@ namespace LinuxCNC
         return false; // No new data or error
     }
 
+    // Helper overloads to convert C++ values to Napi::Value
+    inline Napi::Value toNapiValue(Napi::Env env, double v) { return Napi::Number::New(env, v); }
+    inline Napi::Value toNapiValue(Napi::Env env, int v) { return Napi::Number::New(env, v); }
+    inline Napi::Value toNapiValue(Napi::Env env, bool v) { return Napi::Boolean::New(env, v); }
+    inline Napi::Value toNapiValue(Napi::Env env, const char* v) { return Napi::String::New(env, v); }
+    inline Napi::Value toNapiValue(Napi::Env env, const EmcPose& v) { return EmcPoseToNapiFloat64Array(env, v); }
+
+    // Generic delta helper - adds {path, value} to the changes array
+    template<typename T>
+    void addDelta(Napi::Env env, Napi::Array &deltas, const char* path, const T& value) {
+        Napi::Object change = Napi::Object::New(env);
+        change.Set("path", Napi::String::New(env, path));
+        change.Set("value", toNapiValue(env, value));
+        deltas.Set(deltas.Length(), change);
+    }
+
+    // Macro helpers for cleaner comparison code - force bypasses comparison
+    #define COMPARE_FIELD(field, path) \
+        if (force || newStat.field != oldStat.field) addDelta(env, deltas, path, newStat.field)
+    #define COMPARE_BOOL(field, path) \
+        if (force || newStat.field != oldStat.field) addDelta(env, deltas, path, (bool)newStat.field)
+    #define COMPARE_INT_CAST(field, path) \
+        if (force || (int)newStat.field != (int)oldStat.field) addDelta(env, deltas, path, (int)newStat.field)
+    #define COMPARE_STRING(field, path) \
+        if (force || strcmp(newStat.field, oldStat.field) != 0) addDelta(env, deltas, path, newStat.field)
+    #define COMPARE_POSE(field, path) \
+        if (force || memcmp(&newStat.field, &oldStat.field, sizeof(EmcPose)) != 0) addDelta(env, deltas, path, newStat.field)
+    #define COMPARE_ARRAY(array, idx, path) \
+        if (force || newStat.array[idx] != oldStat.array[idx]) addDelta(env, deltas, path, newStat.array[idx])
+
+    void NapiStatChannel::compareTaskStat(Napi::Env env, Napi::Array &deltas, bool force,
+                                          const EMC_TASK_STAT &newStat, const EMC_TASK_STAT &oldStat)
+    {
+        COMPARE_INT_CAST(mode, "task.mode");
+        COMPARE_INT_CAST(state, "task.state");
+        COMPARE_INT_CAST(execState, "task.execState");
+        COMPARE_INT_CAST(interpState, "task.interpState");
+        COMPARE_FIELD(callLevel, "task.callLevel");
+        COMPARE_FIELD(motionLine, "task.motionLine");
+        COMPARE_FIELD(currentLine, "task.currentLine");
+        COMPARE_FIELD(readLine, "task.readLine");
+        COMPARE_BOOL(optional_stop_state, "task.optionalStopState");
+        COMPARE_BOOL(block_delete_state, "task.blockDeleteState");
+        COMPARE_BOOL(input_timeout, "task.inputTimeout");
+        COMPARE_STRING(file, "task.file");
+        COMPARE_STRING(command, "task.command");
+        COMPARE_STRING(ini_filename, "task.iniFilename");
+        COMPARE_POSE(g5x_offset, "task.g5xOffset");
+        COMPARE_FIELD(g5x_index, "task.g5xIndex");
+        COMPARE_POSE(g92_offset, "task.g92Offset");
+        COMPARE_FIELD(rotation_xy, "task.rotationXY");
+        COMPARE_POSE(toolOffset, "task.toolOffset");
+        
+        // Active G-codes
+        COMPARE_ARRAY(activeGCodes, 1, "task.activeGCodes.motionMode");
+        COMPARE_ARRAY(activeGCodes, 2, "task.activeGCodes.gMode0");
+        COMPARE_ARRAY(activeGCodes, 3, "task.activeGCodes.plane");
+        COMPARE_ARRAY(activeGCodes, 4, "task.activeGCodes.cutterComp");
+        COMPARE_ARRAY(activeGCodes, 5, "task.activeGCodes.units");
+        COMPARE_ARRAY(activeGCodes, 6, "task.activeGCodes.distanceMode");
+        COMPARE_ARRAY(activeGCodes, 7, "task.activeGCodes.feedRateMode");
+        COMPARE_ARRAY(activeGCodes, 8, "task.activeGCodes.origin");
+        COMPARE_ARRAY(activeGCodes, 9, "task.activeGCodes.toolLengthOffset");
+        COMPARE_ARRAY(activeGCodes, 10, "task.activeGCodes.retractMode");
+        COMPARE_ARRAY(activeGCodes, 11, "task.activeGCodes.pathControl");
+        COMPARE_ARRAY(activeGCodes, 13, "task.activeGCodes.spindleSpeedMode");
+        COMPARE_ARRAY(activeGCodes, 14, "task.activeGCodes.ijkDistanceMode");
+        COMPARE_ARRAY(activeGCodes, 15, "task.activeGCodes.latheDiameterMode");
+        COMPARE_ARRAY(activeGCodes, 16, "task.activeGCodes.g92Applied");
+
+        // Active M-codes
+        COMPARE_ARRAY(activeMCodes, 1, "task.activeMCodes.stopping");
+        COMPARE_ARRAY(activeMCodes, 2, "task.activeMCodes.spindleControl");
+        COMPARE_ARRAY(activeMCodes, 3, "task.activeMCodes.toolChange");
+        COMPARE_ARRAY(activeMCodes, 4, "task.activeMCodes.mistCoolant");
+        COMPARE_ARRAY(activeMCodes, 5, "task.activeMCodes.floodCoolant");
+        COMPARE_ARRAY(activeMCodes, 6, "task.activeMCodes.overrideControl");
+        COMPARE_ARRAY(activeMCodes, 7, "task.activeMCodes.adaptiveFeedControl");
+        COMPARE_ARRAY(activeMCodes, 8, "task.activeMCodes.feedHoldControl");
+
+        // Active settings
+        COMPARE_ARRAY(activeSettings, 1, "task.activeSettings.feedRate");
+        COMPARE_ARRAY(activeSettings, 2, "task.activeSettings.speed");
+        COMPARE_ARRAY(activeSettings, 3, "task.activeSettings.blendTolerance");
+        COMPARE_ARRAY(activeSettings, 4, "task.activeSettings.naiveCAMTolerance");
+
+        COMPARE_INT_CAST(programUnits, "task.programUnits");
+        COMPARE_FIELD(delayLeft, "task.delayLeft");
+        COMPARE_BOOL(task_paused, "task.taskPaused");
+        COMPARE_FIELD(interpreter_errcode, "task.interpreterErrorCode");
+        COMPARE_FIELD(queuedMDIcommands, "task.queuedMdiCommands");
+    }
+
+    void NapiStatChannel::compareTrajStat(Napi::Env env, Napi::Array &deltas, const char* prefix,
+                                          const EMC_TRAJ_STAT &newStat, const EMC_TRAJ_STAT &oldStat, bool force)
+    {
+        char path[128];
+        #define TRAJ_PATH(name) snprintf(path, sizeof(path), "%s.%s", prefix, name), path
+        
+        // Simple field comparisons
+        COMPARE_FIELD(linearUnits, TRAJ_PATH("linearUnits"));
+        COMPARE_FIELD(angularUnits, TRAJ_PATH("angularUnits"));
+        COMPARE_FIELD(cycleTime, TRAJ_PATH("cycleTime"));
+        COMPARE_FIELD(joints, TRAJ_PATH("joints"));
+        COMPARE_FIELD(spindles, TRAJ_PATH("spindles"));
+        
+        // Axis mask - special handling to build string array
+        if (force || newStat.axis_mask != oldStat.axis_mask) {
+            Napi::Array axisArray = Napi::Array::New(env);
+            uint32_t axisMask = newStat.axis_mask;
+            uint32_t idx = 0;
+            if (axisMask & 1) axisArray.Set(idx++, Napi::String::New(env, "X"));
+            if (axisMask & 2) axisArray.Set(idx++, Napi::String::New(env, "Y"));
+            if (axisMask & 4) axisArray.Set(idx++, Napi::String::New(env, "Z"));
+            if (axisMask & 8) axisArray.Set(idx++, Napi::String::New(env, "A"));
+            if (axisMask & 16) axisArray.Set(idx++, Napi::String::New(env, "B"));
+            if (axisMask & 32) axisArray.Set(idx++, Napi::String::New(env, "C"));
+            if (axisMask & 64) axisArray.Set(idx++, Napi::String::New(env, "U"));
+            if (axisMask & 128) axisArray.Set(idx++, Napi::String::New(env, "V"));
+            if (axisMask & 256) axisArray.Set(idx++, Napi::String::New(env, "W"));
+            
+            Napi::Object change = Napi::Object::New(env);
+            change.Set("path", Napi::String::New(env, TRAJ_PATH("availableAxes")));
+            change.Set("value", axisArray);
+            deltas.Set(deltas.Length(), change);
+        }
+        
+        COMPARE_INT_CAST(mode, TRAJ_PATH("mode"));
+        COMPARE_BOOL(enabled, TRAJ_PATH("enabled"));
+        COMPARE_BOOL(inpos, TRAJ_PATH("inPosition"));
+        COMPARE_FIELD(queue, TRAJ_PATH("queue"));
+        COMPARE_FIELD(activeQueue, TRAJ_PATH("activeQueue"));
+        COMPARE_BOOL(queueFull, TRAJ_PATH("queueFull"));
+        COMPARE_FIELD(id, TRAJ_PATH("id"));
+        COMPARE_BOOL(paused, TRAJ_PATH("paused"));
+        
+        // Fields with different path names
+        if (force || newStat.scale != oldStat.scale) addDelta(env, deltas, TRAJ_PATH("feedRateOverride"), newStat.scale);
+        if (force || newStat.rapid_scale != oldStat.rapid_scale) addDelta(env, deltas, TRAJ_PATH("rapidRateOverride"), newStat.rapid_scale);
+        
+        COMPARE_POSE(position, TRAJ_PATH("position"));
+        COMPARE_POSE(actualPosition, TRAJ_PATH("actualPosition"));
+        COMPARE_FIELD(acceleration, TRAJ_PATH("acceleration"));
+        COMPARE_FIELD(maxVelocity, TRAJ_PATH("maxVelocity"));
+        COMPARE_FIELD(maxAcceleration, TRAJ_PATH("maxAcceleration"));
+        COMPARE_POSE(probedPosition, TRAJ_PATH("probedPosition"));
+        COMPARE_BOOL(probe_tripped, TRAJ_PATH("probeTripped"));
+        COMPARE_BOOL(probing, TRAJ_PATH("probing"));
+        COMPARE_FIELD(probeval, TRAJ_PATH("probeVal"));
+        COMPARE_FIELD(kinematics_type, TRAJ_PATH("kinematicsType"));
+        COMPARE_FIELD(motion_type, TRAJ_PATH("motionType"));
+        COMPARE_FIELD(distance_to_go, TRAJ_PATH("distanceToGo"));
+        COMPARE_POSE(dtg, TRAJ_PATH("dtg"));
+        COMPARE_FIELD(current_vel, TRAJ_PATH("currentVelocity"));
+        COMPARE_BOOL(feed_override_enabled, TRAJ_PATH("feedOverrideEnabled"));
+        COMPARE_BOOL(adaptive_feed_enabled, TRAJ_PATH("adaptiveFeedEnabled"));
+        COMPARE_BOOL(feed_hold_enabled, TRAJ_PATH("feedHoldEnabled"));
+        
+        #undef TRAJ_PATH
+    }
+
+    void NapiStatChannel::compareJointStat(Napi::Env env, Napi::Array &deltas, const char* prefix,
+                                           const EMC_JOINT_STAT &newStat, const EMC_JOINT_STAT &oldStat, bool force)
+    {
+        char path[128];
+        #define JOINT_PATH(name) snprintf(path, sizeof(path), "%s.%s", prefix, name), path
+        
+        COMPARE_INT_CAST(jointType, JOINT_PATH("jointType"));
+        COMPARE_FIELD(units, JOINT_PATH("units"));
+        COMPARE_FIELD(backlash, JOINT_PATH("backlash"));
+        COMPARE_FIELD(minPositionLimit, JOINT_PATH("minPositionLimit"));
+        COMPARE_FIELD(maxPositionLimit, JOINT_PATH("maxPositionLimit"));
+        COMPARE_FIELD(minFerror, JOINT_PATH("minFerror"));
+        COMPARE_FIELD(maxFerror, JOINT_PATH("maxFerror"));
+        COMPARE_FIELD(ferrorCurrent, JOINT_PATH("ferrorCurrent"));
+        COMPARE_FIELD(ferrorHighMark, JOINT_PATH("ferrorHighMark"));
+        COMPARE_FIELD(output, JOINT_PATH("output"));
+        COMPARE_FIELD(input, JOINT_PATH("input"));
+        COMPARE_FIELD(velocity, JOINT_PATH("velocity"));
+        COMPARE_BOOL(inpos, JOINT_PATH("inPosition"));
+        COMPARE_BOOL(homing, JOINT_PATH("homing"));
+        COMPARE_BOOL(homed, JOINT_PATH("homed"));
+        COMPARE_BOOL(fault, JOINT_PATH("fault"));
+        COMPARE_BOOL(enabled, JOINT_PATH("enabled"));
+        COMPARE_BOOL(minSoftLimit, JOINT_PATH("minSoftLimit"));
+        COMPARE_BOOL(maxSoftLimit, JOINT_PATH("maxSoftLimit"));
+        COMPARE_BOOL(minHardLimit, JOINT_PATH("minHardLimit"));
+        COMPARE_BOOL(maxHardLimit, JOINT_PATH("maxHardLimit"));
+        COMPARE_BOOL(overrideLimits, JOINT_PATH("overrideLimits"));
+        
+        #undef JOINT_PATH
+    }
+
+    void NapiStatChannel::compareSpindleStat(Napi::Env env, Napi::Array &deltas, const char* prefix,
+                                             const EMC_SPINDLE_STAT &newStat, const EMC_SPINDLE_STAT &oldStat, bool force)
+    {
+        char path[128];
+        #define SPINDLE_PATH(name) snprintf(path, sizeof(path), "%s.%s", prefix, name), path
+        
+        COMPARE_FIELD(speed, SPINDLE_PATH("speed"));
+        COMPARE_FIELD(direction, SPINDLE_PATH("direction"));
+        COMPARE_FIELD(increasing, SPINDLE_PATH("increasing"));
+        COMPARE_FIELD(orient_state, SPINDLE_PATH("orientState"));
+        COMPARE_FIELD(orient_fault, SPINDLE_PATH("orientFault"));
+        COMPARE_BOOL(brake, SPINDLE_PATH("brake"));
+        COMPARE_BOOL(enabled, SPINDLE_PATH("enabled"));
+        COMPARE_BOOL(spindle_override_enabled, SPINDLE_PATH("spindleOverrideEnabled"));
+        COMPARE_BOOL(homed, SPINDLE_PATH("homed"));
+        
+        // Field with different path name
+        if (force || newStat.spindle_scale != oldStat.spindle_scale) 
+            addDelta(env, deltas, SPINDLE_PATH("override"), newStat.spindle_scale);
+        
+        #undef SPINDLE_PATH
+    }
+
+    void NapiStatChannel::compareAxisStat(Napi::Env env, Napi::Array &deltas, const char* prefix,
+                                          const EMC_AXIS_STAT &newStat, const EMC_AXIS_STAT &oldStat, bool force)
+    {
+        char path[128];
+        #define AXIS_PATH(name) snprintf(path, sizeof(path), "%s.%s", prefix, name), path
+        
+        COMPARE_FIELD(minPositionLimit, AXIS_PATH("minPositionLimit"));
+        COMPARE_FIELD(maxPositionLimit, AXIS_PATH("maxPositionLimit"));
+        COMPARE_FIELD(velocity, AXIS_PATH("velocity"));
+        
+        #undef AXIS_PATH
+    }
+
+    void NapiStatChannel::compareMotionStat(Napi::Env env, Napi::Array &deltas,
+                                            const EMC_MOTION_STAT &newStat, const EMC_MOTION_STAT &oldStat, bool force)
+    {
+        // Trajectory
+        compareTrajStat(env, deltas, "motion.traj", newStat.traj, oldStat.traj, force);
+        
+        char prefix[64];
+        
+        // Joints
+        for (int i = 0; i < EMCMOT_MAX_JOINTS; ++i) {
+            snprintf(prefix, sizeof(prefix), "motion.joint.%d", i);
+            compareJointStat(env, deltas, prefix, newStat.joint[i], oldStat.joint[i], force);
+        }
+        
+        // Axes
+        for (int i = 0; i < EMCMOT_MAX_AXIS; ++i) {
+            snprintf(prefix, sizeof(prefix), "motion.axis.%d", i);
+            compareAxisStat(env, deltas, prefix, newStat.axis[i], oldStat.axis[i], force);
+        }
+        
+        // Spindles
+        for (int i = 0; i < EMCMOT_MAX_SPINDLES; ++i) {
+            snprintf(prefix, sizeof(prefix), "motion.spindle.%d", i);
+            compareSpindleStat(env, deltas, prefix, newStat.spindle[i], oldStat.spindle[i], force);
+        }
+        
+        // Local macro for indexed array comparison with dynamic path
+        char path[128];
+        #define COMPARE_INDEXED_IO(array, base_path) \
+            for (int i = 0; i < (int)(sizeof(newStat.array)/sizeof(newStat.array[0])); ++i) { \
+                if (force || newStat.array[i] != oldStat.array[i]) { \
+                    snprintf(path, sizeof(path), base_path ".%d", i); \
+                    addDelta(env, deltas, path, newStat.array[i]); \
+                } \
+            }
+        
+        COMPARE_INDEXED_IO(synch_di, "motion.digitalInput");
+        COMPARE_INDEXED_IO(synch_do, "motion.digitalOutput");
+        COMPARE_INDEXED_IO(analog_input, "motion.analogInput");
+        COMPARE_INDEXED_IO(analog_output, "motion.analogOutput");
+        
+        #undef COMPARE_INDEXED_IO
+    }
+
+    void NapiStatChannel::compareIoStat(Napi::Env env, Napi::Array &deltas,
+                                        const EMC_IO_STAT &newStat, const EMC_IO_STAT &oldStat, bool force)
+    {
+        // Tool stat
+        if (force || newStat.tool.pocketPrepped != oldStat.tool.pocketPrepped) 
+            addDelta(env, deltas, "io.tool.pocketPrepped", newStat.tool.pocketPrepped);
+        if (force || newStat.tool.toolInSpindle != oldStat.tool.toolInSpindle) 
+            addDelta(env, deltas, "io.tool.toolInSpindle", newStat.tool.toolInSpindle);
+        if (force || newStat.tool.toolFromPocket != oldStat.tool.toolFromPocket) 
+            addDelta(env, deltas, "io.tool.toolFromPocket", newStat.tool.toolFromPocket);
+        
+        // Coolant stat
+        if (force || newStat.coolant.mist != oldStat.coolant.mist) 
+            addDelta(env, deltas, "io.coolant.mist", (bool)newStat.coolant.mist);
+        if (force || newStat.coolant.flood != oldStat.coolant.flood) 
+            addDelta(env, deltas, "io.coolant.flood", (bool)newStat.coolant.flood);
+        
+        // Aux stat
+        if (force || newStat.aux.estop != oldStat.aux.estop) 
+            addDelta(env, deltas, "io.estop", (bool)newStat.aux.estop);
+    }
+
+    // Undefine macros
+    #undef COMPARE_FIELD
+    #undef COMPARE_BOOL
+    #undef COMPARE_INT_CAST
+    #undef COMPARE_STRING
+    #undef COMPARE_POSE
+    #undef COMPARE_ARRAY
+
     Napi::Value NapiStatChannel::Poll(const Napi::CallbackInfo &info)
     {
         Napi::Env env = info.Env();
+        
+        // Parse optional force parameter
+        bool force = false;
+        if (info.Length() > 0 && info[0].IsBoolean()) {
+            force = info[0].As<Napi::Boolean>().Value();
+        }
+        
         if (!s_channel_ || !s_channel_->valid())
         {
             // Attempt to reconnect or throw error
@@ -126,280 +436,48 @@ namespace LinuxCNC
             }
         }
 
+        // Create result object
+        Napi::Object result = Napi::Object::New(env);
+        Napi::Array deltas = Napi::Array::New(env);
+        
         bool updated = pollInternal();
-        return Napi::Boolean::New(env, updated);
-    }
-
-    Napi::Value NapiStatChannel::GetCurrentFullStat(const Napi::CallbackInfo &info)
-    {
-        Napi::Env env = info.Env();
-        if (!s_channel_ || !s_channel_->valid())
-        { // Ensure we are connected
-            Napi::Error::New(env, "Stat channel not connected.").ThrowAsJavaScriptException();
-            return env.Null();
+        
+        if (updated && (force || has_prev_status_)) {
+            // Compare and generate deltas (force emits all fields)
+            if (force || status_.echo_serial_number != prev_status_.echo_serial_number)
+                addDelta(env, deltas, "echoSerialNumber", (int)status_.echo_serial_number);
+            if (force || (int)status_.status != (int)prev_status_.status)
+                addDelta(env, deltas, "state", (int)status_.status);
+            if (force || status_.debug != prev_status_.debug)
+                addDelta(env, deltas, "debug", (int)status_.debug);
+            
+            compareTaskStat(env, deltas, status_.task, prev_status_.task, force);
+            compareMotionStat(env, deltas, status_.motion, prev_status_.motion, force);
+            compareIoStat(env, deltas, status_.io, prev_status_.io, force);
+            
+            // Tool table comparison
+            compareToolTable(env, deltas, force);
         }
-        return convertFullStatToNapiObject(env, status_);
-    }
-
-    Napi::Object NapiStatChannel::convertFullStatToNapiObject(Napi::Env env, const EMC_STAT &stat_to_convert)
-    {
-        Napi::Object obj = Napi::Object::New(env);
-
-        obj.Set("echoSerialNumber", Napi::Number::New(env, stat_to_convert.echo_serial_number));
-        obj.Set("state", Napi::Number::New(env, static_cast<int>(stat_to_convert.status))); // RCS_STATUS
-
-        obj.Set("task", convertTaskStatToNapi(env, stat_to_convert.task));
-        obj.Set("motion", convertMotionStatToNapi(env, stat_to_convert.motion));
-        obj.Set("io", convertIoStatToNapi(env, stat_to_convert.io));
-        obj.Set("debug", Napi::Number::New(env, stat_to_convert.debug));
-
-        obj.Set("toolTable", convertToolTableToNapi(env));
-
-        return obj;
-    }
-
-    Napi::Object NapiStatChannel::convertTaskStatToNapi(Napi::Env env, const EMC_TASK_STAT &task_stat)
-    {
-        Napi::Object obj = Napi::Object::New(env);
-        DictAdd(env, obj, "mode", static_cast<int>(task_stat.mode));
-        DictAdd(env, obj, "state", static_cast<int>(task_stat.state));
-        DictAdd(env, obj, "execState", static_cast<int>(task_stat.execState));
-        DictAdd(env, obj, "interpState", static_cast<int>(task_stat.interpState));
-        DictAdd(env, obj, "callLevel", task_stat.callLevel);
-        DictAdd(env, obj, "motionLine", task_stat.motionLine);
-        DictAdd(env, obj, "currentLine", task_stat.currentLine);
-        DictAdd(env, obj, "readLine", task_stat.readLine);
-        DictAdd(env, obj, "optionalStopState", (bool)task_stat.optional_stop_state);
-        DictAdd(env, obj, "blockDeleteState", (bool)task_stat.block_delete_state);
-        DictAdd(env, obj, "inputTimeout", (bool)task_stat.input_timeout);
-        DictAddString(env, obj, "file", task_stat.file);
-        DictAddString(env, obj, "command", task_stat.command);
-        DictAddString(env, obj, "iniFilename", task_stat.ini_filename);
-        obj.Set("g5xOffset", EmcPoseToNapiFloat64Array(env, task_stat.g5x_offset));
-        DictAdd(env, obj, "g5xIndex", task_stat.g5x_index);
-        obj.Set("g92Offset", EmcPoseToNapiFloat64Array(env, task_stat.g92_offset));
-        DictAdd(env, obj, "rotationXY", task_stat.rotation_xy);
-        obj.Set("toolOffset", EmcPoseToNapiFloat64Array(env, task_stat.toolOffset));
-
-        Napi::Object activeGCodesObj = Napi::Object::New(env);
-        DictAdd(env, activeGCodesObj, "motionMode", task_stat.activeGCodes[1]);       // G0, G1, G2, G3, G38.2, G80, G81, G82, G83, G84, G85, G86, G87, G88, G89
-        DictAdd(env, activeGCodesObj, "gMode0", task_stat.activeGCodes[2]);           // G4, G10, G28, G30, G53, G92, G92.1, G92.2, G92.3
-        DictAdd(env, activeGCodesObj, "plane", task_stat.activeGCodes[3]);            // G17, G18, G19
-        DictAdd(env, activeGCodesObj, "cutterComp", task_stat.activeGCodes[4]);       // G40, G41, G42
-        DictAdd(env, activeGCodesObj, "units", task_stat.activeGCodes[5]);            // G20, G21
-        DictAdd(env, activeGCodesObj, "distanceMode", task_stat.activeGCodes[6]);     // G90, G91
-        DictAdd(env, activeGCodesObj, "feedRateMode", task_stat.activeGCodes[7]);     // G93, G94, G95
-        DictAdd(env, activeGCodesObj, "origin", task_stat.activeGCodes[8]);           // G54-G59.3
-        DictAdd(env, activeGCodesObj, "toolLengthOffset", task_stat.activeGCodes[9]); // G43, G49
-        DictAdd(env, activeGCodesObj, "retractMode", task_stat.activeGCodes[10]);     // G98, G99
-        DictAdd(env, activeGCodesObj, "pathControl", task_stat.activeGCodes[11]);     // G61, G61.1, G64
-        // skip index 12 as it is reserved/empty
-        DictAdd(env, activeGCodesObj, "spindleSpeedMode", task_stat.activeGCodes[13]);  // G96, G97
-        DictAdd(env, activeGCodesObj, "ijkDistanceMode", task_stat.activeGCodes[14]);   // G90.1, G91.1
-        DictAdd(env, activeGCodesObj, "latheDiameterMode", task_stat.activeGCodes[15]); // G7, G8
-        DictAdd(env, activeGCodesObj, "g92Applied", task_stat.activeGCodes[16]);        // G92.2, G92.3
-        obj.Set("activeGCodes", activeGCodesObj);
-
-        Napi::Object activeMCodesObj = Napi::Object::New(env);
-        DictAdd(env, activeMCodesObj, "stopping", task_stat.activeMCodes[1]);            // M0, M1, M2, M30, M60
-        DictAdd(env, activeMCodesObj, "spindleControl", task_stat.activeMCodes[2]);      // M3, M4, M5
-        DictAdd(env, activeMCodesObj, "toolChange", task_stat.activeMCodes[3]);          // M6
-        DictAdd(env, activeMCodesObj, "mistCoolant", task_stat.activeMCodes[4]);         // M7, M9
-        DictAdd(env, activeMCodesObj, "floodCoolant", task_stat.activeMCodes[5]);        // M8, M9
-        DictAdd(env, activeMCodesObj, "overrideControl", task_stat.activeMCodes[6]);     // M48, M49, M50, M51
-        DictAdd(env, activeMCodesObj, "adaptiveFeedControl", task_stat.activeMCodes[7]); // M52
-        DictAdd(env, activeMCodesObj, "feedHoldControl", task_stat.activeMCodes[8]);     // M53
-        obj.Set("activeMCodes", activeMCodesObj);
-
-        Napi::Object activeSettingsObj = Napi::Object::New(env);
-        DictAdd(env, activeSettingsObj, "feedRate", task_stat.activeSettings[1]);
-        DictAdd(env, activeSettingsObj, "speed", task_stat.activeSettings[2]);
-        DictAdd(env, activeSettingsObj, "blendTolerance", task_stat.activeSettings[3]);
-        DictAdd(env, activeSettingsObj, "naiveCAMTolerance", task_stat.activeSettings[4]);
-        obj.Set("activeSettings", activeSettingsObj);
-
-        DictAdd(env, obj, "programUnits", static_cast<int>(task_stat.programUnits));
-        DictAdd(env, obj, "delayLeft", task_stat.delayLeft);
-        DictAdd(env, obj, "taskPaused", (bool)task_stat.task_paused);
-        DictAdd(env, obj, "interpreterErrorCode", task_stat.interpreter_errcode);
-
-        // not in original python library but added as it might be useful
-        DictAdd(env, obj, "queuedMdiCommands", task_stat.queuedMDIcommands);
-        return obj;
-    }
-
-    Napi::Object NapiStatChannel::convertMotionStatToNapi(Napi::Env env, const EMC_MOTION_STAT &motion_stat)
-    {
-        Napi::Object obj = Napi::Object::New(env);
-        obj.Set("traj", convertTrajStatToNapi(env, motion_stat.traj));
-        obj.Set("joint", convertJointsToNapi(env, motion_stat.joint, EMCMOT_MAX_JOINTS));
-        obj.Set("axis", convertAxesToNapi(env, motion_stat.axis, EMCMOT_MAX_AXIS));
-        obj.Set("spindle", convertSpindlesToNapi(env, motion_stat.spindle, EMCMOT_MAX_SPINDLES));
-        obj.Set("digitalInput", IntArrayToNapiArray(env, motion_stat.synch_di, EMCMOT_MAX_DIO));
-        obj.Set("digitalOutput", IntArrayToNapiArray(env, motion_stat.synch_do, EMCMOT_MAX_DIO));
-        obj.Set("analogInput", DoubleArrayToNapiArray(env, motion_stat.analog_input, EMCMOT_MAX_AIO));
-        obj.Set("analogOutput", DoubleArrayToNapiArray(env, motion_stat.analog_output, EMCMOT_MAX_AIO));
-        // ... other motion_stat fields if needed
-        return obj;
-    }
-
-    Napi::Object NapiStatChannel::convertIoStatToNapi(Napi::Env env, const EMC_IO_STAT &io_stat)
-    {
-        Napi::Object obj = Napi::Object::New(env);
-        obj.Set("tool", convertToolStatToNapi(env, io_stat.tool));
-        obj.Set("coolant", convertCoolantStatToNapi(env, io_stat.coolant));
-
-        DictAdd(env, obj, "estop", (bool)io_stat.aux.estop);
-        return obj;
-    }
-
-    Napi::Object NapiStatChannel::convertTrajStatToNapi(Napi::Env env, const EMC_TRAJ_STAT &traj_stat)
-    {
-        Napi::Object obj = Napi::Object::New(env);
-        DictAdd(env, obj, "linearUnits", traj_stat.linearUnits);
-        DictAdd(env, obj, "angularUnits", traj_stat.angularUnits);
-        DictAdd(env, obj, "cycleTime", traj_stat.cycleTime);
-        DictAdd(env, obj, "joints", traj_stat.joints);
-        DictAdd(env, obj, "spindles", traj_stat.spindles);
-
-        // Convert axis mask to array of available axis letters
-        Napi::Array axisArray = Napi::Array::New(env);
-        uint32_t axisMask = traj_stat.axis_mask;
-        uint32_t arrayIndex = 0;
-
-        if (axisMask & 1)
-            axisArray.Set(arrayIndex++, Napi::String::New(env, "X")); // X=1
-        if (axisMask & 2)
-            axisArray.Set(arrayIndex++, Napi::String::New(env, "Y")); // Y=2
-        if (axisMask & 4)
-            axisArray.Set(arrayIndex++, Napi::String::New(env, "Z")); // Z=4
-        if (axisMask & 8)
-            axisArray.Set(arrayIndex++, Napi::String::New(env, "A")); // A=8
-        if (axisMask & 16)
-            axisArray.Set(arrayIndex++, Napi::String::New(env, "B")); // B=16
-        if (axisMask & 32)
-            axisArray.Set(arrayIndex++, Napi::String::New(env, "C")); // C=32
-        if (axisMask & 64)
-            axisArray.Set(arrayIndex++, Napi::String::New(env, "U")); // U=64
-        if (axisMask & 128)
-            axisArray.Set(arrayIndex++, Napi::String::New(env, "V")); // V=128
-        if (axisMask & 256)
-            axisArray.Set(arrayIndex++, Napi::String::New(env, "W")); // W=256
-
-        obj.Set("availableAxes", axisArray);
-
-        DictAdd(env, obj, "mode", static_cast<int>(traj_stat.mode));
-        DictAdd(env, obj, "enabled", (bool)traj_stat.enabled);
-        DictAdd(env, obj, "inPosition", (bool)traj_stat.inpos);
-        DictAdd(env, obj, "queue", traj_stat.queue);
-        DictAdd(env, obj, "activeQueue", traj_stat.activeQueue);
-        DictAdd(env, obj, "queueFull", (bool)traj_stat.queueFull);
-        DictAdd(env, obj, "id", traj_stat.id);
-        DictAdd(env, obj, "paused", (bool)traj_stat.paused);
-        DictAdd(env, obj, "feedRateOverride", traj_stat.scale);
-        DictAdd(env, obj, "rapidRateOverride", traj_stat.rapid_scale);
-        obj.Set("position", EmcPoseToNapiFloat64Array(env, traj_stat.position));
-        obj.Set("actualPosition", EmcPoseToNapiFloat64Array(env, traj_stat.actualPosition));
-        DictAdd(env, obj, "acceleration", traj_stat.acceleration);
-        DictAdd(env, obj, "maxVelocity", traj_stat.maxVelocity);
-        DictAdd(env, obj, "maxAcceleration", traj_stat.maxAcceleration);
-        obj.Set("probedPosition", EmcPoseToNapiFloat64Array(env, traj_stat.probedPosition));
-        DictAdd(env, obj, "probeTripped", (bool)traj_stat.probe_tripped);
-        DictAdd(env, obj, "probing", (bool)traj_stat.probing);
-        DictAdd(env, obj, "probeVal", traj_stat.probeval);
-        DictAdd(env, obj, "kinematicsType", traj_stat.kinematics_type);
-        DictAdd(env, obj, "motionType", traj_stat.motion_type);
-        DictAdd(env, obj, "distanceToGo", traj_stat.distance_to_go);
-        obj.Set("dtg", EmcPoseToNapiFloat64Array(env, traj_stat.dtg));
-        DictAdd(env, obj, "currentVelocity", traj_stat.current_vel);
-        DictAdd(env, obj, "feedOverrideEnabled", (bool)traj_stat.feed_override_enabled);
-        DictAdd(env, obj, "adaptiveFeedEnabled", (bool)traj_stat.adaptive_feed_enabled);
-        DictAdd(env, obj, "feedHoldEnabled", (bool)traj_stat.feed_hold_enabled);
-        return obj;
-    }
-
-    Napi::Array NapiStatChannel::convertJointsToNapi(Napi::Env env, const EMC_JOINT_STAT joints[], int count)
-    {
-        Napi::Array arr = Napi::Array::New(env, count);
-        for (int i = 0; i < count; ++i)
-        {
-            Napi::Object jointObj = Napi::Object::New(env);
-            DictAdd(env, jointObj, "jointType", (int)joints[i].jointType);
-            DictAdd(env, jointObj, "units", joints[i].units);
-            DictAdd(env, jointObj, "backlash", joints[i].backlash);
-            DictAdd(env, jointObj, "minPositionLimit", joints[i].minPositionLimit);
-            DictAdd(env, jointObj, "maxPositionLimit", joints[i].maxPositionLimit);
-            DictAdd(env, jointObj, "minFerror", joints[i].minFerror);
-            DictAdd(env, jointObj, "maxFerror", joints[i].maxFerror);
-            DictAdd(env, jointObj, "ferrorCurrent", joints[i].ferrorCurrent);
-            DictAdd(env, jointObj, "ferrorHighMark", joints[i].ferrorHighMark);
-            DictAdd(env, jointObj, "output", joints[i].output);
-            DictAdd(env, jointObj, "input", joints[i].input);
-            DictAdd(env, jointObj, "velocity", joints[i].velocity);
-            DictAdd(env, jointObj, "inPosition", (bool)joints[i].inpos);
-            DictAdd(env, jointObj, "homing", (bool)joints[i].homing);
-            DictAdd(env, jointObj, "homed", (bool)joints[i].homed);
-            DictAdd(env, jointObj, "fault", (bool)joints[i].fault);
-            DictAdd(env, jointObj, "enabled", (bool)joints[i].enabled);
-            DictAdd(env, jointObj, "minSoftLimit", (bool)joints[i].minSoftLimit);
-            DictAdd(env, jointObj, "maxSoftLimit", (bool)joints[i].maxSoftLimit);
-            DictAdd(env, jointObj, "minHardLimit", (bool)joints[i].minHardLimit);
-            DictAdd(env, jointObj, "maxHardLimit", (bool)joints[i].maxHardLimit);
-            DictAdd(env, jointObj, "overrideLimits", (bool)joints[i].overrideLimits);
-            arr.Set(i, jointObj);
+        
+        // If we have updated data, copy current to previous for next comparison
+        if (updated) {
+            prev_status_ = status_;
+            has_prev_status_ = true;
         }
-        return arr;
-    }
-
-    Napi::Array NapiStatChannel::convertAxesToNapi(Napi::Env env, const EMC_AXIS_STAT axes[], int count)
-    {
-        Napi::Array arr = Napi::Array::New(env, count);
-        for (int i = 0; i < count; ++i)
-        {
-            Napi::Object axisObj = Napi::Object::New(env);
-            DictAdd(env, axisObj, "minPositionLimit", axes[i].minPositionLimit);
-            DictAdd(env, axisObj, "maxPositionLimit", axes[i].maxPositionLimit);
-            DictAdd(env, axisObj, "velocity", axes[i].velocity);
-            arr.Set(i, axisObj);
+        
+        // Only increment cursor if there are actual changes
+        if (deltas.Length() > 0) {
+            cursor_++;
         }
-        return arr;
+        
+        result.Set("changes", deltas);
+        result.Set("cursor", Napi::Number::New(env, static_cast<uint32_t>(cursor_)));
+        return result;
     }
-
-    Napi::Array NapiStatChannel::convertSpindlesToNapi(Napi::Env env, const EMC_SPINDLE_STAT spindles[], int count)
+    
+    Napi::Value NapiStatChannel::GetCursor(const Napi::CallbackInfo &info)
     {
-        Napi::Array arr = Napi::Array::New(env, count);
-        for (int i = 0; i < count; ++i)
-        {
-            Napi::Object spindleObj = Napi::Object::New(env);
-            DictAdd(env, spindleObj, "speed", spindles[i].speed);
-            DictAdd(env, spindleObj, "override", spindles[i].spindle_scale);
-            DictAdd(env, spindleObj, "direction", spindles[i].direction);
-            DictAdd(env, spindleObj, "brake", (bool)(spindles[i].brake != 0));
-            DictAdd(env, spindleObj, "increasing", spindles[i].increasing);
-            DictAdd(env, spindleObj, "enabled", (bool)(spindles[i].enabled != 0));
-            DictAdd(env, spindleObj, "orientState", spindles[i].orient_state);
-            DictAdd(env, spindleObj, "orientFault", spindles[i].orient_fault);
-            DictAdd(env, spindleObj, "spindleOverrideEnabled", (bool)spindles[i].spindle_override_enabled);
-            DictAdd(env, spindleObj, "homed", (bool)spindles[i].homed);
-            arr.Set(i, spindleObj);
-        }
-        return arr;
-    }
-
-    Napi::Object NapiStatChannel::convertToolStatToNapi(Napi::Env env, const EMC_TOOL_STAT &tool_stat)
-    {
-        Napi::Object obj = Napi::Object::New(env);
-        DictAdd(env, obj, "pocketPrepped", tool_stat.pocketPrepped);
-        DictAdd(env, obj, "toolInSpindle", tool_stat.toolInSpindle);
-        DictAdd(env, obj, "toolFromPocket", tool_stat.toolFromPocket);
-        return obj;
-    }
-    Napi::Object NapiStatChannel::convertCoolantStatToNapi(Napi::Env env, const EMC_COOLANT_STAT &coolant_stat)
-    {
-        Napi::Object obj = Napi::Object::New(env);
-        DictAdd(env, obj, "mist", (bool)coolant_stat.mist);
-        DictAdd(env, obj, "flood", (bool)coolant_stat.flood);
-        return obj;
+        return Napi::Number::New(info.Env(), static_cast<uint32_t>(cursor_));
     }
 
     Napi::Array NapiStatChannel::convertToolTableToNapi(Napi::Env env)
@@ -443,6 +521,76 @@ namespace LinuxCNC
         Napi::Env env = info.Env();
         disconnect();
         return env.Undefined();
+    }
+
+
+
+    void NapiStatChannel::compareToolTable(Napi::Env env, Napi::Array &deltas, bool force)
+    {
+        if (!tool_mmap_initialized_)
+        {
+            if (tool_mmap_user() != 0)
+            {
+                // Failed to init, skip
+                return;
+            }
+            tool_mmap_initialized_ = true;
+        }
+
+        int idxmax = tooldata_last_index_get() + 1;
+        
+        // Resize shadow table if needed
+        if (prev_tool_table_.size() < (size_t)idxmax) {
+            prev_tool_table_.resize(idxmax);
+            // If resizing, we might want to force update for new slots, 
+            // but the loop below handles "diff against zero-init" naturally.
+        }
+
+        char path[128];
+        
+        for (int i = 0; i < idxmax; ++i)
+        {
+            CANON_TOOL_TABLE tdata;
+            if (tooldata_get(&tdata, i) != IDX_OK)
+            {
+                continue;
+            }
+
+            CANON_TOOL_TABLE &oldData = prev_tool_table_[i];
+
+            // Helper macros for tool table fields
+            #define TOOL_PATH(idx, name) snprintf(path, sizeof(path), "toolTable.%d.%s", idx, name), path
+
+            // Compare fields
+            if (force || tdata.toolno != oldData.toolno) 
+                addDelta(env, deltas, TOOL_PATH(i, "toolNo"), tdata.toolno);
+                
+            if (force || tdata.pocketno != oldData.pocketno) 
+                addDelta(env, deltas, TOOL_PATH(i, "pocketNo"), tdata.pocketno);
+                
+            if (force || tdata.diameter != oldData.diameter) 
+                addDelta(env, deltas, TOOL_PATH(i, "diameter"), tdata.diameter);
+                
+            if (force || tdata.frontangle != oldData.frontangle) 
+                addDelta(env, deltas, TOOL_PATH(i, "frontAngle"), tdata.frontangle);
+                
+            if (force || tdata.backangle != oldData.backangle) 
+                addDelta(env, deltas, TOOL_PATH(i, "backAngle"), tdata.backangle);
+                
+            if (force || tdata.orientation != oldData.orientation) 
+                addDelta(env, deltas, TOOL_PATH(i, "orientation"), tdata.orientation);
+                
+            if (force || memcmp(&tdata.offset, &oldData.offset, sizeof(EmcPose)) != 0) 
+                addDelta(env, deltas, TOOL_PATH(i, "offset"), tdata.offset);
+                
+            if (force || strcmp(tdata.comment, oldData.comment) != 0) 
+                addDelta(env, deltas, TOOL_PATH(i, "comment"), tdata.comment);
+
+            #undef TOOL_PATH
+
+            // Update shadow copy
+            oldData = tdata;
+        }
     }
 
 }
