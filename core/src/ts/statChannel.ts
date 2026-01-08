@@ -1,5 +1,9 @@
 import { EventEmitter } from "node:events";
-import { NapiStatChannelInstance } from "./native_type_interfaces";
+import {
+  NapiStatChannelInstance,
+  StatChange,
+  StatDeltaResult,
+} from "./native_type_interfaces";
 import {
   LinuxCNCStat,
   LinuxCNCStatPaths,
@@ -7,16 +11,19 @@ import {
   ToolEntry,
 } from "@linuxcnc-node/types";
 import { addon } from "./constants";
-import isEqual from "fast-deep-equal";
 import delve from "dlv";
+import { dset } from "dset";
 export const DEFAULT_STAT_POLL_INTERVAL = 50; // ms
+
+// Re-export delta types for external use
+export type { StatChange, StatDeltaResult } from "./native_type_interfaces";
 
 export interface StatWatcherOptions {
   pollInterval?: number;
 }
 
 interface WatchedProperty {
-  lastValue: any;
+  lastValue: unknown;
 }
 
 export class StatChannel extends EventEmitter {
@@ -24,6 +31,7 @@ export class StatChannel extends EventEmitter {
   private pollInterval: number;
   private poller: NodeJS.Timeout | null = null;
   private isPolling: boolean = false;
+  private cursor: number = 0;
 
   private currentStat: LinuxCNCStat | null = null;
   private watchedProperties: Map<LinuxCNCStatPaths, WatchedProperty> =
@@ -32,14 +40,15 @@ export class StatChannel extends EventEmitter {
   constructor(options?: StatWatcherOptions) {
     super();
     this.nativeInstance = new addon.NativeStatChannel();
-    this.currentStat = this.nativeInstance.getCurrentFullStat();
-
     this.pollInterval = options?.pollInterval ?? DEFAULT_STAT_POLL_INTERVAL;
 
-    // Initial poll to populate currentStat
-    if (this.nativeInstance.poll()) {
-      this.currentStat = this.nativeInstance.getCurrentFullStat();
+    // Initial full sync to populate currentStat
+    this.currentStat = {} as LinuxCNCStat;
+    const initialResult = this.nativeInstance.poll(true); // force=true gets all fields
+    for (const change of initialResult.changes) {
+      dset(this.currentStat, change.path, change.value);
     }
+    this.cursor = initialResult.cursor;
     this.startPolling();
   }
 
@@ -55,35 +64,44 @@ export class StatChannel extends EventEmitter {
     }
   }
 
-  private async performPoll(): Promise<void> {
+  private performPoll(): void {
     if (this.isPolling) return; // Prevent re-entrancy
     this.isPolling = true;
 
     try {
-      const updated = this.nativeInstance.poll();
-      if (updated) {
-        const newStat = this.nativeInstance.getCurrentFullStat();
-        this.currentStat = newStat; // Update immediately for getters
+      const result = this.nativeInstance.poll();
+      this.cursor = result.cursor;
+
+      if (result.changes.length > 0 && this.currentStat) {
+        // Apply deltas incrementally to local state (no full stat fetch)
+        for (const change of result.changes) {
+          dset(this.currentStat, change.path, change.value);
+        }
+
+        // Emit raw deltas for listeners who want the batch
+        this.emit("delta", result.changes);
 
         // Notify individual property watchers via EventEmitter
-        this.watchedProperties.forEach((watchedInfo, path) => {
-          const newValue = delve(newStat, path);
-          if (!isEqual(newValue, watchedInfo.lastValue)) {
-            const oldValueForCallback = watchedInfo.lastValue;
-            // Deep clone newValue if it's an object/array to prevent modification issues
-            watchedInfo.lastValue =
+        // Only check properties that actually changed (from C++)
+        for (const change of result.changes) {
+          const path = change.path as LinuxCNCStatPaths;
+          const watched = this.watchedProperties.get(path);
+          if (watched) {
+            const oldValue = watched.lastValue;
+            const newValue = change.value;
+            // Update lastValue
+            watched.lastValue =
               typeof newValue === "object" && newValue !== null
                 ? JSON.parse(JSON.stringify(newValue))
                 : newValue;
-            // Emit the event to each listener individually to handle errors
-            // Use rawListeners to get the actual listener wrappers (needed for once() to work)
+
+            // Emit to listeners
             const listeners = this.rawListeners(path);
             for (const listener of listeners) {
               try {
-                // Call the listener - for once() wrappers, this properly removes them
-                (listener as (...args: any[]) => void)(
+                (listener as (...args: unknown[]) => void)(
                   newValue,
-                  oldValueForCallback,
+                  oldValue,
                   path
                 );
               } catch (e) {
@@ -94,11 +112,10 @@ export class StatChannel extends EventEmitter {
               }
             }
           }
-        });
+        }
       }
     } catch (e) {
       console.error("Error during StatChannel poll:", e);
-      // Potentially stop polling or attempt to reconnect if native throws
     } finally {
       this.isPolling = false;
     }
@@ -128,12 +145,20 @@ export class StatChannel extends EventEmitter {
    * @param listener The function to call when the property's value changes.
    * @returns this (for chaining)
    */
+  on(event: "delta", listener: (changes: StatChange[]) => void): this;
   on<P extends LinuxCNCStatPaths>(
     propertyPath: P,
     listener: StatPropertyWatchCallback<P>
+  ): this;
+  on(
+    event: string | LinuxCNCStatPaths,
+    listener: ((...args: any[]) => void) | StatPropertyWatchCallback<any>
   ): this {
-    this.ensureWatched(propertyPath);
-    return super.on(propertyPath, listener as (...args: any[]) => void);
+    if (event === "delta") {
+      return super.on(event, listener as (...args: any[]) => void);
+    }
+    this.ensureWatched(event as LinuxCNCStatPaths);
+    return super.on(event, listener as (...args: any[]) => void);
   }
 
   /**
@@ -157,17 +182,22 @@ export class StatChannel extends EventEmitter {
    * @param listener The listener function to remove.
    * @returns this (for chaining)
    */
+  off(event: "delta", listener: (changes: StatChange[]) => void): this;
   off<P extends LinuxCNCStatPaths>(
     propertyPath: P,
     listener: StatPropertyWatchCallback<P>
+  ): this;
+  off(
+    event: string | LinuxCNCStatPaths,
+    listener: ((...args: any[]) => void) | StatPropertyWatchCallback<any>
   ): this {
-    const result = super.off(
-      propertyPath,
-      listener as (...args: any[]) => void
-    );
+    if (event === "delta") {
+      return super.off(event, listener as (...args: any[]) => void);
+    }
+    const result = super.off(event, listener as (...args: any[]) => void);
     // Clean up the watched property if no more listeners
-    if (this.listenerCount(propertyPath) === 0) {
-      this.watchedProperties.delete(propertyPath);
+    if (this.listenerCount(event) === 0) {
+      this.watchedProperties.delete(event as LinuxCNCStatPaths);
     }
     return result;
   }
@@ -210,6 +240,34 @@ export class StatChannel extends EventEmitter {
    */
   get(): LinuxCNCStat | null {
     return this.currentStat;
+  }
+
+  /**
+   * Forces a full resync of the stat object from native.
+   * Use this if cursor gaps are detected or for initial sync scenarios.
+   */
+  sync(): void {
+    this.currentStat = {} as LinuxCNCStat;
+    const result = this.nativeInstance.poll(true); // force=true gets all fields
+    for (const change of result.changes) {
+      dset(this.currentStat, change.path, change.value);
+    }
+    this.cursor = result.cursor;
+    // Update all watched property lastValues
+    this.watchedProperties.forEach((watched, path) => {
+      watched.lastValue = this.currentStat
+        ? delve(this.currentStat, path)
+        : null;
+    });
+  }
+
+  /**
+   * Gets the current cursor value for sync verification.
+   * The cursor increments each time the native layer detects changes.
+   * @returns The current cursor value.
+   */
+  getCursor(): number {
+    return this.cursor;
   }
 
   /**

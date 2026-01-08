@@ -30,11 +30,35 @@ export interface NapiOptions {
   EMCMOT_MAX_MISC_ERROR: number;
 }
 
+/**
+ * Single change entry in a stat delta update.
+ */
+export interface StatChange {
+  /** Dot-separated path to the changed property */
+  path: string;
+  /** New value of the property */
+  value: unknown;
+}
+
+/**
+ * Delta update result from native polling.
+ */
+export interface StatDeltaResult {
+  /** Array of changed properties */
+  changes: StatChange[];
+  /** Monotonic cursor for sync verification */
+  cursor: number;
+}
+
 // Interface for the NapiStatChannel instance
 export interface NapiStatChannelInstance {
-  poll(): boolean; // Returns true if data was updated
-  getCurrentFullStat(): LinuxCNCStat;
-  disconnect(): void; // Disconnects from NML channel
+  /**
+   * Poll for changes.
+   * @param force If true, returns all fields regardless of changes (for full sync)
+   */
+  poll(force?: boolean): StatDeltaResult;
+  getCursor(): number;
+  disconnect(): void;
 }
 
 // Interface for the NapiCommandChannel instance

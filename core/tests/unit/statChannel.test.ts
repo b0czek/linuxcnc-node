@@ -35,10 +35,27 @@ describe("StatChannel", () => {
 
     // Create mock native instance
     mockNativeInstance = {
-      getCurrentFullStat: jest.fn().mockReturnValue(mockStat),
-      poll: jest.fn().mockReturnValue(true),
+      getCurrentFullStat: jest.fn(), // Unused now
+      poll: jest.fn(),
       disconnect: jest.fn(),
     };
+
+    // Default poll implementation
+    mockNativeInstance.poll.mockImplementation((force: boolean) => {
+      if (force) {
+        return {
+          changes: [
+            { path: "task.motionLine", value: mockStat.task.motionLine },
+            {
+              path: "motion.traj.position",
+              value: mockStat.motion.traj.position,
+            },
+          ],
+          cursor: 1,
+        };
+      }
+      return { changes: [], cursor: 1 };
+    });
 
     (addon.NativeStatChannel as jest.Mock).mockImplementation(
       () => mockNativeInstance
@@ -77,11 +94,10 @@ describe("StatChannel", () => {
       statChannel.on("task.motionLine", callback);
 
       // Update the stat
-      const updatedStat = {
-        ...mockStat,
-        task: { ...mockStat.task, motionLine: 20 },
-      };
-      mockNativeInstance.getCurrentFullStat.mockReturnValue(updatedStat);
+      mockNativeInstance.poll.mockReturnValue({
+        changes: [{ path: "task.motionLine", value: 20 }],
+        cursor: 2,
+      });
 
       jest.advanceTimersByTime(DEFAULT_STAT_POLL_INTERVAL);
 
@@ -116,17 +132,10 @@ describe("StatChannel", () => {
       newPosition[X] = 10;
       newPosition[Y] = 20;
 
-      const updatedStat = {
-        ...mockStat,
-        motion: {
-          ...mockStat.motion,
-          traj: {
-            ...mockStat.motion.traj,
-            position: newPosition,
-          },
-        },
-      };
-      mockNativeInstance.getCurrentFullStat.mockReturnValue(updatedStat);
+      mockNativeInstance.poll.mockReturnValue({
+        changes: [{ path: "motion.traj.position", value: newPosition }],
+        cursor: 2,
+      });
 
       jest.advanceTimersByTime(DEFAULT_STAT_POLL_INTERVAL);
 
@@ -148,11 +157,10 @@ describe("StatChannel", () => {
       statChannel.on("task.motionLine", goodCallback);
 
       // Update the stat
-      const updatedStat = {
-        ...mockStat,
-        task: { ...mockStat.task, motionLine: 20 },
-      };
-      mockNativeInstance.getCurrentFullStat.mockReturnValue(updatedStat);
+      mockNativeInstance.poll.mockReturnValue({
+        changes: [{ path: "task.motionLine", value: 20 }],
+        cursor: 2,
+      });
 
       jest.advanceTimersByTime(DEFAULT_STAT_POLL_INTERVAL);
 
@@ -183,22 +191,20 @@ describe("StatChannel", () => {
       statChannel.once("task.motionLine", callback);
 
       // Update the stat
-      const updatedStat = {
-        ...mockStat,
-        task: { ...mockStat.task, motionLine: 20 },
-      };
-      mockNativeInstance.getCurrentFullStat.mockReturnValue(updatedStat);
+      mockNativeInstance.poll.mockReturnValue({
+        changes: [{ path: "task.motionLine", value: 20 }],
+        cursor: 2,
+      });
 
       jest.advanceTimersByTime(DEFAULT_STAT_POLL_INTERVAL);
 
       expect(callback).toHaveBeenCalledTimes(1);
 
       // Update again
-      const updatedStat2 = {
-        ...mockStat,
-        task: { ...mockStat.task, motionLine: 30 },
-      };
-      mockNativeInstance.getCurrentFullStat.mockReturnValue(updatedStat2);
+      mockNativeInstance.poll.mockReturnValue({
+        changes: [{ path: "task.motionLine", value: 30 }],
+        cursor: 3,
+      });
 
       jest.advanceTimersByTime(DEFAULT_STAT_POLL_INTERVAL);
 
@@ -228,11 +234,10 @@ describe("StatChannel", () => {
       statChannel.off("task.motionLine", callback);
 
       // Update the stat
-      const updatedStat = {
-        ...mockStat,
-        task: { ...mockStat.task, motionLine: 20 },
-      };
-      mockNativeInstance.getCurrentFullStat.mockReturnValue(updatedStat);
+      mockNativeInstance.poll.mockReturnValue({
+        changes: [{ path: "task.motionLine", value: 20 }],
+        cursor: 2,
+      });
 
       jest.advanceTimersByTime(DEFAULT_STAT_POLL_INTERVAL);
 
@@ -251,11 +256,10 @@ describe("StatChannel", () => {
       statChannel.off("task.motionLine", callback1);
 
       // Update the stat
-      const updatedStat = {
-        ...mockStat,
-        task: { ...mockStat.task, motionLine: 20 },
-      };
-      mockNativeInstance.getCurrentFullStat.mockReturnValue(updatedStat);
+      mockNativeInstance.poll.mockReturnValue({
+        changes: [{ path: "task.motionLine", value: 20 }],
+        cursor: 2,
+      });
 
       jest.advanceTimersByTime(DEFAULT_STAT_POLL_INTERVAL);
 
@@ -286,11 +290,10 @@ describe("StatChannel", () => {
       statChannel.removeListener("task.motionLine", callback);
 
       // Update the stat
-      const updatedStat = {
-        ...mockStat,
-        task: { ...mockStat.task, motionLine: 20 },
-      };
-      mockNativeInstance.getCurrentFullStat.mockReturnValue(updatedStat);
+      mockNativeInstance.poll.mockReturnValue({
+        changes: [{ path: "task.motionLine", value: 20 }],
+        cursor: 2,
+      });
 
       jest.advanceTimersByTime(DEFAULT_STAT_POLL_INTERVAL);
 
@@ -314,7 +317,7 @@ describe("StatChannel", () => {
       expect(consoleErrorSpy).toHaveBeenCalled();
 
       // Should continue polling after error
-      mockNativeInstance.poll.mockReturnValue(true);
+      mockNativeInstance.poll.mockReturnValue({ changes: [], cursor: 2 });
       jest.advanceTimersByTime(DEFAULT_STAT_POLL_INTERVAL);
 
       expect(mockNativeInstance.poll).toHaveBeenCalled();

@@ -7,6 +7,17 @@ export interface PositionLoggerOptions {
   maxHistorySize?: number;
 }
 
+export interface DeltaResult {
+  /** Points since the requested cursor */
+  points: Float64Array;
+  /** Number of points returned */
+  count: number;
+  /** Current server cursor */
+  cursor: number;
+  /** True if requested cursor was stale (history wrapped), client should reset */
+  wasReset: boolean;
+}
+
 /**
  * Position Logger for tracking machine tool path
  *
@@ -41,7 +52,7 @@ export class PositionLogger {
   }
 
   /**
-   * Clear the position history
+   * Clear the position history (invalidates all previous cursors)
    */
   clear(): void {
     this.nativeLogger.clear();
@@ -95,5 +106,23 @@ export class PositionLogger {
     const actualCount = Math.min(count, totalCount);
 
     return this.getMotionHistory(startIndex, actualCount);
+  }
+
+  /**
+   * Get the current cursor position (monotonic counter of points ever added)
+   * @returns Current cursor value
+   */
+  getCurrentCursor(): number {
+    return this.nativeLogger.getCurrentCursor();
+  }
+
+  /**
+   * Get delta points since a given cursor position
+   * Use this for efficient incremental updates instead of fetching full history.
+   * @param cursor Last known cursor (0 for full history)
+   * @returns Delta result with points, count, new cursor, and wasReset flag
+   */
+  getDeltaSince(cursor: number): DeltaResult {
+    return this.nativeLogger.getDeltaSince(cursor);
   }
 }

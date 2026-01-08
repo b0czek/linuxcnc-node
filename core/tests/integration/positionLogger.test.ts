@@ -444,6 +444,213 @@ describe("Integration: PositionLogger", () => {
     }, 5000);
   });
 
+  describe("Cursor and Delta API", () => {
+    it("should return cursor of 0 before starting", () => {
+      const logger = new PositionLogger();
+      const cursor = logger.getCurrentCursor();
+      expect(cursor).toBe(0);
+    }, 5000);
+
+    it("should have cursor greater than 0 after logging starts", async () => {
+      const logger = new PositionLogger();
+
+      logger.start({ interval: 0.01 });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      const cursor = logger.getCurrentCursor();
+      expect(cursor).toBeGreaterThan(0);
+
+      logger.stop();
+    }, 5000);
+
+    it("should have monotonically increasing cursor during direction changes", async () => {
+      const logger = new PositionLogger();
+
+      logger.start({ interval: 0.01 });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Execute first move to establish baseline cursor after initial logging settles
+      try {
+        await executeMdiAndWait(commandChannel, statChannel, "G1 X0 Y0 F100");
+      } catch (e) {
+        console.log("Initial move:", e);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const cursor1 = logger.getCurrentCursor();
+
+      // Execute moves with significant direction change to force new logged points
+      // (colinearity optimization only skips colinear points)
+      try {
+        await executeMdiAndWait(commandChannel, statChannel, "G1 X5 F100");
+        await executeMdiAndWait(commandChannel, statChannel, "G1 Y5 F100");
+        await executeMdiAndWait(commandChannel, statChannel, "G1 X0 F100");
+      } catch (e) {
+        console.log("Move command:", e);
+      }
+
+      const cursor2 = logger.getCurrentCursor();
+      expect(cursor2).toBeGreaterThan(cursor1);
+
+      console.log(`Cursor increased from ${cursor1} to ${cursor2}`);
+      logger.stop();
+    }, 20000);
+
+    it("should return delta points since cursor", async () => {
+      const logger = new PositionLogger();
+
+      logger.start({ interval: 0.01 });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Get initial cursor
+      const initialCursor = logger.getCurrentCursor();
+
+      // Execute a move to generate new points
+      try {
+        await executeMdiAndWait(commandChannel, statChannel, "G1 X2 F100");
+      } catch (e) {
+        console.log("Move command:", e);
+      }
+
+      const delta = logger.getDeltaSince(initialCursor);
+
+      expect(delta.count).toBeGreaterThan(0);
+      expect(delta.cursor).toBeGreaterThan(initialCursor);
+      expect(delta.wasReset).toBe(false);
+      expect(delta.points.length).toBe(delta.count * POSITION_STRIDE);
+
+      console.log(
+        `Got ${delta.count} delta points since cursor ${initialCursor}, new cursor: ${delta.cursor}`
+      );
+      logger.stop();
+    }, 15000);
+
+    it("should return full history when cursor is 0", async () => {
+      const logger = new PositionLogger();
+
+      logger.start({ interval: 0.01 });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      const delta = logger.getDeltaSince(0);
+      const historyCount = logger.getHistoryCount();
+
+      // Delta with cursor 0 should return same count as full history
+      expect(delta.count).toBe(historyCount);
+      expect(delta.wasReset).toBe(false);
+
+      logger.stop();
+    }, 5000);
+
+    it("should return empty delta when cursor is current", async () => {
+      const logger = new PositionLogger();
+
+      logger.start({ interval: 0.01 });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      // Stop logging so cursor doesn't advance
+      logger.stop();
+
+      const currentCursor = logger.getCurrentCursor();
+      const delta = logger.getDeltaSince(currentCursor);
+
+      expect(delta.count).toBe(0);
+      expect(delta.cursor).toBe(currentCursor);
+      expect(delta.wasReset).toBe(false);
+    }, 5000);
+
+    it("should set wasReset flag when cursor is stale (history wrapped)", async () => {
+      const logger = new PositionLogger();
+
+      // Use a very small history size to force wrapping
+      logger.start({ interval: 0.005, maxHistorySize: 10 });
+
+      // Get initial cursor
+      const initialCursor = logger.getCurrentCursor();
+
+      // Generate actual motion with direction changes to create many logged points
+      // Each direction change forces a new point to be logged
+      try {
+        for (let i = 0; i < 5; i++) {
+          await executeMdiAndWait(commandChannel, statChannel, "G0 X2");
+          await executeMdiAndWait(commandChannel, statChannel, "G0 Y2");
+          await executeMdiAndWait(commandChannel, statChannel, "G0 X0");
+          await executeMdiAndWait(commandChannel, statChannel, "G0 Y0");
+        }
+      } catch (e) {
+        console.log("Motion for history wrap:", e);
+      }
+
+      const delta = logger.getDeltaSince(initialCursor);
+
+      // Cursor should have advanced beyond the history size
+      expect(delta.cursor).toBeGreaterThan(10);
+      // wasReset indicates the cursor was stale (history wrapped past it)
+      expect(delta.wasReset).toBe(true);
+
+      console.log(
+        `History wrapped - wasReset: ${delta.wasReset}, cursor: ${initialCursor} -> ${delta.cursor}`
+      );
+      logger.stop();
+    }, 30000);
+
+    it("should support incremental updates workflow", async () => {
+      const logger = new PositionLogger();
+
+      logger.start({ interval: 0.01 });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Simulate client tracking updates with cursor
+      let clientCursor = 0;
+      let totalPointsReceived = 0;
+
+      // First fetch - get all history
+      const delta1 = logger.getDeltaSince(clientCursor);
+      totalPointsReceived += delta1.count;
+      clientCursor = delta1.cursor;
+
+      // Execute a move
+      try {
+        await executeMdiAndWait(commandChannel, statChannel, "G1 X3 F100");
+      } catch (e) {
+        console.log("Move:", e);
+      }
+
+      // Second fetch - get only new points
+      const delta2 = logger.getDeltaSince(clientCursor);
+      totalPointsReceived += delta2.count;
+      clientCursor = delta2.cursor;
+
+      expect(delta2.wasReset).toBe(false);
+      expect(totalPointsReceived).toBe(logger.getHistoryCount());
+
+      console.log(
+        `Incremental updates: ${delta1.count} initial + ${delta2.count} new = ${totalPointsReceived} total`
+      );
+      logger.stop();
+    }, 15000);
+
+    it("should set wasReset after clear()", async () => {
+      const logger = new PositionLogger();
+
+      logger.start({ interval: 0.01 });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      const cursorBefore = logger.getCurrentCursor();
+      expect(cursorBefore).toBeGreaterThan(0);
+
+      logger.clear();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // After clear, the oldest_cursor is set to cursor+1, making any
+      // pre-clear cursor stale. The current cursor will be >= cursorBefore.
+      const delta = logger.getDeltaSince(cursorBefore);
+      expect(delta.wasReset).toBe(true);
+      expect(delta.cursor).toBeGreaterThanOrEqual(cursorBefore);
+
+      logger.stop();
+    }, 5000);
+  });
+
   describe("Edge Cases", () => {
     it("should handle getting position before starting", () => {
       const logger = new PositionLogger();

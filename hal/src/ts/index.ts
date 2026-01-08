@@ -7,12 +7,13 @@ export type {
   HalPinInfo,
   HalSignalInfo,
   HalParamInfo,
+  HalValue,
 } from "@linuxcnc-node/types";
 
 // --- Exported classes ---
 export { HalComponent } from "./component";
 export { HalItem, Pin, Param } from "./item";
-export type { HalMonitorOptions } from "./component";
+export type { HalMonitorOptions, HalDelta } from "./component";
 
 // --- Global functions ---
 export {

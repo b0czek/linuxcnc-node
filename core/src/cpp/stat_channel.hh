@@ -23,6 +23,9 @@ namespace LinuxCNC
 
         RCS_STAT_CHANNEL *s_channel_ = nullptr;
         EMC_STAT status_{};                  // Current status, directly from NML
+        EMC_STAT prev_status_{};             // Previous status for delta comparison
+        uint64_t cursor_{0};                 // Monotonic cursor for sync
+        bool has_prev_status_{false};        // Whether we have a previous status to compare
         bool tool_mmap_initialized_ = false; // For tool_mmap_user etc.
 
         // Internal helper to connect to NML
@@ -30,23 +33,36 @@ namespace LinuxCNC
         void disconnect();
         bool pollInternal(); // Internal poll without Napi dependencies
 
-        // Conversion helpers
-        Napi::Object convertFullStatToNapiObject(Napi::Env env, const EMC_STAT &stat_to_convert);
+        // Note: addDelta is a free template function in stat_channel.cc
+        
+        // Compare subsystems and add deltas (force=true emits all fields regardless of comparison)
+        void compareTaskStat(Napi::Env env, Napi::Array &deltas, 
+                            const EMC_TASK_STAT &newStat, const EMC_TASK_STAT &oldStat, bool force);
+        void compareMotionStat(Napi::Env env, Napi::Array &deltas,
+                              const EMC_MOTION_STAT &newStat, const EMC_MOTION_STAT &oldStat, bool force);
+        void compareIoStat(Napi::Env env, Napi::Array &deltas,
+                          const EMC_IO_STAT &newStat, const EMC_IO_STAT &oldStat, bool force);
+        void compareTrajStat(Napi::Env env, Napi::Array &deltas, const char* prefix,
+                            const EMC_TRAJ_STAT &newStat, const EMC_TRAJ_STAT &oldStat, bool force);
+        void compareJointStat(Napi::Env env, Napi::Array &deltas, const char* prefix,
+                             const EMC_JOINT_STAT &newStat, const EMC_JOINT_STAT &oldStat, bool force);
+        void compareSpindleStat(Napi::Env env, Napi::Array &deltas, const char* prefix,
+                               const EMC_SPINDLE_STAT &newStat, const EMC_SPINDLE_STAT &oldStat, bool force);
+        void compareAxisStat(Napi::Env env, Napi::Array &deltas, const char* prefix,
+                            const EMC_AXIS_STAT &newStat, const EMC_AXIS_STAT &oldStat, bool force);
 
-        Napi::Object convertTaskStatToNapi(Napi::Env env, const EMC_TASK_STAT &task_stat);
-        Napi::Object convertMotionStatToNapi(Napi::Env env, const EMC_MOTION_STAT &motion_stat);
-        Napi::Object convertIoStatToNapi(Napi::Env env, const EMC_IO_STAT &io_stat);
-        Napi::Object convertTrajStatToNapi(Napi::Env env, const EMC_TRAJ_STAT &traj_stat);
-        Napi::Array convertJointsToNapi(Napi::Env env, const EMC_JOINT_STAT joints[], int count);
-        Napi::Array convertAxesToNapi(Napi::Env env, const EMC_AXIS_STAT axes[], int count);
-        Napi::Array convertSpindlesToNapi(Napi::Env env, const EMC_SPINDLE_STAT spindles[], int count);
-        Napi::Object convertToolStatToNapi(Napi::Env env, const EMC_TOOL_STAT &tool_stat);
-        Napi::Object convertCoolantStatToNapi(Napi::Env env, const EMC_COOLANT_STAT &coolant_stat);
-        Napi::Array convertToolTableToNapi(Napi::Env env); // Specific for tool_table
+        // Tool table conversion (still needed - from mmap, not EMC_STAT)
+        Napi::Array convertToolTableToNapi(Napi::Env env);
+
+        // Shadow tool table for diffing
+        std::vector<CANON_TOOL_TABLE> prev_tool_table_;
+        
+        // Compare tool table and add deltas
+        void compareToolTable(Napi::Env env, Napi::Array &deltas, bool force);
 
         // Exposed methods
-        Napi::Value Poll(const Napi::CallbackInfo &info);               // Returns bool: true if new data was read
-        Napi::Value GetCurrentFullStat(const Napi::CallbackInfo &info); // Returns the full current stat object
+        Napi::Value Poll(const Napi::CallbackInfo &info);               // Returns delta changes array (accepts optional force bool)
+        Napi::Value GetCursor(const Napi::CallbackInfo &info);          // Returns current cursor value
         Napi::Value Disconnect(const Napi::CallbackInfo &info);         // Disconnects from NML channel
     };
 
