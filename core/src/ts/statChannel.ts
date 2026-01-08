@@ -78,6 +78,9 @@ export class StatChannel extends EventEmitter {
           dset(this.currentStat, change.path, change.value);
         }
 
+        // Emit raw deltas for listeners who want the batch
+        this.emit("delta", result.changes);
+
         // Notify individual property watchers via EventEmitter
         // Only check properties that actually changed (from C++)
         for (const change of result.changes) {
@@ -142,12 +145,20 @@ export class StatChannel extends EventEmitter {
    * @param listener The function to call when the property's value changes.
    * @returns this (for chaining)
    */
+  on(event: "delta", listener: (changes: StatChange[]) => void): this;
   on<P extends LinuxCNCStatPaths>(
     propertyPath: P,
     listener: StatPropertyWatchCallback<P>
+  ): this;
+  on(
+    event: string | LinuxCNCStatPaths,
+    listener: ((...args: any[]) => void) | StatPropertyWatchCallback<any>
   ): this {
-    this.ensureWatched(propertyPath);
-    return super.on(propertyPath, listener as (...args: any[]) => void);
+    if (event === "delta") {
+      return super.on(event, listener as (...args: any[]) => void);
+    }
+    this.ensureWatched(event as LinuxCNCStatPaths);
+    return super.on(event, listener as (...args: any[]) => void);
   }
 
   /**
@@ -171,17 +182,22 @@ export class StatChannel extends EventEmitter {
    * @param listener The listener function to remove.
    * @returns this (for chaining)
    */
+  off(event: "delta", listener: (changes: StatChange[]) => void): this;
   off<P extends LinuxCNCStatPaths>(
     propertyPath: P,
     listener: StatPropertyWatchCallback<P>
+  ): this;
+  off(
+    event: string | LinuxCNCStatPaths,
+    listener: ((...args: any[]) => void) | StatPropertyWatchCallback<any>
   ): this {
-    const result = super.off(
-      propertyPath,
-      listener as (...args: any[]) => void
-    );
+    if (event === "delta") {
+      return super.off(event, listener as (...args: any[]) => void);
+    }
+    const result = super.off(event, listener as (...args: any[]) => void);
     // Clean up the watched property if no more listeners
-    if (this.listenerCount(propertyPath) === 0) {
-      this.watchedProperties.delete(propertyPath);
+    if (this.listenerCount(event) === 0) {
+      this.watchedProperties.delete(event as LinuxCNCStatPaths);
     }
     return result;
   }
