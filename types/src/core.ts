@@ -777,24 +777,24 @@ export type LinuxCNCStatPaths = NestedPaths<LinuxCNCStat>;
 type GetPropertyType<T, P extends string> = P extends keyof T
   ? T[P]
   : P extends `${infer K}.${infer R}`
-  ? K extends keyof T
-    ? T[K] extends readonly (infer U)[]
-      ? R extends `${number}`
-        ? U
-        : R extends `${number}.${infer Rest}`
-        ? GetPropertyType<U, Rest>
-        : never
-      : GetPropertyType<T[K], R>
-    : never
-  : never;
+    ? K extends keyof T
+      ? T[K] extends readonly (infer U)[]
+        ? R extends `${number}`
+          ? U
+          : R extends `${number}.${infer Rest}`
+            ? GetPropertyType<U, Rest>
+            : never
+        : GetPropertyType<T[K], R>
+      : never
+    : never;
 
 // Utility type for recursively making all properties optional
 export type RecursivePartial<T> = {
   [P in keyof T]?: T[P] extends (infer U)[]
     ? RecursivePartial<U>[]
     : T[P] extends object
-    ? RecursivePartial<T[P]>
-    : T[P];
+      ? RecursivePartial<T[P]>
+      : T[P];
 };
 
 // Callback types
@@ -805,3 +805,16 @@ export type StatPropertyWatchCallback<P extends LinuxCNCStatPaths> = (
 ) => void;
 
 export type ErrorCallback = (error: LinuxCNCError) => void;
+
+/**
+ * A single stat change entry with the path and its correctly typed value.
+ * This is a discriminated union that maps each path to its proper value type.
+ */
+export type StatChange = {
+  [P in LinuxCNCStatPaths]: {
+    /** Dot-separated path to the changed property */
+    path: P;
+    /** New value of the property */
+    value: GetPropertyType<LinuxCNCStat, P>;
+  };
+}[LinuxCNCStatPaths];

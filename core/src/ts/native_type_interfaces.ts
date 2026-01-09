@@ -31,16 +31,6 @@ export interface NapiOptions {
 }
 
 /**
- * Single change entry in a stat delta update.
- */
-export interface StatChange {
-  /** Dot-separated path to the changed property */
-  path: string;
-  /** New value of the property */
-  value: unknown;
-}
-
-/**
  * Delta update result from native polling.
  */
 export interface StatDeltaResult {
