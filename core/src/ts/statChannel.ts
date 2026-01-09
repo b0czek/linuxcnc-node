@@ -1,7 +1,6 @@
 import { EventEmitter } from "node:events";
 import {
   NapiStatChannelInstance,
-  StatChange,
   StatDeltaResult,
 } from "./native_type_interfaces";
 import {
@@ -9,6 +8,7 @@ import {
   LinuxCNCStatPaths,
   StatPropertyWatchCallback,
   ToolEntry,
+  StatChange,
 } from "@linuxcnc-node/types";
 import { addon } from "./constants";
 import delve from "dlv";
@@ -16,7 +16,7 @@ import { dset } from "dset";
 export const DEFAULT_STAT_POLL_INTERVAL = 50; // ms
 
 // Re-export delta types for external use
-export type { StatChange, StatDeltaResult } from "./native_type_interfaces";
+export type { StatDeltaResult } from "./native_type_interfaces";
 
 export interface StatWatcherOptions {
   pollInterval?: number;
