@@ -1,6 +1,6 @@
 {
   "name": "@linuxcnc-node/gcode",
-  "version": "2.1.0",
+  "version": "2.1.2",
   "description": "Node.js G-code parser using LinuxCNC rs274ngc interpreter",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -9,6 +9,7 @@
     "build:cpp": "node-gyp configure && node-gyp build",
     "build": "npm run build:cpp && npm run build:ts",
     "rebuild": "node-gyp rebuild",
+    "install": "npm run build",
     "prepublishOnly": "npm run build",
     "test": "jest --runInBand",
     "test:integration": "jest --runInBand --testPathPattern=tests/integration",
