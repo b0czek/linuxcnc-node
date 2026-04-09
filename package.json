@@ -15,7 +15,7 @@
     "publish": "changeset publish"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.27.1"
+    "@changesets/cli": "^2.30.0"
   },
   "repository": {
     "type": "git",
