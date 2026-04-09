@@ -41,7 +41,7 @@
     "node-gyp": "^11.2.0",
     "ts-jest": "^29.3.4",
     "typedoc": "^0.28.7",
-    "typescript": "^5.8.3"
+    "typescript": "^6.0.2"
   },
   "files": [
     "dist/",
