@@ -12,7 +12,7 @@
   },
   "devDependencies": {
     "@linuxcnc-node/types": "^2.0.0",
-    "@electron/rebuild": "^4.0.2",
+    "@electron/rebuild": "^4.0.3",
     "@types/node": "^20.11.5",
     "@types/three": "^0.160.0",
     "electron": "^28.1.0",
