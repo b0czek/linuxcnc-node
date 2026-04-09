@@ -17,7 +17,7 @@
     "@types/node": "^20.8.0",
     "@types/ws": "^8.5.8",
     "ts-node": "^10.9.1",
-    "typescript": "^5.2.2"
+    "typescript": "^6.0.2"
   },
   "keywords": [
     "linuxcnc",
