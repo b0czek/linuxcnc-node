@@ -7,7 +7,7 @@ on:
 env:
   LINUXCNC_REPOSITORY: LinuxCNC/linuxcnc
   LINUXCNC_REF: 6045b38321
-  LINUXCNC_CACHE_VERSION: v1
+  LINUXCNC_CACHE_VERSION: v2
 
 jobs:
   typecheck:
@@ -71,13 +71,14 @@ jobs:
           set -euo pipefail
 
           sudo apt-get update
-          sudo apt-get install -y devscripts equivs xvfb
+          sudo apt-get install -y build-essential dpkg-dev xvfb
 
           cd "${LINUXCNC_DIR}"
-          if [ -x debian/configure ]; then
-            ./debian/configure uspace
+          ./debian/configure no-docs
+          if ! sudo apt-get build-dep -y --no-install-recommends .; then
+            dpkg-checkbuilddeps || true
+            exit 1
           fi
-          sudo mk-build-deps -i -r -t "apt-get -y --no-install-recommends" debian/control
 
       - name: Build LinuxCNC
         if: steps.linuxcnc-cache.outputs.cache-hit != 'true'
