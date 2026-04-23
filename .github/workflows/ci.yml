@@ -1,0 +1,134 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  LINUXCNC_REPOSITORY: LinuxCNC/linuxcnc
+  LINUXCNC_REF: 6045b38321
+  LINUXCNC_CACHE_VERSION: v1
+
+jobs:
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Typecheck
+        run: npm run typecheck
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Restore LinuxCNC build
+        id: linuxcnc-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/linuxcnc/${{ env.LINUXCNC_REF }}/linuxcnc
+          key: linuxcnc-${{ runner.os }}-${{ runner.arch }}-${{ env.LINUXCNC_REF }}-${{ env.LINUXCNC_CACHE_VERSION }}
+
+      - name: Check out LinuxCNC
+        if: steps.linuxcnc-cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ env.LINUXCNC_REF }}/linuxcnc
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$(dirname "${LINUXCNC_DIR}")"
+          git clone "https://github.com/${LINUXCNC_REPOSITORY}.git" "${LINUXCNC_DIR}"
+          git -C "${LINUXCNC_DIR}" checkout "${LINUXCNC_REF}"
+
+      - name: Install LinuxCNC dependencies
+        shell: bash
+        env:
+          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ env.LINUXCNC_REF }}/linuxcnc
+        run: |
+          set -euo pipefail
+
+          sudo apt-get update
+          sudo apt-get install -y devscripts equivs xvfb
+
+          cd "${LINUXCNC_DIR}"
+          if [ -x debian/configure ]; then
+            ./debian/configure uspace
+          fi
+          sudo mk-build-deps -i -r -t "apt-get -y --no-install-recommends" debian/control
+
+      - name: Build LinuxCNC
+        if: steps.linuxcnc-cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ env.LINUXCNC_REF }}/linuxcnc
+        run: |
+          set -euo pipefail
+
+          cd "${LINUXCNC_DIR}/src"
+          ./autogen.sh
+          ./configure --with-realtime=uspace
+          make -j"$(nproc)"
+
+      - name: Set LinuxCNC runtime permissions
+        shell: bash
+        env:
+          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ env.LINUXCNC_REF }}/linuxcnc
+        run: |
+          set -euo pipefail
+
+          cd "${LINUXCNC_DIR}/src"
+          sudo make setuid
+
+      - name: Save LinuxCNC build
+        if: steps.linuxcnc-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/linuxcnc/${{ env.LINUXCNC_REF }}/linuxcnc
+          key: linuxcnc-${{ runner.os }}-${{ runner.arch }}-${{ env.LINUXCNC_REF }}-${{ env.LINUXCNC_CACHE_VERSION }}
+
+      - name: Install dependencies
+        shell: bash
+        env:
+          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ env.LINUXCNC_REF }}/linuxcnc
+        run: |
+          set -euo pipefail
+
+          source "${LINUXCNC_DIR}/scripts/rip-environment"
+          export LINUXCNC_INCLUDE="${LINUXCNC_DIR}/include"
+          export LINUXCNC_LIB="${LINUXCNC_DIR}/lib"
+          npm ci
+
+      - name: Test
+        shell: bash
+        env:
+          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ env.LINUXCNC_REF }}/linuxcnc
+        run: |
+          set -euo pipefail
+
+          source "${LINUXCNC_DIR}/scripts/rip-environment"
+          export LINUXCNC_INCLUDE="${LINUXCNC_DIR}/include"
+          export LINUXCNC_LIB="${LINUXCNC_DIR}/lib"
+          npm test

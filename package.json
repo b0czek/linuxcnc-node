@@ -11,6 +11,10 @@
   ],
   "scripts": {
     "changeset": "changeset",
+    "ci": "npm run typecheck && npm test",
+    "test": "npm run test --workspace @linuxcnc-node/core && npm run test --workspace @linuxcnc-node/hal && npm run test --workspace @linuxcnc-node/gcode",
+    "test:unit": "npm run test:unit --workspace @linuxcnc-node/core",
+    "typecheck": "npm run build --workspace @linuxcnc-node/types && npm run build:ts --workspace @linuxcnc-node/core && npm run build:ts --workspace @linuxcnc-node/hal && npm run build:ts --workspace @linuxcnc-node/gcode",
     "version": "changeset version",
     "publish": "changeset publish"
   },
@@ -24,4 +28,3 @@
   "author": "Dariusz Majnert",
   "license": "GPL-2.0-only"
 }
-
