@@ -62,7 +62,7 @@ To build and use these bindings, your system will generally need:
     - The LinuxCNC environment must be sourced (e.g., by running `source /path/to/linuxcnc-dev/scripts/rip-environment` or similar for your setup) _before running Node.js applications that use these bindings_. This ensures that the LinuxCNC shared libraries (like `liblinuxcnchal.so`) are findable by the Node.js addon.
     - **LinuxCNC Development Files:** You will need the LinuxCNC header files for building the addons from source. These are typically available when you have a LinuxCNC development setup (e.g., built from source, or `linuxcnc-uspace-dev` package installed).
 2.  **Node.js:**
-    - Node.js and npm (or yarn).
+    - Node.js and pnpm.
 3.  **Build Tools:**
     - The native C++ addons are compiled using `node-gyp`. This requires:
       - A C++ compiler (e.g., g++).

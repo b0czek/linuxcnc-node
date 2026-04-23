@@ -7,8 +7,8 @@ A simple example that streams LinuxCNC machine position data to a web browser an
 ## Quick Start
 
 1. **Prerequisites**: LinuxCNC running, Node.js installed, LinuxCNC bindings built
-2. **Install**: `npm install`
-3. **Run**: `npm start`
+2. **Install**: `pnpm install`
+3. **Run**: `pnpm start`
 4. **Open**: http://localhost:3000
 5. **Use**: Click "Start Logging" and move your machine
 

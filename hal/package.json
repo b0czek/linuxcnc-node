@@ -7,10 +7,10 @@
   "scripts": {
     "build:ts": "tsc",
     "build:cpp": "node-gyp configure && node-gyp build",
-    "build": "npm run build:cpp && npm run build:ts",
+    "build": "pnpm run build:cpp && pnpm run build:ts",
     "rebuild": "node-gyp rebuild",
-    "install": "npm run build:cpp",
-    "prepublishOnly": "npm run build",
+    "install": "pnpm run build:cpp",
+    "prepublishOnly": "pnpm run build",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"
@@ -23,7 +23,7 @@
   },
   "license": "GPL-2.0-only",
   "dependencies": {
-    "@linuxcnc-node/types": "^2.1.0",
+    "@linuxcnc-node/types": "workspace:*",
     "node-addon-api": "^8.3.1"
   },
   "devDependencies": {

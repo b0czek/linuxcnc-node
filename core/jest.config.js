@@ -13,6 +13,7 @@ module.exports = {
       tsconfig: {
         esModuleInterop: true,
         allowSyntheticDefaultImports: true,
+        types: ['node', 'jest'],
       }
     }]
   },

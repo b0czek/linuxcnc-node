@@ -18,17 +18,22 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
 
       - name: Install dependencies
-        run: npm ci --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Typecheck
-        run: npm run typecheck
+        run: pnpm run typecheck
 
   test:
     name: Test
@@ -38,11 +43,16 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
 
       - name: Restore LinuxCNC build
         id: linuxcnc-cache
@@ -122,7 +132,7 @@ jobs:
           set -u
           export LINUXCNC_INCLUDE="${LINUXCNC_DIR}/include"
           export LINUXCNC_LIB="${LINUXCNC_DIR}/lib"
-          npm ci
+          pnpm install --frozen-lockfile
 
       - name: Test
         shell: bash
@@ -136,4 +146,4 @@ jobs:
           set -u
           export LINUXCNC_INCLUDE="${LINUXCNC_DIR}/include"
           export LINUXCNC_LIB="${LINUXCNC_DIR}/lib"
-          npm test
+          pnpm test

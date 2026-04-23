@@ -10,4 +10,11 @@ module.exports = {
   coverageReporters: ["text", "lcov"],
   verbose: true,
   testTimeout: 30000,
+  transform: {
+    "^.+\\.tsx?$": ["ts-jest", {
+      tsconfig: {
+        types: ["node", "jest"],
+      },
+    }],
+  },
 };
