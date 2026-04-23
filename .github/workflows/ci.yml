@@ -117,7 +117,9 @@ jobs:
         run: |
           set -euo pipefail
 
+          set +u
           source "${LINUXCNC_DIR}/scripts/rip-environment"
+          set -u
           export LINUXCNC_INCLUDE="${LINUXCNC_DIR}/include"
           export LINUXCNC_LIB="${LINUXCNC_DIR}/lib"
           npm ci
@@ -129,7 +131,9 @@ jobs:
         run: |
           set -euo pipefail
 
+          set +u
           source "${LINUXCNC_DIR}/scripts/rip-environment"
+          set -u
           export LINUXCNC_INCLUDE="${LINUXCNC_DIR}/include"
           export LINUXCNC_LIB="${LINUXCNC_DIR}/lib"
           npm test
