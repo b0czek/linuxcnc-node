@@ -1,6 +1,6 @@
 # Node.js LinuxCNC Bindings
 
-> **Note:** All packages in this project are written for **LinuxCNC 2.10**.
+> **Note:** All packages in this project are written for **LinuxCNC 2.10** at commit `11d1a60f43`.
 
 This project provides Node.js bindings for various C++ functionalities within the LinuxCNC. The primary goal is to offer an API close to the existing Python one, making it familiar for those who have worked with LinuxCNC in Python.
 
