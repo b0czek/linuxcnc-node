@@ -2,6 +2,8 @@ name: CI
 
 on:
   push:
+    branches:
+      - master
   pull_request:
 
 env:
@@ -73,7 +75,8 @@ jobs:
           git clone "https://github.com/${LINUXCNC_REPOSITORY}.git" "${LINUXCNC_DIR}"
           git -C "${LINUXCNC_DIR}" checkout "${LINUXCNC_REF}"
 
-      - name: Install LinuxCNC dependencies
+      - name: Install LinuxCNC build dependencies
+        if: steps.linuxcnc-cache.outputs.cache-hit != 'true'
         shell: bash
         env:
           LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ env.LINUXCNC_REF }}/linuxcnc
@@ -81,7 +84,7 @@ jobs:
           set -euo pipefail
 
           sudo apt-get update
-          sudo apt-get install -y build-essential dpkg-dev xvfb
+          sudo apt-get install -y build-essential dpkg-dev
 
           cd "${LINUXCNC_DIR}"
           ./debian/configure no-docs
@@ -89,6 +92,25 @@ jobs:
             dpkg-checkbuilddeps || true
             exit 1
           fi
+
+      - name: Install LinuxCNC cached runtime dependencies
+        if: steps.linuxcnc-cache.outputs.cache-hit == 'true'
+        run: |
+          set -euo pipefail
+
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            python3-dev \
+            procps \
+            psmisc \
+            libboost-python-dev \
+            libedit2 \
+            libmodbus5 \
+            libtirpc3t64 \
+            libudev1 \
+            libusb-1.0-0 \
+            libx11-6
 
       - name: Build LinuxCNC
         if: steps.linuxcnc-cache.outputs.cache-hit != 'true'
