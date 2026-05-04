@@ -37,7 +37,6 @@
             }],
             ["linuxcnc_lib_dir!=''", {
               "ldflags": [
-                "-Wl,--disable-new-dtags",
                 "-Wl,-rpath,<(linuxcnc_lib_dir)"
               ]
             }]
