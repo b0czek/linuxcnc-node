@@ -17,7 +17,8 @@
       "conditions": [
         ["OS=='linux'", {
           "variables": {
-            "linuxcnc_rip_dir": "<!(node -p \"process.env.EMC2_HOME || process.env.LINUXCNC_HOME || ''\")"
+            "linuxcnc_rip_dir": "<!(node -p \"process.env.EMC2_HOME || process.env.LINUXCNC_HOME || ''\")",
+            "linuxcnc_lib_dir": "<!(node -p \"process.env.LINUXCNC_LIB || ''\")"
           },
           "include_dirs": [
             "./include/linuxcnc",
@@ -32,6 +33,11 @@
                 "<(linuxcnc_rip_dir)/src",
                 "<(linuxcnc_rip_dir)/src/hal",
                 "<(linuxcnc_rip_dir)/src/rtapi"
+              ]
+            }],
+            ["linuxcnc_lib_dir!=''", {
+              "ldflags": [
+                "-Wl,-rpath,<(linuxcnc_lib_dir)"
               ]
             }]
           ],

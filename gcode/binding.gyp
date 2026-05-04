@@ -21,6 +21,7 @@
         ["OS=='linux'", {
           "variables": {
             "linuxcnc_rip_dir": "<!(node -p \"process.env.EMC2_HOME || process.env.LINUXCNC_HOME || ''\")",
+            "linuxcnc_lib_dir": "<!(node -p \"process.env.LINUXCNC_LIB || ''\")",
             "linuxcnc_include_dirs": [
               "<!(echo ${LINUXCNC_INCLUDE:-/usr/include/linuxcnc})",
               "/usr/include/linuxcnc",
@@ -50,6 +51,11 @@
                 "<(linuxcnc_rip_dir)/src/libnml/posemath",
                 "<(linuxcnc_rip_dir)/src/libnml/rcs",
                 "<(linuxcnc_rip_dir)/src/rtapi"
+              ]
+            }],
+            ["linuxcnc_lib_dir!=''", {
+              "ldflags": [
+                "-Wl,-rpath,<(linuxcnc_lib_dir)"
               ]
             }]
           ],
