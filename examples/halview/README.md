@@ -2,7 +2,7 @@
 
 ## About This Project
 
-This is a **demonstration application (proof-of-concept)** created to explore and showcase the capabilities of the [`@linuxcnc-node/hal`](https://www.npmjs.com/package/@linuxcnc-node/hal) npm package. The primary goal was to replicate core functionalities of the existing `halshow` program (provided with LinuxCNC) using a modern technology stack: Electron, React, TypeScript, Vite, and the Ant Design UI library.
+This is a **demonstration application (proof-of-concept)** created to explore and showcase the capabilities of the [`@linuxcnc-node/hal`](https://www.npmjs.com/package/@linuxcnc-node/hal) package. The primary goal was to replicate core functionalities of the existing `halshow` program (provided with LinuxCNC) using a modern technology stack: Electron, React, TypeScript, Vite, and the Ant Design UI library.
 
 **Important:** This application is **not a fully polished product** and is **not intended to replace the original `halshow` program**. Instead, it serves as an experimental playground and an example of how one can interact with the LinuxCNC Hardware Abstraction Layer (HAL) from Node.js.
 
@@ -38,21 +38,15 @@ While developing this replica, it became apparent that a modern approach could o
 1.  **Clone the repository.**
 2.  **Install dependencies:**
     ```bash
-    npm install
-    # or
-    yarn install
+    pnpm install
     ```
     _Ensure you have a build environment set up for compiling native Node.js modules and have the LinuxCNC development headers installed, as required by `@linuxcnc-node/hal`._
 3.  **Run in development mode:**
     ```bash
-    npm run dev
-    # or
-    yarn dev
+    pnpm run dev
     ```
 4.  **Build the application for production:**
     ```bash
-    npm run build
-    # or
-    yarn build
+    pnpm run build
     ```
     (The build output will be in a `release/${version}` directory as a `halview-Linux-${version}.AppImage` file).

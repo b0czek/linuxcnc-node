@@ -12,7 +12,7 @@ A 3D G-code visualizer built using Electron, Vite, Three.js, and the `@linuxcnc-
 1.  **Install dependencies**:
 
     ```bash
-    npm install
+    pnpm install
     ```
 
 2.  **Build the G-code native module**:
@@ -20,7 +20,7 @@ A 3D G-code visualizer built using Electron, Vite, Three.js, and the `@linuxcnc-
 
 3.  **Run the application**:
     ```bash
-    npm run dev
+    pnpm run dev
     ```
 
 ## License

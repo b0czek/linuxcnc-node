@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "description": "Node.js bindings for LinuxCNC",
+  "packageManager": "pnpm@10.33.0",
   "workspaces": [
     "core",
     "gcode",
@@ -11,6 +12,12 @@
   ],
   "scripts": {
     "changeset": "changeset",
+    "ci": "pnpm run typecheck && pnpm test",
+    "pretest": "pnpm --filter @linuxcnc-node/types build",
+    "test": "pnpm --filter @linuxcnc-node/core test && pnpm --filter @linuxcnc-node/hal test && pnpm --filter @linuxcnc-node/gcode test",
+    "pretest:unit": "pnpm --filter @linuxcnc-node/types build",
+    "test:unit": "pnpm --filter @linuxcnc-node/core test:unit",
+    "typecheck": "pnpm --filter @linuxcnc-node/types build && pnpm --filter @linuxcnc-node/core build:ts && pnpm --filter @linuxcnc-node/hal build:ts && pnpm --filter @linuxcnc-node/gcode build:ts",
     "version": "changeset version",
     "publish": "changeset publish"
   },
@@ -24,4 +31,3 @@
   "author": "Dariusz Majnert",
   "license": "GPL-2.0-only"
 }
-

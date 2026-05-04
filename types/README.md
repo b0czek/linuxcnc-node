@@ -5,7 +5,7 @@ TypeScript type definitions for LinuxCNC Node.js bindings.
 ## Installation
 
 ```bash
-npm install @linuxcnc-node/types
+pnpm add @linuxcnc-node/types
 ```
 
 ## License
