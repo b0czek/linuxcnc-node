@@ -1,0 +1,166 @@
+name: Publish to npm
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  LINUXCNC_REPOSITORY: LinuxCNC/linuxcnc
+  LINUXCNC_REF: 11d1a60f43
+  LINUXCNC_CACHE_VERSION: v2
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      CI: true
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Update npm for trusted publishing
+        run: npm install --global npm@^11.5.1
+
+      - name: Restore LinuxCNC build
+        id: linuxcnc-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/linuxcnc/${{ env.LINUXCNC_REF }}/linuxcnc
+          key: linuxcnc-${{ runner.os }}-${{ runner.arch }}-${{ env.LINUXCNC_REF }}-${{ env.LINUXCNC_CACHE_VERSION }}
+
+      - name: Check out LinuxCNC
+        if: steps.linuxcnc-cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ env.LINUXCNC_REF }}/linuxcnc
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$(dirname "${LINUXCNC_DIR}")"
+          git clone "https://github.com/${LINUXCNC_REPOSITORY}.git" "${LINUXCNC_DIR}"
+          git -C "${LINUXCNC_DIR}" checkout "${LINUXCNC_REF}"
+
+      - name: Install LinuxCNC build dependencies
+        if: steps.linuxcnc-cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ env.LINUXCNC_REF }}/linuxcnc
+        run: |
+          set -euo pipefail
+
+          sudo apt-get update
+          sudo apt-get install -y build-essential dpkg-dev
+
+          cd "${LINUXCNC_DIR}"
+          ./debian/configure no-docs
+          if ! sudo apt-get build-dep -y --no-install-recommends .; then
+            dpkg-checkbuilddeps || true
+            exit 1
+          fi
+
+      - name: Install LinuxCNC cached runtime dependencies
+        if: steps.linuxcnc-cache.outputs.cache-hit == 'true'
+        run: |
+          set -euo pipefail
+
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            python3-dev \
+            procps \
+            psmisc \
+            libboost-python-dev \
+            libedit2 \
+            libfmt9 \
+            libmodbus5 \
+            libtirpc3t64 \
+            libudev1 \
+            libusb-1.0-0 \
+            libx11-6
+
+      - name: Build LinuxCNC
+        if: steps.linuxcnc-cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ env.LINUXCNC_REF }}/linuxcnc
+        run: |
+          set -euo pipefail
+
+          cd "${LINUXCNC_DIR}/src"
+          ./autogen.sh
+          ./configure --with-realtime=uspace
+          make -j"$(nproc)"
+
+      - name: Set LinuxCNC runtime permissions
+        shell: bash
+        env:
+          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ env.LINUXCNC_REF }}/linuxcnc
+        run: |
+          set -euo pipefail
+
+          cd "${LINUXCNC_DIR}/src"
+          sudo make setuid
+
+      - name: Install dependencies
+        shell: bash
+        env:
+          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ env.LINUXCNC_REF }}/linuxcnc
+        run: |
+          set -euo pipefail
+
+          set +u
+          source "${LINUXCNC_DIR}/scripts/rip-environment"
+          set -u
+          export LINUXCNC_INCLUDE="${LINUXCNC_DIR}/include"
+          export LINUXCNC_LIB="${LINUXCNC_DIR}/lib"
+          pnpm install --frozen-lockfile
+
+      - name: Build publishable packages
+        shell: bash
+        env:
+          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ env.LINUXCNC_REF }}/linuxcnc
+        run: |
+          set -euo pipefail
+
+          set +u
+          source "${LINUXCNC_DIR}/scripts/rip-environment"
+          set -u
+          export LINUXCNC_INCLUDE="${LINUXCNC_DIR}/include"
+          export LINUXCNC_LIB="${LINUXCNC_DIR}/lib"
+          pnpm run build:packages
+
+      - name: Publish packages to npm
+        shell: bash
+        env:
+          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ env.LINUXCNC_REF }}/linuxcnc
+        run: |
+          set -euo pipefail
+
+          set +u
+          source "${LINUXCNC_DIR}/scripts/rip-environment"
+          set -u
+          export LINUXCNC_INCLUDE="${LINUXCNC_DIR}/include"
+          export LINUXCNC_LIB="${LINUXCNC_DIR}/lib"
+          pnpm changeset publish

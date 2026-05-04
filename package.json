@@ -18,6 +18,7 @@
     "pretest:unit": "pnpm --filter @linuxcnc-node/types build",
     "test:unit": "pnpm --filter @linuxcnc-node/core test:unit",
     "typecheck": "pnpm --filter @linuxcnc-node/types build && pnpm --filter @linuxcnc-node/core build:ts && pnpm --filter @linuxcnc-node/hal build:ts && pnpm --filter @linuxcnc-node/gcode build:ts",
+    "build:packages": "pnpm --filter @linuxcnc-node/types build && pnpm --filter @linuxcnc-node/core build && pnpm --filter @linuxcnc-node/hal build && pnpm --filter @linuxcnc-node/gcode build",
     "version": "changeset version",
     "publish": "changeset publish"
   },
