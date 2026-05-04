@@ -3,7 +3,7 @@ name: CI
 on:
   push:
     branches:
-      - master
+      - main
   pull_request:
   workflow_dispatch:
 
@@ -137,7 +137,7 @@ jobs:
           sudo make setuid
 
       - name: Save LinuxCNC build
-        if: steps.linuxcnc-cache.outputs.cache-hit != 'true'
+        if: steps.linuxcnc-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
         uses: actions/cache/save@v4
         with:
           path: .cache/linuxcnc/${{ env.LINUXCNC_REF }}/linuxcnc
