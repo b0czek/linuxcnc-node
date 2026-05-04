@@ -40,6 +40,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
+      - name: Build docs dependencies
+        run: pnpm --filter @linuxcnc-node/types build
+
       - name: Build docs
         run: pnpm --filter @linuxcnc-node/core docs
 
