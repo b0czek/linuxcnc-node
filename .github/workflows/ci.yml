@@ -107,6 +107,7 @@ jobs:
             psmisc \
             libboost-python-dev \
             libedit2 \
+            libfmt9t64 \
             libmodbus5 \
             libtirpc3t64 \
             libudev1 \
