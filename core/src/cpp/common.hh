@@ -7,6 +7,8 @@
 
 namespace LinuxCNC
 {
+    constexpr int NML_CONNECT_ATTEMPTS = 20;
+    constexpr double NML_CONNECT_RETRY_DELAY = 0.1;
 
     extern std::string g_nmlFilePath;
 

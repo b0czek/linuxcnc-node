@@ -10,7 +10,7 @@
 #include <map>
 #include "cms.hh"
 #include "tooldata.hh"
-#include "inifile.hh"
+#include "inifile.h"
 #include <fstream>
 
 #define EMC_COMMAND_TIMEOUT_DEFAULT 5.0
@@ -18,6 +18,16 @@
 
 namespace LinuxCNC
 {
+    std::optional<std::string> findIniString(const std::string &filename, const char *tag, const char *section)
+    {
+        char value[INI_MAX_LINELEN] = {};
+        if (iniFindString(filename.c_str(), tag, section, value, sizeof(value)) != 0)
+        {
+            return std::nullopt;
+        }
+
+        return std::string(value);
+    }
 
     Napi::FunctionReference NapiCommandChannel::constructor;
 
@@ -111,32 +121,34 @@ namespace LinuxCNC
         if (c_channel_ && s_channel_)
             return true;
 
-        const char *nml_file = GetNmlFileCStr();
-        c_channel_ = new RCS_CMD_CHANNEL(emcFormat, "emcCommand", "xemc", nml_file);
-        if (!c_channel_ || !c_channel_->valid())
+        for (int attempt = 0; attempt < NML_CONNECT_ATTEMPTS; ++attempt)
         {
-            delete c_channel_;
-            c_channel_ = nullptr;
-            return false;
-        }
-        s_channel_ = new RCS_STAT_CHANNEL(emcFormat, "emcStatus", "xemc", nml_file);
-        if (!s_channel_ || !s_channel_->valid())
-        {
+            const char *nml_file = GetNmlFileCStr();
+            c_channel_ = new RCS_CMD_CHANNEL(emcFormat, "emcCommand", "xemc", nml_file);
+            if (c_channel_ && c_channel_->valid())
+            {
+                s_channel_ = new RCS_STAT_CHANNEL(emcFormat, "emcStatus", "xemc", nml_file);
+                if (s_channel_ && s_channel_->valid())
+                {
+                    // Parse INI file to cache commonly used settings
+                    if (!parseIniFile())
+                    {
+                        // If INI parsing fails, we can still continue but SetTool might not work
+                        // This is not a critical failure for basic command channel functionality
+                    }
+
+                    return true;
+                }
+            }
+
             delete c_channel_;
             c_channel_ = nullptr;
             delete s_channel_;
             s_channel_ = nullptr;
-            return false;
+            esleep(NML_CONNECT_RETRY_DELAY);
         }
 
-        // Parse INI file to cache commonly used settings
-        if (!parseIniFile())
-        {
-            // If INI parsing fails, we can still continue but SetTool might not work
-            // This is not a critical failure for basic command channel functionality
-        }
-
-        return true;
+        return false;
     }
 
     bool NapiCommandChannel::parseIniFile()
@@ -166,24 +178,15 @@ namespace LinuxCNC
         }
 
         // Parse the INI file to get tool table filename
-        IniFile iniFile;
-        if (iniFile.Open(ini_filename_.c_str()) == false)
+        auto toolTableFile = findIniString(ini_filename_, "TOOL_TABLE", "EMCIO");
+        if (toolTableFile)
         {
-            return false;
-        }
-
-        std::optional<const char *> toolTableFile;
-        if ((toolTableFile = iniFile.Find("TOOL_TABLE", "EMCIO")))
-        {
-            tool_table_filename_ = std::string(*toolTableFile);
+            tool_table_filename_ = *toolTableFile;
         }
         else
         {
-            iniFile.Close();
             return false;
         }
-
-        iniFile.Close();
 
         // Handle relative paths - make them relative to the INI file directory
         if (tool_table_filename_[0] != '/')
@@ -1046,7 +1049,7 @@ namespace LinuxCNC
                     if (last_serial_ > 0)
                     {
                         int serial_diff = stat->echo_serial_number - last_serial_;
-                        if (serial_diff >= 0)
+                        if (serial_diff > 0)
                         {
                             return RCS_STATUS::DONE; // Command processed by LCNC
                         }

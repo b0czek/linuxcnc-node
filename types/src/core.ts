@@ -393,6 +393,7 @@ export interface TaskStat {
 
   /** Number of queued MDI commands. */
   queuedMdiCommands: number;
+
 }
 
 /**
@@ -586,6 +587,9 @@ export interface TrajectoryStat {
 
   /** Motion paused flag. */
   paused: boolean;
+
+  /** True while motion is single stepping. */
+  singleStepping: boolean;
 
   /** Current feedrate override scale (1.0 = 100%). */
   feedRateOverride: number;

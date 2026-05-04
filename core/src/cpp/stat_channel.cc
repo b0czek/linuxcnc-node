@@ -51,17 +51,23 @@ namespace LinuxCNC
             return false;
         }
 
-        s_channel_ = new RCS_STAT_CHANNEL(emcFormat, "emcStatus", "xemc", nml_file);
-        if (!s_channel_ || !s_channel_->valid())
+        for (int attempt = 0; attempt < NML_CONNECT_ATTEMPTS; ++attempt)
         {
+            s_channel_ = new RCS_STAT_CHANNEL(emcFormat, "emcStatus", "xemc", nml_file);
+            if (s_channel_ && s_channel_->valid())
+            {
+                // Initial poll to populate status_
+                pollInternal();
+
+                return true;
+            }
+
             delete s_channel_;
             s_channel_ = nullptr;
-            return false;
+            esleep(NML_CONNECT_RETRY_DELAY);
         }
-        // Initial poll to populate status_
-        pollInternal();
 
-        return true;
+        return false;
     }
 
     void NapiStatChannel::disconnect()
@@ -248,6 +254,7 @@ namespace LinuxCNC
         COMPARE_BOOL(queueFull, TRAJ_PATH("queueFull"));
         COMPARE_FIELD(id, TRAJ_PATH("id"));
         COMPARE_BOOL(paused, TRAJ_PATH("paused"));
+        COMPARE_BOOL(single_stepping, TRAJ_PATH("singleStepping"));
         
         // Fields with different path names
         if (force || newStat.scale != oldStat.scale) addDelta(env, deltas, TRAJ_PATH("feedRateOverride"), newStat.scale);
@@ -347,7 +354,6 @@ namespace LinuxCNC
     {
         // Trajectory
         compareTrajStat(env, deltas, "motion.traj", newStat.traj, oldStat.traj, force);
-        
         char prefix[64];
         
         // Joints
