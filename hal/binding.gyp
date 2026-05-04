@@ -16,11 +16,24 @@
       "cflags_cc!": [ "-fno-exceptions" ],
       "conditions": [
         ["OS=='linux'", {
+          "variables": {
+            "linuxcnc_rip_dir": "<!(node -p \"process.env.EMC2_HOME || process.env.LINUXCNC_HOME || ''\")"
+          },
           "include_dirs": [
             "./include/linuxcnc",
             "/usr/include/linuxcnc", 
             "/usr/local/include/linuxcnc",
             "<!(echo ${LINUXCNC_INCLUDE:-})"
+          ],
+          "conditions": [
+            ["linuxcnc_rip_dir!=''", {
+              "include_dirs": [
+                "<(linuxcnc_rip_dir)/include",
+                "<(linuxcnc_rip_dir)/src",
+                "<(linuxcnc_rip_dir)/src/hal",
+                "<(linuxcnc_rip_dir)/src/rtapi"
+              ]
+            }]
           ],
           "libraries": [
             "-llinuxcnchal"

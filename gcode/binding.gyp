@@ -20,6 +20,7 @@
       "conditions": [
         ["OS=='linux'", {
           "variables": {
+            "linuxcnc_rip_dir": "<!(node -p \"process.env.EMC2_HOME || process.env.LINUXCNC_HOME || ''\")",
             "linuxcnc_include_dirs": [
               "<!(echo ${LINUXCNC_INCLUDE:-/usr/include/linuxcnc})",
               "/usr/include/linuxcnc",
@@ -28,6 +29,29 @@
           },
           "include_dirs": [
             "<@(linuxcnc_include_dirs)"
+          ],
+          "conditions": [
+            ["linuxcnc_rip_dir!=''", {
+              "include_dirs": [
+                "<(linuxcnc_rip_dir)/include",
+                "<(linuxcnc_rip_dir)/src",
+                "<(linuxcnc_rip_dir)/src/emc",
+                "<(linuxcnc_rip_dir)/src/emc/ini",
+                "<(linuxcnc_rip_dir)/src/emc/motion",
+                "<(linuxcnc_rip_dir)/src/emc/nml_intf",
+                "<(linuxcnc_rip_dir)/src/emc/rs274ngc",
+                "<(linuxcnc_rip_dir)/src/emc/sai",
+                "<(linuxcnc_rip_dir)/src/emc/tooldata",
+                "<(linuxcnc_rip_dir)/src/libnml/buffer",
+                "<(linuxcnc_rip_dir)/src/libnml/cms",
+                "<(linuxcnc_rip_dir)/src/libnml/linklist",
+                "<(linuxcnc_rip_dir)/src/libnml/nml",
+                "<(linuxcnc_rip_dir)/src/libnml/os_intf",
+                "<(linuxcnc_rip_dir)/src/libnml/posemath",
+                "<(linuxcnc_rip_dir)/src/libnml/rcs",
+                "<(linuxcnc_rip_dir)/src/rtapi"
+              ]
+            }]
           ],
           "libraries": [
             "-lrs274",
