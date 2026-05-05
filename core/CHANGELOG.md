@@ -1,5 +1,13 @@
 # @linuxcnc-node/core
 
+## 2.2.1
+
+### Patch Changes
+
+- Fix native package installs by shipping node-gyp as an install dependency and invoking it directly from lifecycle scripts.
+- Updated dependencies
+  - @linuxcnc-node/types@2.2.1
+
 ## 2.2.0
 
 ### Minor Changes
