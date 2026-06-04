@@ -1,5 +1,13 @@
 # @linuxcnc-node/core
 
+## 2.2.2
+
+### Patch Changes
+
+- update to upstream
+- Updated dependencies
+  - @linuxcnc-node/types@2.2.2
+
 ## 2.2.1
 
 ### Patch Changes

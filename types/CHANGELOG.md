@@ -1,5 +1,11 @@
 # @linuxcnc-node/types
 
+## 2.2.2
+
+### Patch Changes
+
+- update to upstream
+
 ## 2.2.1
 
 ### Patch Changes
