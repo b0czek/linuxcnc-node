@@ -118,6 +118,15 @@ export class CommandChannel {
   }
 
   /**
+   * Closes the currently loaded G-code program
+   *
+   * @returns Promise resolving to RcsStatus indicating command completion
+   */
+  async programClose(): Promise<RcsStatus> {
+    return this.exec(this.nativeInstance.programClose);
+  }
+
+  /**
    * Runs the currently loaded G-code program
    *
    * @param startLine - Line number to start execution from (default: 0 for beginning)

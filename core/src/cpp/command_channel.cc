@@ -41,6 +41,7 @@ namespace LinuxCNC
                                                                            InstanceMethod("taskPlanSynch", &NapiCommandChannel::TaskPlanSynch),
                                                                            InstanceMethod("resetInterpreter", &NapiCommandChannel::ResetInterpreter),
                                                                            InstanceMethod("programOpen", &NapiCommandChannel::ProgramOpen),
+                                                                           InstanceMethod("programClose", &NapiCommandChannel::ProgramClose),
                                                                            InstanceMethod("runProgram", &NapiCommandChannel::RunProgram),
                                                                            InstanceMethod("pauseProgram", &NapiCommandChannel::PauseProgram),
                                                                            InstanceMethod("resumeProgram", &NapiCommandChannel::ResumeProgram),
@@ -350,6 +351,13 @@ namespace LinuxCNC
 
         // Return the promise from the worker
         return worker->GetPromise();
+    }
+
+    Napi::Value NapiCommandChannel::ProgramClose(const Napi::CallbackInfo &info)
+    {
+        auto msg = std::make_unique<EMC_TASK_PLAN_CLOSE>();
+        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
+        return sendCommandAsync(info, std::move(cmd_msg));
     }
 
     Napi::Value NapiCommandChannel::RunProgram(const Napi::CallbackInfo &info)

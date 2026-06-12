@@ -54,6 +54,7 @@ namespace LinuxCNC
         Napi::Value TaskPlanSynch(const Napi::CallbackInfo &info);
         Napi::Value ResetInterpreter(const Napi::CallbackInfo &info);
         Napi::Value ProgramOpen(const Napi::CallbackInfo &info);
+        Napi::Value ProgramClose(const Napi::CallbackInfo &info);
         // auto commands
         Napi::Value RunProgram(const Napi::CallbackInfo &info);
         Napi::Value PauseProgram(const Napi::CallbackInfo &info);

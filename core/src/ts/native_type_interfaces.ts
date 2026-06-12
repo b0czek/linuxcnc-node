@@ -60,6 +60,7 @@ export interface NapiCommandChannelInstance {
   taskPlanSynch(): Promise<RcsStatus>;
   resetInterpreter(): Promise<RcsStatus>;
   programOpen(filePath: string): Promise<RcsStatus>;
+  programClose(): Promise<RcsStatus>;
   // auto commands are mapped to specific methods for clarity
   runProgram(startLine: number): Promise<RcsStatus>; // auto(AUTO_RUN, line)
   pauseProgram(): Promise<RcsStatus>; // auto(AUTO_PAUSE)
