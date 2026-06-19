@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "@linuxcnc-node/gcode": "^2.0.0",
-    "three": "^0.160.0"
+    "three": "^0.183.2"
   },
   "devDependencies": {
     "@linuxcnc-node/types": "^2.0.0",
