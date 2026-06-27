@@ -32,6 +32,7 @@ describe("Integration: Setup Test", () => {
 
     expect(status).toBeDefined();
     expect(status?.task.state).toBeDefined();
+    expect(status?.motion.spindle[0].feedback).toEqual(expect.any(Number));
 
     const homedJoints = status?.motion.joint.filter((j) => j.homed);
     console.log(`${homedJoints?.length} joints are homed`);

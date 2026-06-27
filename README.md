@@ -1,6 +1,10 @@
 # Node.js LinuxCNC Bindings
 
-> **Note:** All packages in this project are written for **LinuxCNC 2.10** at commit `888cb941fbf23ee32fc8e15ca180997d99a39117`.
+> **Compatibility:** Starting with v3, these packages are purpose-built for
+> **LinuxCNC 2.10** at the pinned
+> [base revision](./linuxcnc-patches/base-revision) with this repository's
+> [LinuxCNC patch series](./linuxcnc-patches/README.md) applied. Stock or
+> other LinuxCNC builds are not ABI-compatible with these bindings.
 
 This project provides Node.js bindings for various C++ functionalities within the LinuxCNC. The primary goal is to offer an API close to the existing Python one, making it familiar for those who have worked with LinuxCNC in Python.
 
@@ -37,6 +41,13 @@ The project is organized into modules, each corresponding to a specific area of 
   - Parses G-code files and extracts sequential operations (traverse, feed, arc, etc.) for toolpath visualization.
   - Features high-performance parsing with progress reporting and machine state tracking.
   - **[View G-code Module README](./gcode/README.md)**
+
+## Patched LinuxCNC baseline
+
+The maintained patches, their order, and the reason each divergence exists are
+documented in [`linuxcnc-patches`](./linuxcnc-patches/README.md). Build
+LinuxCNC from the pinned revision with that complete series before building or
+running these packages. CI performs the same checkout, patch, and build flow.
 
 ## Examples
 

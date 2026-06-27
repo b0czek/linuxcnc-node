@@ -503,6 +503,11 @@ export interface SpindleStat {
    */
   speed: number;
 
+  /**
+   * Signed spindle speed feedback from `spindle.N.speed-in`, converted to RPM.
+   */
+  feedback: number;
+
   /** Spindle speed override scale as a floating point value. 1.0 for 100% override */
   override: number;
 

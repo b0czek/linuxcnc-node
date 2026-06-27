@@ -9,8 +9,7 @@ on:
 
 env:
   LINUXCNC_REPOSITORY: LinuxCNC/linuxcnc
-  LINUXCNC_REF: 888cb941fbf23ee32fc8e15ca180997d99a39117
-  LINUXCNC_CACHE_VERSION: v2
+  LINUXCNC_CACHE_VERSION: v3
 
 jobs:
   typecheck:
@@ -44,6 +43,13 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Read LinuxCNC base revision
+        id: linuxcnc-baseline
+        shell: bash
+        run: |
+          revision="$(< linuxcnc-patches/base-revision)"
+          echo "revision=${revision}" >> "${GITHUB_OUTPUT}"
+
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
 
@@ -57,14 +63,15 @@ jobs:
         id: linuxcnc-cache
         uses: actions/cache/restore@v4
         with:
-          path: .cache/linuxcnc/${{ env.LINUXCNC_REF }}/linuxcnc
-          key: linuxcnc-${{ runner.os }}-${{ runner.arch }}-${{ env.LINUXCNC_REF }}-${{ env.LINUXCNC_CACHE_VERSION }}
+          path: .cache/linuxcnc/${{ steps.linuxcnc-baseline.outputs.revision }}/linuxcnc
+          key: linuxcnc-${{ runner.os }}-${{ runner.arch }}-${{ steps.linuxcnc-baseline.outputs.revision }}-${{ env.LINUXCNC_CACHE_VERSION }}-${{ hashFiles('linuxcnc-patches/*.patch') }}
 
       - name: Check out LinuxCNC
         if: steps.linuxcnc-cache.outputs.cache-hit != 'true'
         shell: bash
         env:
-          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ env.LINUXCNC_REF }}/linuxcnc
+          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ steps.linuxcnc-baseline.outputs.revision }}/linuxcnc
+          LINUXCNC_REF: ${{ steps.linuxcnc-baseline.outputs.revision }}
         run: |
           set -euo pipefail
 
@@ -72,11 +79,21 @@ jobs:
           git clone "https://github.com/${LINUXCNC_REPOSITORY}.git" "${LINUXCNC_DIR}"
           git -C "${LINUXCNC_DIR}" checkout "${LINUXCNC_REF}"
 
+      - name: Apply LinuxCNC patches
+        if: steps.linuxcnc-cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ steps.linuxcnc-baseline.outputs.revision }}/linuxcnc
+        run: |
+          set -euo pipefail
+
+          "${GITHUB_WORKSPACE}/linuxcnc-patches/apply.sh" "${LINUXCNC_DIR}"
+
       - name: Install LinuxCNC build dependencies
         if: steps.linuxcnc-cache.outputs.cache-hit != 'true'
         shell: bash
         env:
-          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ env.LINUXCNC_REF }}/linuxcnc
+          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ steps.linuxcnc-baseline.outputs.revision }}/linuxcnc
         run: |
           set -euo pipefail
 
@@ -114,7 +131,7 @@ jobs:
         if: steps.linuxcnc-cache.outputs.cache-hit != 'true'
         shell: bash
         env:
-          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ env.LINUXCNC_REF }}/linuxcnc
+          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ steps.linuxcnc-baseline.outputs.revision }}/linuxcnc
         run: |
           set -euo pipefail
 
@@ -126,7 +143,7 @@ jobs:
       - name: Set LinuxCNC runtime permissions
         shell: bash
         env:
-          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ env.LINUXCNC_REF }}/linuxcnc
+          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ steps.linuxcnc-baseline.outputs.revision }}/linuxcnc
         run: |
           set -euo pipefail
 
@@ -137,13 +154,13 @@ jobs:
         if: steps.linuxcnc-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
         uses: actions/cache/save@v4
         with:
-          path: .cache/linuxcnc/${{ env.LINUXCNC_REF }}/linuxcnc
-          key: linuxcnc-${{ runner.os }}-${{ runner.arch }}-${{ env.LINUXCNC_REF }}-${{ env.LINUXCNC_CACHE_VERSION }}
+          path: .cache/linuxcnc/${{ steps.linuxcnc-baseline.outputs.revision }}/linuxcnc
+          key: linuxcnc-${{ runner.os }}-${{ runner.arch }}-${{ steps.linuxcnc-baseline.outputs.revision }}-${{ env.LINUXCNC_CACHE_VERSION }}-${{ hashFiles('linuxcnc-patches/*.patch') }}
 
       - name: Install dependencies
         shell: bash
         env:
-          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ env.LINUXCNC_REF }}/linuxcnc
+          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ steps.linuxcnc-baseline.outputs.revision }}/linuxcnc
         run: |
           set -euo pipefail
 
@@ -157,7 +174,7 @@ jobs:
       - name: Test
         shell: bash
         env:
-          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ env.LINUXCNC_REF }}/linuxcnc
+          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ steps.linuxcnc-baseline.outputs.revision }}/linuxcnc
         run: |
           set -euo pipefail
 
