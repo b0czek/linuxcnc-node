@@ -320,6 +320,8 @@ namespace LinuxCNC
         #define SPINDLE_PATH(name) (snprintf(path, sizeof(path), "%s.%s", prefix, name), path)
         
         COMPARE_FIELD(speed, SPINDLE_PATH("speed"));
+        COMPARE_FIELD(css_maximum, SPINDLE_PATH("cssMaximum"));
+        COMPARE_FIELD(css_factor, SPINDLE_PATH("cssFactor"));
         COMPARE_FIELD(direction, SPINDLE_PATH("direction"));
         COMPARE_FIELD(increasing, SPINDLE_PATH("increasing"));
         COMPARE_FIELD(orient_state, SPINDLE_PATH("orientState"));

@@ -507,6 +507,17 @@ export interface SpindleStat {
   override: number;
 
   /**
+   * Maximum spindle speed in RPM used by Constant Surface Speed (CSS / G96).
+   * Set by the G96 D-word.
+   */
+  cssMaximum: number;
+
+  /**
+   * CSS factor used to convert surface speed to spindle RPM.
+   */
+  cssFactor: number;
+
+  /**
    * Rotational direction of the spindle.
    * - `1`: Forward (clockwise)
    * - `0`: Off (stopped)
