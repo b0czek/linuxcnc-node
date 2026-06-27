@@ -1,0 +1,171 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dariusz Majnert <dariusz@users.noreply.github.com>
+Date: Sat, 27 Jun 2026 20:00:00 +0200
+Subject: [PATCH] emc: expose interpreter coordinate data in status
+
+---
+ src/emc/nml_intf/emc.cc                       |  8 +++++
+ src/emc/nml_intf/emc_nml.hh                   |  4 +++
+ src/emc/nml_intf/emcops.cc                    |  4 +++
+ src/emc/task/emctask.cc                       | 40 +++++++++++++++++++
+ src/emc/usr_intf/axis/extensions/emcmodule.cc | 24 ++++++++++++
+ 5 files changed, 80 insertions(+)
+
+diff --git a/src/emc/nml_intf/emc.cc b/src/emc/nml_intf/emc.cc
+index fd5b118fba..282edd98ec 100644
+--- a/src/emc/nml_intf/emc.cc
++++ b/src/emc/nml_intf/emc.cc
+@@ -1392,8 +1392,14 @@ void EMC_TASK_STAT::update(CMS * cms)
+     cms->update(ini_filename, LINELEN);
+     EmcPose_update(cms, &g5x_offset);
+     cms->update(g5x_index);
++    for (int i = 0; i < 9; i++) {
++        EmcPose_update(cms, &g5x_offsets[i]);
++    }
++    cms->update(g5x_rotations, 9);
+     EmcPose_update(cms, &g92_offset);
+     cms->update(rotation_xy);
++    EmcPose_update(cms, &g28_position);
++    EmcPose_update(cms, &g30_position);
+     EmcPose_update(cms, &toolOffset);
+     cms->update(activeGCodes, ACTIVE_G_CODES);
+     cms->update(activeMCodes, ACTIVE_M_CODES);
+diff --git a/src/emc/nml_intf/emc_nml.hh b/src/emc/nml_intf/emc_nml.hh
+index 68478559c7..38f67b98bd 100644
+--- a/src/emc/nml_intf/emc_nml.hh
++++ b/src/emc/nml_intf/emc_nml.hh
+@@ -1459,8 +1459,12 @@ class EMC_TASK_STAT:public EMC_TASK_STAT_MSG {
+     char ini_filename[LINELEN];
+     EmcPose g5x_offset;		// in user units, currently active
+     int g5x_index;              // index of active g5x system
++    EmcPose g5x_offsets[9];	// in user units, all G5x coordinate systems (G54-G59.3)
++    double g5x_rotations[9];	// in degrees, all G5x coordinate systems (G54-G59.3)
+     EmcPose g92_offset;		// in user units, currently active
+     double rotation_xy;
++    EmcPose g28_position;	// in user units, G28 home position
++    EmcPose g30_position;	// in user units, G30 home position
+     EmcPose toolOffset;		// tool offset, in general pose form
+     int activeGCodes[ACTIVE_G_CODES];
+     int activeMCodes[ACTIVE_M_CODES];
+diff --git a/src/emc/nml_intf/emcops.cc b/src/emc/nml_intf/emcops.cc
+index 6373c42f49..6e068c2708 100644
+--- a/src/emc/nml_intf/emcops.cc
++++ b/src/emc/nml_intf/emcops.cc
+@@ -134,8 +134,12 @@ EMC_TASK_STAT::EMC_TASK_STAT()
+     ini_filename{},
+     g5x_offset{},
+     g5x_index(0),
++    g5x_offsets{},
++    g5x_rotations{},
+     g92_offset{},
+     rotation_xy(0.0),
++    g28_position{},
++    g30_position{},
+     toolOffset{},
+     activeSettings{},
+     programUnits(CANON_UNITS_MM),
+diff --git a/src/emc/task/emctask.cc b/src/emc/task/emctask.cc
+index 90fc85d0be..d5c060f669 100644
+--- a/src/emc/task/emctask.cc
++++ b/src/emc/task/emctask.cc
+@@ -738,6 +738,46 @@ int emcTaskUpdate(EMC_TASK_STAT * stat)
+     //update state of block delete
+     stat->block_delete_state = GET_BLOCK_DELETE();
+ 
++    // Expose interpreter coordinate data that otherwise lives only in the
++    // RS274NGC parameter file. All pose values are in user units, matching
++    // the existing g5x_offset field.
++    if (_is) {
++        for (int i = 0; i < 9; i++) {
++            int base = 5221 + i * 20;
++            stat->g5x_offsets[i].tran.x = _is->parameters[base + 0];
++            stat->g5x_offsets[i].tran.y = _is->parameters[base + 1];
++            stat->g5x_offsets[i].tran.z = _is->parameters[base + 2];
++            stat->g5x_offsets[i].a = _is->parameters[base + 3];
++            stat->g5x_offsets[i].b = _is->parameters[base + 4];
++            stat->g5x_offsets[i].c = _is->parameters[base + 5];
++            stat->g5x_offsets[i].u = _is->parameters[base + 6];
++            stat->g5x_offsets[i].v = _is->parameters[base + 7];
++            stat->g5x_offsets[i].w = _is->parameters[base + 8];
++            stat->g5x_rotations[i] = _is->parameters[base + 9];
++        }
++
++        // G28 and G30 home positions: parameters 5161-5169 and 5181-5189.
++        stat->g28_position.tran.x = _is->parameters[5161];
++        stat->g28_position.tran.y = _is->parameters[5162];
++        stat->g28_position.tran.z = _is->parameters[5163];
++        stat->g28_position.a = _is->parameters[5164];
++        stat->g28_position.b = _is->parameters[5165];
++        stat->g28_position.c = _is->parameters[5166];
++        stat->g28_position.u = _is->parameters[5167];
++        stat->g28_position.v = _is->parameters[5168];
++        stat->g28_position.w = _is->parameters[5169];
++
++        stat->g30_position.tran.x = _is->parameters[5181];
++        stat->g30_position.tran.y = _is->parameters[5182];
++        stat->g30_position.tran.z = _is->parameters[5183];
++        stat->g30_position.a = _is->parameters[5184];
++        stat->g30_position.b = _is->parameters[5185];
++        stat->g30_position.c = _is->parameters[5186];
++        stat->g30_position.u = _is->parameters[5187];
++        stat->g30_position.v = _is->parameters[5188];
++        stat->g30_position.w = _is->parameters[5189];
++    }
++
+     extern uint64_t task_beat;  // Main loop heartbeat in emctaskmain.cc
+     stat->taskbeat = task_beat;
+ 
+diff --git a/src/emc/usr_intf/axis/extensions/emcmodule.cc b/src/emc/usr_intf/axis/extensions/emcmodule.cc
+index 73b9efc2c8..3345c0a6a0 100644
+--- a/src/emc/usr_intf/axis/extensions/emcmodule.cc
++++ b/src/emc/usr_intf/axis/extensions/emcmodule.cc
+@@ -1261,6 +1261,26 @@ static PyObject *Stat_g5x_offset(pyStatChannel *s, void *) {
+     return pose(s->status.task.g5x_offset);
+ }
+ 
++static PyObject *Stat_g5x_offsets(pyStatChannel *s, void *) {
++    PyObject *res = PyTuple_New(9);
++    for (int i = 0; i < 9; i++) {
++        PyTuple_SET_ITEM(res, i, pose(s->status.task.g5x_offsets[i]));
++    }
++    return res;
++}
++
++static PyObject *Stat_g5x_rotations(pyStatChannel *s, void *) {
++    return double_array(s->status.task.g5x_rotations, 9);
++}
++
++static PyObject *Stat_g28_position(pyStatChannel *s, void *) {
++    return pose(s->status.task.g28_position);
++}
++
++static PyObject *Stat_g30_position(pyStatChannel *s, void *) {
++    return pose(s->status.task.g30_position);
++}
++
+ static PyObject *Stat_g92_offset(pyStatChannel *s, void *) {
+     return pose(s->status.task.g92_offset);
+ }
+@@ -1543,8 +1563,22 @@ static PyGetSetDef Stat_getsetlist[] = {
+     {(char*)"mcodes", (getter)Stat_activemcodes, NULL, NULL, NULL},
+     {(char*)"misc_error", (getter)Stat_misc_error, NULL, NULL, NULL},
+     {(char*)"g5x_offset", (getter)Stat_g5x_offset, NULL, NULL, NULL},
++    {(char*)"g5x_offsets", (getter)Stat_g5x_offsets, NULL,
++        (char*)"An array of nine poses (G54-G59.3) from the interpreter. "
++        "Index 0 is G54, index 8 is G59.3.", NULL
++    },
++    {(char*)"g5x_rotations", (getter)Stat_g5x_rotations, NULL,
++        (char*)"An array of nine XY rotation angles (G54-G59.3) in degrees. "
++        "Index 0 is G54, index 8 is G59.3.", NULL
++    },
+     {(char*)"g5x_index", (getter)Stat_g5x_index, NULL, NULL, NULL},
+     {(char*)"g92_offset", (getter)Stat_g92_offset, NULL, NULL, NULL},
++    {(char*)"g28_position", (getter)Stat_g28_position, NULL,
++        (char*)"G28 home position in user units.", NULL
++    },
++    {(char*)"g30_position", (getter)Stat_g30_position, NULL,
++        (char*)"G30 home position in user units.", NULL
++    },
+     {(char*)"position", (getter)Stat_position, NULL, NULL, NULL},
+     {(char*)"dtg", (getter)Stat_dtg, NULL, NULL, NULL},
+     {(char*)"joint_position", (getter)Stat_joint_position, NULL, NULL, NULL},

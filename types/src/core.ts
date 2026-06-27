@@ -361,8 +361,26 @@ export interface TaskStat {
   /** Currently active coordinate system index. G54=1, G55=2, etc. */
   g5xIndex: number;
 
+  /**
+   * Offsets of all nine G5x coordinate systems (G54-G59.3) from the interpreter.
+   * Index 0 is G54, index 8 is G59.3. Values are in user units.
+   */
+  g5xOffsets: Position[];
+
+  /**
+   * XY rotation angles of all nine G5x coordinate systems (G54-G59.3) in degrees.
+   * Index 0 is G54, index 8 is G59.3.
+   */
+  g5xRotations: number[];
+
   /** Pose of the current G92 offset. */
   g92Offset: Position;
+
+  /** G28 home position in user units. */
+  g28Position: Position;
+
+  /** G30 home position in user units. */
+  g30Position: Position;
 
   /** Current XY rotation angle around Z axis in degrees. */
   rotationXY: number;

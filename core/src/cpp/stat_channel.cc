@@ -148,6 +148,26 @@ namespace LinuxCNC
         if (force || memcmp(&newStat.field, &oldStat.field, sizeof(EmcPose)) != 0) addDelta(env, deltas, path, newStat.field)
     #define COMPARE_ARRAY(array, idx, path) \
         if (force || newStat.array[idx] != oldStat.array[idx]) addDelta(env, deltas, path, newStat.array[idx])
+    #define COMPARE_ARRAY_MEMCMP(array, base_path) \
+        do { \
+            char path[128]; \
+            for (int i = 0; i < (int)(sizeof(newStat.array)/sizeof(newStat.array[0])); ++i) { \
+                if (force || memcmp(&newStat.array[i], &oldStat.array[i], sizeof(newStat.array[0])) != 0) { \
+                    snprintf(path, sizeof(path), base_path ".%d", i); \
+                    addDelta(env, deltas, path, newStat.array[i]); \
+                } \
+            } \
+        } while(0)
+    #define COMPARE_SCALAR_ARRAY(array, base_path) \
+        do { \
+            char path[128]; \
+            for (int i = 0; i < (int)(sizeof(newStat.array)/sizeof(newStat.array[0])); ++i) { \
+                if (force || newStat.array[i] != oldStat.array[i]) { \
+                    snprintf(path, sizeof(path), base_path ".%d", i); \
+                    addDelta(env, deltas, path, newStat.array[i]); \
+                } \
+            } \
+        } while(0)
 
     void NapiStatChannel::compareTaskStat(Napi::Env env, Napi::Array &deltas,
                                           const EMC_TASK_STAT &newStat, const EMC_TASK_STAT &oldStat, bool force)
@@ -168,8 +188,12 @@ namespace LinuxCNC
         COMPARE_STRING(ini_filename, "task.iniFilename");
         COMPARE_POSE(g5x_offset, "task.g5xOffset");
         COMPARE_FIELD(g5x_index, "task.g5xIndex");
+        COMPARE_ARRAY_MEMCMP(g5x_offsets, "task.g5xOffsets");
+        COMPARE_SCALAR_ARRAY(g5x_rotations, "task.g5xRotations");
         COMPARE_POSE(g92_offset, "task.g92Offset");
         COMPARE_FIELD(rotation_xy, "task.rotationXY");
+        COMPARE_POSE(g28_position, "task.g28Position");
+        COMPARE_POSE(g30_position, "task.g30Position");
         COMPARE_POSE(toolOffset, "task.toolOffset");
         
         // Active G-codes
@@ -424,6 +448,8 @@ namespace LinuxCNC
     #undef COMPARE_STRING
     #undef COMPARE_POSE
     #undef COMPARE_ARRAY
+    #undef COMPARE_ARRAY_MEMCMP
+    #undef COMPARE_SCALAR_ARRAY
 
     Napi::Value NapiStatChannel::Poll(const Napi::CallbackInfo &info)
     {
