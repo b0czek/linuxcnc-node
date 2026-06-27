@@ -1,0 +1,62 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dariusz Majnert <dariusz@users.noreply.github.com>
+Date: Sat, 27 Jun 2026 20:00:00 +0200
+Subject: [PATCH] rs274ngc: preserve G96/G97 modal state across task-mode switches
+
+Every MANUAL/MDI task-mode transition calls Interp::synch(), which
+unconditionally reset _setup.spindle_mode[] to CONSTANT_RPM (G97) for
+all spindles.  The motion controller and canon layer retained CSS
+state, but the interpreter model forgot it, so active-G-code display
+and subsequent MDI commands behaved as if G97 were active.
+
+Move the default G97 initialization from Interp::synch() into
+Interp::init(), and preserve _setup.spindle_mode[] across synch()
+calls.  Also update Interp::convert_stop() (M2/M30) to set the
+interpreter model back to G97 when it already turns CSS off at the
+canon level.
+
+---
+ src/emc/rs274ngc/interp_convert.cc | 3 ++-
+ src/emc/rs274ngc/rs274ngc_pre.cc   | 7 +++++--
+ 2 files changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/src/emc/rs274ngc/interp_convert.cc b/src/emc/rs274ngc/interp_convert.cc
+index 779ed70095..be11b73201 100644
+--- a/src/emc/rs274ngc/interp_convert.cc
++++ b/src/emc/rs274ngc/interp_convert.cc
+@@ -5246,8 +5246,9 @@ int Interp::convert_stop(block_pointer block,    //!< pointer to a block of RS27
+         settings->spindle_turning[s] = CANON_STOPPED;
+ 
+         settings->speed_override[s] = true;
+-        /* turn off FPR */
++        /* turn off CSS (G96) and return to G97 */
+         SET_SPINDLE_MODE(s, 0);
++        settings->spindle_mode[s] = SPINDLE_MODE::CONSTANT_RPM;
+     }
+ 
+ /*8*/ settings->motion_mode = G_1;
+diff --git a/src/emc/rs274ngc/rs274ngc_pre.cc b/src/emc/rs274ngc/rs274ngc_pre.cc
+index f843fc8298..2ea4bf5550 100644
+--- a/src/emc/rs274ngc/rs274ngc_pre.cc
++++ b/src/emc/rs274ngc/rs274ngc_pre.cc
+@@ -1207,7 +1207,9 @@ int Interp::init()
+   _setup.sequence_number = 0;   /*DOES THIS NEED TO BE AT TOP? */
+ //_setup.speed set in Interp::synch
+   _setup.speed_feed_mode = CANON_INDEPENDENT;
+-// setup.spindle_mode  set in interp_synch;
++  for (int s = 0; s < EMCMOT_MAX_SPINDLES; s++) {
++      _setup.spindle_mode[s] = SPINDLE_MODE::CONSTANT_RPM;
++  }
+ //_setup.speed_override set in Interp::synch
+ //_setup.spindle_turning set in Interp::synch
+ //_setup.stack does not need initialization
+@@ -2061,7 +2063,8 @@ int Interp::synch()
+ 	  _setup.speed[s] = GET_EXTERNAL_SPEED(s);
+ 	  _setup.spindle_turning[s] = GET_EXTERNAL_SPINDLE(s);
+ 	  _setup.speed_override[s] = GET_EXTERNAL_SPINDLE_OVERRIDE_ENABLE(s);
+-	  _setup.spindle_mode[s] = SPINDLE_MODE::CONSTANT_RPM;
++	  // _setup.spindle_mode is modal; preserve it across synch() so that
++	  // G96/G97 survives task-mode switches and MDI command boundaries.
+   }
+   GET_EXTERNAL_PARAMETER_FILE_NAME(file_name, (LINELEN - 1));
+   save_parameters(((file_name[0] ==

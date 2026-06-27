@@ -75,3 +75,28 @@ through NML and exposed in the Python `linuxcnc.stat` object as
 
 The corresponding `@linuxcnc-node/core` properties are `task.g5xOffsets[N]`,
 `task.g5xRotations[N]`, `task.g28Position`, and `task.g30Position`.
+
+### 0003 — Preserve G96/G97 modal state across task-mode switches
+
+`Interp::synch()` is called on every MANUAL ↔ MDI task-mode transition and at
+other interpreter synchronization points. It used to reset
+`_setup.spindle_mode[s]` to `SPINDLE_MODE::CONSTANT_RPM` (G97) for every
+spindle, even though the motion controller and canon layer retained the CSS
+(G96) state. This made the interpreter model diverge from the actual machine
+state, so the active-G-code display and subsequent MDI commands behaved as if
+G97 were active.
+
+This patch:
+
+- Moves the default G97 initialization from `Interp::synch()` into
+  `Interp::init()`, so all spindles start in CONSTANT_RPM at interpreter
+  startup.
+- Removes the unconditional reset in `Interp::synch()`, letting G96/G97
+  survive task-mode switches and MDI command boundaries.
+- Updates `Interp::convert_stop()` (M2/M30) to set
+  `settings->spindle_mode[s] = SPINDLE_MODE::CONSTANT_RPM` after calling
+  `SET_SPINDLE_MODE(s, 0)`, keeping the interpreter model consistent with
+  canon when a program ends.
+
+No new `EMC_STAT` fields are added, so no Node.js binding or TypeScript
+changes are required.
