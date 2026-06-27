@@ -10,7 +10,6 @@
 // Public LinuxCNC headers only - no internal source dependencies
 #include "interp_base.hh"
 #include "interp_return.hh"
-#include "inifile.hh"
 #include "tooldata.hh"
 
 #include <sys/stat.h>

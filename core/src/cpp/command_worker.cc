@@ -7,7 +7,6 @@
 #include <fstream>
 #include "cms.hh"
 #include "tooldata.hh"
-#include "inifile.hh"
 
 #define EMC_COMMAND_TIMEOUT_DEFAULT 5.0
 #define EMC_COMMAND_DELAY_DEFAULT 0.01
