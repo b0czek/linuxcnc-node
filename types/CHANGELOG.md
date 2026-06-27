@@ -1,5 +1,12 @@
 # @linuxcnc-node/types
 
+## 3.0.0
+
+### Major Changes
+
+- f959601: Require the repository's patched LinuxCNC baseline and expose spindle speed
+  feedback as `motion.spindle[N].feedback`.
+
 ## 2.2.2
 
 ### Patch Changes
