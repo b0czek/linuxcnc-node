@@ -24,8 +24,8 @@ importers:
         specifier: ^3.1.4
         version: 3.1.4
       node-addon-api:
-        specifier: ^8.3.1
-        version: 8.7.0
+        specifier: ^8.9.0
+        version: 8.9.0
       node-gyp:
         specifier: ^11.2.0
         version: 11.5.0
@@ -58,8 +58,8 @@ importers:
         specifier: workspace:*
         version: link:../types
       node-addon-api:
-        specifier: ^8.3.1
-        version: 8.7.0
+        specifier: ^8.9.0
+        version: 8.9.0
       node-gyp:
         specifier: ^11.2.0
         version: 11.5.0
@@ -86,8 +86,8 @@ importers:
         specifier: workspace:*
         version: link:../types
       node-addon-api:
-        specifier: ^8.3.1
-        version: 8.7.0
+        specifier: ^8.9.0
+        version: 8.9.0
       node-gyp:
         specifier: ^11.2.0
         version: 11.5.0
@@ -1386,8 +1386,8 @@ packages:
   neo-async@2.6.2:
     resolution: {integrity: sha512-Yd3UES5mWCSqR+qNT93S3UoYUkqAZ9lLg8a7g9rimsWmYGK8cVToA4/sF3RrshdyV3sAGMXVUmpMYOw+dLpOuw==}
 
-  node-addon-api@8.7.0:
-    resolution: {integrity: sha512-9MdFxmkKaOYVTV+XVRG8ArDwwQ77XIgIPyKASB1k3JPq3M8fGQQQE3YpMOrKm6g//Ktx8ivZr8xo1Qmtqub+GA==}
+  node-addon-api@8.9.0:
+    resolution: {integrity: sha512-ekZMeaaIzSQTSpr7X2X3iJM7lTzgnx8ahAG9pJfT/7+14mlEM8ZYQ9cgCDvSSRbReFK0oHli3WrZdCiRsgAT9Q==}
     engines: {node: ^18 || ^20 || >= 21}
 
   node-gyp@11.5.0:
@@ -3559,7 +3559,7 @@ snapshots:
 
   neo-async@2.6.2: {}
 
-  node-addon-api@8.7.0: {}
+  node-addon-api@8.9.0: {}
 
   node-gyp@11.5.0:
     dependencies:
