@@ -100,3 +100,23 @@ This patch:
 
 No new `EMC_STAT` fields are added, so no Node.js binding or TypeScript
 changes are required.
+
+### 0004 — Resumable Stop for active AUTO programs
+
+Adds a dedicated `EMC_TASK_STOP` command.  By default, Stop decelerates an
+active AUTO program without clearing interpreter or motion queues, safely
+finishes position-synchronized threading and rigid tapping, stops saved
+spindle and coolant outputs, and restores them before Run or Resume continues
+the program.  `[TASK]STOP_PRESERVE_PROGRAM = FALSE` restores full-abort Stop
+behavior.  Abort, E-stop, faults, mode changes, M0/M1, and Pause retain their
+existing behavior.
+
+The command is exposed as Python `command.stop()`, Node
+`CommandChannel.stop()`, and `halui.program.stop`.  Stop progress is reported
+as `EMC_TASK_STOP_STATE` (`IDLE`, `STOPPING`, `STOPPED`, `STARTING`) through
+Python `stop_state` and Node `task.stopState`.  The patch adds a
+`tests/resumable-stop` LinuxCNC regression that verifies active AUTO
+Stop/Resume preserves the queued program, disables spindle/coolant while
+stopped, restores them on Resume, completes the same program, and waits for
+active `G33` threading and `G33.1` rigid-tap synchronized motion to finish
+before entering `STOPPED`.
