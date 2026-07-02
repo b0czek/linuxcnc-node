@@ -795,7 +795,7 @@ index a37da0ca5f..86fdd15940 100644
      return 0;
  }
 diff --git a/src/emc/tp/tp.c b/src/emc/tp/tp.c
-index e5667b3f29..a761c394e7 100644
+index e5667b3f29..698a37f281 100644
 --- a/src/emc/tp/tp.c
 +++ b/src/emc/tp/tp.c
 @@ -250,7 +250,11 @@ STATIC double tpGetFeedScale(TP_STRUCT const * const tp,
@@ -874,7 +874,7 @@ index e5667b3f29..a761c394e7 100644
 +    emcmotStatus->stopped = 0;
 +    TC_STRUCT *tc = tcqItem(&tp->queue, 0);
 +    tp->stopping = 1;
-+    if (tc && tc->synchronized == TC_SYNC_POSITION) {
++    if (tc && tc->active && tc->synchronized == TC_SYNC_POSITION) {
 +        tp->stop_id = tc->id;
 +        tp->pausing = 0;
 +    } else {
@@ -1087,10 +1087,10 @@ index 0000000000..3060ac429e
 +M2
 diff --git a/tests/resumable-stop/test-ui.py b/tests/resumable-stop/test-ui.py
 new file mode 100755
-index 0000000000..eda8c6f3f8
+index 0000000000..7383f8aaab
 --- /dev/null
 +++ b/tests/resumable-stop/test-ui.py
-@@ -0,0 +1,293 @@
+@@ -0,0 +1,343 @@
 +#!/usr/bin/env python3
 +
 +import math
@@ -1324,6 +1324,55 @@ index 0000000000..eda8c6f3f8
 +    )
 +
 +
++def run_queued_threading_stop_resume_test():
++    hal.set_p("spindle.0.at-speed", "false")
++    open_auto_program("thread.ngc")
++
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: s.task_mode == linuxcnc.MODE_AUTO
++        and s.interp_state != linuxcnc.INTERP_IDLE
++        and s.queue > 0
++        and math.isclose(s.position[0], 0.0, abs_tol=0.001)
++        and math.isclose(s.position[2], 0.0, abs_tol=0.001)
++        and abs(s.current_vel) < 0.001
++        and hal.get_value("spindle.0.speed-out") > 0.0,
++        "G33 did not queue while waiting for spindle at-speed",
++    )
++
++    # Let the stationary queue state persist so the G0 before G33 is gone.
++    time.sleep(0.25)
++    s.poll()
++    if s.queue <= 0 or abs(s.current_vel) >= 0.001:
++        fail("G33 did not remain queued while spindle at-speed was false")
++
++    c.stop()
++    wait_complete("queued G33 stop command did not complete")
++
++    # Simulate the delayed prerequisite arriving after Stop. The queued G33
++    # must remain inactive and preserved for Resume.
++    time.sleep(0.05)
++    hal.set_p("spindle.0.at-speed", "true")
++
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
++        "task did not stop with an inactive G33 queued",
++    )
++
++    if not math.isclose(s.position[2], 0.0, abs_tol=0.001):
++        fail("queued G33 started after Stop: Z=%.6f" % s.position[2])
++
++    time.sleep(0.25)
++    s.poll()
++    if not math.isclose(s.position[2], 0.0, abs_tol=0.001):
++        fail("queued G33 moved while stopped: Z=%.6f" % s.position[2])
++
++    resume_and_wait_for_x_motion(s.position[0])
++    wait_for_program_complete(10.0, expected_z=-5.0)
++    assert_outputs_stopped_after_program()
++
++
 +def run_rigid_tap_stop_resume_test():
 +    saw_downstroke = False
 +
@@ -1378,6 +1427,7 @@ index 0000000000..eda8c6f3f8
 +
 +
 +run_ordinary_stop_resume_test()
++run_queued_threading_stop_resume_test()
 +run_threading_stop_resume_test()
 +run_rigid_tap_stop_resume_test()
 +run_spindle_orientation_stop_test()
