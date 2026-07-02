@@ -16,7 +16,7 @@ Add a dedicated task and trajectory Stop operation that preserves interpreter an
  src/emc/nml_intf/emc.hh                       |  10 +
  src/emc/nml_intf/emc_nml.hh                   |  22 ++
  src/emc/nml_intf/emcops.cc                    |   4 +
- src/emc/task/emctaskmain.cc                   | 280 ++++++++++++++++++-
+ src/emc/task/emctaskmain.cc                   | 296 +++++++++++++++++++-
  src/emc/task/taskintf.cc                      |  11 +
  src/emc/tp/tp.c                               |  54 +++-
  src/emc/tp/tp.h                               |   1 +
@@ -27,18 +27,20 @@ Add a dedicated task and trajectory Stop operation that preserves interpreter an
  tests/resumable-stop/core_sim.hal             |  41 +++
  tests/resumable-stop/g76.ngc                  |   7 +
  tests/resumable-stop/orient.ngc               |   4 +
+ tests/resumable-stop/pause.ngc                |   6 +
  tests/resumable-stop/tap.ngc                  |   7 +
- tests/resumable-stop/test-ui.py               | 420 ++++++++++++++++++++++++++++
+ tests/resumable-stop/test-ui.py               | 450 +++++++++++++++++++++++++++++
  tests/resumable-stop/test.ini                 |  87 ++++++
  tests/resumable-stop/test.ngc                 |   8 +
  tests/resumable-stop/test.sh                  |   3 +
  tests/resumable-stop/thread.ngc               |   7 +
  tests/resumable-stop/tool.tbl                 |   1 +
- 29 files changed, 1049 insertions(+), 7 deletions(-)
+ 30 files changed, 1097 insertions(+), 11 deletions(-)
  create mode 100644 tests/resumable-stop/README
  create mode 100644 tests/resumable-stop/core_sim.hal
  create mode 100644 tests/resumable-stop/g76.ngc
  create mode 100644 tests/resumable-stop/orient.ngc
+ create mode 100644 tests/resumable-stop/pause.ngc
  create mode 100644 tests/resumable-stop/tap.ngc
  create mode 100755 tests/resumable-stop/test-ui.py
  create mode 100644 tests/resumable-stop/test.ini
@@ -423,7 +425,7 @@ index 6e068c2708..734079d3af 100644
  {
  }
 diff --git a/src/emc/task/emctaskmain.cc b/src/emc/task/emctaskmain.cc
-index 3bf13a702d..f2e1aecd4e 100644
+index 3bf13a702d..52e7b652e3 100644
 --- a/src/emc/task/emctaskmain.cc
 +++ b/src/emc/task/emctaskmain.cc
 @@ -123,6 +123,36 @@ static int emcTaskEager = 0;
@@ -483,10 +485,18 @@ index 3bf13a702d..f2e1aecd4e 100644
  	// now handle call logic
  	// check for subsystems done
  	if (interp_list.len() == 0 &&
-@@ -745,6 +781,144 @@ static bool allow_while_idle_type() {
+@@ -745,6 +781,152 @@ static bool allow_while_idle_type() {
      return 0;
  }
  
++static void emcTaskResumeInterpreter()
++{
++    emcStatus->task.interpState = interpResumeState;
++    emcStatus->motion.traj.single_stepping = 0;
++    stepping = 0;
++    steppingWait = 0;
++}
++
 +static void emcTaskStopClear()
 +{
 +    bool was_active = emcStatus &&
@@ -628,7 +638,7 @@ index 3bf13a702d..f2e1aecd4e 100644
  /*
    emcTaskPlan()
  
-@@ -773,6 +888,21 @@ static int emcTaskPlan(void)
+@@ -773,6 +896,24 @@ static int emcTaskPlan(void)
  	return retval;
      }
  
@@ -639,6 +649,9 @@ index 3bf13a702d..f2e1aecd4e 100644
 +    if (emcStatus->task.stopState != EMC_TASK_STOP_STATE::IDLE &&
 +            (type == EMC_TASK_PLAN_RUN_TYPE ||
 +             type == EMC_TASK_PLAN_RESUME_TYPE)) {
++        if (emcStatus->task.interpState == EMC_TASK_INTERP::PAUSED) {
++            emcTaskResumeInterpreter();
++        }
 +        if (emcStatus->task.stopState == EMC_TASK_STOP_STATE::STOPPING) {
 +            stop_resume_latched = true;
 +        } else if (emcStatus->task.stopState == EMC_TASK_STOP_STATE::STOPPED) {
@@ -763,6 +776,19 @@ index 3bf13a702d..f2e1aecd4e 100644
 +	    emcTaskStopClear();
 +	}
  	retval = emcTaskSetState(state_msg->state);
+ 	break;
+ 
+@@ -2368,11 +2641,8 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+ 
+     case EMC_TASK_PLAN_RESUME_TYPE:
+ 	emcTrajResume();
+-	emcStatus->task.interpState = interpResumeState;
++	emcTaskResumeInterpreter();
+ 	emcStatus->task.task_paused = 0;
+-	emcStatus->motion.traj.single_stepping = 0;
+-	stepping = 0;
+-	steppingWait = 0;
+ 	retval = 0;
  	break;
  
 @@ -2569,6 +2758,7 @@ static int emcTaskExecute(void)
@@ -1160,6 +1186,18 @@ index 0000000000..eac3292362
 +M19 R90 P1 Q30
 +G1 X20 F60
 +M2
+diff --git a/tests/resumable-stop/pause.ngc b/tests/resumable-stop/pause.ngc
+new file mode 100644
+index 0000000000..4b3a9365c5
+--- /dev/null
++++ b/tests/resumable-stop/pause.ngc
+@@ -0,0 +1,6 @@
++G21 G90
++F600
++G1 X5
++M0
++G1 X10
++M2
 diff --git a/tests/resumable-stop/tap.ngc b/tests/resumable-stop/tap.ngc
 new file mode 100644
 index 0000000000..3060ac429e
@@ -1175,10 +1213,10 @@ index 0000000000..3060ac429e
 +M2
 diff --git a/tests/resumable-stop/test-ui.py b/tests/resumable-stop/test-ui.py
 new file mode 100755
-index 0000000000..265ab8b01d
+index 0000000000..8899134ab8
 --- /dev/null
 +++ b/tests/resumable-stop/test-ui.py
-@@ -0,0 +1,420 @@
+@@ -0,0 +1,450 @@
 +#!/usr/bin/env python3
 +
 +import math
@@ -1334,6 +1372,34 @@ index 0000000000..265ab8b01d
 +
 +    wait_for_program_complete(10.0)
 +    assert_outputs_stopped_after_program()
++
++
++def run_stop_while_program_paused_test(restart_with_run):
++    open_auto_program("pause.ngc")
++
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: s.interp_state == linuxcnc.INTERP_PAUSED
++        and s.task_paused
++        and math.isclose(s.position[0], 5.0, abs_tol=0.01),
++        "program did not reach M0 pause",
++    )
++
++    c.stop()
++    wait_complete("stop command did not complete from M0 pause")
++
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
++        "task did not enter STOPPED from M0 pause",
++    )
++
++    if restart_with_run:
++        c.auto(linuxcnc.AUTO_RUN, 0)
++    else:
++        c.auto(linuxcnc.AUTO_RESUME)
++
++    wait_for_program_complete(10.0)
 +
 +
 +def stop_during_sync_motion(program, active_predicate, complete_predicate, message, expected_z):
@@ -1591,6 +1657,8 @@ index 0000000000..265ab8b01d
 +
 +
 +run_ordinary_stop_resume_test()
++run_stop_while_program_paused_test(False)
++run_stop_while_program_paused_test(True)
 +run_queued_threading_stop_resume_test()
 +run_threading_stop_resume_test()
 +run_g76_stop_resume_test()
