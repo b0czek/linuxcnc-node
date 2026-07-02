@@ -25,17 +25,19 @@ Add a dedicated task and trajectory Stop operation that preserves interpreter an
  src/emc/usr_intf/halui.cc                     |   9 +-
  tests/resumable-stop/README                   |   7 +
  tests/resumable-stop/core_sim.hal             |  41 +++
+ tests/resumable-stop/g76.ngc                  |   7 +
  tests/resumable-stop/orient.ngc               |   4 +
  tests/resumable-stop/tap.ngc                  |   7 +
- tests/resumable-stop/test-ui.py               | 293 ++++++++++++++++++++
+ tests/resumable-stop/test-ui.py               | 391 ++++++++++++++++++++++++++
  tests/resumable-stop/test.ini                 |  87 ++++++
  tests/resumable-stop/test.ngc                 |   8 +
  tests/resumable-stop/test.sh                  |   3 +
  tests/resumable-stop/thread.ngc               |   7 +
  tests/resumable-stop/tool.tbl                 |   1 +
- 28 files changed, 856 insertions(+), 7 deletions(-)
+ 29 files changed, 961 insertions(+), 7 deletions(-)
  create mode 100644 tests/resumable-stop/README
  create mode 100644 tests/resumable-stop/core_sim.hal
+ create mode 100644 tests/resumable-stop/g76.ngc
  create mode 100644 tests/resumable-stop/orient.ngc
  create mode 100644 tests/resumable-stop/tap.ngc
  create mode 100755 tests/resumable-stop/test-ui.py
@@ -795,7 +797,7 @@ index a37da0ca5f..86fdd15940 100644
      return 0;
  }
 diff --git a/src/emc/tp/tp.c b/src/emc/tp/tp.c
-index e5667b3f29..698a37f281 100644
+index e5667b3f29..c78cf69025 100644
 --- a/src/emc/tp/tp.c
 +++ b/src/emc/tp/tp.c
 @@ -250,7 +250,11 @@ STATIC double tpGetFeedScale(TP_STRUCT const * const tp,
@@ -807,7 +809,7 @@ index e5667b3f29..698a37f281 100644
 +        (tp->pausing &&
 +         (tc->synchronized == TC_SYNC_NONE ||
 +          tc->synchronized == TC_SYNC_VELOCITY)) ||
-+        (tp->stopping && tc->id != tp->stop_id);
++        (tp->stopping && tc != tp->stop_tc);
      bool aborting = tp->aborting;
      if (pausing)  {
          tc_debug_print("pausing\n");
@@ -816,7 +818,7 @@ index e5667b3f29..698a37f281 100644
      tp->aborting = 0;
      tp->pausing = 0;
 +    tp->stopping = 0;
-+    tp->stop_id = MOTION_INVALID_ID;
++    tp->stop_tc = 0;
      tp->reverse_run = 0;
      tp->synchronized = 0;
      tp->uu_per_rev = 0.0;
@@ -829,7 +831,7 @@ index e5667b3f29..698a37f281 100644
 +        (tp->pausing &&
 +         (tc->synchronized == TC_SYNC_NONE ||
 +          tc->synchronized == TC_SYNC_VELOCITY)) ||
-+        (tp->stopping && tc->id != tp->stop_id);
++        (tp->stopping && tc != tp->stop_tc);
      bool is_aborting = tp->aborting;
  
      // Check if feed_override = 0 (not pause/abort, but velocity limited to 0)
@@ -848,12 +850,12 @@ index e5667b3f29..698a37f281 100644
          return TP_ERR_WAITING;
      }
  
-+    if (tp->stopping && tc->id != tp->stop_id) {
++    if (tp->stopping && tc != tp->stop_tc) {
 +        tp->pausing = 1;
 +    }
 +
 +    if (((tp->pausing && tc->synchronized != TC_SYNC_POSITION) ||
-+         (tp->stopping && tc->id != tp->stop_id)) &&
++         (tp->stopping && tc != tp->stop_tc)) &&
 +            fabs(emcmotStatus->current_vel) < TP_VEL_EPSILON) {
 +        emcmotStatus->stopped = 1;
 +    }
@@ -875,10 +877,10 @@ index e5667b3f29..698a37f281 100644
 +    TC_STRUCT *tc = tcqItem(&tp->queue, 0);
 +    tp->stopping = 1;
 +    if (tc && tc->active && tc->synchronized == TC_SYNC_POSITION) {
-+        tp->stop_id = tc->id;
++        tp->stop_tc = tc;
 +        tp->pausing = 0;
 +    } else {
-+        tp->stop_id = MOTION_INVALID_ID;
++        tp->stop_tc = 0;
 +        tp->pausing = 1;
 +    }
 +    return TP_ERR_OK;
@@ -891,7 +893,7 @@ index e5667b3f29..698a37f281 100644
      }
      tp->pausing = 0;
 +    tp->stopping = 0;
-+    tp->stop_id = MOTION_INVALID_ID;
++    tp->stop_tc = 0;
 +    emcmotStatus->stopped = 0;
      return TP_ERR_OK;
  }
@@ -917,7 +919,7 @@ index e00b457ad2..8fd114587c 100644
  int tpAbort(TP_STRUCT * tp);
  int tpAddRigidTap(TP_STRUCT * const tp,
 diff --git a/src/emc/tp/tp_types.h b/src/emc/tp/tp_types.h
-index 6687ef3a2d..86814716ae 100644
+index 6687ef3a2d..c7d6be2f5f 100644
 --- a/src/emc/tp/tp_types.h
 +++ b/src/emc/tp/tp_types.h
 @@ -123,6 +123,8 @@ typedef struct {
@@ -925,7 +927,7 @@ index 6687ef3a2d..86814716ae 100644
      int aborting;
      int pausing;
 +    int stopping;
-+    int stop_id;
++    TC_STRUCT *stop_tc;
      int reverse_run;      /* Indicates that TP is running in reverse */
      int motionType;
      double tolerance;           /* for subsequent motions, stay within this
@@ -1062,6 +1064,19 @@ index 0000000000..28af568e79
 +addf encoder.update-counters servo-thread
 +
 +setp spindle.0.at-speed true
+diff --git a/tests/resumable-stop/g76.ngc b/tests/resumable-stop/g76.ngc
+new file mode 100644
+index 0000000000..1c6a3ea852
+--- /dev/null
++++ b/tests/resumable-stop/g76.ngc
+@@ -0,0 +1,7 @@
++G21 G18 G90
++G0 X10 Z0
++S60 M3
++G76 P1 Z-5 I-1 J0.2 K0.6 R1
++G1 X20 F600
++M5
++M2
 diff --git a/tests/resumable-stop/orient.ngc b/tests/resumable-stop/orient.ngc
 new file mode 100644
 index 0000000000..4102431630
@@ -1087,10 +1102,10 @@ index 0000000000..3060ac429e
 +M2
 diff --git a/tests/resumable-stop/test-ui.py b/tests/resumable-stop/test-ui.py
 new file mode 100755
-index 0000000000..7383f8aaab
+index 0000000000..fc70fe7b1f
 --- /dev/null
 +++ b/tests/resumable-stop/test-ui.py
-@@ -0,0 +1,343 @@
+@@ -0,0 +1,391 @@
 +#!/usr/bin/env python3
 +
 +import math
@@ -1324,6 +1339,53 @@ index 0000000000..7383f8aaab
 +    )
 +
 +
++def run_g76_stop_resume_test():
++    open_auto_program("g76.ngc")
++
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: s.task_mode == linuxcnc.MODE_AUTO
++        and s.position[0] < 9.5
++        and s.position[2] < -0.5
++        and s.position[2] > -4.5,
++        "G76 did not enter its first synchronized pass",
++        timeout=15.0,
++    )
++
++    c.stop()
++    wait_complete("G76 stop command did not complete")
++
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
++        "task did not stop after the active G76 threading TC",
++        timeout=15.0,
++    )
++
++    if s.position[2] > -4.90:
++        fail("G76 stopped before its active threading TC completed")
++
++    if s.position[0] >= 9.5:
++        fail(
++            "G76 executed its retract or a later pass before STOPPED: X=%.6f"
++            % s.position[0]
++        )
++
++    stopped_x = s.position[0]
++    stopped_z = s.position[2]
++    time.sleep(0.25)
++    s.poll()
++    if (
++        not math.isclose(s.position[0], stopped_x, abs_tol=0.001)
++        or not math.isclose(s.position[2], stopped_z, abs_tol=0.001)
++    ):
++        fail("G76 moved while stopped")
++
++    resume_and_wait_for_x_motion(stopped_x)
++    wait_for_program_complete(20.0, expected_z=-5.0)
++    assert_outputs_stopped_after_program()
++
++
 +def run_queued_threading_stop_resume_test():
 +    hal.set_p("spindle.0.at-speed", "false")
 +    open_auto_program("thread.ngc")
@@ -1429,6 +1491,7 @@ index 0000000000..7383f8aaab
 +run_ordinary_stop_resume_test()
 +run_queued_threading_stop_resume_test()
 +run_threading_stop_resume_test()
++run_g76_stop_resume_test()
 +run_rigid_tap_stop_resume_test()
 +run_spindle_orientation_stop_test()
 +
