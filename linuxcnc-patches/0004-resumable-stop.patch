@@ -3,7 +3,7 @@ From: Dariusz Majnert <dariusz@users.noreply.github.com>
 Date: Wed, 1 Jul 2026 00:57:53 +0200
 Subject: [PATCH] emc: add resumable Stop for active AUTO programs
 
-Add a dedicated task and trajectory Stop operation that preserves interpreter and motion queues. Stop safely completes position-synchronized motion, snapshots spindle and coolant outputs, and gates Resume on spindle at-speed inputs. Expose the command and Stop state through Python and HALUI; Node bindings are maintained in the consumer repository.
+Add a dedicated task and trajectory Stop operation that preserves interpreter and motion queues. Stop safely completes position-synchronized motion, snapshots spindle and coolant outputs, and gates Resume on spindle readiness, including interrupted orientation. Expose the command and Stop state through Python and HALUI; Node bindings are maintained in the consumer repository.
 ---
  docs/src/config/ini-config.adoc               |   6 +
  docs/src/config/python-interface.adoc         |   8 +
@@ -16,7 +16,7 @@ Add a dedicated task and trajectory Stop operation that preserves interpreter an
  src/emc/nml_intf/emc.hh                       |  10 +
  src/emc/nml_intf/emc_nml.hh                   |  22 ++
  src/emc/nml_intf/emcops.cc                    |   4 +
- src/emc/task/emctaskmain.cc                   | 221 ++++++++++++++-
+ src/emc/task/emctaskmain.cc                   | 280 ++++++++++++++++++-
  src/emc/task/taskintf.cc                      |  11 +
  src/emc/tp/tp.c                               |  54 +++-
  src/emc/tp/tp.h                               |   1 +
@@ -28,13 +28,13 @@ Add a dedicated task and trajectory Stop operation that preserves interpreter an
  tests/resumable-stop/g76.ngc                  |   7 +
  tests/resumable-stop/orient.ngc               |   4 +
  tests/resumable-stop/tap.ngc                  |   7 +
- tests/resumable-stop/test-ui.py               | 391 ++++++++++++++++++++++++++
+ tests/resumable-stop/test-ui.py               | 420 ++++++++++++++++++++++++++++
  tests/resumable-stop/test.ini                 |  87 ++++++
  tests/resumable-stop/test.ngc                 |   8 +
  tests/resumable-stop/test.sh                  |   3 +
  tests/resumable-stop/thread.ngc               |   7 +
  tests/resumable-stop/tool.tbl                 |   1 +
- 29 files changed, 961 insertions(+), 7 deletions(-)
+ 29 files changed, 1049 insertions(+), 7 deletions(-)
  create mode 100644 tests/resumable-stop/README
  create mode 100644 tests/resumable-stop/core_sim.hal
  create mode 100644 tests/resumable-stop/g76.ngc
@@ -423,10 +423,10 @@ index 6e068c2708..734079d3af 100644
  {
  }
 diff --git a/src/emc/task/emctaskmain.cc b/src/emc/task/emctaskmain.cc
-index 3bf13a702d..c842524b3c 100644
+index 3bf13a702d..f2e1aecd4e 100644
 --- a/src/emc/task/emctaskmain.cc
 +++ b/src/emc/task/emctaskmain.cc
-@@ -123,6 +123,24 @@ static int emcTaskEager = 0;
+@@ -123,6 +123,36 @@ static int emcTaskEager = 0;
  
  static int no_force_homing = 0; // forces the user to home first before allowing MDI and Program run
  //can be overridden by [TRAJ]NO_FORCE_HOMING=1
@@ -437,9 +437,21 @@ index 3bf13a702d..c842524b3c 100644
 +    double speed;
 +    double css_factor;
 +    double css_xoffset;
++    bool orienting;
++    double orientation;
++    int orient_mode;
++    double orient_timeout;
++    double orient_deadline;
++};
++
++struct SpindleOrientRequest {
++    double orientation;
++    int mode;
++    double timeout;
 +};
 +
 +static StopSpindleState stop_spindles[EMCMOT_MAX_SPINDLES] = {};
++static SpindleOrientRequest spindle_orient_requests[EMCMOT_MAX_SPINDLES] = {};
 +static bool stop_mist = false;
 +static bool stop_flood = false;
 +static bool stop_resume_latched = false;
@@ -471,7 +483,7 @@ index 3bf13a702d..c842524b3c 100644
  	// now handle call logic
  	// check for subsystems done
  	if (interp_list.len() == 0 &&
-@@ -745,6 +769,110 @@ static bool allow_while_idle_type() {
+@@ -745,6 +781,144 @@ static bool allow_while_idle_type() {
      return 0;
  }
  
@@ -511,6 +523,14 @@ index 3bf13a702d..c842524b3c 100644
 +                    stop_spindles[s].css_factor,
 +                    stop_spindles[s].css_xoffset, 0);
 +        }
++        if (stop_spindles[s].orienting) {
++            emcSpindleOrient(s, stop_spindles[s].orientation,
++                    stop_spindles[s].orient_mode);
++            stop_spindles[s].orient_deadline =
++                stop_spindles[s].orient_timeout > 0.0
++                ? etime() + stop_spindles[s].orient_timeout
++                : 0.0;
++        }
 +    }
 +    emcStatus->task.stopState = EMC_TASK_STOP_STATE::STARTING;
 +}
@@ -535,6 +555,16 @@ index 3bf13a702d..c842524b3c 100644
 +                stop_spindles[s].speed = status.speed;
 +                stop_spindles[s].css_factor = status.css_factor;
 +                stop_spindles[s].css_xoffset = status.css_xoffset;
++                stop_spindles[s].orienting =
++                    status.orient_state == EMCMOT_ORIENT_IN_PROGRESS;
++                if (stop_spindles[s].orienting) {
++                    stop_spindles[s].orientation =
++                        spindle_orient_requests[s].orientation;
++                    stop_spindles[s].orient_mode =
++                        spindle_orient_requests[s].mode;
++                    stop_spindles[s].orient_timeout =
++                        spindle_orient_requests[s].timeout;
++                }
 +            }
 +            if (status.enabled ||
 +                    status.orient_state == EMCMOT_ORIENT_IN_PROGRESS) {
@@ -563,6 +593,22 @@ index 3bf13a702d..c842524b3c 100644
 +
 +    case EMC_TASK_STOP_STATE::STARTING:
 +        for (int s = 0; s < emcStatus->motion.traj.spindles; ++s) {
++            if (stop_spindles[s].orienting) {
++                const auto &status = emcStatus->motion.spindle[s];
++                if (status.orient_state == EMCMOT_ORIENT_FAULTED ||
++                        (stop_spindles[s].orient_deadline > 0.0 &&
++                         etime() >= stop_spindles[s].orient_deadline)) {
++                    emcSpindleOff(s);
++                    emcStatus->task.stopState = EMC_TASK_STOP_STATE::STOPPED;
++                    emcOperatorError(
++                        "resumed spindle orientation failed on spindle %d",
++                        s);
++                    return;
++                }
++                if (status.orient_state != EMCMOT_ORIENT_COMPLETE) {
++                    return;
++                }
++            }
 +            if (stop_spindles[s].running &&
 +                    !emcStatus->motion.spindle[s].at_speed) {
 +                return;
@@ -616,7 +662,33 @@ index 3bf13a702d..c842524b3c 100644
      case EMC_TRAJ_RESUME_TYPE:
  	emcStatus->task.task_paused = 0;
  	retval = emcTrajResume();
-@@ -2075,7 +2210,55 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -1923,6 +2117,11 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+ 
+     case EMC_SPINDLE_WAIT_ORIENT_COMPLETE_TYPE:
+ 	wait_spindle_orient_complete_msg = reinterpret_cast<EMC_SPINDLE_WAIT_ORIENT_COMPLETE *>(cmd);
++	if (wait_spindle_orient_complete_msg->spindle >= 0 &&
++                wait_spindle_orient_complete_msg->spindle < EMCMOT_MAX_SPINDLES) {
++	    spindle_orient_requests[wait_spindle_orient_complete_msg->spindle].timeout =
++                wait_spindle_orient_complete_msg->timeout;
++	}
+ 	taskExecDelayTimeout = etime() + wait_spindle_orient_complete_msg->timeout;
+ 	break;
+ 
+@@ -1983,6 +2182,13 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+ 
+     case EMC_SPINDLE_ORIENT_TYPE:
+ 	spindle_orient_msg = reinterpret_cast<EMC_SPINDLE_ORIENT *>(cmd);
++	if (spindle_orient_msg->spindle >= 0 &&
++                spindle_orient_msg->spindle < EMCMOT_MAX_SPINDLES) {
++	    auto &request = spindle_orient_requests[spindle_orient_msg->spindle];
++	    request.orientation = spindle_orient_msg->orientation;
++	    request.mode = spindle_orient_msg->mode;
++	    request.timeout = 0.0;
++	}
+ 	retval = emcSpindleOrient(spindle_orient_msg->spindle, spindle_orient_msg->orientation,
+ 			spindle_orient_msg->mode);
+ 	break;
+@@ -2075,7 +2281,56 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  
  	// task commands
  
@@ -646,7 +718,8 @@ index 3bf13a702d..c842524b3c 100644
 +            break;
 +        case EMC_TASK_STOP_STATE::STARTING:
 +            for (int s = 0; s < emcStatus->motion.traj.spindles; ++s) {
-+                if (stop_spindles[s].running) {
++                if (stop_spindles[s].running ||
++                        stop_spindles[s].orienting) {
 +                    emcSpindleOff(s);
 +                }
 +            }
@@ -1079,12 +1152,12 @@ index 0000000000..1c6a3ea852
 +M2
 diff --git a/tests/resumable-stop/orient.ngc b/tests/resumable-stop/orient.ngc
 new file mode 100644
-index 0000000000..4102431630
+index 0000000000..eac3292362
 --- /dev/null
 +++ b/tests/resumable-stop/orient.ngc
 @@ -0,0 +1,4 @@
 +G21 G90
-+M19 R90 Q30
++M19 R90 P1 Q30
 +G1 X20 F60
 +M2
 diff --git a/tests/resumable-stop/tap.ngc b/tests/resumable-stop/tap.ngc
@@ -1102,10 +1175,10 @@ index 0000000000..3060ac429e
 +M2
 diff --git a/tests/resumable-stop/test-ui.py b/tests/resumable-stop/test-ui.py
 new file mode 100755
-index 0000000000..fc70fe7b1f
+index 0000000000..265ab8b01d
 --- /dev/null
 +++ b/tests/resumable-stop/test-ui.py
-@@ -0,0 +1,391 @@
+@@ -0,0 +1,420 @@
 +#!/usr/bin/env python3
 +
 +import math
@@ -1458,6 +1531,7 @@ index 0000000000..fc70fe7b1f
 +
 +
 +def run_spindle_orientation_stop_test():
++    hal.set_p("spindle.0.is-oriented", "false")
 +    open_auto_program("orient.ngc")
 +
 +    c.auto(linuxcnc.AUTO_RUN, 0)
@@ -1484,8 +1558,36 @@ index 0000000000..fc70fe7b1f
 +    if not math.isclose(s.position[0], x_before_stop, abs_tol=0.001):
 +        fail("following motion started while stopping M19")
 +
-+    c.abort()
-+    wait_complete("failed to abort stopped M19 program")
++    c.auto(linuxcnc.AUTO_RESUME)
++
++    wait_for(
++        lambda: hal.get_value("spindle.0.orient")
++        and s.spindle[0]["orient_state"] == ORIENT_IN_PROGRESS,
++        "resume did not restore spindle orientation",
++    )
++
++    if not math.isclose(
++        hal.get_value("spindle.0.orient-angle"), 90.0, abs_tol=0.001
++    ):
++        fail("resume did not restore the requested spindle orientation angle")
++
++    if hal.get_value("spindle.0.orient-mode") != 1:
++        fail("resume did not restore the requested spindle orientation mode")
++
++    time.sleep(0.25)
++    s.poll()
++    if not math.isclose(s.position[0], x_before_stop, abs_tol=0.001):
++        fail("following motion started before spindle orientation completed")
++
++    hal.set_p("spindle.0.is-oriented", "true")
++
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_IDLE
++        and s.position[0] > x_before_stop + 0.05,
++        "program did not continue after spindle orientation completed",
++    )
++
++    wait_for_program_complete(20.0)
 +
 +
 +run_ordinary_stop_resume_test()
