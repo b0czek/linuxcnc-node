@@ -16,7 +16,7 @@ Add a dedicated task and trajectory Stop operation that preserves interpreter an
  src/emc/nml_intf/emc.hh                       |  10 +
  src/emc/nml_intf/emc_nml.hh                   |  22 ++
  src/emc/nml_intf/emcops.cc                    |   4 +
- src/emc/task/emctaskmain.cc                   | 296 +++++++++++++++++++-
+ src/emc/task/emctaskmain.cc                   | 297 +++++++++++++++++++-
  src/emc/task/taskintf.cc                      |  11 +
  src/emc/tp/tp.c                               |  54 +++-
  src/emc/tp/tp.h                               |   1 +
@@ -30,13 +30,14 @@ Add a dedicated task and trajectory Stop operation that preserves interpreter an
  tests/resumable-stop/orient.ngc               |   4 +
  tests/resumable-stop/pause.ngc                |   6 +
  tests/resumable-stop/tap.ngc                  |   7 +
- tests/resumable-stop/test-ui.py               | 494 +++++++++++++++++++++++++++++
+ tests/resumable-stop/test-ui.py               | 545 +++++++++++++++++++++++++++++
  tests/resumable-stop/test.ini                 |  87 ++++++
  tests/resumable-stop/test.ngc                 |   8 +
  tests/resumable-stop/test.sh                  |   3 +
  tests/resumable-stop/thread.ngc               |   7 +
  tests/resumable-stop/tool.tbl                 |   1 +
- 31 files changed, 1146 insertions(+), 11 deletions(-)
+ tests/resumable-stop/zero-speed-spindle.ngc   |   6 +
+ 32 files changed, 1204 insertions(+), 11 deletions(-)
  create mode 100644 tests/resumable-stop/README
  create mode 100644 tests/resumable-stop/after-abort.ngc
  create mode 100644 tests/resumable-stop/core_sim.hal
@@ -50,6 +51,7 @@ Add a dedicated task and trajectory Stop operation that preserves interpreter an
  create mode 100755 tests/resumable-stop/test.sh
  create mode 100644 tests/resumable-stop/thread.ngc
  create mode 100644 tests/resumable-stop/tool.tbl
+ create mode 100644 tests/resumable-stop/zero-speed-spindle.ngc
 
 diff --git a/docs/src/config/ini-config.adoc b/docs/src/config/ini-config.adoc
 index 8cb14ddb65..9ccae19573 100644
@@ -427,7 +429,7 @@ index 6e068c2708..734079d3af 100644
  {
  }
 diff --git a/src/emc/task/emctaskmain.cc b/src/emc/task/emctaskmain.cc
-index 3bf13a702d..52e7b652e3 100644
+index 3bf13a702d..e74a9c3c0e 100644
 --- a/src/emc/task/emctaskmain.cc
 +++ b/src/emc/task/emctaskmain.cc
 @@ -123,6 +123,36 @@ static int emcTaskEager = 0;
@@ -487,7 +489,7 @@ index 3bf13a702d..52e7b652e3 100644
  	// now handle call logic
  	// check for subsystems done
  	if (interp_list.len() == 0 &&
-@@ -745,6 +781,152 @@ static bool allow_while_idle_type() {
+@@ -745,6 +781,153 @@ static bool allow_while_idle_type() {
      return 0;
  }
  
@@ -562,8 +564,9 @@ index 3bf13a702d..52e7b652e3 100644
 +        bool spindle_output_active = false;
 +        for (int s = 0; s < emcStatus->motion.traj.spindles; ++s) {
 +            const auto &status = emcStatus->motion.spindle[s];
++            bool spindle_running = status.enabled || status.direction != 0;
 +            if (!stop_outputs_saved) {
-+                stop_spindles[s].running = status.enabled;
++                stop_spindles[s].running = spindle_running;
 +                stop_spindles[s].speed = status.speed;
 +                stop_spindles[s].css_factor = status.css_factor;
 +                stop_spindles[s].css_xoffset = status.css_xoffset;
@@ -578,7 +581,7 @@ index 3bf13a702d..52e7b652e3 100644
 +                        spindle_orient_requests[s].timeout;
 +                }
 +            }
-+            if (status.enabled ||
++            if (spindle_running ||
 +                    status.orient_state == EMCMOT_ORIENT_IN_PROGRESS) {
 +                emcSpindleOff(s);
 +                spindle_output_active = true;
@@ -621,7 +624,7 @@ index 3bf13a702d..52e7b652e3 100644
 +                    return;
 +                }
 +            }
-+            if (stop_spindles[s].running &&
++            if (stop_spindles[s].running && stop_spindles[s].speed != 0.0 &&
 +                    !emcStatus->motion.spindle[s].at_speed) {
 +                return;
 +            }
@@ -1226,10 +1229,10 @@ index 0000000000..3060ac429e
 +M2
 diff --git a/tests/resumable-stop/test-ui.py b/tests/resumable-stop/test-ui.py
 new file mode 100755
-index 0000000000..f19f4a4d56
+index 0000000000..e57c212f98
 --- /dev/null
 +++ b/tests/resumable-stop/test-ui.py
-@@ -0,0 +1,494 @@
+@@ -0,0 +1,545 @@
 +#!/usr/bin/env python3
 +
 +import math
@@ -1382,6 +1385,56 @@ index 0000000000..f19f4a4d56
 +
 +    if not resume_and_wait_for_x_motion(stopped_x):
 +        fail("resume did not restore coolant")
++
++    wait_for_program_complete(10.0)
++    assert_outputs_stopped_after_program()
++
++
++def run_zero_speed_spindle_stop_resume_test():
++    open_auto_program("zero-speed-spindle.ngc")
++
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: s.task_mode == linuxcnc.MODE_AUTO
++        and s.position[0] > 0.05
++        and s.position[0] < 9.0
++        and s.spindle[0]["direction"] == 1
++        and math.isclose(s.spindle[0]["speed"], 0.0, abs_tol=0.001)
++        and not s.spindle[0]["enabled"]
++        and hal.get_value("spindle.0.forward"),
++        "program did not reach active S0 M3 motion",
++    )
++
++    c.stop()
++    wait_complete("S0 M3 stop command did not complete")
++
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
++        "task did not enter STOPPED state for S0 M3",
++    )
++
++    if hal.get_value("spindle.0.forward"):
++        fail("S0 M3 spindle forward remained asserted while stopped")
++
++    if s.spindle[0]["direction"] != 0:
++        fail("S0 M3 spindle direction remained active while stopped")
++
++    stopped_x = s.position[0]
++    c.auto(linuxcnc.AUTO_RESUME)
++
++    saw_restored_forward = False
++    start = time.time()
++    while time.time() - start < 10.0:
++        s.poll()
++        if hal.get_value("spindle.0.forward") and s.spindle[0]["direction"] == 1:
++            saw_restored_forward = True
++        if s.position[0] > stopped_x + 0.05:
++            break
++        time.sleep(0.02)
++
++    if not saw_restored_forward:
++        fail("resume did not restore S0 M3 spindle direction")
 +
 +    wait_for_program_complete(10.0)
 +    assert_outputs_stopped_after_program()
@@ -1713,6 +1766,7 @@ index 0000000000..f19f4a4d56
 +
 +
 +run_ordinary_stop_resume_test()
++run_zero_speed_spindle_stop_resume_test()
 +run_stop_while_program_paused_test(False)
 +run_stop_while_program_paused_test(True)
 +run_abort_from_empty_stopped_queue_test()
@@ -1860,5 +1914,17 @@ index 0000000000..68840ea75c
 +++ b/tests/resumable-stop/tool.tbl
 @@ -0,0 +1 @@
 +T1 P1 Z0 D0
+diff --git a/tests/resumable-stop/zero-speed-spindle.ngc b/tests/resumable-stop/zero-speed-spindle.ngc
+new file mode 100644
+index 0000000000..5c9cc98ed5
+--- /dev/null
++++ b/tests/resumable-stop/zero-speed-spindle.ngc
+@@ -0,0 +1,6 @@
++G21 G90
++F60
++S0 M3
++G1 X10
++M5
++M2
 -- 
 2.53.0
