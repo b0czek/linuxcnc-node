@@ -16,7 +16,7 @@ Add a dedicated task and trajectory Stop operation that preserves interpreter an
  src/emc/nml_intf/emc.hh                       |  10 +
  src/emc/nml_intf/emc_nml.hh                   |  22 ++
  src/emc/nml_intf/emcops.cc                    |   4 +
- src/emc/task/emctaskmain.cc                   | 208 +++++++++++++-
+ src/emc/task/emctaskmain.cc                   | 221 ++++++++++++++-
  src/emc/task/taskintf.cc                      |  11 +
  src/emc/tp/tp.c                               |  54 +++-
  src/emc/tp/tp.h                               |   1 +
@@ -25,16 +25,18 @@ Add a dedicated task and trajectory Stop operation that preserves interpreter an
  src/emc/usr_intf/halui.cc                     |   9 +-
  tests/resumable-stop/README                   |   7 +
  tests/resumable-stop/core_sim.hal             |  41 +++
+ tests/resumable-stop/orient.ngc               |   4 +
  tests/resumable-stop/tap.ngc                  |   7 +
- tests/resumable-stop/test-ui.py               | 258 ++++++++++++++++++
+ tests/resumable-stop/test-ui.py               | 293 ++++++++++++++++++++
  tests/resumable-stop/test.ini                 |  87 ++++++
  tests/resumable-stop/test.ngc                 |   8 +
  tests/resumable-stop/test.sh                  |   3 +
  tests/resumable-stop/thread.ngc               |   7 +
  tests/resumable-stop/tool.tbl                 |   1 +
- 27 files changed, 804 insertions(+), 7 deletions(-)
+ 28 files changed, 856 insertions(+), 7 deletions(-)
  create mode 100644 tests/resumable-stop/README
  create mode 100644 tests/resumable-stop/core_sim.hal
+ create mode 100644 tests/resumable-stop/orient.ngc
  create mode 100644 tests/resumable-stop/tap.ngc
  create mode 100755 tests/resumable-stop/test-ui.py
  create mode 100644 tests/resumable-stop/test.ini
@@ -419,7 +421,7 @@ index 6e068c2708..734079d3af 100644
  {
  }
 diff --git a/src/emc/task/emctaskmain.cc b/src/emc/task/emctaskmain.cc
-index 3bf13a702d..a58763a2b3 100644
+index 3bf13a702d..c842524b3c 100644
 --- a/src/emc/task/emctaskmain.cc
 +++ b/src/emc/task/emctaskmain.cc
 @@ -123,6 +123,24 @@ static int emcTaskEager = 0;
@@ -467,7 +469,7 @@ index 3bf13a702d..a58763a2b3 100644
  	// now handle call logic
  	// check for subsystems done
  	if (interp_list.len() == 0 &&
-@@ -745,6 +769,97 @@ static bool allow_while_idle_type() {
+@@ -745,6 +769,110 @@ static bool allow_while_idle_type() {
      return 0;
  }
  
@@ -514,35 +516,48 @@ index 3bf13a702d..a58763a2b3 100644
 +static void emcTaskStopProgress()
 +{
 +    switch (emcStatus->task.stopState) {
-+    case EMC_TASK_STOP_STATE::STOPPING:
++    case EMC_TASK_STOP_STATE::STOPPING: {
 +        if (!emcStatus->motion.traj.stopped) {
 +            return;
 +        }
 +
-+        stop_mist = emcStatus->io.coolant.mist;
-+        stop_flood = emcStatus->io.coolant.flood;
++        if (!stop_outputs_saved) {
++            stop_mist = emcStatus->io.coolant.mist;
++            stop_flood = emcStatus->io.coolant.flood;
++        }
++        bool spindle_output_active = false;
 +        for (int s = 0; s < emcStatus->motion.traj.spindles; ++s) {
 +            const auto &status = emcStatus->motion.spindle[s];
-+            stop_spindles[s].running = status.enabled;
-+            stop_spindles[s].speed = status.speed;
-+            stop_spindles[s].css_factor = status.css_factor;
-+            stop_spindles[s].css_xoffset = status.css_xoffset;
-+            if (status.enabled) {
++            if (!stop_outputs_saved) {
++                stop_spindles[s].running = status.enabled;
++                stop_spindles[s].speed = status.speed;
++                stop_spindles[s].css_factor = status.css_factor;
++                stop_spindles[s].css_xoffset = status.css_xoffset;
++            }
++            if (status.enabled ||
++                    status.orient_state == EMCMOT_ORIENT_IN_PROGRESS) {
 +                emcSpindleOff(s);
++                spindle_output_active = true;
 +            }
 +        }
-+        if (stop_mist) {
-+            emcCoolantMistOff();
++        if (!stop_outputs_saved) {
++            if (stop_mist) {
++                emcCoolantMistOff();
++            }
++            if (stop_flood) {
++                emcCoolantFloodOff();
++            }
++            stop_outputs_saved = true;
 +        }
-+        if (stop_flood) {
-+            emcCoolantFloodOff();
++        if (spindle_output_active) {
++            return;
 +        }
-+        stop_outputs_saved = true;
 +        emcStatus->task.stopState = EMC_TASK_STOP_STATE::STOPPED;
 +        if (stop_resume_latched) {
 +            emcTaskStopResume();
 +        }
 +        return;
++    }
 +
 +    case EMC_TASK_STOP_STATE::STARTING:
 +        for (int s = 0; s < emcStatus->motion.traj.spindles; ++s) {
@@ -1047,6 +1062,16 @@ index 0000000000..28af568e79
 +addf encoder.update-counters servo-thread
 +
 +setp spindle.0.at-speed true
+diff --git a/tests/resumable-stop/orient.ngc b/tests/resumable-stop/orient.ngc
+new file mode 100644
+index 0000000000..4102431630
+--- /dev/null
++++ b/tests/resumable-stop/orient.ngc
+@@ -0,0 +1,4 @@
++G21 G90
++M19 R90 Q30
++G1 X20 F60
++M2
 diff --git a/tests/resumable-stop/tap.ngc b/tests/resumable-stop/tap.ngc
 new file mode 100644
 index 0000000000..3060ac429e
@@ -1062,10 +1087,10 @@ index 0000000000..3060ac429e
 +M2
 diff --git a/tests/resumable-stop/test-ui.py b/tests/resumable-stop/test-ui.py
 new file mode 100755
-index 0000000000..b9853b5677
+index 0000000000..eda8c6f3f8
 --- /dev/null
 +++ b/tests/resumable-stop/test-ui.py
-@@ -0,0 +1,258 @@
+@@ -0,0 +1,293 @@
 +#!/usr/bin/env python3
 +
 +import math
@@ -1074,6 +1099,9 @@ index 0000000000..b9853b5677
 +
 +import hal
 +import linuxcnc
++
++
++ORIENT_IN_PROGRESS = 2
 +
 +
 +def fail(message):
@@ -1318,9 +1346,41 @@ index 0000000000..b9853b5677
 +    )
 +
 +
++def run_spindle_orientation_stop_test():
++    open_auto_program("orient.ngc")
++
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: hal.get_value("spindle.0.orient")
++        and s.spindle[0]["orient_state"] == ORIENT_IN_PROGRESS,
++        "M19 did not start spindle orientation",
++    )
++
++    x_before_stop = s.position[0]
++    c.stop()
++    wait_complete("M19 stop command did not complete")
++
++    if s.stop_state != linuxcnc.STOP_STOPPED:
++        fail("task did not enter STOPPED during M19")
++
++    if hal.get_value("spindle.0.orient"):
++        fail("task reported STOPPED while spindle orientation remained active")
++
++    if s.spindle[0]["orient_state"] == ORIENT_IN_PROGRESS:
++        fail("task reported STOPPED while spindle orientation was in progress")
++
++    if not math.isclose(s.position[0], x_before_stop, abs_tol=0.001):
++        fail("following motion started while stopping M19")
++
++    c.abort()
++    wait_complete("failed to abort stopped M19 program")
++
++
 +run_ordinary_stop_resume_test()
 +run_threading_stop_resume_test()
 +run_rigid_tap_stop_resume_test()
++run_spindle_orientation_stop_test()
 +
 +print("resumable stop/resume behavior ok")
 +sys.exit(0)
@@ -1462,4 +1522,3 @@ index 0000000000..68840ea75c
 +T1 P1 Z0 D0
 -- 
 2.53.0
-
