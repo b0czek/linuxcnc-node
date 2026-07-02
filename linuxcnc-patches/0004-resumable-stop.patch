@@ -24,19 +24,21 @@ Add a dedicated task and trajectory Stop operation that preserves interpreter an
  src/emc/usr_intf/axis/extensions/emcmodule.cc |  14 +
  src/emc/usr_intf/halui.cc                     |   9 +-
  tests/resumable-stop/README                   |   7 +
+ tests/resumable-stop/after-abort.ngc          |   4 +
  tests/resumable-stop/core_sim.hal             |  41 +++
  tests/resumable-stop/g76.ngc                  |   7 +
  tests/resumable-stop/orient.ngc               |   4 +
  tests/resumable-stop/pause.ngc                |   6 +
  tests/resumable-stop/tap.ngc                  |   7 +
- tests/resumable-stop/test-ui.py               | 450 +++++++++++++++++++++++++++++
+ tests/resumable-stop/test-ui.py               | 494 +++++++++++++++++++++++++++++
  tests/resumable-stop/test.ini                 |  87 ++++++
  tests/resumable-stop/test.ngc                 |   8 +
  tests/resumable-stop/test.sh                  |   3 +
  tests/resumable-stop/thread.ngc               |   7 +
  tests/resumable-stop/tool.tbl                 |   1 +
- 30 files changed, 1097 insertions(+), 11 deletions(-)
+ 31 files changed, 1146 insertions(+), 11 deletions(-)
  create mode 100644 tests/resumable-stop/README
+ create mode 100644 tests/resumable-stop/after-abort.ngc
  create mode 100644 tests/resumable-stop/core_sim.hal
  create mode 100644 tests/resumable-stop/g76.ngc
  create mode 100644 tests/resumable-stop/orient.ngc
@@ -896,7 +898,7 @@ index a37da0ca5f..86fdd15940 100644
      return 0;
  }
 diff --git a/src/emc/tp/tp.c b/src/emc/tp/tp.c
-index e5667b3f29..c78cf69025 100644
+index e5667b3f29..a2fc9e6f38 100644
 --- a/src/emc/tp/tp.c
 +++ b/src/emc/tp/tp.c
 @@ -250,7 +250,11 @@ STATIC double tpGetFeedScale(TP_STRUCT const * const tp,
@@ -934,15 +936,16 @@ index e5667b3f29..c78cf69025 100644
      bool is_aborting = tp->aborting;
  
      // Check if feed_override = 0 (not pause/abort, but velocity limited to 0)
-@@ -4118,10 +4128,27 @@ int tpRunCycle(TP_STRUCT * const tp, long period)
+@@ -4118,10 +4128,28 @@ int tpRunCycle(TP_STRUCT * const tp, long period)
  
      //If we have a NULL pointer, then the queue must be empty, so we're done.
      if(!tc) {
 +        if (tp->stopping) {
 +            tpHandleEmptyQueue(tp);
-+            tp->stopping = 1;
-+            tp->pausing = 1;
-+            emcmotStatus->stopped = 1;
++            if (tp->stopping) {
++                tp->pausing = 1;
++                emcmotStatus->stopped = 1;
++            }
 +            return TP_ERR_WAITING;
 +        }
          tpHandleEmptyQueue(tp);
@@ -1116,6 +1119,16 @@ index 0000000000..fbf9cdddb6
 +aborting queued AUTO state, that spindle and coolant outputs are disabled
 +while stopped, and that Resume restores them before continuing the same
 +program to completion.
+diff --git a/tests/resumable-stop/after-abort.ngc b/tests/resumable-stop/after-abort.ngc
+new file mode 100644
+index 0000000000..df711f6b3d
+--- /dev/null
++++ b/tests/resumable-stop/after-abort.ngc
+@@ -0,0 +1,4 @@
++G21 G90
++F600
++G1 X6
++M2
 diff --git a/tests/resumable-stop/core_sim.hal b/tests/resumable-stop/core_sim.hal
 new file mode 100644
 index 0000000000..28af568e79
@@ -1213,10 +1226,10 @@ index 0000000000..3060ac429e
 +M2
 diff --git a/tests/resumable-stop/test-ui.py b/tests/resumable-stop/test-ui.py
 new file mode 100755
-index 0000000000..8899134ab8
+index 0000000000..f19f4a4d56
 --- /dev/null
 +++ b/tests/resumable-stop/test-ui.py
-@@ -0,0 +1,450 @@
+@@ -0,0 +1,494 @@
 +#!/usr/bin/env python3
 +
 +import math
@@ -1400,6 +1413,49 @@ index 0000000000..8899134ab8
 +        c.auto(linuxcnc.AUTO_RESUME)
 +
 +    wait_for_program_complete(10.0)
++
++
++def run_abort_from_empty_stopped_queue_test():
++    open_auto_program("pause.ngc")
++
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: s.interp_state == linuxcnc.INTERP_PAUSED
++        and s.task_paused
++        and math.isclose(s.position[0], 5.0, abs_tol=0.01),
++        "program did not reach M0 pause before abort test",
++    )
++
++    c.stop()
++    wait_complete("stop command did not complete from M0 pause before abort")
++
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
++        "task did not enter STOPPED from M0 pause before abort",
++    )
++
++    c.abort()
++    wait_complete("abort command did not complete from empty stopped queue")
++
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_IDLE
++        and not s.task_paused
++        and s.interp_state == linuxcnc.INTERP_IDLE
++        and s.exec_state == linuxcnc.EXEC_DONE
++        and s.queue == 0,
++        "abort did not clear empty STOPPED state",
++    )
++
++    open_auto_program("after-abort.ngc")
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: s.position[0] > 5.05,
++        "motion did not start after aborting empty STOPPED queue",
++    )
++
++    wait_for_program_complete(6.0)
 +
 +
 +def stop_during_sync_motion(program, active_predicate, complete_predicate, message, expected_z):
@@ -1659,6 +1715,7 @@ index 0000000000..8899134ab8
 +run_ordinary_stop_resume_test()
 +run_stop_while_program_paused_test(False)
 +run_stop_while_program_paused_test(True)
++run_abort_from_empty_stopped_queue_test()
 +run_queued_threading_stop_resume_test()
 +run_threading_stop_resume_test()
 +run_g76_stop_resume_test()
