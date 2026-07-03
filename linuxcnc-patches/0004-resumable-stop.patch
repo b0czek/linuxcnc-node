@@ -597,7 +597,7 @@ index 3bf13a702d..6dcda53267 100644
  	// now handle call logic
  	// check for subsystems done
  	if (interp_list.len() == 0 &&
-@@ -745,6 +789,151 @@ static bool allow_while_idle_type() {
+@@ -745,6 +789,167 @@ static bool allow_while_idle_type() {
      return 0;
  }
  
@@ -624,6 +624,22 @@ index 3bf13a702d..6dcda53267 100644
 +        if (was_active) {
 +            emcStatus->task.task_paused = 0;
 +        }
++    }
++}
++
++static void emcTaskStopDisableSavedOutputs()
++{
++    for (int s = 0; s < emcStatus->motion.traj.spindles; ++s) {
++        if (stop_spindles[s].running ||
++                stop_spindles[s].orienting) {
++            emcSpindleOff(s);
++        }
++    }
++    if (stop_mist) {
++        emcCoolantMistOff();
++    }
++    if (stop_flood) {
++        emcCoolantFloodOff();
 +    }
 +}
 +
@@ -723,7 +739,7 @@ index 3bf13a702d..6dcda53267 100644
 +                if (status.orient_state == EMCMOT_ORIENT_FAULTED ||
 +                        (stop_spindles[s].orient_deadline > 0.0 &&
 +                         etime() >= stop_spindles[s].orient_deadline)) {
-+                    emcSpindleOff(s);
++                    emcTaskStopDisableSavedOutputs();
 +                    emcStatus->task.stopState = EMC_TASK_STOP_STATE::STOPPED;
 +                    emcOperatorError(
 +                        "resumed spindle orientation failed on spindle %d",
@@ -749,7 +765,7 @@ index 3bf13a702d..6dcda53267 100644
  /*
    emcTaskPlan()
  
-@@ -773,6 +965,24 @@ static int emcTaskPlan(void)
+@@ -773,6 +978,24 @@ static int emcTaskPlan(void)
  	return retval;
      }
  
@@ -774,7 +790,7 @@ index 3bf13a702d..6dcda53267 100644
      // handle any new command
      switch (emcStatus->task.state) {
      case EMC_TASK_STATE::OFF:
-@@ -1843,6 +2053,11 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -1843,6 +2066,11 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  	retval = emcTrajPause();
  	break;
  
@@ -786,7 +802,7 @@ index 3bf13a702d..6dcda53267 100644
      case EMC_TRAJ_RESUME_TYPE:
  	emcStatus->task.task_paused = 0;
  	retval = emcTrajResume();
-@@ -1923,6 +2138,11 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -1923,6 +2151,11 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  
      case EMC_SPINDLE_WAIT_ORIENT_COMPLETE_TYPE:
  	wait_spindle_orient_complete_msg = reinterpret_cast<EMC_SPINDLE_WAIT_ORIENT_COMPLETE *>(cmd);
@@ -798,7 +814,7 @@ index 3bf13a702d..6dcda53267 100644
  	taskExecDelayTimeout = etime() + wait_spindle_orient_complete_msg->timeout;
  	break;
  
-@@ -1983,6 +2203,12 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -1983,6 +2216,12 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  
      case EMC_SPINDLE_ORIENT_TYPE:
  	spindle_orient_msg = reinterpret_cast<EMC_SPINDLE_ORIENT *>(cmd);
@@ -811,7 +827,7 @@ index 3bf13a702d..6dcda53267 100644
  	retval = emcSpindleOrient(spindle_orient_msg->spindle, spindle_orient_msg->orientation,
  			spindle_orient_msg->mode);
  	break;
-@@ -2075,7 +2301,56 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -2075,7 +2314,45 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  
  	// task commands
  
@@ -840,18 +856,7 @@ index 3bf13a702d..6dcda53267 100644
 +            retval = emcTrajStop();
 +            break;
 +        case EMC_TASK_STOP_STATE::STARTING:
-+            for (int s = 0; s < emcStatus->motion.traj.spindles; ++s) {
-+                if (stop_spindles[s].running ||
-+                        stop_spindles[s].orienting) {
-+                    emcSpindleOff(s);
-+                }
-+            }
-+            if (stop_mist) {
-+                emcCoolantMistOff();
-+            }
-+            if (stop_flood) {
-+                emcCoolantFloodOff();
-+            }
++            emcTaskStopDisableSavedOutputs();
 +            emcStatus->task.stopState = EMC_TASK_STOP_STATE::STOPPED;
 +            stop_resume_latched = false;
 +            retval = 0;
@@ -868,7 +873,7 @@ index 3bf13a702d..6dcda53267 100644
  	// abort everything
  	emcTaskAbort();
  	// KLUDGE call motion abort before state restore to make absolutely sure no
-@@ -2099,6 +2374,9 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -2099,6 +2376,9 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  	    mode_msg->mode != EMC_TASK_MODE::AUTO) {
  	    emcOperatorError(_("Can't switch mode while mode is AUTO and interpreter is not IDLE"));
  	} else { // we can honour the modeswitch
@@ -878,7 +883,7 @@ index 3bf13a702d..6dcda53267 100644
  	    if (mode_msg->mode == EMC_TASK_MODE::MANUAL &&
  		emcStatus->task.mode != EMC_TASK_MODE::MANUAL) {
  		// leaving auto or mdi mode for manual
-@@ -2143,6 +2421,9 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -2143,6 +2423,9 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  
      case EMC_TASK_SET_STATE_TYPE:
  	state_msg = reinterpret_cast<EMC_TASK_SET_STATE *>(cmd);
@@ -888,7 +893,7 @@ index 3bf13a702d..6dcda53267 100644
  	retval = emcTaskSetState(state_msg->state);
  	break;
  
-@@ -2368,11 +2649,8 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -2368,11 +2651,8 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  
      case EMC_TASK_PLAN_RESUME_TYPE:
  	emcTrajResume();
@@ -901,7 +906,7 @@ index 3bf13a702d..6dcda53267 100644
  	retval = 0;
  	break;
  
-@@ -2569,6 +2847,7 @@ static int emcTaskExecute(void)
+@@ -2569,6 +2849,7 @@ static int emcTaskExecute(void)
  
      switch (emcStatus->task.execState) {
      case EMC_TASK_EXEC::ERROR:
@@ -909,7 +914,7 @@ index 3bf13a702d..6dcda53267 100644
  
  	/*! \todo FIXME-- duplicate code for abort,
  	   also near end of main, when aborting on subordinate errors,
-@@ -2614,7 +2893,9 @@ static int emcTaskExecute(void)
+@@ -2614,7 +2895,9 @@ static int emcTaskExecute(void)
      case EMC_TASK_EXEC::DONE:
  	STEPPING_CHECK();
  	if (!emcStatus->motion.traj.queueFull &&
@@ -920,7 +925,7 @@ index 3bf13a702d..6dcda53267 100644
  	    if (0 == emcTaskCommand) {
  		// need a new command
  		emcTaskCommand = interp_list.get();
-@@ -2739,6 +3020,18 @@ static int emcTaskExecute(void)
+@@ -2739,6 +3022,18 @@ static int emcTaskExecute(void)
  
      case EMC_TASK_EXEC::WAITING_FOR_DELAY:
  	STEPPING_CHECK();
@@ -939,7 +944,7 @@ index 3bf13a702d..6dcda53267 100644
  	// check if delay has passed
  	emcStatus->task.delayLeft = taskExecDelayTimeout - etime();
  	if (etime() >= taskExecDelayTimeout) {
-@@ -3154,6 +3447,9 @@ static int iniLoad(const char *filename)
+@@ -3154,6 +3449,9 @@ static int iniLoad(const char *filename)
          }
      }
  
@@ -949,7 +954,7 @@ index 3bf13a702d..6dcda53267 100644
      if (auto inistring = inifile.findString("RS274NGC_STARTUP_CODE", "RS274NGC")) {
  	// copy to global
  	rtapi_strxcpy(rs274ngc_startup_code, inistring->c_str());
-@@ -3325,6 +3621,7 @@ int main(int argc, char *argv[])
+@@ -3325,6 +3623,7 @@ int main(int argc, char *argv[])
  	prev_traj_enabled = emcStatus->motion.traj.enabled;
  	// synchronize subordinate states
  	if (emcStatus->io.aux.estop) {
@@ -957,7 +962,7 @@ index 3bf13a702d..6dcda53267 100644
  	    if (emcStatus->motion.traj.enabled) {
  		emcTrajDisable();
  		emcTaskAbort();
-@@ -3406,6 +3703,7 @@ int main(int argc, char *argv[])
+@@ -3406,6 +3705,7 @@ int main(int argc, char *argv[])
  	    // 	emcOperatorError("wait for orient complete timed out");
  	    // }
  
@@ -965,7 +970,7 @@ index 3bf13a702d..6dcda53267 100644
              // abort everything
              emcTaskAbort();
              emcIoAbort(EMC_ABORT::MOTION_OR_IO_RCS_ERROR);
-@@ -3441,6 +3739,12 @@ int main(int argc, char *argv[])
+@@ -3441,6 +3741,12 @@ int main(int argc, char *argv[])
  	    emcTaskQueueTaskPlanSynchCmd();
  	}
  
@@ -978,7 +983,7 @@ index 3bf13a702d..6dcda53267 100644
  	// update task-specific status
  	emcTaskUpdate(&emcStatus->task);
  
-@@ -3461,6 +3765,9 @@ int main(int argc, char *argv[])
+@@ -3461,6 +3767,9 @@ int main(int argc, char *argv[])
  	    emcStatus->io.status == RCS_STATUS::ERROR) {
  	    emcStatus->status = RCS_STATUS::ERROR;
  	    emcStatus->task.status = RCS_STATUS::ERROR;
@@ -1255,7 +1260,7 @@ index 0000000000..d66aa79ff9
 +++ b/tests/resumable-stop/checkresult
 @@ -0,0 +1,3 @@
 +#!/bin/sh
-+test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 13
++test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 14
 +grep -q '^resumable stop scenarios complete$' "$1"
 diff --git a/tests/resumable-stop/core_sim.hal b/tests/resumable-stop/core_sim.hal
 new file mode 100644
