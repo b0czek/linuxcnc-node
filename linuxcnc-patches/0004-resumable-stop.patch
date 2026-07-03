@@ -16,7 +16,8 @@ Add a dedicated task and trajectory Stop operation that preserves interpreter an
  src/emc/nml_intf/emc.hh                       |  10 +
  src/emc/nml_intf/emc_nml.hh                   |  22 ++
  src/emc/nml_intf/emcops.cc                    |   4 +
- src/emc/task/emctaskmain.cc                   | 297 +++++++++++++++++++-
+ src/emc/task/emccanon.cc                      |   4 +-
+ src/emc/task/emctaskmain.cc                   | 303 +++++++++++++++++++-
  src/emc/task/taskintf.cc                      |  11 +
  src/emc/tp/tp.c                               |  54 +++-
  src/emc/tp/tp.h                               |   1 +
@@ -37,7 +38,7 @@ Add a dedicated task and trajectory Stop operation that preserves interpreter an
  tests/resumable-stop/thread.ngc               |   7 +
  tests/resumable-stop/tool.tbl                 |   1 +
  tests/resumable-stop/zero-speed-spindle.ngc   |   6 +
- 32 files changed, 1204 insertions(+), 11 deletions(-)
+ 33 files changed, 1214 insertions(+), 12 deletions(-)
  create mode 100644 tests/resumable-stop/README
  create mode 100644 tests/resumable-stop/after-abort.ngc
  create mode 100644 tests/resumable-stop/core_sim.hal
@@ -428,11 +429,29 @@ index 6e068c2708..734079d3af 100644
      homed(OFF)
  {
  }
+diff --git a/src/emc/task/emccanon.cc b/src/emc/task/emccanon.cc
+index d2a0e0d0f2..0531304648 100644
+--- a/src/emc/task/emccanon.cc
++++ b/src/emc/task/emccanon.cc
+@@ -66,3 +66,4 @@
+ #include <algorithm>
+-
++extern void emcTaskRecordSpindleOrientTimeout(int spindle, double timeout);
++
+ //#define EMCCANON_DEBUG
+@@ -3043,2 +3044,3 @@ void ORIENT_SPINDLE(int s, double orientation, int mode)
+     o->mode = mode;
++    emcTaskRecordSpindleOrientTimeout(s, 0.0);
+     interp_list.append(std::move(o));
+@@ -3053,2 +3054,3 @@ void WAIT_SPINDLE_ORIENT_COMPLETE(int s, double timeout)
+     o->timeout = timeout;
++    emcTaskRecordSpindleOrientTimeout(s, timeout);
+     interp_list.append(std::move(o));
 diff --git a/src/emc/task/emctaskmain.cc b/src/emc/task/emctaskmain.cc
-index 3bf13a702d..e74a9c3c0e 100644
+index 3bf13a702d..890c567a0b 100644
 --- a/src/emc/task/emctaskmain.cc
 +++ b/src/emc/task/emctaskmain.cc
-@@ -123,6 +123,36 @@ static int emcTaskEager = 0;
+@@ -123,6 +123,43 @@ static int emcTaskEager = 0;
  
  static int no_force_homing = 0; // forces the user to home first before allowing MDI and Program run
  //can be overridden by [TRAJ]NO_FORCE_HOMING=1
@@ -462,6 +481,13 @@ index 3bf13a702d..e74a9c3c0e 100644
 +static bool stop_flood = false;
 +static bool stop_resume_latched = false;
 +static bool stop_outputs_saved = false;
++
++void emcTaskRecordSpindleOrientTimeout(int spindle, double timeout)
++{
++    if (spindle >= 0 && spindle < EMCMOT_MAX_SPINDLES) {
++        spindle_orient_requests[spindle].timeout = timeout;
++    }
++}
 +
 +static void emcTaskStopClear();
 +static void emcTaskStopProgress();
@@ -692,7 +718,7 @@ index 3bf13a702d..e74a9c3c0e 100644
  	taskExecDelayTimeout = etime() + wait_spindle_orient_complete_msg->timeout;
  	break;
  
-@@ -1983,6 +2182,13 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -1983,6 +2182,12 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  
      case EMC_SPINDLE_ORIENT_TYPE:
  	spindle_orient_msg = reinterpret_cast<EMC_SPINDLE_ORIENT *>(cmd);
@@ -701,7 +727,6 @@ index 3bf13a702d..e74a9c3c0e 100644
 +	    auto &request = spindle_orient_requests[spindle_orient_msg->spindle];
 +	    request.orientation = spindle_orient_msg->orientation;
 +	    request.mode = spindle_orient_msg->mode;
-+	    request.timeout = 0.0;
 +	}
  	retval = emcSpindleOrient(spindle_orient_msg->spindle, spindle_orient_msg->orientation,
  			spindle_orient_msg->mode);
