@@ -10,6 +10,11 @@ import {
   ToolEntry,
 } from "@linuxcnc-node/types";
 
+/**
+ * Legacy command API that resolves each async command after LinuxCNC reports
+ * completion. Use CommandChannelV2 when you need separate acceptance and
+ * completion boundaries.
+ */
 export class CommandChannel {
   private nativeInstance: NapiCommandChannelInstance;
 

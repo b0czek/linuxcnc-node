@@ -5,7 +5,8 @@ Node.js bindings for the LinuxCNC NML interface. Control and monitor CNC machine
 ## Features
 
 - **StatChannel** - Real-time machine status monitoring with typed property change events
-- **CommandChannel** - Send commands to LinuxCNC (MDI, program control, jogging, tool changes, etc.)
+- **CommandChannelV2** - Recommended command API with explicit acceptance and completion waits
+- **CommandChannel** - Legacy completion-waiting command API for compatibility
 - **ErrorChannel** - Receive error and operator messages from LinuxCNC
 - **PositionLogger** - High-frequency position logging for toolpath visualization
 
@@ -43,6 +44,23 @@ await cmd.executeMdi("G0 X10 Y10");
 
 // Cleanup
 stat.destroy();
+```
+
+## Command Lifecycle
+
+`CommandChannelV2` models LinuxCNC command acceptance separately from command completion:
+
+```typescript
+import { CommandChannelV2 } from "@linuxcnc-node/core";
+
+const command = new CommandChannelV2();
+const cmd = command.mdi("G1 X10");
+
+await cmd; // waits until LinuxCNC accepts/echoes the command
+
+await command.withLock(async (locked) => {
+  await locked.mdi("G1 X10").wait({ timeout: 5000 }); // waits for completion under exclusive command access
+});
 ```
 
 ## Documentation

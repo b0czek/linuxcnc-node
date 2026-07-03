@@ -23,6 +23,7 @@ namespace LinuxCNC
 
         // Allow CommandWorker classes to access private members
         friend class CommandWorker;
+        friend class WaitCompleteForSerialWorker;
         friend class ProgramOpenWorker;
         friend class SetToolWorker;
 
@@ -31,6 +32,7 @@ namespace LinuxCNC
         int last_serial_ = 0;
         std::string ini_filename_;
         std::string tool_table_filename_;
+        CommandWaitMode command_wait_mode_ = CommandWaitMode::Complete;
 
         bool connect();
         void disconnect();
@@ -42,10 +44,12 @@ namespace LinuxCNC
 
         // Helper for sending commands asynchronously
         Napi::Value sendCommandAsync(const Napi::CallbackInfo &info, std::unique_ptr<RCS_CMD_MSG> cmd_msg, double timeout = 5.0);
+        double getCommandTimeout(CommandWaitMode wait_mode);
 
         // Helper methods for command completion waiting
         RCS_STATUS waitCommandComplete();
         RCS_STATUS waitCommandComplete(double timeout);
+        RCS_STATUS waitCommandCompleteForSerial(int serial, double timeout);
 
         // --- NAPI Wrapped Methods ---
         // Task Commands
@@ -118,6 +122,7 @@ namespace LinuxCNC
         // Misc
         Napi::Value Disconnect(const Napi::CallbackInfo &info);
         Napi::Value WaitComplete(const Napi::CallbackInfo &info);
+        Napi::Value WaitCompleteForSerial(const Napi::CallbackInfo &info);
         Napi::Value GetSerial(const Napi::CallbackInfo &info);
     };
 

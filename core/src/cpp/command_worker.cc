@@ -17,20 +17,24 @@ namespace LinuxCNC
     CommandWorker::CommandWorker(Napi::Function &callback,
                                  NapiCommandChannel *channel,
                                  std::unique_ptr<RCS_CMD_MSG> cmd_msg,
-                                 double timeout)
+                                 double timeout,
+                                 CommandWaitMode wait_mode)
         : Napi::AsyncWorker(callback),
           channel_(channel),
           cmd_msg_(std::move(cmd_msg)),
           timeout_(timeout),
           command_serial_(0),
-          result_status_(RCS_STATUS::UNINITIALIZED)
+          result_status_(RCS_STATUS::UNINITIALIZED),
+          wait_mode_(wait_mode)
     {
         command_serial_ = cmd_msg_->serial_number;
     }
 
     void CommandWorker::Execute()
     {
-        result_status_ = waitCommandComplete();
+        result_status_ = wait_mode_ == CommandWaitMode::Accepted
+                             ? waitCommandAccepted()
+                             : waitCommandComplete();
     }
 
     void CommandWorker::OnOK()
@@ -38,7 +42,15 @@ namespace LinuxCNC
         Napi::Env env = Env();
         Napi::HandleScope scope(env);
 
-        // Call the callback with the result status
+        if (wait_mode_ == CommandWaitMode::Accepted)
+        {
+            Napi::Object result = Napi::Object::New(env);
+            result.Set("status", Napi::Number::New(env, static_cast<int>(result_status_)));
+            result.Set("serial", Napi::Number::New(env, command_serial_));
+            Callback().Call({result});
+            return;
+        }
+
         Callback().Call({Napi::Number::New(env, static_cast<int>(result_status_))});
     }
 
@@ -80,13 +92,75 @@ namespace LinuxCNC
         return RCS_STATUS::UNINITIALIZED; // Timeout
     }
 
+    RCS_STATUS CommandWorker::waitCommandAccepted()
+    {
+        double start = etime();
+        do
+        {
+            double now = etime();
+            if (channel_->s_channel_->peek() == EMC_STAT_TYPE)
+            {
+                EMC_STAT *stat = static_cast<EMC_STAT *>(channel_->s_channel_->get_address());
+                if (stat)
+                {
+                    if (stat->echo_serial_number >= command_serial_)
+                    {
+                        return RCS_STATUS::DONE;
+                    }
+                }
+            }
+            esleep(std::min(timeout_ - (now - start), EMC_COMMAND_DELAY_DEFAULT));
+        } while (etime() - start < timeout_);
+        return RCS_STATUS::UNINITIALIZED;
+    }
+
+    WaitCompleteForSerialWorker::WaitCompleteForSerialWorker(Napi::Promise::Deferred deferred,
+                                                             NapiCommandChannel *channel,
+                                                             int serial,
+                                                             double timeout)
+        : AsyncWorker(deferred.Env()),
+          deferred_(deferred),
+          channel_(channel),
+          serial_(serial),
+          timeout_(timeout),
+          result_status_(RCS_STATUS::UNINITIALIZED)
+    {
+    }
+
+    void WaitCompleteForSerialWorker::Execute()
+    {
+        if (!channel_)
+        {
+            SetError("Command channel is not available");
+            return;
+        }
+        result_status_ = channel_->waitCommandCompleteForSerial(serial_, timeout_);
+    }
+
+    void WaitCompleteForSerialWorker::OnOK()
+    {
+        deferred_.Resolve(Napi::Number::New(Env(), static_cast<int>(result_status_)));
+    }
+
+    void WaitCompleteForSerialWorker::OnError(const Napi::Error &error)
+    {
+        deferred_.Reject(error.Value());
+    }
+
     // ProgramOpenWorker implementation
-    ProgramOpenWorker::ProgramOpenWorker(const Napi::CallbackInfo &info, std::string file_path, NapiCommandChannel *channel)
+    ProgramOpenWorker::ProgramOpenWorker(const Napi::CallbackInfo &info,
+                                         std::string file_path,
+                                         NapiCommandChannel *channel,
+                                         CommandWaitMode wait_mode,
+                                         double timeout)
         : Napi::AsyncWorker(info.Env()),
           deferred_(Napi::Promise::Deferred::New(info.Env())),
           file_path_(std::move(file_path)),
           channel_(channel),
-          result_status_(RCS_STATUS::UNINITIALIZED)
+          result_status_(RCS_STATUS::UNINITIALIZED),
+          wait_mode_(wait_mode),
+          timeout_(timeout),
+          final_serial_(0)
     {
     }
 
@@ -102,6 +176,7 @@ namespace LinuxCNC
                 SetError("Failed to send close command");
                 return;
             }
+            channel_->last_serial_ = close_msg.serial_number;
 
             RCS_STATUS close_status = waitCommandComplete();
             if (close_status != RCS_STATUS::DONE)
@@ -141,7 +216,11 @@ namespace LinuxCNC
                     SetError("Failed to send open command");
                     return;
                 }
-                result_status_ = waitCommandComplete();
+                final_serial_ = open_msg.serial_number;
+                channel_->last_serial_ = final_serial_;
+                result_status_ = wait_mode_ == CommandWaitMode::Accepted
+                                     ? waitCommandAccepted(final_serial_)
+                                     : waitCommandComplete();
             }
         }
         catch (const std::exception &e)
@@ -153,6 +232,22 @@ namespace LinuxCNC
 
     void ProgramOpenWorker::OnOK()
     {
+        if (wait_mode_ == CommandWaitMode::Accepted)
+        {
+            Napi::Object result = Napi::Object::New(Env());
+            result.Set("status", Napi::Number::New(Env(), static_cast<int>(result_status_)));
+            if (final_serial_ > 0)
+            {
+                result.Set("serial", Napi::Number::New(Env(), final_serial_));
+            }
+            else
+            {
+                result.Set("serial", Env().Null());
+            }
+            deferred_.Resolve(result);
+            return;
+        }
+
         deferred_.Resolve(Napi::Number::New(Env(), static_cast<int>(result_status_)));
     }
 
@@ -163,7 +258,29 @@ namespace LinuxCNC
 
     RCS_STATUS ProgramOpenWorker::waitCommandComplete()
     {
-        return channel_->waitCommandComplete();
+        return channel_->waitCommandComplete(timeout_);
+    }
+
+    RCS_STATUS ProgramOpenWorker::waitCommandAccepted(int serial)
+    {
+        double start = etime();
+        do
+        {
+            double now = etime();
+            if (channel_->s_channel_->peek() == EMC_STAT_TYPE)
+            {
+                EMC_STAT *stat = static_cast<EMC_STAT *>(channel_->s_channel_->get_address());
+                if (stat)
+                {
+                    if (stat->echo_serial_number >= serial)
+                    {
+                        return RCS_STATUS::DONE;
+                    }
+                }
+            }
+            esleep(std::min(timeout_ - (now - start), EMC_COMMAND_DELAY_DEFAULT));
+        } while (etime() - start < timeout_);
+        return RCS_STATUS::UNINITIALIZED;
     }
 
     RCS_STATUS ProgramOpenWorker::handleRemoteFileTransfer(EMC_TASK_PLAN_OPEN &open_msg)
@@ -220,6 +337,8 @@ namespace LinuxCNC
                 return RCS_STATUS::ERROR;
             }
 
+            final_serial_ = open_msg.serial_number;
+            channel_->last_serial_ = final_serial_;
             last_chunk_status = waitCommandComplete();
             if (last_chunk_status != RCS_STATUS::DONE)
             {

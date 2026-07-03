@@ -14,10 +14,17 @@
 #include <fstream>
 
 #define EMC_COMMAND_TIMEOUT_DEFAULT 5.0
+#define EMC_COMMAND_ACCEPTED_TIMEOUT_DEFAULT 1.0
 #define EMC_COMMAND_DELAY_DEFAULT 0.01
 
 namespace LinuxCNC
 {
+    namespace
+    {
+        constexpr const char *COMMAND_WAIT_MODE_OPTION = "waitMode";
+        constexpr const char *COMMAND_WAIT_MODE_ACCEPTED = "accepted";
+    }
+
     std::optional<std::string> findIniString(const std::string &filename, const char *tag, const char *section)
     {
         char value[INI_MAX_LINELEN] = {};
@@ -96,6 +103,7 @@ namespace LinuxCNC
                                                                            // Misc
                                                                            InstanceMethod("disconnect", &NapiCommandChannel::Disconnect),
                                                                            InstanceMethod("waitComplete", &NapiCommandChannel::WaitComplete),
+                                                                           InstanceMethod("waitCompleteForSerial", &NapiCommandChannel::WaitCompleteForSerial),
                                                                            InstanceAccessor("serial", &NapiCommandChannel::GetSerial, nullptr),
                                                                        });
         constructor = Napi::Persistent(func);
@@ -107,6 +115,28 @@ namespace LinuxCNC
     NapiCommandChannel::NapiCommandChannel(const Napi::CallbackInfo &info) : Napi::ObjectWrap<NapiCommandChannel>(info)
     {
         Napi::Env env = info.Env();
+        if (info.Length() > 0)
+        {
+            if (!info[0].IsObject())
+            {
+                Napi::TypeError::New(env, "NativeCommandChannel options object expected").ThrowAsJavaScriptException();
+                return;
+            }
+
+            Napi::Object options = info[0].As<Napi::Object>();
+            Napi::Value wait_mode = options.Get(COMMAND_WAIT_MODE_OPTION);
+            if (!wait_mode.IsUndefined())
+            {
+                if (!wait_mode.IsString() ||
+                    wait_mode.As<Napi::String>().Utf8Value() != COMMAND_WAIT_MODE_ACCEPTED)
+                {
+                    Napi::TypeError::New(env, "waitMode must be \"accepted\"").ThrowAsJavaScriptException();
+                    return;
+                }
+                command_wait_mode_ = CommandWaitMode::Accepted;
+            }
+        }
+
         if (!connect())
         {
             Napi::Error::New(env, "Failed to connect to LinuxCNC command/status channels").ThrowAsJavaScriptException();
@@ -218,6 +248,9 @@ namespace LinuxCNC
     Napi::Value NapiCommandChannel::sendCommandAsync(const Napi::CallbackInfo &info, std::unique_ptr<RCS_CMD_MSG> cmd_msg, double timeout)
     {
         Napi::Env env = info.Env();
+        double command_timeout = timeout == EMC_COMMAND_TIMEOUT_DEFAULT
+                                     ? getCommandTimeout(command_wait_mode_)
+                                     : timeout;
 
         // Check if channels are connected
         if (!c_channel_ || !s_channel_ || !c_channel_->valid() || !s_channel_->valid())
@@ -246,8 +279,8 @@ namespace LinuxCNC
         auto resolver = Napi::Function::New(env, [deferred](const Napi::CallbackInfo &cbInfo) -> Napi::Value
                                             {
             Napi::Env env = cbInfo.Env();
-            if (cbInfo.Length() > 0 && cbInfo[0].IsNumber()) {
-                // Success case - resolve with status
+            if (cbInfo.Length() > 0 && (cbInfo[0].IsNumber() || cbInfo[0].IsObject())) {
+                // Success case - resolve with status or accepted command object
                 deferred.Resolve(cbInfo[0]);
             } else if (cbInfo.Length() > 1) {
                 // Error case - reject with error
@@ -259,10 +292,17 @@ namespace LinuxCNC
             return env.Undefined(); });
 
         // Create and queue the async worker
-        CommandWorker *worker = new CommandWorker(resolver, this, std::move(cmd_msg), timeout);
+        CommandWorker *worker = new CommandWorker(resolver, this, std::move(cmd_msg), command_timeout, command_wait_mode_);
         worker->Queue();
 
         return deferred.Promise();
+    }
+
+    double NapiCommandChannel::getCommandTimeout(CommandWaitMode wait_mode)
+    {
+        return wait_mode == CommandWaitMode::Accepted
+                   ? EMC_COMMAND_ACCEPTED_TIMEOUT_DEFAULT
+                   : EMC_COMMAND_TIMEOUT_DEFAULT;
     }
 
     Napi::Value NapiCommandChannel::SetTaskMode(const Napi::CallbackInfo &info)
@@ -347,7 +387,12 @@ namespace LinuxCNC
         std::string file_path_str = info[0].As<Napi::String>().Utf8Value();
 
         // Create and queue the ProgramOpenWorker
-        ProgramOpenWorker *worker = new ProgramOpenWorker(info, file_path_str, this);
+        ProgramOpenWorker *worker = new ProgramOpenWorker(
+            info,
+            file_path_str,
+            this,
+            command_wait_mode_,
+            getCommandTimeout(command_wait_mode_));
         worker->Queue();
 
         // Return the promise from the worker
@@ -1050,6 +1095,37 @@ namespace LinuxCNC
         return Napi::Number::New(env, static_cast<int>(status));
     }
 
+    Napi::Value NapiCommandChannel::WaitCompleteForSerial(const Napi::CallbackInfo &info)
+    {
+        Napi::Env env = info.Env();
+        if (info.Length() < 1 || !info[0].IsNumber())
+        {
+            Napi::TypeError::New(env, "waitCompleteForSerial(serial, timeoutMs?) expected").ThrowAsJavaScriptException();
+            return env.Null();
+        }
+
+        if (!s_channel_ || !s_channel_->valid())
+        {
+            if (!connect())
+            {
+                Napi::Error::New(env, "Status channel not connected and failed to reconnect").ThrowAsJavaScriptException();
+                return env.Null();
+            }
+        }
+
+        int serial = info[0].As<Napi::Number>().Int32Value();
+        double timeout = EMC_COMMAND_TIMEOUT_DEFAULT;
+        if (info.Length() > 1 && info[1].IsNumber())
+        {
+            timeout = info[1].As<Napi::Number>().DoubleValue() / 1000.0;
+        }
+
+        auto deferred = Napi::Promise::Deferred::New(env);
+        WaitCompleteForSerialWorker *worker = new WaitCompleteForSerialWorker(deferred, this, serial, timeout);
+        worker->Queue();
+        return deferred.Promise();
+    }
+
     RCS_STATUS NapiCommandChannel::waitCommandComplete(double timeout)
     {
         double start = etime();
@@ -1081,6 +1157,40 @@ namespace LinuxCNC
             esleep(std::min(timeout - (now - start), EMC_COMMAND_DELAY_DEFAULT));
         } while (etime() - start < timeout);
         return RCS_STATUS::UNINITIALIZED; // Timeout
+    }
+
+    RCS_STATUS NapiCommandChannel::waitCommandCompleteForSerial(int serial, double timeout)
+    {
+        if (serial <= 0)
+        {
+            return RCS_STATUS::UNINITIALIZED;
+        }
+
+        double start = etime();
+        do
+        {
+            double now = etime();
+            if (s_channel_->peek() == EMC_STAT_TYPE)
+            {
+                EMC_STAT *stat = static_cast<EMC_STAT *>(s_channel_->get_address());
+                if (stat)
+                {
+                    int serial_diff = stat->echo_serial_number - serial;
+                    if (serial_diff > 0)
+                    {
+                        // A later echoed command means this serial's terminal status
+                        // was missed; do not report success for an unrelated command.
+                        return RCS_STATUS::UNINITIALIZED;
+                    }
+                    if (serial_diff == 0 && (stat->status == RCS_STATUS::DONE || stat->status == RCS_STATUS::ERROR))
+                    {
+                        return stat->status;
+                    }
+                }
+            }
+            esleep(std::min(timeout - (now - start), EMC_COMMAND_DELAY_DEFAULT));
+        } while (etime() - start < timeout);
+        return RCS_STATUS::UNINITIALIZED;
     }
 
     RCS_STATUS NapiCommandChannel::waitCommandComplete()

@@ -16,7 +16,9 @@ export interface NapiOptions {
   setNmlFilePath: (path: string) => void;
   getNmlFilePath: () => string;
   NativeStatChannel: { new (): NapiStatChannelInstance };
-  NativeCommandChannel: { new (): NapiCommandChannelInstance };
+  NativeCommandChannel: {
+    new (options?: NativeCommandChannelOptions): NapiCommandChannelInstance;
+  };
   NativeErrorChannel: { new (): NapiErrorChannelInstance };
   NativePositionLogger: { new (): NapiPositionLoggerInstance };
 
@@ -29,6 +31,10 @@ export interface NapiOptions {
   EMCMOT_MAX_DIO: number;
   EMCMOT_MAX_AIO: number;
   EMCMOT_MAX_MISC_ERROR: number;
+}
+
+export interface NativeCommandChannelOptions {
+  waitMode?: "accepted";
 }
 
 /**
@@ -142,6 +148,7 @@ export interface NapiCommandChannelInstance {
   // Misc
   disconnect(): void;
   waitComplete(timeout?: number): RcsStatus; // Keep this synchronous
+  waitCompleteForSerial(serial: number, timeoutMs?: number): Promise<RcsStatus>;
   serial: number; // For the command serial number
 }
 

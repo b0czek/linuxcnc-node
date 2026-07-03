@@ -13,6 +13,12 @@ namespace LinuxCNC
 {
     class NapiCommandChannel;
 
+    enum class CommandWaitMode
+    {
+        Complete,
+        Accepted
+    };
+
     // AsyncWorker class for handling commands asynchronously
     class CommandWorker : public Napi::AsyncWorker
     {
@@ -20,7 +26,8 @@ namespace LinuxCNC
         CommandWorker(Napi::Function &callback,
                       NapiCommandChannel *channel,
                       std::unique_ptr<RCS_CMD_MSG> cmd_msg,
-                      double timeout);
+                      double timeout,
+                      CommandWaitMode wait_mode);
 
     protected:
         void Execute() override;
@@ -34,15 +41,42 @@ namespace LinuxCNC
         int command_serial_;
         RCS_STATUS result_status_;
         std::string error_message_;
+        CommandWaitMode wait_mode_;
 
         RCS_STATUS waitCommandComplete();
+        RCS_STATUS waitCommandAccepted();
+    };
+
+    class WaitCompleteForSerialWorker : public Napi::AsyncWorker
+    {
+    public:
+        WaitCompleteForSerialWorker(Napi::Promise::Deferred deferred,
+                                    NapiCommandChannel *channel,
+                                    int serial,
+                                    double timeout);
+
+    protected:
+        void Execute() override;
+        void OnOK() override;
+        void OnError(const Napi::Error &error) override;
+
+    private:
+        Napi::Promise::Deferred deferred_;
+        NapiCommandChannel *channel_;
+        int serial_;
+        double timeout_;
+        RCS_STATUS result_status_;
     };
 
     // AsyncWorker for ProgramOpen command - handles file open / transfer operations (in case of )
     class ProgramOpenWorker : public Napi::AsyncWorker
     {
     public:
-        ProgramOpenWorker(const Napi::CallbackInfo &info, std::string file_path, NapiCommandChannel *channel);
+        ProgramOpenWorker(const Napi::CallbackInfo &info,
+                          std::string file_path,
+                          NapiCommandChannel *channel,
+                          CommandWaitMode wait_mode,
+                          double timeout);
         Napi::Promise GetPromise() { return deferred_.Promise(); }
 
     protected:
@@ -55,8 +89,12 @@ namespace LinuxCNC
         std::string file_path_;
         NapiCommandChannel *channel_;
         RCS_STATUS result_status_;
+        CommandWaitMode wait_mode_;
+        double timeout_;
+        int final_serial_;
 
         RCS_STATUS waitCommandComplete();
+        RCS_STATUS waitCommandAccepted(int serial);
         RCS_STATUS handleRemoteFileTransfer(EMC_TASK_PLAN_OPEN &open_msg);
     };
 
