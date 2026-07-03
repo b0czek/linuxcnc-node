@@ -16,6 +16,7 @@ module.exports = {
   transform: {
     "^.+\\.tsx?$": ["ts-jest", {
       tsconfig: {
+        isolatedModules: true,
         types: ["node", "jest"],
       },
     }],
