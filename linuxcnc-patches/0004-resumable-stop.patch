@@ -9,36 +9,36 @@ Add a dedicated task and trajectory Stop operation that preserves interpreter an
  docs/src/config/python-interface.adoc         |   8 +
  docs/src/gui/halui.adoc                       |   3 +-
  docs/src/man/man1/halui.1.adoc                |   5 +-
- src/emc/motion/command.c                      |   8 +
+ src/emc/motion/command.c                      |  15 +
+ src/emc/motion/control.c                      |  13 +
  src/emc/motion/motion.c                       |   1 +
  src/emc/motion/motion.h                       |   2 +
- src/emc/nml_intf/emc.cc                       |  24 ++
+ src/emc/nml_intf/emc.cc                       |  24 +
  src/emc/nml_intf/emc.hh                       |  10 +
- src/emc/nml_intf/emc_nml.hh                   |  22 ++
+ src/emc/nml_intf/emc_nml.hh                   |  22 +
  src/emc/nml_intf/emcops.cc                    |   4 +
- src/emc/task/emccanon.cc                      |   4 +-
- src/emc/task/emctaskmain.cc                   | 303 +++++++++++++++++++-
+ src/emc/task/emccanon.cc                      |   3 +
+ src/emc/task/emctaskmain.cc                   | 317 +++++++++-
  src/emc/task/taskintf.cc                      |  11 +
- src/emc/tp/tp.c                               |  54 +++-
- src/emc/tp/tp.h                               |   1 +
- src/emc/tp/tp_types.h                         |   2 +
+ src/emc/tp/tp.c                               |  49 +-
+ src/emc/tp/tp_types.h                         |   7 +
  src/emc/usr_intf/axis/extensions/emcmodule.cc |  14 +
  src/emc/usr_intf/halui.cc                     |   9 +-
  tests/resumable-stop/README                   |   7 +
  tests/resumable-stop/after-abort.ngc          |   4 +
- tests/resumable-stop/core_sim.hal             |  41 +++
+ tests/resumable-stop/core_sim.hal             |  41 ++
  tests/resumable-stop/g76.ngc                  |   7 +
  tests/resumable-stop/orient.ngc               |   4 +
  tests/resumable-stop/pause.ngc                |   6 +
  tests/resumable-stop/tap.ngc                  |   7 +
- tests/resumable-stop/test-ui.py               | 545 +++++++++++++++++++++++++++++
- tests/resumable-stop/test.ini                 |  87 ++++++
+ tests/resumable-stop/test-ui.py               | 545 ++++++++++++++++++
+ tests/resumable-stop/test.ini                 |  87 +++
  tests/resumable-stop/test.ngc                 |   8 +
  tests/resumable-stop/test.sh                  |   3 +
  tests/resumable-stop/thread.ngc               |   7 +
  tests/resumable-stop/tool.tbl                 |   1 +
  tests/resumable-stop/zero-speed-spindle.ngc   |   6 +
- 33 files changed, 1214 insertions(+), 12 deletions(-)
+ 33 files changed, 1244 insertions(+), 12 deletions(-)
  create mode 100644 tests/resumable-stop/README
  create mode 100644 tests/resumable-stop/after-abort.ngc
  create mode 100644 tests/resumable-stop/core_sim.hal
@@ -128,16 +128,28 @@ index 6e84da6e5f..66b7f74e85 100644
  === Mode
  
 diff --git a/src/emc/motion/command.c b/src/emc/motion/command.c
-index fa7beb3c72..0df6e39442 100644
+index fa7beb3c72..22343702eb 100644
 --- a/src/emc/motion/command.c
 +++ b/src/emc/motion/command.c
-@@ -1221,6 +1221,13 @@ void emcmotCommandHandler_locked(void *arg, long servo_period)
+@@ -507,6 +507,9 @@ void emcmotCommandHandler_locked(void *arg, long servo_period)
+ 	    if (GET_MOTION_TELEOP_FLAG()) {
+                 axis_jog_abort_all(0);
+ 	    } else if (GET_MOTION_COORD_FLAG()) {
++		emcmotInternal->coord_tp.stopping = 0;
++		emcmotInternal->coord_tp.stop_tc = 0;
++		emcmotStatus->stopped = 0;
+ 		tpAbort(&emcmotInternal->coord_tp);
+ 	    } else {
+ 		for (joint_num = 0; joint_num < ALL_JOINTS; joint_num++) {
+@@ -1221,6 +1224,15 @@ void emcmotCommandHandler_locked(void *arg, long servo_period)
  	    emcmotStatus->paused = 1;
  	    break;
  
 +	case EMCMOT_STOP:
 +	    rtapi_print_msg(RTAPI_MSG_DBG, "STOP");
-+	    tpStop(&emcmotInternal->coord_tp);
++	    emcmotInternal->coord_tp.stopping = 1;
++	    emcmotInternal->coord_tp.stop_tc = 0;
++	    tpPause(&emcmotInternal->coord_tp);
 +	    emcmotStatus->paused = 1;
 +	    emcmotStatus->stopped = 0;
 +	    break;
@@ -145,14 +157,42 @@ index fa7beb3c72..0df6e39442 100644
  	case EMCMOT_REVERSE:
  	    /* run motion in reverse*/
  	    /* only allowed during a pause */
-@@ -1242,6 +1249,7 @@ void emcmotCommandHandler_locked(void *arg, long servo_period)
+@@ -1240,8 +1252,11 @@ void emcmotCommandHandler_locked(void *arg, long servo_period)
+ 	    /* can happen at any time */
+ 	    rtapi_print_msg(RTAPI_MSG_DBG, "RESUME");
  	    emcmotStatus->stepping = 0;
++	    emcmotInternal->coord_tp.stopping = 0;
++	    emcmotInternal->coord_tp.stop_tc = 0;
  	    tpResume(&emcmotInternal->coord_tp);
  	    emcmotStatus->paused = 0;
 +	    emcmotStatus->stopped = 0;
  	    break;
  
  	case EMCMOT_STEP:
+diff --git a/src/emc/motion/control.c b/src/emc/motion/control.c
+index 9e23ea480a..0a5d550480 100644
+--- a/src/emc/motion/control.c
++++ b/src/emc/motion/control.c
+@@ -1990,6 +1990,19 @@ static void output_to_hal(void)
+         *(emcmot_hal_data->requested_vel) = 0.0;
+     }
+ 
++    /*
++     * Alternate trajectory planners only provide the established tpPause()
++     * interface.  Treat a completed fallback pause as a completed Stop.  The
++     * default planner sets stop_tc while an active position-synchronized
++     * segment must finish, so do not complete Stop at an intermediate zero
++     * velocity in that case.
++     */
++    if (emcmotInternal->coord_tp.stopping &&
++            !emcmotInternal->coord_tp.stop_tc &&
++            fabs(emcmotStatus->current_vel) < TP_VEL_EPSILON) {
++        emcmotStatus->stopped = 1;
++    }
++
+     /* These params can be used to examine any internal variable. */
+     /* Change the following lines to assign the variable you want to observe
+        to one of the debug parameters.  You can also comment out these lines
 diff --git a/src/emc/motion/motion.c b/src/emc/motion/motion.c
 index 6b4f01a50f..7f81108901 100644
 --- a/src/emc/motion/motion.c
@@ -430,25 +470,35 @@ index 6e068c2708..734079d3af 100644
  {
  }
 diff --git a/src/emc/task/emccanon.cc b/src/emc/task/emccanon.cc
-index d2a0e0d0f2..0531304648 100644
+index d2a0e0d0f2..bcf53bf405 100644
 --- a/src/emc/task/emccanon.cc
 +++ b/src/emc/task/emccanon.cc
-@@ -66,3 +66,4 @@
+@@ -64,6 +64,7 @@
+ #include "rs274ngc/modal_state.hh"
+ #include "tooldata/tooldata.hh"
  #include <algorithm>
--
 +extern void emcTaskRecordSpindleOrientTimeout(int spindle, double timeout);
-+
+ 
  //#define EMCCANON_DEBUG
-@@ -3043,2 +3044,3 @@ void ORIENT_SPINDLE(int s, double orientation, int mode)
+ 
+@@ -3041,6 +3042,7 @@ void ORIENT_SPINDLE(int s, double orientation, int mode)
+     o->spindle = s;
+     o->orientation = orientation;
      o->mode = mode;
 +    emcTaskRecordSpindleOrientTimeout(s, 0.0);
      interp_list.append(std::move(o));
-@@ -3053,2 +3054,3 @@ void WAIT_SPINDLE_ORIENT_COMPLETE(int s, double timeout)
+ }
+ 
+@@ -3051,6 +3053,7 @@ void WAIT_SPINDLE_ORIENT_COMPLETE(int s, double timeout)
+     flush_segments();
+     o->spindle = s;
      o->timeout = timeout;
 +    emcTaskRecordSpindleOrientTimeout(s, timeout);
      interp_list.append(std::move(o));
+ }
+ 
 diff --git a/src/emc/task/emctaskmain.cc b/src/emc/task/emctaskmain.cc
-index 3bf13a702d..890c567a0b 100644
+index 3bf13a702d..6dcda53267 100644
 --- a/src/emc/task/emctaskmain.cc
 +++ b/src/emc/task/emctaskmain.cc
 @@ -123,6 +123,44 @@ static int emcTaskEager = 0;
@@ -496,7 +546,7 @@ index 3bf13a702d..890c567a0b 100644
  
  // delay counter
  static double taskExecDelayTimeout = 0.0;
-@@ -487,6 +505,9 @@ extern int emcTaskMopup();
+@@ -487,6 +525,9 @@ extern int emcTaskMopup();
  
  void readahead_reading(void)
  {
@@ -506,7 +556,7 @@ index 3bf13a702d..890c567a0b 100644
      int readRetval;
      int execRetval;
  
-@@ -701,6 +722,9 @@ static void mdi_execute_hook(void)
+@@ -701,6 +742,9 @@ static void mdi_execute_hook(void)
  
  void readahead_waiting(void)
  {
@@ -516,7 +566,7 @@ index 3bf13a702d..890c567a0b 100644
  	// now handle call logic
  	// check for subsystems done
  	if (interp_list.len() == 0 &&
-@@ -745,6 +781,154 @@ static bool allow_while_idle_type() {
+@@ -745,6 +789,154 @@ static bool allow_while_idle_type() {
      return 0;
  }
  
@@ -671,7 +721,7 @@ index 3bf13a702d..890c567a0b 100644
  /*
    emcTaskPlan()
  
-@@ -773,6 +896,24 @@ static int emcTaskPlan(void)
+@@ -773,6 +965,24 @@ static int emcTaskPlan(void)
  	return retval;
      }
  
@@ -696,7 +746,7 @@ index 3bf13a702d..890c567a0b 100644
      // handle any new command
      switch (emcStatus->task.state) {
      case EMC_TASK_STATE::OFF:
-@@ -1843,6 +1973,11 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -1843,6 +2053,11 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  	retval = emcTrajPause();
  	break;
  
@@ -708,7 +758,7 @@ index 3bf13a702d..890c567a0b 100644
      case EMC_TRAJ_RESUME_TYPE:
  	emcStatus->task.task_paused = 0;
  	retval = emcTrajResume();
-@@ -1923,6 +2117,11 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -1923,6 +2138,11 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  
      case EMC_SPINDLE_WAIT_ORIENT_COMPLETE_TYPE:
  	wait_spindle_orient_complete_msg = reinterpret_cast<EMC_SPINDLE_WAIT_ORIENT_COMPLETE *>(cmd);
@@ -720,7 +770,7 @@ index 3bf13a702d..890c567a0b 100644
  	taskExecDelayTimeout = etime() + wait_spindle_orient_complete_msg->timeout;
  	break;
  
-@@ -1983,6 +2182,12 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -1983,6 +2203,12 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  
      case EMC_SPINDLE_ORIENT_TYPE:
  	spindle_orient_msg = reinterpret_cast<EMC_SPINDLE_ORIENT *>(cmd);
@@ -733,7 +783,7 @@ index 3bf13a702d..890c567a0b 100644
  	retval = emcSpindleOrient(spindle_orient_msg->spindle, spindle_orient_msg->orientation,
  			spindle_orient_msg->mode);
  	break;
-@@ -2075,7 +2281,56 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -2075,7 +2301,56 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  
  	// task commands
  
@@ -790,7 +840,7 @@ index 3bf13a702d..890c567a0b 100644
  	// abort everything
  	emcTaskAbort();
  	// KLUDGE call motion abort before state restore to make absolutely sure no
-@@ -2099,6 +2282,9 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -2099,6 +2374,9 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  	    mode_msg->mode != EMC_TASK_MODE::AUTO) {
  	    emcOperatorError(_("Can't switch mode while mode is AUTO and interpreter is not IDLE"));
  	} else { // we can honour the modeswitch
@@ -800,7 +850,7 @@ index 3bf13a702d..890c567a0b 100644
  	    if (mode_msg->mode == EMC_TASK_MODE::MANUAL &&
  		emcStatus->task.mode != EMC_TASK_MODE::MANUAL) {
  		// leaving auto or mdi mode for manual
-@@ -2143,6 +2329,9 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -2143,6 +2421,9 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  
      case EMC_TASK_SET_STATE_TYPE:
  	state_msg = reinterpret_cast<EMC_TASK_SET_STATE *>(cmd);
@@ -810,7 +860,7 @@ index 3bf13a702d..890c567a0b 100644
  	retval = emcTaskSetState(state_msg->state);
  	break;
  
-@@ -2368,11 +2641,8 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -2368,11 +2649,8 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  
      case EMC_TASK_PLAN_RESUME_TYPE:
  	emcTrajResume();
@@ -823,7 +873,7 @@ index 3bf13a702d..890c567a0b 100644
  	retval = 0;
  	break;
  
-@@ -2569,6 +2758,7 @@ static int emcTaskExecute(void)
+@@ -2569,6 +2847,7 @@ static int emcTaskExecute(void)
  
      switch (emcStatus->task.execState) {
      case EMC_TASK_EXEC::ERROR:
@@ -831,7 +881,7 @@ index 3bf13a702d..890c567a0b 100644
  
  	/*! \todo FIXME-- duplicate code for abort,
  	   also near end of main, when aborting on subordinate errors,
-@@ -2614,7 +2804,9 @@ static int emcTaskExecute(void)
+@@ -2614,7 +2893,9 @@ static int emcTaskExecute(void)
      case EMC_TASK_EXEC::DONE:
  	STEPPING_CHECK();
  	if (!emcStatus->motion.traj.queueFull &&
@@ -842,10 +892,10 @@ index 3bf13a702d..890c567a0b 100644
  	    if (0 == emcTaskCommand) {
  		// need a new command
  		emcTaskCommand = interp_list.get();
-@@ -2830,2 +3022,14 @@ static int emcTaskExecute(void)
+@@ -2739,6 +3020,18 @@ static int emcTaskExecute(void)
+ 
      case EMC_TASK_EXEC::WAITING_FOR_DELAY:
--	STEPPING_CHECK();
-+	STEPPING_CHECK();
+ 	STEPPING_CHECK();
 +	if (emcStatus->task.stopState != EMC_TASK_STOP_STATE::IDLE) {
 +	    if (taskExecDelayStopTime <= 0.0) {
 +		taskExecDelayStopTime = etime();
@@ -858,7 +908,10 @@ index 3bf13a702d..890c567a0b 100644
 +	    taskExecDelayTimeout += etime() - taskExecDelayStopTime;
 +	    taskExecDelayStopTime = 0.0;
 +	}
-@@ -3154,6 +3346,9 @@ static int iniLoad(const char *filename)
+ 	// check if delay has passed
+ 	emcStatus->task.delayLeft = taskExecDelayTimeout - etime();
+ 	if (etime() >= taskExecDelayTimeout) {
+@@ -3154,6 +3447,9 @@ static int iniLoad(const char *filename)
          }
      }
  
@@ -868,7 +921,7 @@ index 3bf13a702d..890c567a0b 100644
      if (auto inistring = inifile.findString("RS274NGC_STARTUP_CODE", "RS274NGC")) {
  	// copy to global
  	rtapi_strxcpy(rs274ngc_startup_code, inistring->c_str());
-@@ -3325,6 +3520,7 @@ int main(int argc, char *argv[])
+@@ -3325,6 +3621,7 @@ int main(int argc, char *argv[])
  	prev_traj_enabled = emcStatus->motion.traj.enabled;
  	// synchronize subordinate states
  	if (emcStatus->io.aux.estop) {
@@ -876,7 +929,7 @@ index 3bf13a702d..890c567a0b 100644
  	    if (emcStatus->motion.traj.enabled) {
  		emcTrajDisable();
  		emcTaskAbort();
-@@ -3406,6 +3602,7 @@ int main(int argc, char *argv[])
+@@ -3406,6 +3703,7 @@ int main(int argc, char *argv[])
  	    // 	emcOperatorError("wait for orient complete timed out");
  	    // }
  
@@ -884,7 +937,7 @@ index 3bf13a702d..890c567a0b 100644
              // abort everything
              emcTaskAbort();
              emcIoAbort(EMC_ABORT::MOTION_OR_IO_RCS_ERROR);
-@@ -3441,6 +3638,12 @@ int main(int argc, char *argv[])
+@@ -3441,6 +3739,12 @@ int main(int argc, char *argv[])
  	    emcTaskQueueTaskPlanSynchCmd();
  	}
  
@@ -897,7 +950,7 @@ index 3bf13a702d..890c567a0b 100644
  	// update task-specific status
  	emcTaskUpdate(&emcStatus->task);
  
-@@ -3461,6 +3664,9 @@ int main(int argc, char *argv[])
+@@ -3461,6 +3765,9 @@ int main(int argc, char *argv[])
  	    emcStatus->io.status == RCS_STATUS::ERROR) {
  	    emcStatus->status = RCS_STATUS::ERROR;
  	    emcStatus->task.status = RCS_STATUS::ERROR;
@@ -944,7 +997,7 @@ index a37da0ca5f..86fdd15940 100644
      return 0;
  }
 diff --git a/src/emc/tp/tp.c b/src/emc/tp/tp.c
-index e5667b3f29..a2fc9e6f38 100644
+index e5667b3f29..f01c3fb74f 100644
 --- a/src/emc/tp/tp.c
 +++ b/src/emc/tp/tp.c
 @@ -250,7 +250,11 @@ STATIC double tpGetFeedScale(TP_STRUCT const * const tp,
@@ -1011,32 +1064,28 @@ index e5667b3f29..a2fc9e6f38 100644
      tc_debug_print("-------------------\n");
  
  
-@@ -4231,12 +4258,34 @@ int tpPause(TP_STRUCT * const tp)
+@@ -4227,7 +4255,19 @@ int tpPause(TP_STRUCT * const tp)
+     if (0 == tp) {
+         return TP_ERR_FAIL;
+     }
+-    tp->pausing = 1;
++
++    if (tp->stopping) {
++        TC_STRUCT *tc = tcqItem(&tp->queue, 0);
++        if (tc && tc->active && tc->synchronized == TC_SYNC_POSITION) {
++            tp->stop_tc = tc;
++            tp->pausing = 0;
++        } else {
++            tp->stop_tc = 0;
++            tp->pausing = 1;
++        }
++    } else {
++        tp->pausing = 1;
++    }
      return TP_ERR_OK;
  }
  
-+int tpStop(TP_STRUCT * const tp)
-+{
-+    if (0 == tp) {
-+        return TP_ERR_FAIL;
-+    }
-+
-+    emcmotStatus->stopped = 0;
-+    TC_STRUCT *tc = tcqItem(&tp->queue, 0);
-+    tp->stopping = 1;
-+    if (tc && tc->active && tc->synchronized == TC_SYNC_POSITION) {
-+        tp->stop_tc = tc;
-+        tp->pausing = 0;
-+    } else {
-+        tp->stop_tc = 0;
-+        tp->pausing = 1;
-+    }
-+    return TP_ERR_OK;
-+}
-+
- int tpResume(TP_STRUCT * const tp)
- {
-     if (0 == tp) {
+@@ -4237,6 +4277,9 @@ int tpResume(TP_STRUCT * const tp)
          return TP_ERR_FAIL;
      }
      tp->pausing = 0;
@@ -1046,39 +1095,24 @@ index e5667b3f29..a2fc9e6f38 100644
      return TP_ERR_OK;
  }
  
-@@ -4373,6 +4422,7 @@ EXPORT_SYMBOL(tpGetMotionType);
- EXPORT_SYMBOL(tpGetPos);
- EXPORT_SYMBOL(tpIsDone);
- EXPORT_SYMBOL(tpPause);
-+EXPORT_SYMBOL(tpStop);
- EXPORT_SYMBOL(tpQueueDepth);
- EXPORT_SYMBOL(tpResume);
- EXPORT_SYMBOL(tpRunCycle);
-diff --git a/src/emc/tp/tp.h b/src/emc/tp/tp.h
-index e00b457ad2..8fd114587c 100644
---- a/src/emc/tp/tp.h
-+++ b/src/emc/tp/tp.h
-@@ -44,6 +44,7 @@ int tpSetTermCond(TP_STRUCT * tp, int cond, double tolerance);
- int tpSetPos(TP_STRUCT * tp, EmcPose const * const pos);
- int tpRunCycle(TP_STRUCT * tp, long period);
- int tpPause(TP_STRUCT * tp);
-+int tpStop(TP_STRUCT * tp);
- int tpResume(TP_STRUCT * tp);
- int tpAbort(TP_STRUCT * tp);
- int tpAddRigidTap(TP_STRUCT * const tp,
 diff --git a/src/emc/tp/tp_types.h b/src/emc/tp/tp_types.h
-index 6687ef3a2d..c7d6be2f5f 100644
+index 6687ef3a2d..8d8aa3a362 100644
 --- a/src/emc/tp/tp_types.h
 +++ b/src/emc/tp/tp_types.h
-@@ -123,6 +123,8 @@ typedef struct {
-     int activeDepth;		/* number of motions blending */
-     int aborting;
-     int pausing;
+@@ -136,6 +136,13 @@ typedef struct {
+ 
+     syncdio_t syncdio; //record tpSetDout's here
+ 
++    /*
++     * Keep Stop extension fields at the end so existing alternate trajectory
++     * planners retain the offsets of every member in the established ABI.
++     */
 +    int stopping;
 +    TC_STRUCT *stop_tc;
-     int reverse_run;      /* Indicates that TP is running in reverse */
-     int motionType;
-     double tolerance;           /* for subsequent motions, stay within this
++
+ } TP_STRUCT;
+ 
+ 
 diff --git a/src/emc/usr_intf/axis/extensions/emcmodule.cc b/src/emc/usr_intf/axis/extensions/emcmodule.cc
 index 3345c0a6a0..59a6da5bf6 100644
 --- a/src/emc/usr_intf/axis/extensions/emcmodule.cc
