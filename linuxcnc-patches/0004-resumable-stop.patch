@@ -18,31 +18,39 @@ Add a dedicated task and trajectory Stop operation that preserves interpreter an
  src/emc/nml_intf/emc_nml.hh                   |  22 +
  src/emc/nml_intf/emcops.cc                    |   4 +
  src/emc/task/emccanon.cc                      |   3 +
- src/emc/task/emctaskmain.cc                   | 317 +++++++++-
+ src/emc/task/emctaskmain.cc                   | 317 +++++++-
  src/emc/task/taskintf.cc                      |  11 +
- src/emc/tp/tp.c                               |  49 +-
+ src/emc/tp/tp.c                               |  53 +-
  src/emc/tp/tp_types.h                         |   7 +
  src/emc/usr_intf/axis/extensions/emcmodule.cc |  14 +
  src/emc/usr_intf/halui.cc                     |   9 +-
  tests/resumable-stop/README                   |   7 +
  tests/resumable-stop/after-abort.ngc          |   4 +
- tests/resumable-stop/core_sim.hal             |  41 ++
+ tests/resumable-stop/checkresult              |   3 +
+ tests/resumable-stop/core_sim.hal             |  42 ++
+ tests/resumable-stop/css.ngc                  |   6 +
+ tests/resumable-stop/dwell.ngc                |   5 +
  tests/resumable-stop/g76.ngc                  |   7 +
- tests/resumable-stop/orient.ngc               |   4 +
- tests/resumable-stop/pause.ngc                |   6 +
+ tests/resumable-stop/multi-spindle.ngc        |   4 +
+ tests/resumable-stop/orient.ngc               |   5 +
+ tests/resumable-stop/pause.ngc                |   7 +
  tests/resumable-stop/tap.ngc                  |   7 +
- tests/resumable-stop/test-ui.py               | 545 ++++++++++++++++++
- tests/resumable-stop/test.ini                 |  87 +++
- tests/resumable-stop/test.ngc                 |   8 +
- tests/resumable-stop/test.sh                  |   3 +
+ tests/resumable-stop/test-ui.py               | 674 ++++++++++++++++++
+ tests/resumable-stop/test.ini                 |  88 +++
+ tests/resumable-stop/test.ngc                 |   9 +
+ tests/resumable-stop/test.sh                  |  29 +
  tests/resumable-stop/thread.ngc               |   7 +
  tests/resumable-stop/tool.tbl                 |   1 +
- tests/resumable-stop/zero-speed-spindle.ngc   |   6 +
- 33 files changed, 1244 insertions(+), 12 deletions(-)
+ tests/resumable-stop/zero-speed-spindle.ngc   |   7 +
+ 37 files changed, 1426 insertions(+), 13 deletions(-)
  create mode 100644 tests/resumable-stop/README
  create mode 100644 tests/resumable-stop/after-abort.ngc
+ create mode 100755 tests/resumable-stop/checkresult
  create mode 100644 tests/resumable-stop/core_sim.hal
+ create mode 100644 tests/resumable-stop/css.ngc
+ create mode 100644 tests/resumable-stop/dwell.ngc
  create mode 100644 tests/resumable-stop/g76.ngc
+ create mode 100644 tests/resumable-stop/multi-spindle.ngc
  create mode 100644 tests/resumable-stop/orient.ngc
  create mode 100644 tests/resumable-stop/pause.ngc
  create mode 100644 tests/resumable-stop/tap.ngc
@@ -997,7 +1005,7 @@ index a37da0ca5f..86fdd15940 100644
      return 0;
  }
 diff --git a/src/emc/tp/tp.c b/src/emc/tp/tp.c
-index e5667b3f29..f01c3fb74f 100644
+index e5667b3f29..db77a5881b 100644
 --- a/src/emc/tp/tp.c
 +++ b/src/emc/tp/tp.c
 @@ -250,7 +250,11 @@ STATIC double tpGetFeedScale(TP_STRUCT const * const tp,
@@ -1035,7 +1043,18 @@ index e5667b3f29..f01c3fb74f 100644
      bool is_aborting = tp->aborting;
  
      // Check if feed_override = 0 (not pause/abort, but velocity limited to 0)
-@@ -4118,10 +4128,28 @@ int tpRunCycle(TP_STRUCT * const tp, long period)
+@@ -3301,7 +3311,9 @@ STATIC void tpHandleEmptyQueue(TP_STRUCT * const tp)
+ 
+     tpUpdateMovementStatus(tp, NULL);
+ 
+-    tpResume(tp);
++    if (!tp->stopping) {
++        tpResume(tp);
++    }
+ }
+ 
+ /** Wrapper function to unlock rotary axes */
+@@ -4118,10 +4130,28 @@ int tpRunCycle(TP_STRUCT * const tp, long period)
  
      //If we have a NULL pointer, then the queue must be empty, so we're done.
      if(!tc) {
@@ -1064,7 +1083,7 @@ index e5667b3f29..f01c3fb74f 100644
      tc_debug_print("-------------------\n");
  
  
-@@ -4227,7 +4255,19 @@ int tpPause(TP_STRUCT * const tp)
+@@ -4227,7 +4257,19 @@ int tpPause(TP_STRUCT * const tp)
      if (0 == tp) {
          return TP_ERR_FAIL;
      }
@@ -1085,7 +1104,7 @@ index e5667b3f29..f01c3fb74f 100644
      return TP_ERR_OK;
  }
  
-@@ -4237,6 +4277,9 @@ int tpResume(TP_STRUCT * const tp)
+@@ -4237,6 +4279,9 @@ int tpResume(TP_STRUCT * const tp)
          return TP_ERR_FAIL;
      }
      tp->pausing = 0;
@@ -1209,12 +1228,21 @@ index 0000000000..df711f6b3d
 +F600
 +G1 X6
 +M2
+diff --git a/tests/resumable-stop/checkresult b/tests/resumable-stop/checkresult
+new file mode 100755
+index 0000000000..d66aa79ff9
+--- /dev/null
++++ b/tests/resumable-stop/checkresult
+@@ -0,0 +1,3 @@
++#!/bin/sh
++test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 13
++grep -q '^resumable stop scenarios complete$' "$1"
 diff --git a/tests/resumable-stop/core_sim.hal b/tests/resumable-stop/core_sim.hal
 new file mode 100644
-index 0000000000..28af568e79
+index 0000000000..7a6501b210
 --- /dev/null
 +++ b/tests/resumable-stop/core_sim.hal
-@@ -0,0 +1,41 @@
+@@ -0,0 +1,42 @@
 +# core HAL config file for simulation
 +
 +loadrt [KINS]KINEMATICS
@@ -1256,6 +1284,30 @@ index 0000000000..28af568e79
 +addf encoder.update-counters servo-thread
 +
 +setp spindle.0.at-speed true
++setp spindle.1.at-speed true
+diff --git a/tests/resumable-stop/css.ngc b/tests/resumable-stop/css.ngc
+new file mode 100644
+index 0000000000..382aaffcec
+--- /dev/null
++++ b/tests/resumable-stop/css.ngc
+@@ -0,0 +1,6 @@
++G21 G18 G90
++G0 X20 Z0
++G96 D1000 S60 M3
++G1 X10 F60
++M5
++M2
+diff --git a/tests/resumable-stop/dwell.ngc b/tests/resumable-stop/dwell.ngc
+new file mode 100644
+index 0000000000..f7a54f80d5
+--- /dev/null
++++ b/tests/resumable-stop/dwell.ngc
+@@ -0,0 +1,5 @@
++G21 G90
++G0 X0
++G4 P3
++G1 X5 F600
++M2
 diff --git a/tests/resumable-stop/g76.ngc b/tests/resumable-stop/g76.ngc
 new file mode 100644
 index 0000000000..1c6a3ea852
@@ -1269,23 +1321,35 @@ index 0000000000..1c6a3ea852
 +G1 X20 F600
 +M5
 +M2
-diff --git a/tests/resumable-stop/orient.ngc b/tests/resumable-stop/orient.ngc
+diff --git a/tests/resumable-stop/multi-spindle.ngc b/tests/resumable-stop/multi-spindle.ngc
 new file mode 100644
-index 0000000000..eac3292362
+index 0000000000..ba2e66f6da
 --- /dev/null
-+++ b/tests/resumable-stop/orient.ngc
++++ b/tests/resumable-stop/multi-spindle.ngc
 @@ -0,0 +1,4 @@
 +G21 G90
++G0 X0
++G1 X10 F60
++M2
+diff --git a/tests/resumable-stop/orient.ngc b/tests/resumable-stop/orient.ngc
+new file mode 100644
+index 0000000000..3aa0abdb29
+--- /dev/null
++++ b/tests/resumable-stop/orient.ngc
+@@ -0,0 +1,5 @@
++G21 G90
++G0 X0
 +M19 R90 P1 Q30
 +G1 X20 F60
 +M2
 diff --git a/tests/resumable-stop/pause.ngc b/tests/resumable-stop/pause.ngc
 new file mode 100644
-index 0000000000..4b3a9365c5
+index 0000000000..6fe71e34bc
 --- /dev/null
 +++ b/tests/resumable-stop/pause.ngc
-@@ -0,0 +1,6 @@
+@@ -0,0 +1,7 @@
 +G21 G90
++G0 X0
 +F600
 +G1 X5
 +M0
@@ -1306,13 +1370,14 @@ index 0000000000..3060ac429e
 +M2
 diff --git a/tests/resumable-stop/test-ui.py b/tests/resumable-stop/test-ui.py
 new file mode 100755
-index 0000000000..e57c212f98
+index 0000000000..2cf089d29b
 --- /dev/null
 +++ b/tests/resumable-stop/test-ui.py
-@@ -0,0 +1,545 @@
+@@ -0,0 +1,674 @@
 +#!/usr/bin/env python3
 +
 +import math
++import os
 +import sys
 +import time
 +
@@ -1479,7 +1544,7 @@ index 0000000000..e57c212f98
 +        and s.spindle[0]["direction"] == 1
 +        and math.isclose(s.spindle[0]["speed"], 0.0, abs_tol=0.001)
 +        and not s.spindle[0]["enabled"]
-+        and hal.get_value("spindle.0.forward"),
++        and hal.get_value("spindle.0.on"),
 +        "program did not reach active S0 M3 motion",
 +    )
 +
@@ -1491,8 +1556,8 @@ index 0000000000..e57c212f98
 +        "task did not enter STOPPED state for S0 M3",
 +    )
 +
-+    if hal.get_value("spindle.0.forward"):
-+        fail("S0 M3 spindle forward remained asserted while stopped")
++    if hal.get_value("spindle.0.on"):
++        fail("S0 M3 spindle enable remained asserted while stopped")
 +
 +    if s.spindle[0]["direction"] != 0:
 +        fail("S0 M3 spindle direction remained active while stopped")
@@ -1504,7 +1569,7 @@ index 0000000000..e57c212f98
 +    start = time.time()
 +    while time.time() - start < 10.0:
 +        s.poll()
-+        if hal.get_value("spindle.0.forward") and s.spindle[0]["direction"] == 1:
++        if hal.get_value("spindle.0.on") and s.spindle[0]["direction"] == 1:
 +            saw_restored_forward = True
 +        if s.position[0] > stopped_x + 0.05:
 +            break
@@ -1798,8 +1863,10 @@ index 0000000000..e57c212f98
 +    c.stop()
 +    wait_complete("M19 stop command did not complete")
 +
-+    if s.stop_state != linuxcnc.STOP_STOPPED:
-+        fail("task did not enter STOPPED during M19")
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
++        "task did not enter STOPPED during M19",
++    )
 +
 +    if hal.get_value("spindle.0.orient"):
 +        fail("task reported STOPPED while spindle orientation remained active")
@@ -1842,25 +1909,151 @@ index 0000000000..e57c212f98
 +    wait_for_program_complete(20.0)
 +
 +
-+run_ordinary_stop_resume_test()
-+run_zero_speed_spindle_stop_resume_test()
-+run_stop_while_program_paused_test(False)
-+run_stop_while_program_paused_test(True)
-+run_abort_from_empty_stopped_queue_test()
-+run_queued_threading_stop_resume_test()
-+run_threading_stop_resume_test()
-+run_g76_stop_resume_test()
-+run_rigid_tap_stop_resume_test()
-+run_spindle_orientation_stop_test()
++def run_dwell_stop_resume_test():
++    open_auto_program("dwell.ngc")
++    c.auto(linuxcnc.AUTO_RUN, 0)
 +
-+print("resumable stop/resume behavior ok")
++    wait_for(
++        lambda: s.exec_state == linuxcnc.EXEC_WAITING_FOR_DELAY
++        and s.delay_left > 2.0,
++        "G4 did not enter its dwell",
++    )
++
++    c.stop()
++    wait_complete("G4 stop command did not complete")
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
++        "task did not enter STOPPED during G4",
++    )
++
++    stopped_delay = s.delay_left
++    time.sleep(0.5)
++    s.poll()
++    if not math.isclose(s.position[0], 0.0, abs_tol=0.001):
++        fail("motion started while G4 was stopped")
++    if s.delay_left < stopped_delay - 0.1:
++        fail("G4 delay elapsed while stopped")
++
++    c.auto(linuxcnc.AUTO_RESUME)
++    time.sleep(0.5)
++    s.poll()
++    if not math.isclose(s.position[0], 0.0, abs_tol=0.001):
++        fail("motion started before the restored G4 delay elapsed")
++
++    wait_for_program_complete(5.0)
++
++
++def run_multi_spindle_stop_resume_test():
++    open_auto_program("multi-spindle.ngc")
++    c.spindle(linuxcnc.SPINDLE_FORWARD, 120.0, 0)
++    wait_complete("primary spindle command did not complete")
++    c.spindle(linuxcnc.SPINDLE_REVERSE, 180.0, 1)
++    wait_complete("secondary spindle command did not complete")
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: s.position[0] > 0.05
++        and s.position[0] < 9.0
++        and s.spindle[0]["direction"] == 1
++        and s.spindle[1]["direction"] == -1
++        and hal.get_value("spindle.0.on")
++        and hal.get_value("spindle.1.on"),
++        "both spindles did not remain active during motion",
++    )
++
++    c.stop()
++    wait_complete("multi-spindle stop command did not complete")
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
++        "task did not enter STOPPED with two spindles",
++    )
++    if hal.get_value("spindle.0.on") or hal.get_value("spindle.1.on"):
++        fail("a spindle remained enabled while stopped")
++
++    stopped_x = s.position[0]
++    c.auto(linuxcnc.AUTO_RESUME)
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_IDLE
++        and s.position[0] > stopped_x + 0.05
++        and s.spindle[0]["direction"] == 1
++        and s.spindle[1]["direction"] == -1
++        and hal.get_value("spindle.0.on")
++        and hal.get_value("spindle.1.on"),
++        "resume did not restore both spindles",
++    )
++
++    wait_for_program_complete(10.0)
++    if hal.get_value("spindle.0.on") or hal.get_value("spindle.1.on"):
++        fail("a spindle remained enabled after program completion")
++
++
++def run_css_stop_resume_test():
++    open_auto_program("css.ngc")
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: s.position[0] < 18.0
++        and s.position[0] > 12.0
++        and hal.get_value("spindle.0.speed-out") > 0.0,
++        "G96 did not enter active CSS motion",
++    )
++    speed_before_stop = hal.get_value("spindle.0.speed-out")
++
++    c.stop()
++    wait_complete("G96 stop command did not complete")
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
++        "task did not enter STOPPED during G96",
++    )
++    if abs(hal.get_value("spindle.0.speed-out")) > 0.001:
++        fail("CSS spindle remained active while stopped")
++
++    stopped_x = s.position[0]
++    c.auto(linuxcnc.AUTO_RESUME)
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_IDLE
++        and s.position[0] < stopped_x - 0.05
++        and hal.get_value("spindle.0.speed-out") > 0.0,
++        "G96 motion did not resume with the spindle active",
++    )
++    wait_for(
++        lambda: hal.get_value("spindle.0.speed-out") > speed_before_stop * 1.02,
++        "G96 spindle speed did not continue tracking diameter after Resume",
++    )
++
++    wait_for_program_complete(10.0)
++    assert_outputs_stopped_after_program()
++
++
++SCENARIOS = {
++    "ordinary": run_ordinary_stop_resume_test,
++    "zero-speed-spindle": run_zero_speed_spindle_stop_resume_test,
++    "paused-resume": lambda: run_stop_while_program_paused_test(False),
++    "paused-run": lambda: run_stop_while_program_paused_test(True),
++    "abort-empty": run_abort_from_empty_stopped_queue_test,
++    "queued-g33": run_queued_threading_stop_resume_test,
++    "g33": run_threading_stop_resume_test,
++    "g76": run_g76_stop_resume_test,
++    "rigid-tap": run_rigid_tap_stop_resume_test,
++    "orientation": run_spindle_orientation_stop_test,
++    "dwell": run_dwell_stop_resume_test,
++    "multi-spindle": run_multi_spindle_stop_resume_test,
++    "css": run_css_stop_resume_test,
++}
++
++scenario = os.environ.get("RESUMABLE_STOP_SCENARIO")
++if scenario not in SCENARIOS:
++    fail("unknown resumable-stop scenario: %s" % scenario)
++
++SCENARIOS[scenario]()
++print("resumable stop scenario ok: %s" % scenario)
 +sys.exit(0)
 diff --git a/tests/resumable-stop/test.ini b/tests/resumable-stop/test.ini
 new file mode 100644
-index 0000000000..cc0e02aa69
+index 0000000000..09536a1b4d
 --- /dev/null
 +++ b/tests/resumable-stop/test.ini
-@@ -0,0 +1,87 @@
+@@ -0,0 +1,88 @@
 +[EMC]
 +VERSION = 1.1
 +DEBUG = 0x0
@@ -1889,6 +2082,7 @@ index 0000000000..cc0e02aa69
 +NO_FORCE_HOMING = 1
 +AXES = 3
 +COORDINATES = X Y Z
++SPINDLES = 2
 +LINEAR_UNITS = mm
 +ANGULAR_UNITS = degree
 +DEFAULT_LINEAR_VELOCITY = 10
@@ -1950,11 +2144,12 @@ index 0000000000..cc0e02aa69
 +MIN_FERROR = 0.25
 diff --git a/tests/resumable-stop/test.ngc b/tests/resumable-stop/test.ngc
 new file mode 100644
-index 0000000000..602669518c
+index 0000000000..416044b08c
 --- /dev/null
 +++ b/tests/resumable-stop/test.ngc
-@@ -0,0 +1,8 @@
+@@ -0,0 +1,9 @@
 +G21 G90
++G0 X0
 +F60
 +S300 M3
 +M8
@@ -1964,13 +2159,39 @@ index 0000000000..602669518c
 +M2
 diff --git a/tests/resumable-stop/test.sh b/tests/resumable-stop/test.sh
 new file mode 100755
-index 0000000000..411ae8c19f
+index 0000000000..59712a2810
 --- /dev/null
 +++ b/tests/resumable-stop/test.sh
-@@ -0,0 +1,3 @@
+@@ -0,0 +1,29 @@
 +#!/bin/bash -e
 +
-+linuxcnc -r test.ini
++if nm -D -u "$EMC2_HOME/rtlib/motmod.so" | grep -q '[[:space:]]tpStop$'; then
++    echo "motmod unexpectedly requires the nonstandard tpStop symbol" >&2
++    exit 1
++fi
++
++scenarios=(
++    ordinary
++    zero-speed-spindle
++    paused-resume
++    paused-run
++    abort-empty
++    queued-g33
++    g33
++    g76
++    rigid-tap
++    orientation
++    dwell
++    multi-spindle
++    css
++)
++
++for scenario in "${scenarios[@]}"; do
++    echo "Running resumable-stop scenario: $scenario"
++    RESUMABLE_STOP_SCENARIO="$scenario" linuxcnc -r test.ini
++done
++
++echo "resumable stop scenarios complete"
 diff --git a/tests/resumable-stop/thread.ngc b/tests/resumable-stop/thread.ngc
 new file mode 100644
 index 0000000000..5976979e44
@@ -1993,11 +2214,12 @@ index 0000000000..68840ea75c
 +T1 P1 Z0 D0
 diff --git a/tests/resumable-stop/zero-speed-spindle.ngc b/tests/resumable-stop/zero-speed-spindle.ngc
 new file mode 100644
-index 0000000000..5c9cc98ed5
+index 0000000000..8e4ffa6645
 --- /dev/null
 +++ b/tests/resumable-stop/zero-speed-spindle.ngc
-@@ -0,0 +1,6 @@
+@@ -0,0 +1,7 @@
 +G21 G90
++G0 X0
 +F60
 +S0 M3
 +G1 X10
