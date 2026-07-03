@@ -3,7 +3,7 @@ From: Dariusz Majnert <dariusz@users.noreply.github.com>
 Date: Wed, 1 Jul 2026 00:57:53 +0200
 Subject: [PATCH] emc: add resumable Stop for active AUTO programs
 
-Add a dedicated task and trajectory Stop operation that preserves interpreter and motion queues. Stop safely completes position-synchronized motion, snapshots spindle and coolant outputs, and gates Resume on spindle readiness, including interrupted orientation. Expose the command and Stop state through Python and HALUI; Node bindings are maintained in the consumer repository.
+Add a dedicated task and trajectory Stop operation that preserves interpreter and motion queues. Stop safely completes position-synchronized motion, snapshots spindle and coolant outputs, and restores them before resuming queued motion, while still waiting for interrupted orientation to complete. Expose the command and Stop state through Python and HALUI; Node bindings are maintained in the consumer repository.
 ---
  docs/src/config/ini-config.adoc               |   6 +
  docs/src/config/python-interface.adoc         |   8 +
@@ -34,6 +34,7 @@ Add a dedicated task and trajectory Stop operation that preserves interpreter an
  tests/resumable-stop/multi-spindle.ngc        |   4 +
  tests/resumable-stop/orient.ngc               |   5 +
  tests/resumable-stop/pause.ngc                |   7 +
+ tests/resumable-stop/rapid-then-feed.ngc      |   7 +
  tests/resumable-stop/tap.ngc                  |   7 +
  tests/resumable-stop/test-ui.py               | 674 ++++++++++++++++++
  tests/resumable-stop/test.ini                 |  88 +++
@@ -53,6 +54,7 @@ Add a dedicated task and trajectory Stop operation that preserves interpreter an
  create mode 100644 tests/resumable-stop/multi-spindle.ngc
  create mode 100644 tests/resumable-stop/orient.ngc
  create mode 100644 tests/resumable-stop/pause.ngc
+ create mode 100644 tests/resumable-stop/rapid-then-feed.ngc
  create mode 100644 tests/resumable-stop/tap.ngc
  create mode 100755 tests/resumable-stop/test-ui.py
  create mode 100644 tests/resumable-stop/test.ini
@@ -177,6 +179,19 @@ index fa7beb3c72..22343702eb 100644
  	    break;
  
  	case EMCMOT_STEP:
+@@ -1672,7 +1687,11 @@ void emcmotCommandHandler_locked(void *arg, long servo_period)
+             }
+             apply_spindle_limits(&emcmotStatus->spindle_status[n]);
+         }
+-        emcmotStatus->atspeed_next_feed = emcmotCommand->wait_for_spindle_at_speed;
++        if (emcmotCommand->wait_for_spindle_at_speed !=
++                EMCMOT_SPINDLE_AT_SPEED_PRESERVE) {
++            emcmotStatus->atspeed_next_feed =
++                emcmotCommand->wait_for_spindle_at_speed;
++        }
+ 
+        // check whether it's passed correctly
+        if (!emcmotStatus->atspeed_next_feed){
 diff --git a/src/emc/motion/control.c b/src/emc/motion/control.c
 index 9e23ea480a..0a5d550480 100644
 --- a/src/emc/motion/control.c
@@ -217,6 +232,14 @@ diff --git a/src/emc/motion/motion.h b/src/emc/motion/motion.h
 index 9c62af046c..24b766afb5 100644
 --- a/src/emc/motion/motion.h
 +++ b/src/emc/motion/motion.h
+@@ -66,6 +66,7 @@
+ 
+ #define MOTION_INVALID_ID INT_MIN
+ #define MOTION_ID_VALID(x) ((x) != MOTION_INVALID_ID)
++#define EMCMOT_SPINDLE_AT_SPEED_PRESERVE 2
+ 
+ #include <rtapi.h>		/* must precede rtapi_atomic.h in kernel mode */
+ #include <rtapi_atomic.h>
 @@ -97,6 +97,7 @@ extern "C" {
  	EMCMOT_DISABLE,		/* disable servos for active joints */
  
@@ -574,7 +597,7 @@ index 3bf13a702d..6dcda53267 100644
  	// now handle call logic
  	// check for subsystems done
  	if (interp_list.len() == 0 &&
-@@ -745,6 +789,154 @@ static bool allow_while_idle_type() {
+@@ -745,6 +789,151 @@ static bool allow_while_idle_type() {
      return 0;
  }
  
@@ -621,7 +644,8 @@ index 3bf13a702d..6dcda53267 100644
 +        if (stop_spindles[s].running) {
 +            emcSpindleOn(s, stop_spindles[s].speed,
 +                    stop_spindles[s].css_factor,
-+                    stop_spindles[s].css_xoffset, 0);
++                    stop_spindles[s].css_xoffset,
++                    EMCMOT_SPINDLE_AT_SPEED_PRESERVE);
 +        }
 +        if (stop_spindles[s].orienting) {
 +            emcSpindleOrient(s, stop_spindles[s].orientation,
@@ -709,10 +733,6 @@ index 3bf13a702d..6dcda53267 100644
 +                if (status.orient_state != EMCMOT_ORIENT_COMPLETE) {
 +                    return;
 +                }
-+            }
-+            if (stop_spindles[s].running && stop_spindles[s].speed != 0.0 &&
-+                    !emcStatus->motion.spindle[s].at_speed) {
-+                return;
 +            }
 +        }
 +        emcTrajResume();
@@ -1355,6 +1375,19 @@ index 0000000000..6fe71e34bc
 +M0
 +G1 X10
 +M2
+diff --git a/tests/resumable-stop/rapid-then-feed.ngc b/tests/resumable-stop/rapid-then-feed.ngc
+new file mode 100644
+index 0000000000..c562a572dc
+--- /dev/null
++++ b/tests/resumable-stop/rapid-then-feed.ngc
+@@ -0,0 +1,7 @@
++G21 G90
++F60
++S300 M3
++G0 X80
++G1 X90
++M5
++M2
 diff --git a/tests/resumable-stop/tap.ngc b/tests/resumable-stop/tap.ngc
 new file mode 100644
 index 0000000000..3060ac429e
@@ -1529,6 +1562,54 @@ index 0000000000..2cf089d29b
 +        fail("resume did not restore coolant")
 +
 +    wait_for_program_complete(10.0)
++    assert_outputs_stopped_after_program()
++
++
++def run_rapid_resume_without_at_speed_test():
++    hal.set_p("spindle.0.at-speed", "false")
++    open_auto_program("rapid-then-feed.ngc")
++
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: s.task_mode == linuxcnc.MODE_AUTO
++        and s.position[0] > 1.0
++        and s.position[0] < 70.0
++        and hal.get_value("spindle.0.speed-out") > 0.0,
++        "program did not enter active rapid with spindle at-speed false",
++    )
++
++    c.stop()
++    wait_complete("rapid stop command did not complete")
++
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
++        "task did not stop during active rapid",
++    )
++
++    stopped_x = s.position[0]
++    c.auto(linuxcnc.AUTO_RESUME)
++
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_IDLE
++        and s.position[0] > stopped_x + 0.05,
++        "rapid resume incorrectly waited for spindle at-speed",
++    )
++
++    wait_for(
++        lambda: math.isclose(s.position[0], 80.0, abs_tol=0.05)
++        and abs(s.current_vel) < 0.001
++        and s.queue > 0,
++        "rapid did not complete and wait at following feed with at-speed false",
++    )
++
++    time.sleep(0.25)
++    s.poll()
++    if not math.isclose(s.position[0], 80.0, abs_tol=0.05):
++        fail("following feed moved before spindle at-speed became true")
++
++    hal.set_p("spindle.0.at-speed", "true")
++    wait_for_program_complete(90.0)
 +    assert_outputs_stopped_after_program()
 +
 +
@@ -2027,6 +2108,7 @@ index 0000000000..2cf089d29b
 +
 +SCENARIOS = {
 +    "ordinary": run_ordinary_stop_resume_test,
++    "rapid-no-atspeed": run_rapid_resume_without_at_speed_test,
 +    "zero-speed-spindle": run_zero_speed_spindle_stop_resume_test,
 +    "paused-resume": lambda: run_stop_while_program_paused_test(False),
 +    "paused-run": lambda: run_stop_while_program_paused_test(True),
@@ -2172,6 +2254,7 @@ index 0000000000..59712a2810
 +
 +scenarios=(
 +    ordinary
++    rapid-no-atspeed
 +    zero-speed-spindle
 +    paused-resume
 +    paused-run
@@ -2190,7 +2273,6 @@ index 0000000000..59712a2810
 +    echo "Running resumable-stop scenario: $scenario"
 +    RESUMABLE_STOP_SCENARIO="$scenario" linuxcnc -r test.ini
 +done
-+
 +echo "resumable stop scenarios complete"
 diff --git a/tests/resumable-stop/thread.ngc b/tests/resumable-stop/thread.ngc
 new file mode 100644

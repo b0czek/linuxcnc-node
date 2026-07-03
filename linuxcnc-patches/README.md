@@ -117,6 +117,7 @@ as `EMC_TASK_STOP_STATE` (`IDLE`, `STOPPING`, `STOPPED`, `STARTING`) through
 Python `stop_state` and Node `task.stopState`.  The patch adds a
 `tests/resumable-stop` LinuxCNC regression that verifies active AUTO
 Stop/Resume preserves the queued program, disables spindle/coolant while
-stopped, restores them on Resume, completes the same program, and waits for
-active `G33` threading and `G33.1` rigid-tap synchronized motion to finish
-before entering `STOPPED`.
+stopped, restores them on Resume without adding a task-level spindle-at-speed
+wait, preserves the normal next-feed at-speed wait after rapid motion,
+completes the same program, and waits for active `G33` threading and `G33.1`
+rigid-tap synchronized motion to finish before entering `STOPPED`.
