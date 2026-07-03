@@ -451,7 +451,7 @@ diff --git a/src/emc/task/emctaskmain.cc b/src/emc/task/emctaskmain.cc
 index 3bf13a702d..890c567a0b 100644
 --- a/src/emc/task/emctaskmain.cc
 +++ b/src/emc/task/emctaskmain.cc
-@@ -123,6 +123,43 @@ static int emcTaskEager = 0;
+@@ -123,6 +123,44 @@ static int emcTaskEager = 0;
  
  static int no_force_homing = 0; // forces the user to home first before allowing MDI and Program run
  //can be overridden by [TRAJ]NO_FORCE_HOMING=1
@@ -481,6 +481,7 @@ index 3bf13a702d..890c567a0b 100644
 +static bool stop_flood = false;
 +static bool stop_resume_latched = false;
 +static bool stop_outputs_saved = false;
++static double taskExecDelayStopTime = 0.0;
 +
 +void emcTaskRecordSpindleOrientTimeout(int spindle, double timeout)
 +{
@@ -515,7 +516,7 @@ index 3bf13a702d..890c567a0b 100644
  	// now handle call logic
  	// check for subsystems done
  	if (interp_list.len() == 0 &&
-@@ -745,6 +781,153 @@ static bool allow_while_idle_type() {
+@@ -745,6 +781,154 @@ static bool allow_while_idle_type() {
      return 0;
  }
  
@@ -533,6 +534,7 @@ index 3bf13a702d..890c567a0b 100644
 +        emcStatus->task.stopState != EMC_TASK_STOP_STATE::IDLE;
 +    stop_resume_latched = false;
 +    stop_outputs_saved = false;
++    taskExecDelayStopTime = 0.0;
 +    for (auto &spindle : stop_spindles) {
 +        spindle = {};
 +    }
@@ -840,6 +842,22 @@ index 3bf13a702d..890c567a0b 100644
  	    if (0 == emcTaskCommand) {
  		// need a new command
  		emcTaskCommand = interp_list.get();
+@@ -2830,2 +3022,14 @@ static int emcTaskExecute(void)
+     case EMC_TASK_EXEC::WAITING_FOR_DELAY:
+-	STEPPING_CHECK();
++	STEPPING_CHECK();
++	if (emcStatus->task.stopState != EMC_TASK_STOP_STATE::IDLE) {
++	    if (taskExecDelayStopTime <= 0.0) {
++		taskExecDelayStopTime = etime();
++	    }
++	    double delayLeft = taskExecDelayTimeout - taskExecDelayStopTime;
++	    emcStatus->task.delayLeft = delayLeft > 0.0 ? delayLeft : 0.0;
++	    break;
++	}
++	if (taskExecDelayStopTime > 0.0) {
++	    taskExecDelayTimeout += etime() - taskExecDelayStopTime;
++	    taskExecDelayStopTime = 0.0;
++	}
 @@ -3154,6 +3346,9 @@ static int iniLoad(const char *filename)
          }
      }
