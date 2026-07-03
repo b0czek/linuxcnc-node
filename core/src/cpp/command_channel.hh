@@ -62,6 +62,7 @@ namespace LinuxCNC
         Napi::Value StepProgram(const Napi::CallbackInfo &info);
         Napi::Value ReverseProgram(const Napi::CallbackInfo &info);
         Napi::Value ForwardProgram(const Napi::CallbackInfo &info);
+        Napi::Value Stop(const Napi::CallbackInfo &info);
         Napi::Value AbortTask(const Napi::CallbackInfo &info);
         Napi::Value SetOptionalStop(const Napi::CallbackInfo &info);
         Napi::Value SetBlockDelete(const Napi::CallbackInfo &info);

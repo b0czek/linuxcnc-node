@@ -1,0 +1,2377 @@
+From 106b926cda2af7dbf9a41bce9b5bc9bb423aac5e Mon Sep 17 00:00:00 2001
+From: Dariusz Majnert <dariusz@users.noreply.github.com>
+Date: Wed, 1 Jul 2026 00:57:53 +0200
+Subject: [PATCH] emc: add resumable Stop for active AUTO programs
+
+Add a dedicated task and trajectory Stop operation that preserves interpreter and motion queues. Stop safely completes position-synchronized motion, snapshots spindle and coolant outputs, and restores them before resuming queued motion, while still waiting for interrupted orientation to complete. Expose the command and Stop state through Python and HALUI; Node bindings are maintained in the consumer repository.
+---
+ docs/src/config/ini-config.adoc               |   6 +
+ docs/src/config/python-interface.adoc         |   8 +
+ docs/src/gui/halui.adoc                       |   3 +-
+ docs/src/man/man1/halui.1.adoc                |   5 +-
+ src/emc/motion/command.c                      |  21 +-
+ src/emc/motion/control.c                      |  13 +
+ src/emc/motion/motion.c                       |   1 +
+ src/emc/motion/motion.h                       |   3 +
+ src/emc/nml_intf/emc.cc                       |  24 +
+ src/emc/nml_intf/emc.hh                       |  10 +
+ src/emc/nml_intf/emc_nml.hh                   |  22 +
+ src/emc/nml_intf/emcops.cc                    |   4 +
+ src/emc/task/emctaskmain.cc                   | 317 ++++++++++-
+ src/emc/task/taskintf.cc                      |  11 +
+ src/emc/tp/tp.c                               |  53 +-
+ src/emc/tp/tp_types.h                         |   7 +
+ src/emc/usr_intf/axis/extensions/emcmodule.cc |  14 +
+ src/emc/usr_intf/halui.cc                     |   9 +-
+ tests/resumable-stop/README                   |   7 +
+ tests/resumable-stop/after-abort.ngc          |   4 +
+ tests/resumable-stop/checkresult              |   3 +
+ tests/resumable-stop/core_sim.hal             |  42 ++
+ tests/resumable-stop/css.ngc                  |   6 +
+ tests/resumable-stop/dwell.ngc                |   5 +
+ tests/resumable-stop/g76.ngc                  |   7 +
+ tests/resumable-stop/multi-spindle.ngc        |   4 +
+ tests/resumable-stop/orient.ngc               |   6 +
+ tests/resumable-stop/pause.ngc                |   7 +
+ tests/resumable-stop/rapid-then-feed.ngc      |   7 +
+ tests/resumable-stop/single-step.ngc          |  10 +
+ tests/resumable-stop/tap.ngc                  |   7 +
+ tests/resumable-stop/test-ui.py               | 723 ++++++++++++++++++++++++++
+ tests/resumable-stop/test.ini                 |  88 ++++
+ tests/resumable-stop/test.ngc                 |   9 +
+ tests/resumable-stop/test.sh                  |  29 ++
+ tests/resumable-stop/thread.ngc               |   7 +
+ tests/resumable-stop/tool.tbl                 |   1 +
+ tests/resumable-stop/zero-speed-spindle.ngc   |   7 +
+ 37 files changed, 1486 insertions(+), 14 deletions(-)
+ create mode 100644 tests/resumable-stop/README
+ create mode 100644 tests/resumable-stop/after-abort.ngc
+ create mode 100755 tests/resumable-stop/checkresult
+ create mode 100644 tests/resumable-stop/core_sim.hal
+ create mode 100644 tests/resumable-stop/css.ngc
+ create mode 100644 tests/resumable-stop/dwell.ngc
+ create mode 100644 tests/resumable-stop/g76.ngc
+ create mode 100644 tests/resumable-stop/multi-spindle.ngc
+ create mode 100644 tests/resumable-stop/orient.ngc
+ create mode 100644 tests/resumable-stop/pause.ngc
+ create mode 100644 tests/resumable-stop/rapid-then-feed.ngc
+ create mode 100644 tests/resumable-stop/single-step.ngc
+ create mode 100644 tests/resumable-stop/tap.ngc
+ create mode 100755 tests/resumable-stop/test-ui.py
+ create mode 100644 tests/resumable-stop/test.ini
+ create mode 100644 tests/resumable-stop/test.ngc
+ create mode 100755 tests/resumable-stop/test.sh
+ create mode 100644 tests/resumable-stop/thread.ngc
+ create mode 100644 tests/resumable-stop/tool.tbl
+ create mode 100644 tests/resumable-stop/zero-speed-spindle.ngc
+
+diff --git a/docs/src/config/ini-config.adoc b/docs/src/config/ini-config.adoc
+index 8cb14ddb65..9ccae19573 100644
+--- a/docs/src/config/ini-config.adoc
++++ b/docs/src/config/ini-config.adoc
+@@ -704,6 +704,13 @@ For more information on the motion controller see the <<sec:motion,Motion>> sect
+   This parameter affects the polling interval when waiting for motion to complete, when executing a pause instruction, and when accepting a command from a user interface.
+   There is usually no need to change this number.
+   Defaults to 0.100 if omitted.
++* `STOP_PRESERVE_PROGRAM = TRUE` -
++  When true (the default), the dedicated Stop command preserves an active AUTO
++  program and its queued motion so it can be continued with Run, Resume, or
++  Single Step.
++  Motion decelerates to a safe boundary before spindle and coolant outputs are
++  stopped.  When false, or outside active AUTO execution, Stop performs the
++  same full abort as the Abort command.
+ 
+ [[sub:ini:sec:hal]]
+ === [HAL] section(((INI File,Sections,[HAL] Section)))
+diff --git a/docs/src/config/python-interface.adoc b/docs/src/config/python-interface.adoc
+index 219a873d24..c465235054 100644
+--- a/docs/src/config/python-interface.adoc
++++ b/docs/src/config/python-interface.adoc
+@@ -209,6 +209,10 @@ see <<python:reading-ini-values,ReadingINI file values>> for an example.
+   current state of RS274NGC interpreter. One of
+   INTERP_IDLE, INTERP_READING, INTERP_PAUSED, INTERP_WAITING.
+ 
++*stop_state*:: '(returns integer)' -
++  current resumable Stop state. One of `STOP_IDLE`, `STOP_STOPPING`,
++  `STOP_STOPPED`, `STOP_STARTING`.
++
+ *interpreter_errcode*:: '(returns integer)' -
+   current RS274NGC interpreter return code. One of
+   INTERP_OK, INTERP_EXIT, INTERP_EXECUTE_FINISH, INTERP_ENDFILE,
+@@ -640,6 +644,10 @@ c.tool_offset(toolno, z_offset,  x_offset, diameter, frontangle, backangle, orie
+ `abort()`::
+   send EMC_TASK_ABORT message.
+ 
++`stop()`::
++  send the dedicated resumable Stop command. Outside active AUTO execution,
++  or when `[TASK]STOP_PRESERVE_PROGRAM` is false, this performs a full abort.
++
+ `auto(int[, int])`::
+   run, step, pause or resume a program.
+ 
+diff --git a/docs/src/gui/halui.adoc b/docs/src/gui/halui.adoc
+index 37d92b8ff7..633a65fc00 100644
+--- a/docs/src/gui/halui.adoc
++++ b/docs/src/gui/halui.adoc
+@@ -268,7 +268,8 @@ _L_ = axis letter (xyzabcuvw)
+ * 'halui.program.resume' (bit, in) - pin for resuming a paused program
+ * 'halui.program.run' (bit, in) - pin for running a program
+ * 'halui.program.step' (bit, in) - pin for stepping in a program
+-* 'halui.program.stop' (bit, in) - pin for stopping a program
++* 'halui.program.stop' (bit, in) - pin for the dedicated resumable Stop command.
++  `halui.abort` remains the full-abort input.
+ 
+ === Rapid Override
+ 
+diff --git a/docs/src/man/man1/halui.1.adoc b/docs/src/man/man1/halui.1.adoc
+index 6e84da6e5f..66b7f74e85 100644
+--- a/docs/src/man/man1/halui.1.adoc
++++ b/docs/src/man/man1/halui.1.adoc
+@@ -137,8 +137,9 @@ contact) connect the physical button to a HAL debounce filter first.
+ *halui.program.step* bit in::
+   pin for stepping in a program
+ *halui.program.stop* bit in::
+-  pin for stopping a program (note: this pin does the same thing as
+-  halui.abort)
++  pin for the dedicated Stop command.  With
++  `[TASK]STOP_PRESERVE_PROGRAM = TRUE`, an active AUTO program is preserved
++  for Run or Resume.  `halui.abort` always performs a full abort.
+ 
+ === Mode
+ 
+diff --git a/src/emc/motion/command.c b/src/emc/motion/command.c
+index fa7beb3c72..22343702eb 100644
+--- a/src/emc/motion/command.c
++++ b/src/emc/motion/command.c
+@@ -507,6 +507,9 @@ void emcmotCommandHandler_locked(void *arg, long servo_period)
+ 	    if (GET_MOTION_TELEOP_FLAG()) {
+                 axis_jog_abort_all(0);
+ 	    } else if (GET_MOTION_COORD_FLAG()) {
++		emcmotInternal->coord_tp.stopping = 0;
++		emcmotInternal->coord_tp.stop_tc = 0;
++		emcmotStatus->stopped = 0;
+ 		tpAbort(&emcmotInternal->coord_tp);
+ 	    } else {
+ 		for (joint_num = 0; joint_num < ALL_JOINTS; joint_num++) {
+@@ -1221,6 +1224,15 @@ void emcmotCommandHandler_locked(void *arg, long servo_period)
+ 	    emcmotStatus->paused = 1;
+ 	    break;
+ 
++	case EMCMOT_STOP:
++	    rtapi_print_msg(RTAPI_MSG_DBG, "STOP");
++	    emcmotInternal->coord_tp.stopping = 1;
++	    emcmotInternal->coord_tp.stop_tc = 0;
++	    tpPause(&emcmotInternal->coord_tp);
++	    emcmotStatus->paused = 1;
++	    emcmotStatus->stopped = 0;
++	    break;
++
+ 	case EMCMOT_REVERSE:
+ 	    /* run motion in reverse*/
+ 	    /* only allowed during a pause */
+@@ -1240,8 +1252,11 @@ void emcmotCommandHandler_locked(void *arg, long servo_period)
+ 	    /* can happen at any time */
+ 	    rtapi_print_msg(RTAPI_MSG_DBG, "RESUME");
+ 	    emcmotStatus->stepping = 0;
++	    emcmotInternal->coord_tp.stopping = 0;
++	    emcmotInternal->coord_tp.stop_tc = 0;
+ 	    tpResume(&emcmotInternal->coord_tp);
+ 	    emcmotStatus->paused = 0;
++	    emcmotStatus->stopped = 0;
+ 	    break;
+ 
+ 	case EMCMOT_STEP:
+@@ -1672,7 +1687,11 @@ void emcmotCommandHandler_locked(void *arg, long servo_period)
+             }
+             apply_spindle_limits(&emcmotStatus->spindle_status[n]);
+         }
+-        emcmotStatus->atspeed_next_feed = emcmotCommand->wait_for_spindle_at_speed;
++        if (emcmotCommand->wait_for_spindle_at_speed !=
++                EMCMOT_SPINDLE_AT_SPEED_PRESERVE) {
++            emcmotStatus->atspeed_next_feed =
++                emcmotCommand->wait_for_spindle_at_speed;
++        }
+ 
+        // check whether it's passed correctly
+        if (!emcmotStatus->atspeed_next_feed){
+diff --git a/src/emc/motion/control.c b/src/emc/motion/control.c
+index 9e23ea480a..0a5d550480 100644
+--- a/src/emc/motion/control.c
++++ b/src/emc/motion/control.c
+@@ -1990,6 +1990,19 @@ static void output_to_hal(void)
+         *(emcmot_hal_data->requested_vel) = 0.0;
+     }
+ 
++    /*
++     * Alternate trajectory planners only provide the established tpPause()
++     * interface.  Treat a completed fallback pause as a completed Stop.  The
++     * default planner sets stop_tc while an active position-synchronized
++     * segment must finish, so do not complete Stop at an intermediate zero
++     * velocity in that case.
++     */
++    if (emcmotInternal->coord_tp.stopping &&
++            !emcmotInternal->coord_tp.stop_tc &&
++            fabs(emcmotStatus->current_vel) < TP_VEL_EPSILON) {
++        emcmotStatus->stopped = 1;
++    }
++
+     /* These params can be used to examine any internal variable. */
+     /* Change the following lines to assign the variable you want to observe
+        to one of the debug parameters.  You can also comment out these lines
+diff --git a/src/emc/motion/motion.c b/src/emc/motion/motion.c
+index 6b4f01a50f..7f81108901 100644
+--- a/src/emc/motion/motion.c
++++ b/src/emc/motion/motion.c
+@@ -906,6 +906,7 @@ static int init_comm_buffers(void)
+     emcmotStatus->depth = 0;
+     emcmotStatus->activeDepth = 0;
+     emcmotStatus->paused = 0;
++    emcmotStatus->stopped = 0;
+     emcmotStatus->overrideLimitMask = 0;
+     SET_MOTION_INPOS_FLAG(1);
+     SET_MOTION_ENABLE_FLAG(0);
+diff --git a/src/emc/motion/motion.h b/src/emc/motion/motion.h
+index 9c62af046c..24b766afb5 100644
+--- a/src/emc/motion/motion.h
++++ b/src/emc/motion/motion.h
+@@ -66,6 +66,7 @@
+ 
+ #define MOTION_INVALID_ID INT_MIN
+ #define MOTION_ID_VALID(x) ((x) != MOTION_INVALID_ID)
++#define EMCMOT_SPINDLE_AT_SPEED_PRESERVE 2
+ 
+ #include <rtapi.h>		/* must precede rtapi_atomic.h in kernel mode */
+ #include <rtapi_atomic.h>
+@@ -97,6 +98,7 @@ extern "C" {
+ 	EMCMOT_DISABLE,		/* disable servos for active joints */
+ 
+ 	EMCMOT_PAUSE,		/* pause motion */
++	EMCMOT_STOP,		/* stop while preserving the coordinated queue */
+ 	EMCMOT_REVERSE,		/* run reverse motion */
+ 	EMCMOT_FORWARD,		/* run reverse motion */
+ 	EMCMOT_RESUME,		/* resume motion */
+@@ -637,6 +639,7 @@ Suggestion: Split this in to an Error and a Status flag register..
+ 	int activeDepth;	/* depth of active blend elements */
+ 	int queueFull;		/* Flag to indicate the tc queue is full */
+ 	int paused;		/* Flag to signal motion paused */
++	int stopped;		/* Stop has reached a safe motion boundary */
+ 	int overrideLimitMask;	/* non-zero means one or more limits ignored */
+ 				/* 1 << (joint-num*2) = ignore neg limit */
+ 				/* 2 << (joint-num*2) = ignore pos limit */
+diff --git a/src/emc/nml_intf/emc.cc b/src/emc/nml_intf/emc.cc
+index 282edd98ec..c4faf0dd39 100644
+--- a/src/emc/nml_intf/emc.cc
++++ b/src/emc/nml_intf/emc.cc
+@@ -181,6 +181,9 @@ int emcFormat(NMLTYPE type, void *buffer, CMS * cms)
+     case EMC_TASK_ABORT_TYPE:
+ 	((EMC_TASK_ABORT *) buffer)->update(cms);
+ 	break;
++    case EMC_TASK_STOP_TYPE:
++	((EMC_TASK_STOP *) buffer)->update(cms);
++	break;
+     case EMC_TASK_PLAN_CLOSE_TYPE:
+ 	((EMC_TASK_PLAN_CLOSE *) buffer)->update(cms);
+ 	break;
+@@ -277,6 +280,9 @@ int emcFormat(NMLTYPE type, void *buffer, CMS * cms)
+     case EMC_TRAJ_PAUSE_TYPE:
+ 	((EMC_TRAJ_PAUSE *) buffer)->update(cms);
+ 	break;
++    case EMC_TRAJ_STOP_TYPE:
++	((EMC_TRAJ_STOP *) buffer)->update(cms);
++	break;
+     case EMC_TRAJ_PROBE_TYPE:
+ 	((EMC_TRAJ_PROBE *) buffer)->update(cms);
+ 	break;
+@@ -444,6 +450,8 @@ const char *emc_symbol_lookup(uint32_t type)
+ 	return "EMC_STAT";
+     case EMC_TASK_ABORT_TYPE:
+ 	return "EMC_TASK_ABORT";
++    case EMC_TASK_STOP_TYPE:
++	return "EMC_TASK_STOP";
+     case EMC_TASK_PLAN_CLOSE_TYPE:
+ 	return "EMC_TASK_PLAN_CLOSE";
+     case EMC_TASK_PLAN_END_TYPE:
+@@ -506,6 +514,8 @@ const char *emc_symbol_lookup(uint32_t type)
+ 	return "EMC_TRAJ_LINEAR_MOVE";
+     case EMC_TRAJ_PAUSE_TYPE:
+ 	return "EMC_TRAJ_PAUSE";
++    case EMC_TRAJ_STOP_TYPE:
++	return "EMC_TRAJ_STOP";
+     case EMC_TRAJ_PROBE_TYPE:
+ 	return "EMC_TRAJ_PROBE";
+     case EMC_AUX_INPUT_WAIT_TYPE:
+@@ -839,6 +849,11 @@ void EMC_TASK_ABORT::update(CMS * cms)
+     EMC_TASK_CMD_MSG::update(cms);
+ }
+ 
++void EMC_TASK_STOP::update(CMS * cms)
++{
++    EMC_TASK_CMD_MSG::update(cms);
++}
++
+ /*
+ *	NML/CMS Update function for EMC_TASK_PLAN_INIT
+ *	Automatically generated by NML CodeGen Java Applet.
+@@ -1018,6 +1033,7 @@ void EMC_SPINDLE_STAT::update(CMS * cms)
+     cms->update(spindle_scale);
+     cms->update(css_maximum);
+     cms->update(css_factor);
++    cms->update(css_xoffset);
+     cms->update(state);
+     cms->update(direction);
+     cms->update(brake);
+@@ -1026,6 +1042,7 @@ void EMC_SPINDLE_STAT::update(CMS * cms)
+     cms->update(orient_state);
+     cms->update(orient_fault);
+     cms->update(spindle_override_enabled);
++    cms->update(at_speed);
+     cms->update(homed);
+ }
+ 
+@@ -1380,6 +1397,7 @@ void EMC_TASK_STAT::update(CMS * cms)
+     cms->update((int *) &state, 1);
+     cms->update((int *) &execState, 1);
+     cms->update((int *) &interpState, 1);
++    cms->update((int *) &stopState, 1);
+     cms->update(callLevel);
+     cms->update(motionLine);
+     cms->update(currentLine);
+@@ -1711,6 +1729,7 @@ void EMC_TRAJ_STAT::update(CMS * cms)
+     cms->update(queueFull);
+     cms->update(id);
+     cms->update(paused);
++    cms->update(stopped);
+     cms->update(single_stepping);
+     cms->update(scale);
+     cms->update(rapid_scale);
+@@ -1868,6 +1887,11 @@ void EMC_TRAJ_PAUSE::update(CMS * cms)
+     EMC_TRAJ_CMD_MSG::update(cms);
+ }
+ 
++void EMC_TRAJ_STOP::update(CMS * cms)
++{
++    EMC_TRAJ_CMD_MSG::update(cms);
++}
++
+ /*
+ *	NML/CMS Update function for EMC_AUX_STAT_MSG
+ *	Automatically generated by NML CodeGen Java Applet.
+diff --git a/src/emc/nml_intf/emc.hh b/src/emc/nml_intf/emc.hh
+index 20bb4bba56..6b3846feaa 100644
+--- a/src/emc/nml_intf/emc.hh
++++ b/src/emc/nml_intf/emc.hh
+@@ -93,6 +93,7 @@ struct PM_CARTESIAN;
+ 
+ #define EMC_TRAJ_ABORT_TYPE                          ((NMLTYPE) 215)
+ #define EMC_TRAJ_PAUSE_TYPE                          ((NMLTYPE) 216)
++#define EMC_TRAJ_STOP_TYPE                           ((NMLTYPE) 217)
+ #define EMC_TRAJ_RESUME_TYPE                         ((NMLTYPE) 218)
+ #define EMC_TRAJ_DELAY_TYPE                          ((NMLTYPE) 219)
+ #define EMC_TRAJ_LINEAR_MOVE_TYPE                    ((NMLTYPE) 220)
+@@ -124,6 +125,7 @@ struct PM_CARTESIAN;
+ 
+ // NML for EMC_TASK
+ 
++#define EMC_TASK_STOP_TYPE                           ((NMLTYPE) 502)
+ #define EMC_TASK_ABORT_TYPE                          ((NMLTYPE) 503)
+ #define EMC_TASK_SET_MODE_TYPE                       ((NMLTYPE) 504)
+ #define EMC_TASK_SET_STATE_TYPE                      ((NMLTYPE) 505)
+@@ -225,6 +227,13 @@ enum class EMC_TASK_INTERP {
+     WAITING = 4
+ };
+ 
++enum class EMC_TASK_STOP_STATE {
++    IDLE = 0,
++    STOPPING = 1,
++    STOPPED = 2,
++    STARTING = 3
++};
++
+ // types for motion control
+ enum class EMC_TRAJ_MODE {
+     FREE = 1,	// independent-axis motion,
+@@ -364,6 +373,7 @@ extern int emcTrajEnable();
+ extern int emcTrajDisable();
+ extern int emcTrajAbort();
+ extern int emcTrajPause();
++extern int emcTrajStop();
+ extern int emcTrajReverse();
+ extern int emcTrajForward();
+ extern int emcTrajStep();
+diff --git a/src/emc/nml_intf/emc_nml.hh b/src/emc/nml_intf/emc_nml.hh
+index 38f67b98bd..9494a43de3 100644
+--- a/src/emc/nml_intf/emc_nml.hh
++++ b/src/emc/nml_intf/emc_nml.hh
+@@ -699,6 +699,15 @@ class EMC_TRAJ_PAUSE:public EMC_TRAJ_CMD_MSG {
+     void update(CMS * cms);
+ };
+ 
++class EMC_TRAJ_STOP:public EMC_TRAJ_CMD_MSG {
++  public:
++    EMC_TRAJ_STOP()
++      : EMC_TRAJ_CMD_MSG(EMC_TRAJ_STOP_TYPE, sizeof(EMC_TRAJ_STOP))
++    {};
++
++    void update(CMS * cms);
++};
++
+ class EMC_TRAJ_RESUME:public EMC_TRAJ_CMD_MSG {
+   public:
+     EMC_TRAJ_RESUME()
+@@ -988,6 +997,7 @@ class EMC_TRAJ_STAT:public EMC_TRAJ_STAT_MSG {
+     bool queueFull;		// non-zero means can't accept another motion
+     int id;			// id of the currently executing motion
+     bool paused;			// non-zero means motion paused
++    bool stopped;               // resumable Stop reached a safe boundary
+     bool single_stepping;    // non-zero means motion stepping single block
+     double scale;		// velocity scale factor
+     double rapid_scale;		// rapid scale factor
+@@ -1123,6 +1133,7 @@ class EMC_SPINDLE_STAT:public EMC_SPINDLE_STAT_MSG {
+     double spindle_scale;	// spindle over-ride
+     double css_maximum;
+     double css_factor;  // CSS Status
++    double css_xoffset;
+     int state;
+     int direction;		// 0 stopped, 1 forward, -1 reverse
+     int brake;			// 0 released, 1 engaged
+@@ -1131,6 +1142,7 @@ class EMC_SPINDLE_STAT:public EMC_SPINDLE_STAT_MSG {
+     int orient_state;
+     int orient_fault;
+     bool spindle_override_enabled;
++    bool at_speed;
+     bool homed;
+ };
+ 
+@@ -1176,6 +1188,15 @@ class EMC_TASK_CMD_MSG:public RCS_CMD_MSG {
+     void update(CMS * cms);
+ };
+ 
++class EMC_TASK_STOP:public EMC_TASK_CMD_MSG {
++  public:
++    EMC_TASK_STOP()
++      : EMC_TASK_CMD_MSG(EMC_TASK_STOP_TYPE, sizeof(EMC_TASK_STOP))
++    {};
++
++    void update(CMS * cms);
++};
++
+ class EMC_TASK_ABORT:public EMC_TASK_CMD_MSG {
+   public:
+     EMC_TASK_ABORT()
+@@ -1447,6 +1468,7 @@ class EMC_TASK_STAT:public EMC_TASK_STAT_MSG {
+ 
+     EMC_TASK_EXEC execState;	// EMC_DONE,WAITING_FOR_MOTION, etc.
+     EMC_TASK_INTERP interpState;	// EMC_IDLE,READING,PAUSED,WAITING
++    EMC_TASK_STOP_STATE stopState;
+     int callLevel;              // current subroutine level - 0 if not in a subroutine, > 0 otherwise
+     int motionLine;		// line motion is executing-- may lag
+     int currentLine;		// line currently executing
+diff --git a/src/emc/nml_intf/emcops.cc b/src/emc/nml_intf/emcops.cc
+index 6e068c2708..734079d3af 100644
+--- a/src/emc/nml_intf/emcops.cc
++++ b/src/emc/nml_intf/emcops.cc
+@@ -70,6 +70,7 @@ EMC_TRAJ_STAT::EMC_TRAJ_STAT()
+     queueFull(OFF),
+     id(0),
+     paused(OFF),
++    stopped(OFF),
+     single_stepping(false),
+     scale(0.0),
+     rapid_scale(0.0),
+@@ -122,6 +123,7 @@ EMC_TASK_STAT::EMC_TASK_STAT()
+     state(EMC_TASK_STATE::ESTOP),
+     execState(EMC_TASK_EXEC::DONE),
+     interpState(EMC_TASK_INTERP::IDLE),
++    stopState(EMC_TASK_STOP_STATE::IDLE),
+     callLevel(0),
+     motionLine(0),
+     currentLine(0),
+@@ -186,6 +188,7 @@ EMC_SPINDLE_STAT::EMC_SPINDLE_STAT()
+     spindle_scale(1.0),
+     css_maximum(0.0),
+     css_factor(1.0),
++    css_xoffset(0.0),
+     state(0),
+     direction(0),
+     brake(1),
+@@ -194,6 +197,7 @@ EMC_SPINDLE_STAT::EMC_SPINDLE_STAT()
+     orient_state(0),
+     orient_fault(0),
+     spindle_override_enabled(OFF),
++    at_speed(OFF),
+     homed(OFF)
+ {
+ }
+diff --git a/src/emc/task/emctaskmain.cc b/src/emc/task/emctaskmain.cc
+index 3bf13a702d..6dcda53267 100644
+--- a/src/emc/task/emctaskmain.cc
++++ b/src/emc/task/emctaskmain.cc
+@@ -123,6 +123,38 @@ static int emcTaskEager = 0;
+ 
+ static int no_force_homing = 0; // forces the user to home first before allowing MDI and Program run
+ //can be overridden by [TRAJ]NO_FORCE_HOMING=1
++static bool stop_preserve_program = true;
++
++struct StopSpindleState {
++    bool running;
++    double speed;
++    double css_factor;
++    double css_xoffset;
++    bool orienting;
++    double orientation;
++    int orient_mode;
++    double orient_timeout;
++    double orient_deadline;
++};
++
++struct SpindleOrientRequest {
++    double orientation;
++    int mode;
++    double timeout;
++};
++
++static StopSpindleState stop_spindles[EMCMOT_MAX_SPINDLES] = {};
++static SpindleOrientRequest active_spindle_orient_requests[EMCMOT_MAX_SPINDLES] = {};
++static bool stop_mist = false;
++static bool stop_flood = false;
++static bool stop_resume_latched = false;
++static bool stop_single_step = false;
++static bool stop_outputs_saved = false;
++static double taskExecDelayStopTime = 0.0;
++
++static void emcTaskStopClear();
++static void emcTaskStopProgress();
++static void emcTaskStopResume();
+ 
+ // delay counter
+ static double taskExecDelayTimeout = 0.0;
+@@ -487,6 +518,9 @@ extern int emcTaskMopup();
+ 
+ void readahead_reading(void)
+ {
++    if (emcStatus->task.stopState != EMC_TASK_STOP_STATE::IDLE) {
++        return;
++    }
+     int readRetval;
+     int execRetval;
+ 
+@@ -701,6 +735,9 @@ static void mdi_execute_hook(void)
+ 
+ void readahead_waiting(void)
+ {
++    if (emcStatus->task.stopState != EMC_TASK_STOP_STATE::IDLE) {
++        return;
++    }
+ 	// now handle call logic
+ 	// check for subsystems done
+ 	if (interp_list.len() == 0 &&
+@@ -745,6 +783,186 @@ static bool allow_while_idle_type() {
+     return 0;
+ }
+ 
++static void emcTaskResumeInterpreter()
++{
++    emcStatus->task.interpState = interpResumeState;
++    emcStatus->motion.traj.single_stepping = 0;
++    stepping = 0;
++    steppingWait = 0;
++}
++
++static void emcTaskStepInterpreter()
++{
++    emcStatus->motion.traj.single_stepping = 1;
++    stepping = 1;
++    steppingWait = 0;
++    if (emcStatus->motion.traj.queue == 0) {
++        emcStatus->task.interpState = interpResumeState;
++    }
++    emcStatus->task.task_paused = 1;
++}
++
++static void emcTaskStopClear()
++{
++    bool was_active = emcStatus &&
++        emcStatus->task.stopState != EMC_TASK_STOP_STATE::IDLE;
++    stop_resume_latched = false;
++    stop_single_step = false;
++    stop_outputs_saved = false;
++    taskExecDelayStopTime = 0.0;
++    for (auto &spindle : stop_spindles) {
++        spindle = {};
++    }
++    if (emcStatus) {
++        emcStatus->task.stopState = EMC_TASK_STOP_STATE::IDLE;
++        if (was_active) {
++            emcStatus->task.task_paused = 0;
++        }
++    }
++}
++
++static void emcTaskStopDisableSavedOutputs()
++{
++    for (int s = 0; s < emcStatus->motion.traj.spindles; ++s) {
++        if (stop_spindles[s].running ||
++                stop_spindles[s].orienting) {
++            emcSpindleOff(s);
++        }
++    }
++    if (stop_mist) {
++        emcCoolantMistOff();
++    }
++    if (stop_flood) {
++        emcCoolantFloodOff();
++    }
++}
++
++static void emcTaskStopResume()
++{
++    stop_resume_latched = false;
++    if (!stop_outputs_saved) {
++        return;
++    }
++
++    if (stop_mist) {
++        emcCoolantMistOn();
++    }
++    if (stop_flood) {
++        emcCoolantFloodOn();
++    }
++    for (int s = 0; s < emcStatus->motion.traj.spindles; ++s) {
++        if (stop_spindles[s].running) {
++            emcSpindleOn(s, stop_spindles[s].speed,
++                    stop_spindles[s].css_factor,
++                    stop_spindles[s].css_xoffset,
++                    EMCMOT_SPINDLE_AT_SPEED_PRESERVE);
++        }
++        if (stop_spindles[s].orienting) {
++            emcSpindleOrient(s, stop_spindles[s].orientation,
++                    stop_spindles[s].orient_mode);
++            stop_spindles[s].orient_deadline =
++                stop_spindles[s].orient_timeout > 0.0
++                ? etime() + stop_spindles[s].orient_timeout
++                : 0.0;
++        }
++    }
++    emcStatus->task.stopState = EMC_TASK_STOP_STATE::STARTING;
++}
++
++static void emcTaskStopProgress()
++{
++    switch (emcStatus->task.stopState) {
++    case EMC_TASK_STOP_STATE::STOPPING: {
++        if (!emcStatus->motion.traj.stopped) {
++            return;
++        }
++
++        if (!stop_outputs_saved) {
++            stop_mist = emcStatus->io.coolant.mist;
++            stop_flood = emcStatus->io.coolant.flood;
++        }
++        bool spindle_output_active = false;
++        for (int s = 0; s < emcStatus->motion.traj.spindles; ++s) {
++            const auto &status = emcStatus->motion.spindle[s];
++            bool spindle_running = status.enabled || status.direction != 0;
++            if (!stop_outputs_saved) {
++                stop_spindles[s].running = spindle_running;
++                stop_spindles[s].speed = status.speed;
++                stop_spindles[s].css_factor = status.css_factor;
++                stop_spindles[s].css_xoffset = status.css_xoffset;
++                stop_spindles[s].orienting =
++                    status.orient_state == EMCMOT_ORIENT_IN_PROGRESS;
++                if (stop_spindles[s].orienting) {
++                    const auto &request =
++                        active_spindle_orient_requests[s];
++                    stop_spindles[s].orientation =
++                        request.orientation;
++                    stop_spindles[s].orient_mode =
++                        request.mode;
++                    stop_spindles[s].orient_timeout =
++                        request.timeout;
++                }
++            }
++            if (spindle_running ||
++                    status.orient_state == EMCMOT_ORIENT_IN_PROGRESS) {
++                emcSpindleOff(s);
++                spindle_output_active = true;
++            }
++        }
++        if (!stop_outputs_saved) {
++            if (stop_mist) {
++                emcCoolantMistOff();
++            }
++            if (stop_flood) {
++                emcCoolantFloodOff();
++            }
++            stop_outputs_saved = true;
++        }
++        if (spindle_output_active) {
++            return;
++        }
++        emcStatus->task.stopState = EMC_TASK_STOP_STATE::STOPPED;
++        if (stop_resume_latched) {
++            emcTaskStopResume();
++        }
++        return;
++    }
++
++    case EMC_TASK_STOP_STATE::STARTING:
++        for (int s = 0; s < emcStatus->motion.traj.spindles; ++s) {
++            if (stop_spindles[s].orienting) {
++                const auto &status = emcStatus->motion.spindle[s];
++                if (status.orient_state == EMCMOT_ORIENT_FAULTED ||
++                        (stop_spindles[s].orient_deadline > 0.0 &&
++                         etime() >= stop_spindles[s].orient_deadline)) {
++                    emcTaskStopDisableSavedOutputs();
++                    emcStatus->task.stopState = EMC_TASK_STOP_STATE::STOPPED;
++                    emcOperatorError(
++                        "resumed spindle orientation failed on spindle %d",
++                        s);
++                    return;
++                }
++                if (status.orient_state != EMCMOT_ORIENT_COMPLETE) {
++                    return;
++                }
++            }
++        }
++        if (stop_single_step) {
++            emcTrajStep();
++        } else {
++            emcTrajResume();
++        }
++        emcStatus->task.stopState = EMC_TASK_STOP_STATE::IDLE;
++        emcStatus->task.task_paused = stop_single_step;
++        stop_single_step = false;
++        stop_outputs_saved = false;
++        return;
++
++    default:
++        return;
++    }
++}
++
+ /*
+   emcTaskPlan()
+ 
+@@ -773,6 +991,28 @@ static int emcTaskPlan(void)
+ 	return retval;
+     }
+ 
++    if (type == EMC_TASK_STOP_TYPE) {
++        return emcTaskIssueCommand(emcCommand);
++    }
++
++    if (emcStatus->task.stopState != EMC_TASK_STOP_STATE::IDLE &&
++            (type == EMC_TASK_PLAN_RUN_TYPE ||
++             type == EMC_TASK_PLAN_RESUME_TYPE ||
++             type == EMC_TASK_PLAN_STEP_TYPE)) {
++        stop_single_step = type == EMC_TASK_PLAN_STEP_TYPE;
++        if (stop_single_step) {
++            emcTaskStepInterpreter();
++        } else if (emcStatus->task.interpState == EMC_TASK_INTERP::PAUSED) {
++            emcTaskResumeInterpreter();
++        }
++        if (emcStatus->task.stopState == EMC_TASK_STOP_STATE::STOPPING) {
++            stop_resume_latched = true;
++        } else if (emcStatus->task.stopState == EMC_TASK_STOP_STATE::STOPPED) {
++            emcTaskStopResume();
++        }
++        return 0;
++    }
++
+     // handle any new command
+     switch (emcStatus->task.state) {
+     case EMC_TASK_STATE::OFF:
+@@ -1843,6 +2061,11 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+ 	retval = emcTrajPause();
+ 	break;
+ 
++    case EMC_TRAJ_STOP_TYPE:
++	emcStatus->task.task_paused = 1;
++	retval = emcTrajStop();
++	break;
++
+     case EMC_TRAJ_RESUME_TYPE:
+ 	emcStatus->task.task_paused = 0;
+ 	retval = emcTrajResume();
+@@ -1923,6 +2146,11 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+ 
+     case EMC_SPINDLE_WAIT_ORIENT_COMPLETE_TYPE:
+ 	wait_spindle_orient_complete_msg = reinterpret_cast<EMC_SPINDLE_WAIT_ORIENT_COMPLETE *>(cmd);
++	if (wait_spindle_orient_complete_msg->spindle >= 0 &&
++                wait_spindle_orient_complete_msg->spindle < EMCMOT_MAX_SPINDLES) {
++	    active_spindle_orient_requests[wait_spindle_orient_complete_msg->spindle].timeout =
++                wait_spindle_orient_complete_msg->timeout;
++	}
+ 	taskExecDelayTimeout = etime() + wait_spindle_orient_complete_msg->timeout;
+ 	break;
+ 
+@@ -1983,6 +2211,14 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+ 
+     case EMC_SPINDLE_ORIENT_TYPE:
+ 	spindle_orient_msg = reinterpret_cast<EMC_SPINDLE_ORIENT *>(cmd);
++	if (spindle_orient_msg->spindle >= 0 &&
++                spindle_orient_msg->spindle < EMCMOT_MAX_SPINDLES) {
++	    auto &request =
++                active_spindle_orient_requests[spindle_orient_msg->spindle];
++	    request.orientation = spindle_orient_msg->orientation;
++	    request.mode = spindle_orient_msg->mode;
++	    request.timeout = 0.0;
++	}
+ 	retval = emcSpindleOrient(spindle_orient_msg->spindle, spindle_orient_msg->orientation,
+ 			spindle_orient_msg->mode);
+ 	break;
+@@ -2075,7 +2333,47 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+ 
+ 	// task commands
+ 
++    case EMC_TASK_STOP_TYPE: {
++        bool active_auto_program =
++            emcStatus->task.interpState != EMC_TASK_INTERP::IDLE ||
++            emcStatus->task.execState != EMC_TASK_EXEC::DONE ||
++            emcStatus->motion.traj.queue > 0 ||
++            interp_list.len() > 0 ||
++            emcTaskCommand != nullptr;
++        if (!stop_preserve_program ||
++                emcStatus->task.state != EMC_TASK_STATE::ON ||
++                emcStatus->task.mode != EMC_TASK_MODE::AUTO ||
++                !active_auto_program) {
++            EMC_TASK_ABORT abort;
++            retval = emcTaskIssueCommand(&abort);
++            break;
++        }
++
++        switch (emcStatus->task.stopState) {
++        case EMC_TASK_STOP_STATE::IDLE:
++            stop_resume_latched = false;
++            stop_single_step = false;
++            stop_outputs_saved = false;
++            emcStatus->task.stopState = EMC_TASK_STOP_STATE::STOPPING;
++            emcStatus->task.task_paused = 1;
++            retval = emcTrajStop();
++            break;
++        case EMC_TASK_STOP_STATE::STARTING:
++            emcTaskStopDisableSavedOutputs();
++            emcStatus->task.stopState = EMC_TASK_STOP_STATE::STOPPED;
++            stop_resume_latched = false;
++            stop_single_step = false;
++            retval = 0;
++            break;
++        default:
++            retval = 0;
++            break;
++        }
++        break;
++    }
++
+     case EMC_TASK_ABORT_TYPE:
++	emcTaskStopClear();
+ 	// abort everything
+ 	emcTaskAbort();
+ 	// KLUDGE call motion abort before state restore to make absolutely sure no
+@@ -2099,6 +2373,9 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+ 	    mode_msg->mode != EMC_TASK_MODE::AUTO) {
+ 	    emcOperatorError(_("Can't switch mode while mode is AUTO and interpreter is not IDLE"));
+ 	} else { // we can honour the modeswitch
++	    if (mode_msg->mode != emcStatus->task.mode) {
++		emcTaskStopClear();
++	    }
+ 	    if (mode_msg->mode == EMC_TASK_MODE::MANUAL &&
+ 		emcStatus->task.mode != EMC_TASK_MODE::MANUAL) {
+ 		// leaving auto or mdi mode for manual
+@@ -2143,6 +2420,9 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+ 
+     case EMC_TASK_SET_STATE_TYPE:
+ 	state_msg = reinterpret_cast<EMC_TASK_SET_STATE *>(cmd);
++	if (state_msg->state != EMC_TASK_STATE::ON) {
++	    emcTaskStopClear();
++	}
+ 	retval = emcTaskSetState(state_msg->state);
+ 	break;
+ 
+@@ -2368,11 +2648,8 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+ 
+     case EMC_TASK_PLAN_RESUME_TYPE:
+ 	emcTrajResume();
+-	emcStatus->task.interpState = interpResumeState;
++	emcTaskResumeInterpreter();
+ 	emcStatus->task.task_paused = 0;
+-	emcStatus->motion.traj.single_stepping = 0;
+-	stepping = 0;
+-	steppingWait = 0;
+ 	retval = 0;
+ 	break;
+ 
+@@ -2569,6 +2846,7 @@ static int emcTaskExecute(void)
+ 
+     switch (emcStatus->task.execState) {
+     case EMC_TASK_EXEC::ERROR:
++	emcTaskStopClear();
+ 
+ 	/*! \todo FIXME-- duplicate code for abort,
+ 	   also near end of main, when aborting on subordinate errors,
+@@ -2614,7 +2892,9 @@ static int emcTaskExecute(void)
+     case EMC_TASK_EXEC::DONE:
+ 	STEPPING_CHECK();
+ 	if (!emcStatus->motion.traj.queueFull &&
+-	    emcStatus->task.interpState != EMC_TASK_INTERP::PAUSED) {
++	    emcStatus->task.interpState != EMC_TASK_INTERP::PAUSED &&
++	    emcStatus->task.stopState != EMC_TASK_STOP_STATE::STOPPED &&
++	    emcStatus->task.stopState != EMC_TASK_STOP_STATE::STARTING) {
+ 	    if (0 == emcTaskCommand) {
+ 		// need a new command
+ 		emcTaskCommand = interp_list.get();
+@@ -2739,6 +3019,18 @@ static int emcTaskExecute(void)
+ 
+     case EMC_TASK_EXEC::WAITING_FOR_DELAY:
+ 	STEPPING_CHECK();
++	if (emcStatus->task.stopState != EMC_TASK_STOP_STATE::IDLE) {
++	    if (taskExecDelayStopTime <= 0.0) {
++		taskExecDelayStopTime = etime();
++	    }
++	    double delayLeft = taskExecDelayTimeout - taskExecDelayStopTime;
++	    emcStatus->task.delayLeft = delayLeft > 0.0 ? delayLeft : 0.0;
++	    break;
++	}
++	if (taskExecDelayStopTime > 0.0) {
++	    taskExecDelayTimeout += etime() - taskExecDelayStopTime;
++	    taskExecDelayStopTime = 0.0;
++	}
+ 	// check if delay has passed
+ 	emcStatus->task.delayLeft = taskExecDelayTimeout - etime();
+ 	if (etime() >= taskExecDelayTimeout) {
+@@ -3154,6 +3446,9 @@ static int iniLoad(const char *filename)
+         }
+     }
+ 
++    stop_preserve_program =
++        inifile.findBoolV("STOP_PRESERVE_PROGRAM", "TASK", true);
++
+     if (auto inistring = inifile.findString("RS274NGC_STARTUP_CODE", "RS274NGC")) {
+ 	// copy to global
+ 	rtapi_strxcpy(rs274ngc_startup_code, inistring->c_str());
+@@ -3325,6 +3620,7 @@ int main(int argc, char *argv[])
+ 	prev_traj_enabled = emcStatus->motion.traj.enabled;
+ 	// synchronize subordinate states
+ 	if (emcStatus->io.aux.estop) {
++	    emcTaskStopClear();
+ 	    if (emcStatus->motion.traj.enabled) {
+ 		emcTrajDisable();
+ 		emcTaskAbort();
+@@ -3406,6 +3702,7 @@ int main(int argc, char *argv[])
+ 	    // 	emcOperatorError("wait for orient complete timed out");
+ 	    // }
+ 
++            emcTaskStopClear();
+             // abort everything
+             emcTaskAbort();
+             emcIoAbort(EMC_ABORT::MOTION_OR_IO_RCS_ERROR);
+@@ -3441,6 +3738,12 @@ int main(int argc, char *argv[])
+ 	    emcTaskQueueTaskPlanSynchCmd();
+ 	}
+ 
++        if (emcStatus->task.state != EMC_TASK_STATE::ON) {
++            emcTaskStopClear();
++        } else {
++            emcTaskStopProgress();
++        }
++
+ 	// update task-specific status
+ 	emcTaskUpdate(&emcStatus->task);
+ 
+@@ -3461,6 +3764,9 @@ int main(int argc, char *argv[])
+ 	    emcStatus->io.status == RCS_STATUS::ERROR) {
+ 	    emcStatus->status = RCS_STATUS::ERROR;
+ 	    emcStatus->task.status = RCS_STATUS::ERROR;
++	} else if (emcStatus->task.stopState == EMC_TASK_STOP_STATE::STOPPED) {
++	    emcStatus->status = RCS_STATUS::DONE;
++	    emcStatus->task.status = RCS_STATUS::DONE;
+ 	} else if (!taskPlanError && !taskExecuteError &&
+ 		   emcStatus->task.execState == EMC_TASK_EXEC::DONE &&
+ 		   emcStatus->motion.status == RCS_STATUS::DONE &&
+diff --git a/src/emc/task/taskintf.cc b/src/emc/task/taskintf.cc
+index a37da0ca5f..86fdd15940 100644
+--- a/src/emc/task/taskintf.cc
++++ b/src/emc/task/taskintf.cc
+@@ -1421,6 +1421,13 @@ int emcTrajPause()
+     return usrmotWriteEmcmotCommand(&emcmotCommand);
+ }
+ 
++int emcTrajStop()
++{
++    emcmotCommand.command = EMCMOT_STOP;
++
++    return usrmotWriteEmcmotCommand(&emcmotCommand);
++}
++
+ int emcTrajReverse()
+ {
+     emcmotCommand.command = EMCMOT_REVERSE;
+@@ -1676,6 +1683,7 @@ int emcTrajUpdate(EMC_TRAJ_STAT * stat)
+     }
+ 
+     stat->paused = emcmotStatus.paused;
++    stat->stopped = emcmotStatus.stopped;
+     stat->scale = emcmotStatus.feed_scale;
+     stat->rapid_scale = emcmotStatus.rapid_scale;
+ 
+@@ -2042,6 +2050,9 @@ int emcSpindleUpdate(EMC_SPINDLE_STAT stat[], int num_spindles){
+ 		stat[s].orient_state = emcmotStatus.spindle_status[s].orient_state;
+ 		stat[s].orient_fault = emcmotStatus.spindle_status[s].orient_fault;
+ 		stat[s].spindle_scale = emcmotStatus.spindle_status[s].scale;
++		stat[s].css_factor = emcmotStatus.spindle_status[s].css_factor;
++		stat[s].css_xoffset = emcmotStatus.spindle_status[s].xoffset;
++		stat[s].at_speed = emcmotStatus.spindle_status[s].at_speed;
+     }
+     return 0;
+ }
+diff --git a/src/emc/tp/tp.c b/src/emc/tp/tp.c
+index e5667b3f29..db77a5881b 100644
+--- a/src/emc/tp/tp.c
++++ b/src/emc/tp/tp.c
+@@ -250,7 +250,11 @@ STATIC double tpGetFeedScale(TP_STRUCT const * const tp,
+         return 0.0;
+     }
+     //All reasons to disable feed override go here
+-    bool pausing = tp->pausing && (tc->synchronized == TC_SYNC_NONE || tc->synchronized == TC_SYNC_VELOCITY);
++    bool pausing =
++        (tp->pausing &&
++         (tc->synchronized == TC_SYNC_NONE ||
++          tc->synchronized == TC_SYNC_VELOCITY)) ||
++        (tp->stopping && tc != tp->stop_tc);
+     bool aborting = tp->aborting;
+     if (pausing)  {
+         tc_debug_print("pausing\n");
+@@ -490,6 +494,8 @@ int tpClear(TP_STRUCT * const tp)
+     tp->depth = tp->activeDepth = 0;
+     tp->aborting = 0;
+     tp->pausing = 0;
++    tp->stopping = 0;
++    tp->stop_tc = 0;
+     tp->reverse_run = 0;
+     tp->synchronized = 0;
+     tp->uu_per_rev = 0.0;
+@@ -2830,7 +2836,11 @@ int tpCalculateSCurveAccel(TP_STRUCT const * const tp, TC_STRUCT * const tc, TC_
+     }
+ 
+     // Check pause/abort state
+-    bool is_pausing = tp->pausing && (tc->synchronized == TC_SYNC_NONE || tc->synchronized == TC_SYNC_VELOCITY);
++    bool is_pausing =
++        (tp->pausing &&
++         (tc->synchronized == TC_SYNC_NONE ||
++          tc->synchronized == TC_SYNC_VELOCITY)) ||
++        (tp->stopping && tc != tp->stop_tc);
+     bool is_aborting = tp->aborting;
+ 
+     // Check if feed_override = 0 (not pause/abort, but velocity limited to 0)
+@@ -3301,7 +3311,9 @@ STATIC void tpHandleEmptyQueue(TP_STRUCT * const tp)
+ 
+     tpUpdateMovementStatus(tp, NULL);
+ 
+-    tpResume(tp);
++    if (!tp->stopping) {
++        tpResume(tp);
++    }
+ }
+ 
+ /** Wrapper function to unlock rotary axes */
+@@ -4118,10 +4130,28 @@ int tpRunCycle(TP_STRUCT * const tp, long period)
+ 
+     //If we have a NULL pointer, then the queue must be empty, so we're done.
+     if(!tc) {
++        if (tp->stopping) {
++            tpHandleEmptyQueue(tp);
++            if (tp->stopping) {
++                tp->pausing = 1;
++                emcmotStatus->stopped = 1;
++            }
++            return TP_ERR_WAITING;
++        }
+         tpHandleEmptyQueue(tp);
+         return TP_ERR_WAITING;
+     }
+ 
++    if (tp->stopping && tc != tp->stop_tc) {
++        tp->pausing = 1;
++    }
++
++    if (((tp->pausing && tc->synchronized != TC_SYNC_POSITION) ||
++         (tp->stopping && tc != tp->stop_tc)) &&
++            fabs(emcmotStatus->current_vel) < TP_VEL_EPSILON) {
++        emcmotStatus->stopped = 1;
++    }
++
+     tc_debug_print("-------------------\n");
+ 
+ 
+@@ -4227,7 +4257,19 @@ int tpPause(TP_STRUCT * const tp)
+     if (0 == tp) {
+         return TP_ERR_FAIL;
+     }
+-    tp->pausing = 1;
++
++    if (tp->stopping) {
++        TC_STRUCT *tc = tcqItem(&tp->queue, 0);
++        if (tc && tc->active && tc->synchronized == TC_SYNC_POSITION) {
++            tp->stop_tc = tc;
++            tp->pausing = 0;
++        } else {
++            tp->stop_tc = 0;
++            tp->pausing = 1;
++        }
++    } else {
++        tp->pausing = 1;
++    }
+     return TP_ERR_OK;
+ }
+ 
+@@ -4237,6 +4279,9 @@ int tpResume(TP_STRUCT * const tp)
+         return TP_ERR_FAIL;
+     }
+     tp->pausing = 0;
++    tp->stopping = 0;
++    tp->stop_tc = 0;
++    emcmotStatus->stopped = 0;
+     return TP_ERR_OK;
+ }
+ 
+diff --git a/src/emc/tp/tp_types.h b/src/emc/tp/tp_types.h
+index 6687ef3a2d..8d8aa3a362 100644
+--- a/src/emc/tp/tp_types.h
++++ b/src/emc/tp/tp_types.h
+@@ -136,6 +136,13 @@ typedef struct {
+ 
+     syncdio_t syncdio; //record tpSetDout's here
+ 
++    /*
++     * Keep Stop extension fields at the end so existing alternate trajectory
++     * planners retain the offsets of every member in the established ABI.
++     */
++    int stopping;
++    TC_STRUCT *stop_tc;
++
+ } TP_STRUCT;
+ 
+ 
+diff --git a/src/emc/usr_intf/axis/extensions/emcmodule.cc b/src/emc/usr_intf/axis/extensions/emcmodule.cc
+index 3345c0a6a0..59a6da5bf6 100644
+--- a/src/emc/usr_intf/axis/extensions/emcmodule.cc
++++ b/src/emc/usr_intf/axis/extensions/emcmodule.cc
+@@ -1132,6 +1132,7 @@ static PyMemberDef Stat_members[] = {
+     },
+     { "exec_state", T_INT, O(task.execState), READONLY, NULL},
+     { "interp_state", T_INT, O(task.interpState), READONLY, NULL},
++    { "stop_state", T_INT, O(task.stopState), READONLY, NULL},
+     { "call_level", T_INT, O(task.callLevel), READONLY, NULL},
+     { "read_line", T_INT, O(task.readLine), READONLY, NULL},
+     { "motion_line", T_INT, O(task.motionLine), READONLY, NULL},
+@@ -1959,6 +1960,13 @@ static PyObject *emcabort(pyCommandChannel *s, PyObject * /*o*/) {
+     return Py_None;
+ }
+ 
++static PyObject *emcstop(pyCommandChannel *s, PyObject * /*o*/) {
++    EMC_TASK_STOP m;
++    emcSendCommand(s, m);
++    Py_INCREF(Py_None);
++    return Py_None;
++}
++
+ static PyObject *override_limits(pyCommandChannel *s, PyObject * /*o*/) {
+     EMC_JOINT_OVERRIDE_LIMITS m;
+     m.joint = 0; // same number for all
+@@ -2361,6 +2369,7 @@ static PyMethodDef Command_methods[] = {
+     {"brake", (PyCFunction)brake, METH_VARARGS, NULL},
+     {"load_tool_table", (PyCFunction)load_tool_table, METH_NOARGS, NULL},
+     {"abort", (PyCFunction)emcabort, METH_NOARGS, NULL},
++    {"stop", (PyCFunction)emcstop, METH_NOARGS, NULL},
+     {"task_plan_synch", (PyCFunction)task_plan_synch, METH_NOARGS, NULL},
+     {"override_limits", (PyCFunction)override_limits, METH_NOARGS, NULL},
+     {"home", (PyCFunction)home, METH_VARARGS,
+@@ -3402,6 +3411,11 @@ PyMODINIT_FUNC PyInit_linuxcnc(void)
+     PyModule_AddIntConstant(m, "INTERP_PAUSED", (int)EMC_TASK_INTERP::PAUSED);
+     PyModule_AddIntConstant(m, "INTERP_WAITING", (int)EMC_TASK_INTERP::WAITING);
+ 
++    PyModule_AddIntConstant(m, "STOP_IDLE", (int)EMC_TASK_STOP_STATE::IDLE);
++    PyModule_AddIntConstant(m, "STOP_STOPPING", (int)EMC_TASK_STOP_STATE::STOPPING);
++    PyModule_AddIntConstant(m, "STOP_STOPPED", (int)EMC_TASK_STOP_STATE::STOPPED);
++    PyModule_AddIntConstant(m, "STOP_STARTING", (int)EMC_TASK_STOP_STATE::STARTING);
++
+     PyModule_AddIntConstant(m, "MODE_MDI", (int)EMC_TASK_MODE::MDI);
+     PyModule_AddIntConstant(m, "MODE_MANUAL", (int)EMC_TASK_MODE::MANUAL);
+     PyModule_AddIntConstant(m, "MODE_AUTO", (int)EMC_TASK_MODE::AUTO);
+diff --git a/src/emc/usr_intf/halui.cc b/src/emc/usr_intf/halui.cc
+index 6e7c462197..f516c9691a 100644
+--- a/src/emc/usr_intf/halui.cc
++++ b/src/emc/usr_intf/halui.cc
+@@ -1238,6 +1238,13 @@ static int sendAbort()
+     return emcCommandSend(task_abort_msg);
+ }
+ 
++static int sendStop()
++{
++    EMC_TASK_STOP task_stop_msg;
++
++    return emcCommandSend(task_stop_msg);
++}
++
+ 
+ static void sendJogStop(int ja, int jjogmode)
+ {
+@@ -1684,7 +1691,7 @@ static void check_hal_changes()
+ 	sendProgramStep();
+ 
+     if (check_bit_changed(new_halui_data.program_stop, old_halui_data.program_stop) != 0)
+-	sendAbort();
++	sendStop();
+ 
+     //max-velocity stuff
+     counts = new_halui_data.mv_counts;
+diff --git a/tests/resumable-stop/README b/tests/resumable-stop/README
+new file mode 100644
+index 0000000000..fbf9cdddb6
+--- /dev/null
++++ b/tests/resumable-stop/README
+@@ -0,0 +1,8 @@
++Verify resumable Stop preserves an active AUTO program and resumes or
++single-steps it.
++
++This regression test exercises the task-level Stop operation directly through
++the Python command API. It checks that an active feed move stops without
++aborting queued AUTO state, that spindle and coolant outputs are disabled
++while stopped, and that Resume restores them before continuing the same
++program to completion.
+diff --git a/tests/resumable-stop/after-abort.ngc b/tests/resumable-stop/after-abort.ngc
+new file mode 100644
+index 0000000000..df711f6b3d
+--- /dev/null
++++ b/tests/resumable-stop/after-abort.ngc
+@@ -0,0 +1,4 @@
++G21 G90
++F600
++G1 X6
++M2
+diff --git a/tests/resumable-stop/checkresult b/tests/resumable-stop/checkresult
+new file mode 100755
+index 0000000000..d66aa79ff9
+--- /dev/null
++++ b/tests/resumable-stop/checkresult
+@@ -0,0 +1,3 @@
++#!/bin/sh
++test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 15
++grep -q '^resumable stop scenarios complete$' "$1"
+diff --git a/tests/resumable-stop/core_sim.hal b/tests/resumable-stop/core_sim.hal
+new file mode 100644
+index 0000000000..7a6501b210
+--- /dev/null
++++ b/tests/resumable-stop/core_sim.hal
+@@ -0,0 +1,42 @@
++# core HAL config file for simulation
++
++loadrt [KINS]KINEMATICS
++loadrt [EMCMOT]EMCMOT base_period_nsec=[EMCMOT]BASE_PERIOD servo_period_nsec=[EMCMOT]SERVO_PERIOD num_joints=[KINS]JOINTS
++loadrt encoder names=encoder_0
++loadrt sim_encoder names=sim_encoder_0
++
++addf motion-command-handler servo-thread
++addf motion-controller servo-thread
++
++net Xpos joint.0.motor-pos-cmd => joint.0.motor-pos-fb
++net Ypos joint.1.motor-pos-cmd => joint.1.motor-pos-fb
++net Zpos joint.2.motor-pos-cmd => joint.2.motor-pos-fb
++
++net estop-loop iocontrol.0.user-enable-out iocontrol.0.emc-enable-in
++
++net tool-prepare <= iocontrol.0.tool-prepare
++net tool-prepared => iocontrol.0.tool-prepared
++
++net tool-change <= iocontrol.0.tool-change
++net tool-changed => iocontrol.0.tool-changed
++
++net spindle-speed-cmd spindle.0.speed-out => sim_encoder_0.speed
++setp sim_encoder_0.ppr 12
++setp sim_encoder_0.scale 60
++
++net spindle-phase-A sim_encoder_0.phase-A => encoder_0.phase-A
++net spindle-phase-B sim_encoder_0.phase-B => encoder_0.phase-B
++net spindle-phase-Z sim_encoder_0.phase-Z => encoder_0.phase-Z
++setp encoder_0.position-scale 48
++
++net spindle-index-enable spindle.0.index-enable <=> encoder_0.index-enable
++net spindle-pos encoder_0.position => spindle.0.revs
++net spindle-rps encoder_0.velocity => spindle.0.speed-in
++
++addf encoder.capture-position servo-thread
++addf sim-encoder.update-speed servo-thread
++addf sim-encoder.make-pulses servo-thread
++addf encoder.update-counters servo-thread
++
++setp spindle.0.at-speed true
++setp spindle.1.at-speed true
+diff --git a/tests/resumable-stop/css.ngc b/tests/resumable-stop/css.ngc
+new file mode 100644
+index 0000000000..382aaffcec
+--- /dev/null
++++ b/tests/resumable-stop/css.ngc
+@@ -0,0 +1,6 @@
++G21 G18 G90
++G0 X20 Z0
++G96 D1000 S60 M3
++G1 X10 F60
++M5
++M2
+diff --git a/tests/resumable-stop/dwell.ngc b/tests/resumable-stop/dwell.ngc
+new file mode 100644
+index 0000000000..f7a54f80d5
+--- /dev/null
++++ b/tests/resumable-stop/dwell.ngc
+@@ -0,0 +1,5 @@
++G21 G90
++G0 X0
++G4 P3
++G1 X5 F600
++M2
+diff --git a/tests/resumable-stop/g76.ngc b/tests/resumable-stop/g76.ngc
+new file mode 100644
+index 0000000000..1c6a3ea852
+--- /dev/null
++++ b/tests/resumable-stop/g76.ngc
+@@ -0,0 +1,7 @@
++G21 G18 G90
++G0 X10 Z0
++S60 M3
++G76 P1 Z-5 I-1 J0.2 K0.6 R1
++G1 X20 F600
++M5
++M2
+diff --git a/tests/resumable-stop/multi-spindle.ngc b/tests/resumable-stop/multi-spindle.ngc
+new file mode 100644
+index 0000000000..ba2e66f6da
+--- /dev/null
++++ b/tests/resumable-stop/multi-spindle.ngc
+@@ -0,0 +1,4 @@
++G21 G90
++G0 X0
++G1 X10 F60
++M2
+diff --git a/tests/resumable-stop/orient.ngc b/tests/resumable-stop/orient.ngc
+new file mode 100644
+index 0000000000..3aa0abdb29
+--- /dev/null
++++ b/tests/resumable-stop/orient.ngc
+@@ -0,0 +1,6 @@
++G21 G90
++G0 X0
++M19 R90 P1 Q30
++M19 R180 P0 Q1
++G1 X20 F60
++M2
+diff --git a/tests/resumable-stop/pause.ngc b/tests/resumable-stop/pause.ngc
+new file mode 100644
+index 0000000000..6fe71e34bc
+--- /dev/null
++++ b/tests/resumable-stop/pause.ngc
+@@ -0,0 +1,7 @@
++G21 G90
++G0 X0
++F600
++G1 X5
++M0
++G1 X10
++M2
+diff --git a/tests/resumable-stop/rapid-then-feed.ngc b/tests/resumable-stop/rapid-then-feed.ngc
+new file mode 100644
+index 0000000000..c562a572dc
+--- /dev/null
++++ b/tests/resumable-stop/rapid-then-feed.ngc
+@@ -0,0 +1,7 @@
++G21 G90
++F60
++S300 M3
++G0 X80
++G1 X90
++M5
++M2
+diff --git a/tests/resumable-stop/single-step.ngc b/tests/resumable-stop/single-step.ngc
+new file mode 100644
+index 0000000000..0763cfc0bc
+--- /dev/null
++++ b/tests/resumable-stop/single-step.ngc
+@@ -0,0 +1,10 @@
++G21 G90
++G0 X0
++F600
++S300 M3
++M8
++G1 X10
++G1 X20
++M9
++M5
++M2
+diff --git a/tests/resumable-stop/tap.ngc b/tests/resumable-stop/tap.ngc
+new file mode 100644
+index 0000000000..3060ac429e
+--- /dev/null
++++ b/tests/resumable-stop/tap.ngc
+@@ -0,0 +1,7 @@
++G21 G90
++G0 X0 Z0
++S6 M3
++G33.1 Z-5 K10
++G1 X10 F60
++M5
++M2
+diff --git a/tests/resumable-stop/test-ui.py b/tests/resumable-stop/test-ui.py
+new file mode 100755
+index 0000000000..2cf089d29b
+--- /dev/null
++++ b/tests/resumable-stop/test-ui.py
+@@ -0,0 +1,770 @@
++#!/usr/bin/env python3
++
++import math
++import os
++import sys
++import time
++
++import hal
++import linuxcnc
++
++
++ORIENT_IN_PROGRESS = 2
++
++
++def fail(message):
++    print(message)
++    sys.exit(1)
++
++
++def wait_for(predicate, message, timeout=10.0):
++    start = time.time()
++    while time.time() - start < timeout:
++        s.poll()
++        if predicate():
++            return
++        time.sleep(0.02)
++    fail(message)
++
++
++def wait_complete(message, timeout=10.0):
++    if c.wait_complete(timeout) != linuxcnc.RCS_DONE:
++        fail(message)
++    s.poll()
++
++
++c = linuxcnc.command()
++s = linuxcnc.stat()
++e = linuxcnc.error_channel()
++comp = hal.component("resumable-stop-test")
++
++wait_for(lambda: s.task_state == linuxcnc.STATE_ESTOP, "LinuxCNC did not initialize")
++
++c.state(linuxcnc.STATE_ESTOP_RESET)
++c.state(linuxcnc.STATE_ON)
++wait_complete("machine did not turn on")
++
++
++def open_auto_program(path):
++    c.mode(linuxcnc.MODE_AUTO)
++    wait_complete("machine did not enter AUTO")
++    c.program_open(path)
++    wait_complete("%s did not open" % path)
++
++
++def wait_for_program_complete(expected_x, expected_z=0.0, timeout=15.0):
++    wait_for(
++        lambda: s.interp_state == linuxcnc.INTERP_IDLE
++        and s.exec_state == linuxcnc.EXEC_DONE
++        and s.queue == 0
++        and math.isclose(s.position[0], expected_x, abs_tol=0.01)
++        and math.isclose(s.position[2], expected_z, abs_tol=0.01),
++        "program did not complete at expected position",
++        timeout=timeout,
++    )
++
++
++def assert_outputs_stopped_after_program():
++    if abs(hal.get_value("spindle.0.speed-out")) > 0.001:
++        fail("spindle was not stopped by program completion")
++
++    if hal.get_value("iocontrol.0.coolant-flood"):
++        fail("flood coolant was not stopped by program completion")
++
++
++def resume_and_wait_for_x_motion(stopped_x):
++    c.auto(linuxcnc.AUTO_RESUME)
++
++    saw_restored_spindle = False
++    saw_restored_coolant = False
++    start = time.time()
++    while time.time() - start < 10.0:
++        s.poll()
++        if hal.get_value("spindle.0.speed-out") > 0.0:
++            saw_restored_spindle = True
++        if hal.get_value("iocontrol.0.coolant-flood"):
++            saw_restored_coolant = True
++        if s.position[0] > stopped_x + 0.05:
++            break
++        time.sleep(0.02)
++
++    if not saw_restored_spindle:
++        fail("resume did not restore spindle")
++
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_IDLE
++        and s.position[0] > stopped_x + 0.05,
++        "program did not resume motion from stopped position",
++    )
++
++    return saw_restored_coolant
++
++
++def run_ordinary_stop_resume_test():
++    open_auto_program("test.ngc")
++
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: s.task_mode == linuxcnc.MODE_AUTO
++        and s.interp_state != linuxcnc.INTERP_IDLE
++        and s.queue > 0
++        and s.position[0] > 0.05
++        and s.position[0] < 9.0
++        and hal.get_value("spindle.0.speed-out") > 0.0
++        and hal.get_value("iocontrol.0.coolant-flood"),
++        "program did not reach active motion with spindle and coolant on",
++    )
++
++    line_before_stop = s.read_line
++    queue_before_stop = s.queue
++
++    c.stop()
++    wait_complete("stop command did not complete")
++
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
++        "task did not enter STOPPED state",
++    )
++
++    stopped_x = s.position[0]
++    stopped_read_line = s.read_line
++    stopped_queue = s.queue
++
++    time.sleep(0.25)
++    s.poll()
++
++    if abs(s.position[0] - stopped_x) > 0.001:
++        fail("position changed while stopped: %.6f -> %.6f" % (stopped_x, s.position[0]))
++
++    if stopped_read_line < line_before_stop:
++        fail("read line regressed across stop: %d -> %d" % (line_before_stop, stopped_read_line))
++
++    if stopped_queue <= 0 or stopped_queue > queue_before_stop:
++        fail("queue was not preserved across stop: before=%d stopped=%d" % (queue_before_stop, stopped_queue))
++
++    if abs(hal.get_value("spindle.0.speed-out")) > 0.001:
++        fail("spindle speed-out was not disabled while stopped")
++
++    if hal.get_value("iocontrol.0.coolant-flood"):
++        fail("flood coolant was not disabled while stopped")
++
++    if not resume_and_wait_for_x_motion(stopped_x):
++        fail("resume did not restore coolant")
++
++    wait_for_program_complete(10.0)
++    assert_outputs_stopped_after_program()
++
++
++def run_stop_single_step_test():
++    open_auto_program("single-step.ngc")
++
++    c.auto(linuxcnc.AUTO_RUN, 0)
++    wait_for(
++        lambda: s.queue > 0
++        and s.position[0] > 0.05
++        and s.position[0] < 9.0
++        and hal.get_value("spindle.0.speed-out") > 0.0,
++        "program did not reach active motion before single-step test",
++    )
++
++    c.stop()
++    wait_complete("single-step stop command did not complete")
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
++        "task did not enter STOPPED before single-step",
++    )
++
++    stopped_x = s.position[0]
++    c.auto(linuxcnc.AUTO_STEP)
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_IDLE
++        and s.task_paused
++        and s.position[0] > stopped_x + 0.05
++        and abs(s.current_vel) < 0.001,
++        "single-step did not execute one queued motion and pause",
++        timeout=15.0,
++    )
++
++    stepped_x = s.position[0]
++    time.sleep(0.25)
++    s.poll()
++    if abs(s.position[0] - stepped_x) > 0.001:
++        fail("program continued after stop-to-single-step")
++
++    if abs(hal.get_value("spindle.0.speed-out")) < 0.001:
++        fail("single-step did not restore spindle")
++    if not hal.get_value("iocontrol.0.coolant-flood"):
++        fail("single-step did not restore coolant")
++
++    c.auto(linuxcnc.AUTO_RESUME)
++    wait_for_program_complete(20.0)
++    assert_outputs_stopped_after_program()
++
++
++def run_rapid_resume_without_at_speed_test():
++    hal.set_p("spindle.0.at-speed", "false")
++    open_auto_program("rapid-then-feed.ngc")
++
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: s.task_mode == linuxcnc.MODE_AUTO
++        and s.position[0] > 1.0
++        and s.position[0] < 70.0
++        and hal.get_value("spindle.0.speed-out") > 0.0,
++        "program did not enter active rapid with spindle at-speed false",
++    )
++
++    c.stop()
++    wait_complete("rapid stop command did not complete")
++
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
++        "task did not stop during active rapid",
++    )
++
++    stopped_x = s.position[0]
++    c.auto(linuxcnc.AUTO_RESUME)
++
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_IDLE
++        and s.position[0] > stopped_x + 0.05,
++        "rapid resume incorrectly waited for spindle at-speed",
++    )
++
++    wait_for(
++        lambda: math.isclose(s.position[0], 80.0, abs_tol=0.05)
++        and abs(s.current_vel) < 0.001
++        and s.queue > 0,
++        "rapid did not complete and wait at following feed with at-speed false",
++    )
++
++    time.sleep(0.25)
++    s.poll()
++    if not math.isclose(s.position[0], 80.0, abs_tol=0.05):
++        fail("following feed moved before spindle at-speed became true")
++
++    hal.set_p("spindle.0.at-speed", "true")
++    wait_for_program_complete(90.0)
++    assert_outputs_stopped_after_program()
++
++
++def run_zero_speed_spindle_stop_resume_test():
++    open_auto_program("zero-speed-spindle.ngc")
++
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: s.task_mode == linuxcnc.MODE_AUTO
++        and s.position[0] > 0.05
++        and s.position[0] < 9.0
++        and s.spindle[0]["direction"] == 1
++        and math.isclose(s.spindle[0]["speed"], 0.0, abs_tol=0.001)
++        and not s.spindle[0]["enabled"]
++        and hal.get_value("spindle.0.on"),
++        "program did not reach active S0 M3 motion",
++    )
++
++    c.stop()
++    wait_complete("S0 M3 stop command did not complete")
++
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
++        "task did not enter STOPPED state for S0 M3",
++    )
++
++    if hal.get_value("spindle.0.on"):
++        fail("S0 M3 spindle enable remained asserted while stopped")
++
++    if s.spindle[0]["direction"] != 0:
++        fail("S0 M3 spindle direction remained active while stopped")
++
++    stopped_x = s.position[0]
++    c.auto(linuxcnc.AUTO_RESUME)
++
++    saw_restored_forward = False
++    start = time.time()
++    while time.time() - start < 10.0:
++        s.poll()
++        if hal.get_value("spindle.0.on") and s.spindle[0]["direction"] == 1:
++            saw_restored_forward = True
++        if s.position[0] > stopped_x + 0.05:
++            break
++        time.sleep(0.02)
++
++    if not saw_restored_forward:
++        fail("resume did not restore S0 M3 spindle direction")
++
++    wait_for_program_complete(10.0)
++    assert_outputs_stopped_after_program()
++
++
++def run_stop_while_program_paused_test(restart_with_run):
++    open_auto_program("pause.ngc")
++
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: s.interp_state == linuxcnc.INTERP_PAUSED
++        and s.task_paused
++        and math.isclose(s.position[0], 5.0, abs_tol=0.01),
++        "program did not reach M0 pause",
++    )
++
++    c.stop()
++    wait_complete("stop command did not complete from M0 pause")
++
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
++        "task did not enter STOPPED from M0 pause",
++    )
++
++    if restart_with_run:
++        c.auto(linuxcnc.AUTO_RUN, 0)
++    else:
++        c.auto(linuxcnc.AUTO_RESUME)
++
++    wait_for_program_complete(10.0)
++
++
++def run_abort_from_empty_stopped_queue_test():
++    open_auto_program("pause.ngc")
++
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: s.interp_state == linuxcnc.INTERP_PAUSED
++        and s.task_paused
++        and math.isclose(s.position[0], 5.0, abs_tol=0.01),
++        "program did not reach M0 pause before abort test",
++    )
++
++    c.stop()
++    wait_complete("stop command did not complete from M0 pause before abort")
++
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
++        "task did not enter STOPPED from M0 pause before abort",
++    )
++
++    c.abort()
++    wait_complete("abort command did not complete from empty stopped queue")
++
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_IDLE
++        and not s.task_paused
++        and s.interp_state == linuxcnc.INTERP_IDLE
++        and s.exec_state == linuxcnc.EXEC_DONE
++        and s.queue == 0,
++        "abort did not clear empty STOPPED state",
++    )
++
++    open_auto_program("after-abort.ngc")
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: s.position[0] > 5.05,
++        "motion did not start after aborting empty STOPPED queue",
++    )
++
++    wait_for_program_complete(6.0)
++
++
++def stop_during_sync_motion(program, active_predicate, complete_predicate, message, expected_z):
++    open_auto_program(program)
++
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    start = time.time()
++    while time.time() - start < 15.0:
++        s.poll()
++        if (
++            s.task_mode == linuxcnc.MODE_AUTO
++            and hal.get_value("spindle.0.speed-out") > 0.0
++            and active_predicate()
++        ):
++            break
++        time.sleep(0.02)
++    else:
++        err = e.poll()
++        fail(
++            "%s did not enter synchronized motion: X=%.6f Z=%.6f "
++            "interp=%d exec=%d queue=%d spindle=%.3f error=%s"
++            % (
++                message,
++                s.position[0],
++                s.position[2],
++                s.interp_state,
++                s.exec_state,
++                s.queue,
++                hal.get_value("spindle.0.speed-out"),
++                err,
++            )
++        )
++
++    c.stop()
++    wait_complete("%s stop command did not complete" % message)
++
++    start = time.time()
++    while time.time() - start < 15.0:
++        s.poll()
++        if s.stop_state == linuxcnc.STOP_STOPPED:
++            break
++        if not complete_predicate() and s.stop_state == linuxcnc.STOP_STOPPED:
++            fail("%s stopped before synchronized motion completed" % message)
++        time.sleep(0.02)
++
++    if s.stop_state != linuxcnc.STOP_STOPPED:
++        fail("%s did not enter STOPPED state" % message)
++
++    if not complete_predicate():
++        fail(
++            "%s STOPPED before synchronized motion endpoint/cycle completion: "
++            "X=%.6f Z=%.6f"
++            % (message, s.position[0], s.position[2])
++        )
++
++    if s.position[0] > 0.05:
++        fail("%s allowed following X move to start before STOPPED: X=%.6f" % (message, s.position[0]))
++
++    if abs(hal.get_value("spindle.0.speed-out")) > 0.001:
++        fail("%s spindle speed-out was not disabled while stopped" % message)
++
++    stopped_x = s.position[0]
++    resume_and_wait_for_x_motion(stopped_x)
++    wait_for_program_complete(10.0, expected_z=expected_z)
++    assert_outputs_stopped_after_program()
++
++
++def run_threading_stop_resume_test():
++    stop_during_sync_motion(
++        "thread.ngc",
++        lambda: s.position[2] < -0.5 and s.position[2] > -4.5,
++        lambda: s.position[2] <= -4.90,
++        "G33 threading",
++        expected_z=-5.0,
++    )
++
++
++def run_g76_stop_resume_test():
++    open_auto_program("g76.ngc")
++
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: s.task_mode == linuxcnc.MODE_AUTO
++        and s.position[0] < 9.5
++        and s.position[2] < -0.5
++        and s.position[2] > -4.5,
++        "G76 did not enter its first synchronized pass",
++        timeout=15.0,
++    )
++
++    c.stop()
++    wait_complete("G76 stop command did not complete")
++
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
++        "task did not stop after the active G76 threading TC",
++        timeout=15.0,
++    )
++
++    if s.position[2] > -4.90:
++        fail("G76 stopped before its active threading TC completed")
++
++    if s.position[0] >= 9.5:
++        fail(
++            "G76 executed its retract or a later pass before STOPPED: X=%.6f"
++            % s.position[0]
++        )
++
++    stopped_x = s.position[0]
++    stopped_z = s.position[2]
++    time.sleep(0.25)
++    s.poll()
++    if (
++        not math.isclose(s.position[0], stopped_x, abs_tol=0.001)
++        or not math.isclose(s.position[2], stopped_z, abs_tol=0.001)
++    ):
++        fail("G76 moved while stopped")
++
++    resume_and_wait_for_x_motion(stopped_x)
++    wait_for_program_complete(20.0, expected_z=-5.0)
++    assert_outputs_stopped_after_program()
++
++
++def run_queued_threading_stop_resume_test():
++    hal.set_p("spindle.0.at-speed", "false")
++    open_auto_program("thread.ngc")
++
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: s.task_mode == linuxcnc.MODE_AUTO
++        and s.interp_state != linuxcnc.INTERP_IDLE
++        and s.queue > 0
++        and math.isclose(s.position[0], 0.0, abs_tol=0.001)
++        and math.isclose(s.position[2], 0.0, abs_tol=0.001)
++        and abs(s.current_vel) < 0.001
++        and hal.get_value("spindle.0.speed-out") > 0.0,
++        "G33 did not queue while waiting for spindle at-speed",
++    )
++
++    # Let the stationary queue state persist so the G0 before G33 is gone.
++    time.sleep(0.25)
++    s.poll()
++    if s.queue <= 0 or abs(s.current_vel) >= 0.001:
++        fail("G33 did not remain queued while spindle at-speed was false")
++
++    c.stop()
++    wait_complete("queued G33 stop command did not complete")
++
++    # Simulate the delayed prerequisite arriving after Stop. The queued G33
++    # must remain inactive and preserved for Resume.
++    time.sleep(0.05)
++    hal.set_p("spindle.0.at-speed", "true")
++
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
++        "task did not stop with an inactive G33 queued",
++    )
++
++    if not math.isclose(s.position[2], 0.0, abs_tol=0.001):
++        fail("queued G33 started after Stop: Z=%.6f" % s.position[2])
++
++    time.sleep(0.25)
++    s.poll()
++    if not math.isclose(s.position[2], 0.0, abs_tol=0.001):
++        fail("queued G33 moved while stopped: Z=%.6f" % s.position[2])
++
++    resume_and_wait_for_x_motion(s.position[0])
++    wait_for_program_complete(10.0, expected_z=-5.0)
++    assert_outputs_stopped_after_program()
++
++
++def run_rigid_tap_stop_resume_test():
++    saw_downstroke = False
++
++    def active_predicate():
++        nonlocal saw_downstroke
++        if s.position[2] < -0.5:
++            saw_downstroke = True
++            return True
++        return False
++
++    def complete_predicate():
++        return saw_downstroke and s.position[2] >= -0.05
++
++    stop_during_sync_motion(
++        "tap.ngc",
++        active_predicate,
++        complete_predicate,
++        "G33.1 rigid tapping",
++        expected_z=0.0,
++    )
++
++
++def run_spindle_orientation_stop_test():
++    hal.set_p("spindle.0.is-oriented", "false")
++    open_auto_program("orient.ngc")
++
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: hal.get_value("spindle.0.orient")
++        and s.spindle[0]["orient_state"] == ORIENT_IN_PROGRESS,
++        "M19 did not start spindle orientation",
++    )
++
++    x_before_stop = s.position[0]
++    c.stop()
++    wait_complete("M19 stop command did not complete")
++
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
++        "task did not enter STOPPED during M19",
++    )
++
++    if hal.get_value("spindle.0.orient"):
++        fail("task reported STOPPED while spindle orientation remained active")
++
++    if s.spindle[0]["orient_state"] == ORIENT_IN_PROGRESS:
++        fail("task reported STOPPED while spindle orientation was in progress")
++
++    if not math.isclose(s.position[0], x_before_stop, abs_tol=0.001):
++        fail("following motion started while stopping M19")
++
++    c.auto(linuxcnc.AUTO_RESUME)
++
++    wait_for(
++        lambda: hal.get_value("spindle.0.orient")
++        and s.spindle[0]["orient_state"] == ORIENT_IN_PROGRESS,
++        "resume did not restore spindle orientation",
++    )
++
++    if not math.isclose(
++        hal.get_value("spindle.0.orient-angle"), 90.0, abs_tol=0.001
++    ):
++        fail("resume did not restore the requested spindle orientation angle")
++
++    if hal.get_value("spindle.0.orient-mode") != 1:
++        fail("resume did not restore the requested spindle orientation mode")
++
++    time.sleep(0.25)
++    s.poll()
++    if not math.isclose(s.position[0], x_before_stop, abs_tol=0.001):
++        fail("following motion started before spindle orientation completed")
++
++    hal.set_p("spindle.0.is-oriented", "true")
++
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_IDLE
++        and s.position[0] > x_before_stop + 0.05,
++        "program did not continue after spindle orientation completed",
++    )
++
++    wait_for_program_complete(20.0)
++
++
++def run_dwell_stop_resume_test():
++    open_auto_program("dwell.ngc")
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: s.exec_state == linuxcnc.EXEC_WAITING_FOR_DELAY
++        and s.delay_left > 2.0,
++        "G4 did not enter its dwell",
++    )
++
++    c.stop()
++    wait_complete("G4 stop command did not complete")
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
++        "task did not enter STOPPED during G4",
++    )
++
++    stopped_delay = s.delay_left
++    time.sleep(0.5)
++    s.poll()
++    if not math.isclose(s.position[0], 0.0, abs_tol=0.001):
++        fail("motion started while G4 was stopped")
++    if s.delay_left < stopped_delay - 0.1:
++        fail("G4 delay elapsed while stopped")
++
++    c.auto(linuxcnc.AUTO_RESUME)
++    time.sleep(0.5)
++    s.poll()
++    if not math.isclose(s.position[0], 0.0, abs_tol=0.001):
++        fail("motion started before the restored G4 delay elapsed")
++
++    wait_for_program_complete(5.0)
++
++
++def run_multi_spindle_stop_resume_test():
++    open_auto_program("multi-spindle.ngc")
++    c.spindle(linuxcnc.SPINDLE_FORWARD, 120.0, 0)
++    wait_complete("primary spindle command did not complete")
++    c.spindle(linuxcnc.SPINDLE_REVERSE, 180.0, 1)
++    wait_complete("secondary spindle command did not complete")
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: s.position[0] > 0.05
++        and s.position[0] < 9.0
++        and s.spindle[0]["direction"] == 1
++        and s.spindle[1]["direction"] == -1
++        and hal.get_value("spindle.0.on")
++        and hal.get_value("spindle.1.on"),
++        "both spindles did not remain active during motion",
++    )
++
++    c.stop()
++    wait_complete("multi-spindle stop command did not complete")
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
++        "task did not enter STOPPED with two spindles",
++    )
++    if hal.get_value("spindle.0.on") or hal.get_value("spindle.1.on"):
++        fail("a spindle remained enabled while stopped")
++
++    stopped_x = s.position[0]
++    c.auto(linuxcnc.AUTO_RESUME)
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_IDLE
++        and s.position[0] > stopped_x + 0.05
++        and s.spindle[0]["direction"] == 1
++        and s.spindle[1]["direction"] == -1
++        and hal.get_value("spindle.0.on")
++        and hal.get_value("spindle.1.on"),
++        "resume did not restore both spindles",
++    )
++
++    wait_for_program_complete(10.0)
++    if hal.get_value("spindle.0.on") or hal.get_value("spindle.1.on"):
++        fail("a spindle remained enabled after program completion")
++
++
++def run_css_stop_resume_test():
++    open_auto_program("css.ngc")
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: s.position[0] < 18.0
++        and s.position[0] > 12.0
++        and hal.get_value("spindle.0.speed-out") > 0.0,
++        "G96 did not enter active CSS motion",
++    )
++    speed_before_stop = hal.get_value("spindle.0.speed-out")
++
++    c.stop()
++    wait_complete("G96 stop command did not complete")
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
++        "task did not enter STOPPED during G96",
++    )
++    if abs(hal.get_value("spindle.0.speed-out")) > 0.001:
++        fail("CSS spindle remained active while stopped")
++
++    stopped_x = s.position[0]
++    c.auto(linuxcnc.AUTO_RESUME)
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_IDLE
++        and s.position[0] < stopped_x - 0.05
++        and hal.get_value("spindle.0.speed-out") > 0.0,
++        "G96 motion did not resume with the spindle active",
++    )
++    wait_for(
++        lambda: hal.get_value("spindle.0.speed-out") > speed_before_stop * 1.02,
++        "G96 spindle speed did not continue tracking diameter after Resume",
++    )
++
++    wait_for_program_complete(10.0)
++    assert_outputs_stopped_after_program()
++
++
++SCENARIOS = {
++    "ordinary": run_ordinary_stop_resume_test,
++    "single-step": run_stop_single_step_test,
++    "rapid-no-atspeed": run_rapid_resume_without_at_speed_test,
++    "zero-speed-spindle": run_zero_speed_spindle_stop_resume_test,
++    "paused-resume": lambda: run_stop_while_program_paused_test(False),
++    "paused-run": lambda: run_stop_while_program_paused_test(True),
++    "abort-empty": run_abort_from_empty_stopped_queue_test,
++    "queued-g33": run_queued_threading_stop_resume_test,
++    "g33": run_threading_stop_resume_test,
++    "g76": run_g76_stop_resume_test,
++    "rigid-tap": run_rigid_tap_stop_resume_test,
++    "orientation": run_spindle_orientation_stop_test,
++    "dwell": run_dwell_stop_resume_test,
++    "multi-spindle": run_multi_spindle_stop_resume_test,
++    "css": run_css_stop_resume_test,
++}
++
++scenario = os.environ.get("RESUMABLE_STOP_SCENARIO")
++if scenario not in SCENARIOS:
++    fail("unknown resumable-stop scenario: %s" % scenario)
++
++SCENARIOS[scenario]()
++print("resumable stop scenario ok: %s" % scenario)
++sys.exit(0)
+diff --git a/tests/resumable-stop/test.ini b/tests/resumable-stop/test.ini
+new file mode 100644
+index 0000000000..09536a1b4d
+--- /dev/null
++++ b/tests/resumable-stop/test.ini
+@@ -0,0 +1,88 @@
++[EMC]
++VERSION = 1.1
++DEBUG = 0x0
++
++[DISPLAY]
++DISPLAY = ./test-ui.py
++
++[RS274NGC]
++PARAMETER_FILE = sim.var
++
++[EMCMOT]
++EMCMOT = motmod
++COMM_TIMEOUT = 4.0
++BASE_PERIOD = 0
++SERVO_PERIOD = 1000000
++
++[TASK]
++TASK = milltask
++CYCLE_TIME = 0.001
++STOP_PRESERVE_PROGRAM = TRUE
++
++[HAL]
++HALFILE = core_sim.hal
++
++[TRAJ]
++NO_FORCE_HOMING = 1
++AXES = 3
++COORDINATES = X Y Z
++SPINDLES = 2
++LINEAR_UNITS = mm
++ANGULAR_UNITS = degree
++DEFAULT_LINEAR_VELOCITY = 10
++MAX_LINEAR_VELOCITY = 50
++
++[EMCIO]
++TOOL_TABLE = tool.tbl
++
++[KINS]
++KINEMATICS = trivkins
++JOINTS = 3
++
++[AXIS_X]
++MIN_LIMIT = -100
++MAX_LIMIT = 100
++MAX_VELOCITY = 50
++MAX_ACCELERATION = 500
++
++[JOINT_0]
++TYPE = LINEAR
++HOME = 0
++MAX_VELOCITY = 50
++MAX_ACCELERATION = 500
++MIN_LIMIT = -100
++MAX_LIMIT = 100
++FERROR = 1
++MIN_FERROR = 0.25
++
++[AXIS_Y]
++MIN_LIMIT = -100
++MAX_LIMIT = 100
++MAX_VELOCITY = 50
++MAX_ACCELERATION = 500
++
++[JOINT_1]
++TYPE = LINEAR
++HOME = 0
++MAX_VELOCITY = 50
++MAX_ACCELERATION = 500
++MIN_LIMIT = -100
++MAX_LIMIT = 100
++FERROR = 1
++MIN_FERROR = 0.25
++
++[AXIS_Z]
++MIN_LIMIT = -100
++MAX_LIMIT = 100
++MAX_VELOCITY = 50
++MAX_ACCELERATION = 500
++
++[JOINT_2]
++TYPE = LINEAR
++HOME = 0
++MAX_VELOCITY = 50
++MAX_ACCELERATION = 500
++MIN_LIMIT = -100
++MAX_LIMIT = 100
++FERROR = 1
++MIN_FERROR = 0.25
+diff --git a/tests/resumable-stop/test.ngc b/tests/resumable-stop/test.ngc
+new file mode 100644
+index 0000000000..416044b08c
+--- /dev/null
++++ b/tests/resumable-stop/test.ngc
+@@ -0,0 +1,9 @@
++G21 G90
++G0 X0
++F60
++S300 M3
++M8
++G1 X10
++M9
++M5
++M2
+diff --git a/tests/resumable-stop/test.sh b/tests/resumable-stop/test.sh
+new file mode 100755
+index 0000000000..59712a2810
+--- /dev/null
++++ b/tests/resumable-stop/test.sh
+@@ -0,0 +1,30 @@
++#!/bin/bash -e
++
++if nm -D -u "$EMC2_HOME/rtlib/motmod.so" | grep -q '[[:space:]]tpStop$'; then
++    echo "motmod unexpectedly requires the nonstandard tpStop symbol" >&2
++    exit 1
++fi
++
++scenarios=(
++    ordinary
++    single-step
++    rapid-no-atspeed
++    zero-speed-spindle
++    paused-resume
++    paused-run
++    abort-empty
++    queued-g33
++    g33
++    g76
++    rigid-tap
++    orientation
++    dwell
++    multi-spindle
++    css
++)
++
++for scenario in "${scenarios[@]}"; do
++    echo "Running resumable-stop scenario: $scenario"
++    RESUMABLE_STOP_SCENARIO="$scenario" linuxcnc -r test.ini
++done
++echo "resumable stop scenarios complete"
+diff --git a/tests/resumable-stop/thread.ngc b/tests/resumable-stop/thread.ngc
+new file mode 100644
+index 0000000000..5976979e44
+--- /dev/null
++++ b/tests/resumable-stop/thread.ngc
+@@ -0,0 +1,7 @@
++G21 G90
++G0 X0 Z0
++S6 M3
++G33 Z-5 K10
++G1 X10 F60
++M5
++M2
+diff --git a/tests/resumable-stop/tool.tbl b/tests/resumable-stop/tool.tbl
+new file mode 100644
+index 0000000000..68840ea75c
+--- /dev/null
++++ b/tests/resumable-stop/tool.tbl
+@@ -0,0 +1 @@
++T1 P1 Z0 D0
+diff --git a/tests/resumable-stop/zero-speed-spindle.ngc b/tests/resumable-stop/zero-speed-spindle.ngc
+new file mode 100644
+index 0000000000..8e4ffa6645
+--- /dev/null
++++ b/tests/resumable-stop/zero-speed-spindle.ngc
+@@ -0,0 +1,7 @@
++G21 G90
++G0 X0
++F60
++S0 M3
++G1 X10
++M5
++M2
+-- 
+2.53.0

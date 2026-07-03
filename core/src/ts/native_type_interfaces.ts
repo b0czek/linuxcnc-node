@@ -68,6 +68,7 @@ export interface NapiCommandChannelInstance {
   stepProgram(): Promise<RcsStatus>; // auto(AUTO_STEP)
   reverseProgram(): Promise<RcsStatus>; // auto(AUTO_REVERSE)
   forwardProgram(): Promise<RcsStatus>; // auto(AUTO_FORWARD)
+  stop(): Promise<RcsStatus>;
   abortTask(): Promise<RcsStatus>;
   setOptionalStop(enable: boolean): Promise<RcsStatus>;
   setBlockDelete(enable: boolean): Promise<RcsStatus>;

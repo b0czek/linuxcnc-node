@@ -176,6 +176,7 @@ namespace LinuxCNC
         COMPARE_INT_CAST(state, "task.state");
         COMPARE_INT_CAST(execState, "task.execState");
         COMPARE_INT_CAST(interpState, "task.interpState");
+        COMPARE_INT_CAST(stopState, "task.stopState");
         COMPARE_FIELD(callLevel, "task.callLevel");
         COMPARE_FIELD(motionLine, "task.motionLine");
         COMPARE_FIELD(currentLine, "task.currentLine");

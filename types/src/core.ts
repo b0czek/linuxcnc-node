@@ -3,6 +3,7 @@ import {
   TaskState,
   ExecState,
   InterpState,
+  StopState,
   TrajMode,
   MotionType,
   KinematicsType,
@@ -324,6 +325,9 @@ export interface TaskStat {
 
   /** Current state of RS274NGC interpreter. One of IDLE, READING, PAUSED, WAITING. */
   interpState: InterpState;
+
+  /** State of the resumable Stop operation. */
+  stopState: StopState;
 
   /** Current subroutine depth. 0 if not in a subroutine. */
   callLevel: number;

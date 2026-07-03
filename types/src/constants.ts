@@ -30,6 +30,13 @@ export enum InterpState {
   WAITING = 4,
 }
 
+export enum StopState {
+  IDLE = 0,
+  STOPPING = 1,
+  STOPPED = 2,
+  STARTING = 3,
+}
+
 export enum TrajMode {
   FREE = 1,
   COORD = 2,

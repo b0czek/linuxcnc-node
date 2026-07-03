@@ -213,6 +213,14 @@ export class CommandChannel {
   }
 
   /**
+   * Stops an active AUTO program while preserving it for RUN or RESUME.
+   * Outside active AUTO execution this has the same destructive behavior as abortTask().
+   */
+  async stop(): Promise<RcsStatus> {
+    return this.exec(this.nativeInstance.stop);
+  }
+
+  /**
    * Aborts the currently running task/program
    * Immediately stops all motion and task execution
    *

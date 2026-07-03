@@ -48,6 +48,7 @@ namespace LinuxCNC
                                                                            InstanceMethod("stepProgram", &NapiCommandChannel::StepProgram),
                                                                            InstanceMethod("reverseProgram", &NapiCommandChannel::ReverseProgram),
                                                                            InstanceMethod("forwardProgram", &NapiCommandChannel::ForwardProgram),
+                                                                           InstanceMethod("stop", &NapiCommandChannel::Stop),
                                                                            InstanceMethod("abortTask", &NapiCommandChannel::AbortTask),
                                                                            InstanceMethod("setOptionalStop", &NapiCommandChannel::SetOptionalStop),
                                                                            InstanceMethod("setBlockDelete", &NapiCommandChannel::SetBlockDelete),
@@ -409,6 +410,13 @@ namespace LinuxCNC
     Napi::Value NapiCommandChannel::AbortTask(const Napi::CallbackInfo &info)
     {
         auto msg = std::make_unique<EMC_TASK_ABORT>();
+        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
+        return sendCommandAsync(info, std::move(cmd_msg));
+    }
+
+    Napi::Value NapiCommandChannel::Stop(const Napi::CallbackInfo &info)
+    {
+        auto msg = std::make_unique<EMC_TASK_STOP>();
         std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
         return sendCommandAsync(info, std::move(cmd_msg));
     }
