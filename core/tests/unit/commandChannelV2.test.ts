@@ -207,6 +207,60 @@ describe("CommandChannelV2", () => {
     expect(mockNativeInstance.waitCompleteForSerial).not.toHaveBeenCalled();
   });
 
+  it("invalidates lock context retained by escaped async callbacks", async () => {
+    const events: string[] = [];
+    let runEscapedCallback!: () => void;
+    let releaseSecond!: () => void;
+    let escapedHandle!: WaitableCommandHandle;
+    let escapedWait!: Promise<RcsStatus>;
+
+    mockNativeInstance.mdi.mockImplementation(async (command: string) => {
+      events.push(`native-${command}`);
+      return { status: RcsStatus.DONE, serial: 15 };
+    });
+
+    await commandChannel.withLock((command) => {
+      escapedHandle = command.mdi("locked");
+      new Promise<void>((resolve) => {
+        runEscapedCallback = resolve;
+      }).then(() => {
+        void commandChannel.mdi("escaped");
+        escapedWait = escapedHandle.wait();
+      });
+    });
+
+    const second = commandChannel.withLock(async () => {
+      events.push("second-start");
+      await new Promise<void>((resolve) => {
+        releaseSecond = resolve;
+      });
+      events.push("second-end");
+    });
+
+    await Promise.resolve();
+    runEscapedCallback();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(events).toEqual(["native-locked", "second-start"]);
+    await expect(escapedWait).rejects.toThrow(
+      "Command wait requires active withLock"
+    );
+    expect(mockNativeInstance.waitCompleteForSerial).not.toHaveBeenCalled();
+
+    releaseSecond();
+    await second;
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(events).toEqual([
+      "native-locked",
+      "second-start",
+      "second-end",
+      "native-escaped",
+    ]);
+  });
+
   it("keeps the lock until fire-and-forget waits settle", async () => {
     const events: string[] = [];
     let releaseWait!: () => void;

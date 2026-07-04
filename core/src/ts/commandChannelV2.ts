@@ -22,6 +22,7 @@ type NativeAcceptedMethod = (
 
 interface CommandLockContext {
   channel: CommandChannelV2;
+  active: boolean;
   pending: Set<Promise<unknown>>;
 }
 
@@ -229,7 +230,7 @@ export class CommandChannelV2 {
 
   private async runWithCommandLock<T>(fn: () => T | Promise<T>): Promise<T> {
     const currentContext = CommandChannelV2.lockContext.getStore();
-    if (currentContext?.channel === this) {
+    if (currentContext?.channel === this && currentContext.active) {
       return this.trackCommandLockOperation(Promise.resolve().then(fn));
     }
 
@@ -242,6 +243,7 @@ export class CommandChannelV2 {
     await previous;
     const lockContext: CommandLockContext = {
       channel: this,
+      active: true,
       pending: new Set(),
     };
 
@@ -252,17 +254,19 @@ export class CommandChannelV2 {
         return result;
       });
     } finally {
+      lockContext.active = false;
       release();
     }
   }
 
   private hasCommandLock(): boolean {
-    return CommandChannelV2.lockContext.getStore()?.channel === this;
+    const context = CommandChannelV2.lockContext.getStore();
+    return context?.channel === this && context.active;
   }
 
   private trackCommandLockOperation<T>(promise: Promise<T>): Promise<T> {
     const context = CommandChannelV2.lockContext.getStore();
-    if (context?.channel !== this) {
+    if (context?.channel !== this || !context.active) {
       return promise;
     }
 
