@@ -249,9 +249,28 @@ export class CommandChannelV2 {
 
     try {
       return await CommandChannelV2.lockContext.run(lockContext, async () => {
-        const result = await fn();
-        await this.drainCommandLockOperations(lockContext);
-        return result;
+        let callbackResult:
+          | { succeeded: true; value: T }
+          | { succeeded: false; error: unknown };
+
+        try {
+          callbackResult = { succeeded: true, value: await fn() };
+        } catch (error: unknown) {
+          callbackResult = { succeeded: false, error };
+        }
+
+        try {
+          await this.drainCommandLockOperations(lockContext);
+        } catch (error: unknown) {
+          if (callbackResult.succeeded) {
+            throw error;
+          }
+        }
+
+        if (!callbackResult.succeeded) {
+          throw callbackResult.error;
+        }
+        return callbackResult.value;
       });
     } finally {
       lockContext.active = false;
@@ -281,8 +300,21 @@ export class CommandChannelV2 {
   private async drainCommandLockOperations(
     context: CommandLockContext
   ): Promise<void> {
+    let firstError: unknown;
+    let failed = false;
+
     while (context.pending.size > 0) {
-      await Promise.all([...context.pending]);
+      const results = await Promise.allSettled([...context.pending]);
+      for (const result of results) {
+        if (result.status === "rejected" && !failed) {
+          firstError = result.reason;
+          failed = true;
+        }
+      }
+    }
+
+    if (failed) {
+      throw firstError;
     }
   }
 

@@ -292,6 +292,38 @@ describe("CommandChannelV2", () => {
     expect(events).toEqual(["first-callback-end", "second-start"]);
   });
 
+  it("drains fire-and-forget waits before releasing a rejected lock", async () => {
+    const events: string[] = [];
+    let releaseWait!: () => void;
+    mockNativeInstance.mdi.mockResolvedValue({
+      status: RcsStatus.DONE,
+      serial: 16,
+    });
+    mockNativeInstance.waitCompleteForSerial.mockReturnValue(
+      new Promise<RcsStatus>((resolve) => {
+        releaseWait = () => resolve(RcsStatus.DONE);
+      })
+    );
+
+    const first = commandChannel.withLock((command) => {
+      void command.mdi("G1 X1").wait();
+      throw new Error("callback failed");
+    });
+    const second = commandChannel.withLock(() => {
+      events.push("second-start");
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(events).toEqual([]);
+
+    releaseWait();
+    await expect(first).rejects.toThrow("callback failed");
+    await second;
+
+    expect(events).toEqual(["second-start"]);
+  });
+
   it("reuses the lock for nested withLock calls", async () => {
     const events: string[] = [];
 
