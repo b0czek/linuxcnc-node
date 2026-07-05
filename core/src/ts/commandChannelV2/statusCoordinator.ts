@@ -120,7 +120,6 @@ export class StatusCoordinator {
       this.timer = undefined;
       this.poll();
     }, delay);
-    this.timer.unref?.();
   }
 
   private poll(): void {
