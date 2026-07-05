@@ -16,7 +16,7 @@ namespace LinuxCNC
     enum class CommandWaitMode
     {
         Complete,
-        Accepted
+        Sent
     };
 
     // AsyncWorker class for handling commands asynchronously
@@ -26,8 +26,7 @@ namespace LinuxCNC
         CommandWorker(Napi::Function &callback,
                       NapiCommandChannel *channel,
                       std::unique_ptr<RCS_CMD_MSG> cmd_msg,
-                      double timeout,
-                      CommandWaitMode wait_mode);
+                      double timeout);
 
     protected:
         void Execute() override;
@@ -41,31 +40,8 @@ namespace LinuxCNC
         int command_serial_;
         RCS_STATUS result_status_;
         std::string error_message_;
-        CommandWaitMode wait_mode_;
 
         RCS_STATUS waitCommandComplete();
-        RCS_STATUS waitCommandAccepted();
-    };
-
-    class WaitCompleteForSerialWorker : public Napi::AsyncWorker
-    {
-    public:
-        WaitCompleteForSerialWorker(Napi::Promise::Deferred deferred,
-                                    NapiCommandChannel *channel,
-                                    int serial,
-                                    double timeout);
-
-    protected:
-        void Execute() override;
-        void OnOK() override;
-        void OnError(const Napi::Error &error) override;
-
-    private:
-        Napi::Promise::Deferred deferred_;
-        NapiCommandChannel *channel_;
-        int serial_;
-        double timeout_;
-        RCS_STATUS result_status_;
     };
 
     // AsyncWorker for ProgramOpen command - handles file open / transfer operations (in case of )
@@ -76,7 +52,7 @@ namespace LinuxCNC
                           std::string file_path,
                           NapiCommandChannel *channel,
                           CommandWaitMode wait_mode,
-                          double timeout);
+                          double completion_timeout);
         Napi::Promise GetPromise() { return deferred_.Promise(); }
 
     protected:
@@ -88,14 +64,16 @@ namespace LinuxCNC
         Napi::Promise::Deferred deferred_;
         std::string file_path_;
         NapiCommandChannel *channel_;
+        std::unique_ptr<RCS_STAT_CHANNEL> status_channel_;
         RCS_STATUS result_status_;
         CommandWaitMode wait_mode_;
-        double timeout_;
+        double completion_timeout_;
         int final_serial_;
 
-        RCS_STATUS waitCommandComplete();
-        RCS_STATUS waitCommandAccepted(int serial);
+        bool connectStatusChannel();
+        RCS_STATUS waitCommandComplete(int serial);
         RCS_STATUS handleRemoteFileTransfer(EMC_TASK_PLAN_OPEN &open_msg);
+        void releaseChannel();
     };
 
     // AsyncWorker for SetTool command

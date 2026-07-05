@@ -34,7 +34,12 @@ export interface NapiOptions {
 }
 
 export interface NativeCommandChannelOptions {
-  waitMode?: "accepted";
+  waitMode?: "sent";
+}
+
+export interface CommandStatusSnapshot {
+  echoSerial: number;
+  status: RcsStatus;
 }
 
 /**
@@ -148,7 +153,7 @@ export interface NapiCommandChannelInstance {
   // Misc
   disconnect(): void;
   waitComplete(timeout?: number): RcsStatus; // Keep this synchronous
-  waitCompleteForSerial(serial: number, timeoutMs?: number): Promise<RcsStatus>;
+  getStatusSnapshot(): CommandStatusSnapshot;
   serial: number; // For the command serial number
 }
 

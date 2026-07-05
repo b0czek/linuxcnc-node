@@ -1,429 +1,416 @@
+import { RcsStatus, TaskState } from "@linuxcnc-node/types";
 import { CommandChannelV2 } from "../../src/ts/commandChannelV2";
-import type { WaitableCommandHandle } from "../../src/ts/commandChannelV2";
-import { RcsStatus } from "@linuxcnc-node/types";
 
-jest.mock("../../src/ts/constants", () => {
-  const mockAddon = {
+jest.mock("../../src/ts/constants", () => ({
+  addon: {
     NativeCommandChannel: jest.fn(),
-  };
+  },
+}));
 
-  return {
-    addon: mockAddon,
-  };
-});
+interface Snapshot {
+  echoSerial: number;
+  status: RcsStatus;
+}
 
-describe("CommandChannelV2", () => {
-  let commandChannel: CommandChannelV2;
-  let mockNativeInstance: any;
+describe("CommandChannelV2 policy scheduler", () => {
+  let channel: CommandChannelV2;
+  let native: Record<string, jest.Mock>;
+  let snapshot: Snapshot;
+  let nextSerial: number;
 
   beforeEach(() => {
-    mockNativeInstance = {
-      mdi: jest.fn(),
-      stop: jest.fn(),
-      setTool: jest.fn(),
-      loadToolTable: jest.fn(),
-      waitComplete: jest.fn(),
-      waitCompleteForSerial: jest.fn(),
+    jest.useFakeTimers();
+    snapshot = { echoSerial: 0, status: RcsStatus.DONE };
+    nextSerial = 0;
+    native = {
+      mdi: jest.fn(() => ++nextSerial),
+      setRapidRate: jest.fn(() => ++nextSerial),
+      setFeedRate: jest.fn(() => ++nextSerial),
+      stop: jest.fn(() => ++nextSerial),
+      abortTask: jest.fn(() => ++nextSerial),
+      pauseProgram: jest.fn(() => ++nextSerial),
+      jogStop: jest.fn(() => ++nextSerial),
+      setState: jest.fn(() => ++nextSerial),
+      programOpen: jest.fn(() => Promise.resolve(++nextSerial)),
+      setTool: jest.fn(() => Promise.resolve(RcsStatus.DONE)),
+      getStatusSnapshot: jest.fn(() => ({ ...snapshot })),
       disconnect: jest.fn(),
-      serial: 0,
     };
 
     const { addon } = require("../../src/ts/constants");
-    addon.NativeCommandChannel.mockImplementation(() => mockNativeInstance);
-
-    commandChannel = new CommandChannelV2();
+    addon.NativeCommandChannel.mockImplementation(() => native);
+    channel = new CommandChannelV2();
   });
 
-  it("resolves public command handles after acceptance without exposing wait", async () => {
-    mockNativeInstance.mdi.mockResolvedValue({
-      status: RcsStatus.DONE,
-      serial: 42,
-    });
+  afterEach(() => {
+    channel.disconnect();
+    jest.useRealTimers();
+  });
 
-    const handle = commandChannel.mdi("G1 X10");
+  async function flush(): Promise<void> {
+    for (let index = 0; index < 20; index += 1) {
+      await Promise.resolve();
+      jest.advanceTimersByTime(0);
+    }
+  }
 
-    expect("wait" in handle).toBe(false);
-    await expect(handle).resolves.toEqual({
-      status: RcsStatus.DONE,
-      serial: 42,
+  async function poll(
+    echoSerial: number,
+    status: RcsStatus,
+    advance = 10
+  ): Promise<void> {
+    snapshot = { echoSerial, status };
+    await flush();
+    jest.advanceTimersByTime(Math.max(advance, 10));
+    await flush();
+  }
+
+  it("builds disjoint public and exclusive facades from the policy catalog", async () => {
+    expect(typeof channel.setRapidRate).toBe("function");
+    expect(typeof channel.setOptionalStop).toBe("function");
+    expect(typeof channel.stop).toBe("function");
+    expect("mdi" in channel).toBe(false);
+
+    let exclusiveFacade: object | undefined;
+    const transaction = channel.exclusive((command) => {
+      exclusiveFacade = command;
     });
-    expect(mockNativeInstance.mdi).toHaveBeenCalledWith("G1 X10");
+    await flush();
+    await transaction;
+
+    expect(exclusiveFacade).toBeDefined();
+    expect("mdi" in exclusiveFacade!).toBe(true);
+    expect("setRapidRate" in exclusiveFacade!).toBe(true);
+    expect("setOptionalStop" in exclusiveFacade!).toBe(true);
+    expect("stop" in exclusiveFacade!).toBe(false);
+
     const { addon } = require("../../src/ts/constants");
     expect(addon.NativeCommandChannel).toHaveBeenCalledWith({
-      waitMode: "accepted",
+      waitMode: "sent",
     });
   });
 
-  it("waits for serial-specific completion from inside withLock", async () => {
-    mockNativeInstance.mdi.mockResolvedValue({
+  it("auto-drains exclusive commands sequentially and ignores later immediate serials for completion", async () => {
+    const transaction = channel.exclusive((command) => {
+      void command.mdi("G1 X10");
+      void command.mdi("G1 X20");
+    });
+    await flush();
+
+    expect(native.mdi).toHaveBeenCalledTimes(1);
+    expect(native.mdi).toHaveBeenLastCalledWith("G1 X10");
+
+    await poll(1, RcsStatus.EXEC, 0);
+    const rapid = channel.setRapidRate(0.5);
+    expect(native.setRapidRate).toHaveBeenCalledWith(0.5);
+    expect("completed" in rapid).toBe(false);
+
+    await poll(2, RcsStatus.EXEC);
+    await expect(rapid).resolves.toEqual({
       status: RcsStatus.DONE,
-      serial: 7,
+      serial: 2,
     });
-    mockNativeInstance.waitCompleteForSerial.mockResolvedValue(RcsStatus.DONE);
+    expect(native.mdi).toHaveBeenCalledTimes(1);
 
-    await expect(
-      commandChannel.withLock((command) =>
-        command.mdi("G1 X10").wait({ timeout: 5000 })
-      )
-    ).resolves.toBe(RcsStatus.DONE);
+    await poll(2, RcsStatus.DONE);
+    expect(native.mdi).toHaveBeenCalledTimes(2);
+    expect(native.mdi).toHaveBeenLastCalledWith("G1 X20");
 
-    expect(mockNativeInstance.waitCompleteForSerial).toHaveBeenCalledWith(
-      7,
-      5000
-    );
+    await poll(3, RcsStatus.DONE);
+    await expect(transaction).resolves.toBeUndefined();
   });
 
-  it("rejects the handle when acceptance times out", async () => {
-    mockNativeInstance.stop.mockResolvedValue({
-      status: RcsStatus.UNINITIALIZED,
-      serial: 8,
+  it("uses immediate commands inside exclusive callbacks as ordered acceptance barriers", async () => {
+    let rapid: ReturnType<CommandChannelV2["setRapidRate"]> | undefined;
+    const transaction = channel.exclusive((command) => {
+      rapid = command.setRapidRate(0.5);
+      void command.mdi("G1 X10");
+      void command.mdi("G1 X20");
     });
+    await flush();
 
-    await expect(commandChannel.stop()).rejects.toThrow(
-      "Command acceptance failed with RCS status"
-    );
+    expect(native.setRapidRate).toHaveBeenCalledTimes(1);
+    expect(native.setRapidRate).toHaveBeenCalledWith(0.5);
+    expect(native.mdi).not.toHaveBeenCalled();
+    expect(rapid).toBeDefined();
+    expect("completed" in rapid!).toBe(false);
+
+    await poll(1, RcsStatus.EXEC, 0);
+    await expect(rapid).resolves.toEqual({
+      status: RcsStatus.DONE,
+      serial: 1,
+    });
+    expect(native.mdi).toHaveBeenCalledTimes(1);
+    expect(native.mdi).toHaveBeenLastCalledWith("G1 X10");
+
+    await poll(2, RcsStatus.DONE);
+    expect(native.mdi).toHaveBeenCalledTimes(2);
+    await poll(3, RcsStatus.DONE);
+    await expect(transaction).resolves.toBeUndefined();
   });
 
-  it.each([RcsStatus.ERROR, RcsStatus.UNINITIALIZED])(
-    "rejects locked wait when completion returns %s",
-    async (status) => {
-      mockNativeInstance.mdi.mockResolvedValue({
-        status: RcsStatus.DONE,
-        serial: 10,
+  it("can dispatch an immediate command during an active exclusive command after acceptance", async () => {
+    let rapid: ReturnType<CommandChannelV2["setRapidRate"]> | undefined;
+    const transaction = channel.exclusive(async (command) => {
+      const dwell = command.mdi("G4 P1");
+      await dwell;
+      rapid = command.setRapidRate(0.5);
+      await rapid;
+      await dwell.completed;
+    });
+    await flush();
+
+    expect(native.mdi).toHaveBeenCalledTimes(1);
+    await poll(1, RcsStatus.EXEC, 0);
+    await flush();
+    expect(native.setRapidRate).toHaveBeenCalledTimes(1);
+
+    await poll(2, RcsStatus.EXEC);
+    await expect(rapid).resolves.toMatchObject({ serial: 2 });
+    await poll(2, RcsStatus.DONE);
+    await expect(transaction).resolves.toBeUndefined();
+  });
+
+  it("rejects a concurrent exclusive transaction while one is active", async () => {
+    const first = channel.exclusive((command) => {
+      void command.mdi("first");
+    });
+    const second = channel.exclusive((command) => {
+      void command.mdi("second");
+    });
+    await flush();
+
+    expect(native.mdi).toHaveBeenCalledTimes(1);
+    expect(native.mdi).toHaveBeenCalledWith("first");
+    await expect(second).rejects.toThrow(
+      "Exclusive transaction already active"
+    );
+
+    await poll(1, RcsStatus.DONE, 0);
+    await expect(first).resolves.toBeUndefined();
+
+    const next = channel.exclusive((command) => {
+      void command.mdi("next");
+    });
+    await flush();
+    expect(native.mdi).toHaveBeenCalledTimes(2);
+    expect(native.mdi).toHaveBeenLastCalledWith("next");
+    await poll(2, RcsStatus.DONE);
+    await expect(next).resolves.toBeUndefined();
+  });
+
+  it.each([
+    ["stop", () => channel.stop()],
+    ["abortTask", () => channel.abortTask()],
+    ["pauseProgram", () => channel.pauseProgram()],
+    ["jogStop", () => channel.jogStop(0, true)],
+  ])(
+    "dispatches preemptive %s immediately and rejects active transactions",
+    async (method, invoke) => {
+      const active = channel.exclusive((command) => {
+        void command.mdi("active");
       });
-      mockNativeInstance.waitCompleteForSerial.mockResolvedValue(status);
+      await flush();
 
-      await expect(
-        commandChannel.withLock((command) => command.mdi("G4 P1").wait())
-      ).rejects.toThrow("Command completion failed with RCS status");
+      const preemptive = invoke();
+      expect(native[method]).toHaveBeenCalledTimes(1);
+      expect(native.mdi).toHaveBeenCalledTimes(1);
+      await expect(active).rejects.toThrow(`preempted by ${method}`);
+
+      await poll(2, RcsStatus.DONE, 0);
+      await expect(preemptive).resolves.toEqual({
+        status: RcsStatus.DONE,
+        serial: 2,
+      });
     }
   );
 
-  it("returns a serial-null waitable handle for setTool inside withLock", async () => {
-    mockNativeInstance.setTool.mockResolvedValue(RcsStatus.DONE);
+  it("dispatches preemptive state values at top level and exclusive state values in a transaction", async () => {
+    const off = channel.setState(TaskState.OFF);
+    expect(native.setState).toHaveBeenCalledWith(TaskState.OFF);
+    await poll(1, RcsStatus.DONE, 0);
+    await off;
 
-    const result = await commandChannel.withLock(async (command) => {
-      const handle = command.setTool({ toolNo: 1 });
-
-      await expect(handle).resolves.toEqual({
-        status: RcsStatus.DONE,
-        serial: null,
-      });
-      await expect(handle.wait({ timeout: 5000 })).resolves.toBe(
-        RcsStatus.DONE
-      );
-      await expect(handle.serial).resolves.toBeNull();
-      return "done";
+    const transaction = channel.exclusive((command) => {
+      void command.setState(TaskState.ON);
     });
-
-    expect(result).toBe("done");
-    expect(mockNativeInstance.waitCompleteForSerial).not.toHaveBeenCalled();
+    await flush();
+    expect(native.setState).toHaveBeenLastCalledWith(TaskState.ON);
+    await poll(2, RcsStatus.DONE, 0);
+    await transaction;
   });
 
-  it("runs concurrent withLock calls in FIFO order", async () => {
-    const events: string[] = [];
-    let releaseFirst!: () => void;
-
-    const first = commandChannel.withLock(async () => {
-      events.push("first-start");
-      await new Promise<void>((resolve) => {
-        releaseFirst = resolve;
-      });
-      events.push("first-end");
+  it("clears busy state after an exclusive error and accepts new work afterward", async () => {
+    const failed = channel.exclusive((command) => {
+      void command.mdi("failed");
     });
+    await flush();
 
-    const second = commandChannel.withLock(async () => {
-      events.push("second-start");
+    await poll(1, RcsStatus.ERROR, 0);
+    await expect(failed).rejects.toThrow("RCS status: ERROR");
+    expect(native.mdi).toHaveBeenCalledTimes(1);
+
+    const next = channel.exclusive((command) => {
+      void command.mdi("next");
     });
-
-    await Promise.resolve();
-    expect(events).toEqual(["first-start"]);
-
-    releaseFirst();
-    await Promise.all([first, second]);
-
-    expect(events).toEqual(["first-start", "first-end", "second-start"]);
+    await flush();
+    expect(native.mdi).toHaveBeenLastCalledWith("next");
+    await poll(2, RcsStatus.DONE, 0);
+    await expect(next).resolves.toBeUndefined();
   });
 
-  it("queues public commands behind an active lock", async () => {
-    const events: string[] = [];
-    let releaseLock!: () => void;
-    mockNativeInstance.mdi.mockImplementation(async (command: string) => {
-      events.push(`native-${command}`);
-      return { status: RcsStatus.DONE, serial: 11 };
-    });
+  it("applies transaction timeout defaults and trailing command overrides", async () => {
+    const timedOut = channel.exclusive(
+      (command) => {
+        void command.mdi("slow");
+      },
+      { timeout: 50 }
+    );
+    await flush();
+    await poll(1, RcsStatus.EXEC, 0);
 
-    const locked = commandChannel.withLock(async () => {
-      events.push("lock-start");
-      await new Promise<void>((resolve) => {
-        releaseLock = resolve;
-      });
-      events.push("lock-end");
-    });
+    jest.advanceTimersByTime(49);
+    await flush();
+    expect(jest.isMockFunction(native.mdi)).toBe(true);
+    jest.advanceTimersByTime(1);
+    await flush();
 
-    await Promise.resolve();
-    const publicHandle = commandChannel.mdi("G1 X10");
-    await Promise.resolve();
-
-    expect(events).toEqual(["lock-start"]);
-
-    releaseLock();
-    await Promise.all([locked, publicHandle]);
-
-    expect(events).toEqual(["lock-start", "lock-end", "native-G1 X10"]);
-  });
-
-  it("releases the lock after a locked command fails", async () => {
-    mockNativeInstance.mdi.mockResolvedValue({
-      status: RcsStatus.DONE,
-      serial: 12,
-    });
-    mockNativeInstance.waitCompleteForSerial.mockResolvedValueOnce(
-      RcsStatus.ERROR
+    await expect(timedOut).rejects.toThrow(
+      "Command completion timed out for serial 1"
     );
 
+    const overridden = channel.exclusive(
+      (command) => {
+        void command.mdi("override", { timeout: 100 });
+      },
+      { timeout: 10 }
+    );
+    await flush();
+    await poll(2, RcsStatus.EXEC, 0);
+    jest.advanceTimersByTime(20);
+    await flush();
+
+    await poll(2, RcsStatus.DONE);
+    await expect(overridden).resolves.toBeUndefined();
+  });
+
+  it("uses the one-second acceptance timeout and recovers for new work", async () => {
+    const timedOut = channel.exclusive((command) => {
+      void command.mdi("unaccepted");
+    });
+    await flush();
+
+    jest.advanceTimersByTime(1000);
+    await flush();
+    await expect(timedOut).rejects.toThrow(
+      "Command acceptance timed out for serial 1"
+    );
+
+    const next = channel.exclusive((command) => {
+      void command.mdi("next");
+    });
+    await flush();
+    await poll(2, RcsStatus.DONE);
+    await expect(next).resolves.toBeUndefined();
+  });
+
+  it("preserves callback errors, aborts undispatched work, and clears busy state", async () => {
+    const callbackError = new Error("callback failed");
+    const failed = channel.exclusive((command) => {
+      void command.mdi("never-1");
+      void command.mdi("never-2");
+      throw callbackError;
+    });
+    await flush();
+
+    await expect(failed).rejects.toBe(callbackError);
+    expect(native.mdi).not.toHaveBeenCalled();
+
+    const following = channel.exclusive((command) => {
+      void command.mdi("following");
+    });
+    await flush();
+    expect(native.mdi).toHaveBeenCalledWith("following");
+    await poll(1, RcsStatus.DONE, 0);
+    await expect(following).resolves.toBeUndefined();
+  });
+
+  it("lets callback logic await acceptance and exclusive completion independently", async () => {
+    const events: string[] = [];
+    const transaction = channel.exclusive(async (command) => {
+      const move = command.mdi("conditional");
+      const accepted = await move;
+      events.push(`accepted-${accepted.serial}`);
+      await move.completed;
+      events.push("completed");
+      command.mdi("after");
+    });
+    await flush();
+
+    await poll(1, RcsStatus.EXEC, 0);
+    expect(events).toEqual(["accepted-1"]);
+    await poll(1, RcsStatus.DONE);
+    expect(events).toEqual(["accepted-1", "completed"]);
+    expect(native.mdi).toHaveBeenCalledTimes(2);
+
+    await poll(2, RcsStatus.DONE);
+    await expect(transaction).resolves.toBeUndefined();
+  });
+
+  it("keeps setTool as a local exclusive operation", async () => {
+    let acceptedSerial: number | null | undefined;
+    const transaction = channel.exclusive(async (command) => {
+      const handle = command.setTool({ toolNo: 7 });
+      acceptedSerial = (await handle).serial;
+      await handle.completed;
+    });
+    await flush();
+
+    await expect(transaction).resolves.toBeUndefined();
+    expect(acceptedSerial).toBeNull();
+    expect(native.setTool).toHaveBeenCalledWith({ toolNo: 7 });
+    expect(native.getStatusSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("tracks program-open completion while immediate commands advance the serial", async () => {
+    const opened = channel.exclusive((command) => {
+      void command.programOpen("/tmp/example.ngc");
+    });
+    await flush();
+
+    await poll(1, RcsStatus.EXEC, 0);
+    const feed = channel.setFeedRate(0.75);
+    await poll(2, RcsStatus.EXEC);
+    await expect(feed).resolves.toMatchObject({ serial: 2 });
+    let settled = false;
+    void opened.finally(() => {
+      settled = true;
+    });
+    await flush();
+    expect(settled).toBe(false);
+
+    await poll(2, RcsStatus.DONE);
+    await expect(opened).resolves.toBeUndefined();
+  });
+
+  it("rejects outstanding handles and transactions on disconnect", async () => {
+    const immediate = channel.setRapidRate(0.5);
+    const transaction = channel.exclusive((command) => {
+      void command.mdi("active");
+    });
+    await flush();
+
+    channel.disconnect();
+    await expect(immediate).rejects.toThrow("disconnected");
+    await expect(transaction).rejects.toThrow("disconnected");
+    expect(native.disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects invalid exclusive timeouts before invoking the callback", async () => {
+    const callback = jest.fn();
     await expect(
-      commandChannel.withLock((command) => command.mdi("G4 P1").wait())
-    ).rejects.toThrow("Command completion failed with RCS status");
-
-    await expect(
-      commandChannel.withLock(async () => "next")
-    ).resolves.toBe("next");
-  });
-
-  it("rejects wait when a locked handle escapes withLock", async () => {
-    mockNativeInstance.mdi.mockResolvedValue({
-      status: RcsStatus.DONE,
-      serial: 13,
-    });
-
-    let escapedHandle!: WaitableCommandHandle;
-    await commandChannel.withLock((command) => {
-      escapedHandle = command.mdi("G1 X1");
-    });
-
-    await expect(escapedHandle.wait()).rejects.toThrow(
-      "Command wait requires active withLock"
-    );
-    expect(mockNativeInstance.waitCompleteForSerial).not.toHaveBeenCalled();
-  });
-
-  it("invalidates lock context retained by escaped async callbacks", async () => {
-    const events: string[] = [];
-    let runEscapedCallback!: () => void;
-    let releaseSecond!: () => void;
-    let escapedHandle!: WaitableCommandHandle;
-    let escapedWait!: Promise<RcsStatus>;
-
-    mockNativeInstance.mdi.mockImplementation(async (command: string) => {
-      events.push(`native-${command}`);
-      return { status: RcsStatus.DONE, serial: 15 };
-    });
-
-    await commandChannel.withLock((command) => {
-      escapedHandle = command.mdi("locked");
-      new Promise<void>((resolve) => {
-        runEscapedCallback = resolve;
-      }).then(() => {
-        void commandChannel.mdi("escaped");
-        escapedWait = escapedHandle.wait();
-      });
-    });
-
-    const second = commandChannel.withLock(async () => {
-      events.push("second-start");
-      await new Promise<void>((resolve) => {
-        releaseSecond = resolve;
-      });
-      events.push("second-end");
-    });
-
-    await Promise.resolve();
-    runEscapedCallback();
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(events).toEqual(["native-locked", "second-start"]);
-    await expect(escapedWait).rejects.toThrow(
-      "Command wait requires active withLock"
-    );
-    expect(mockNativeInstance.waitCompleteForSerial).not.toHaveBeenCalled();
-
-    releaseSecond();
-    await second;
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(events).toEqual([
-      "native-locked",
-      "second-start",
-      "second-end",
-      "native-escaped",
-    ]);
-  });
-
-  it("keeps the lock until fire-and-forget waits settle", async () => {
-    const events: string[] = [];
-    let releaseWait!: () => void;
-    mockNativeInstance.mdi.mockResolvedValue({
-      status: RcsStatus.DONE,
-      serial: 14,
-    });
-    mockNativeInstance.waitCompleteForSerial.mockReturnValue(
-      new Promise<RcsStatus>((resolve) => {
-        releaseWait = () => resolve(RcsStatus.DONE);
-      })
-    );
-
-    const first = commandChannel.withLock((command) => {
-      void command.mdi("G1 X1").wait();
-      events.push("first-callback-end");
-    });
-    const second = commandChannel.withLock(() => {
-      events.push("second-start");
-    });
-
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(events).toEqual(["first-callback-end"]);
-
-    releaseWait();
-    await Promise.all([first, second]);
-
-    expect(events).toEqual(["first-callback-end", "second-start"]);
-  });
-
-  it("serializes fire-and-forget locked command waits", async () => {
-    let releaseFirstWait!: () => void;
-    mockNativeInstance.mdi
-      .mockResolvedValueOnce({ status: RcsStatus.DONE, serial: 17 })
-      .mockResolvedValueOnce({ status: RcsStatus.DONE, serial: 18 });
-    mockNativeInstance.waitCompleteForSerial
-      .mockReturnValueOnce(
-        new Promise<RcsStatus>((resolve) => {
-          releaseFirstWait = () => resolve(RcsStatus.DONE);
-        })
-      )
-      .mockResolvedValueOnce(RcsStatus.DONE);
-
-    const locked = commandChannel.withLock((command) => {
-      void command.mdi("first").wait();
-      void command.mdi("second").wait();
-    });
-
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(mockNativeInstance.mdi).toHaveBeenCalledTimes(1);
-    expect(mockNativeInstance.mdi).toHaveBeenCalledWith("first");
-
-    releaseFirstWait();
-    await locked;
-
-    expect(mockNativeInstance.mdi).toHaveBeenCalledTimes(2);
-    expect(mockNativeInstance.mdi).toHaveBeenLastCalledWith("second");
-  });
-
-  it("serializes local tool updates with locked native dispatches", async () => {
-    let releaseSetTool!: () => void;
-    mockNativeInstance.setTool.mockReturnValue(
-      new Promise<RcsStatus>((resolve) => {
-        releaseSetTool = () => resolve(RcsStatus.DONE);
-      })
-    );
-    mockNativeInstance.loadToolTable.mockResolvedValue({
-      status: RcsStatus.DONE,
-      serial: 19,
-    });
-
-    const locked = commandChannel.withLock((command) => {
-      void command.setTool({ toolNo: 1 });
-      void command.loadToolTable();
-    });
-
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(mockNativeInstance.setTool).toHaveBeenCalledTimes(1);
-    expect(mockNativeInstance.loadToolTable).not.toHaveBeenCalled();
-
-    releaseSetTool();
-    await locked;
-
-    expect(mockNativeInstance.loadToolTable).toHaveBeenCalledTimes(1);
-  });
-
-  it("queues reentrant public commands behind locked waits", async () => {
-    let releaseFirstWait!: () => void;
-    mockNativeInstance.mdi
-      .mockResolvedValueOnce({ status: RcsStatus.DONE, serial: 20 })
-      .mockResolvedValueOnce({ status: RcsStatus.DONE, serial: 21 });
-    mockNativeInstance.waitCompleteForSerial.mockReturnValue(
-      new Promise<RcsStatus>((resolve) => {
-        releaseFirstWait = () => resolve(RcsStatus.DONE);
-      })
-    );
-
-    const locked = commandChannel.withLock((command) => {
-      void command.mdi("locked").wait();
-      void commandChannel.mdi("public");
-    });
-
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(mockNativeInstance.mdi).toHaveBeenCalledTimes(1);
-    expect(mockNativeInstance.mdi).toHaveBeenCalledWith("locked");
-
-    releaseFirstWait();
-    await locked;
-
-    expect(mockNativeInstance.mdi).toHaveBeenCalledTimes(2);
-    expect(mockNativeInstance.mdi).toHaveBeenLastCalledWith("public");
-  });
-
-  it("drains fire-and-forget waits before releasing a rejected lock", async () => {
-    const events: string[] = [];
-    let releaseWait!: () => void;
-    mockNativeInstance.mdi.mockResolvedValue({
-      status: RcsStatus.DONE,
-      serial: 16,
-    });
-    mockNativeInstance.waitCompleteForSerial.mockReturnValue(
-      new Promise<RcsStatus>((resolve) => {
-        releaseWait = () => resolve(RcsStatus.DONE);
-      })
-    );
-
-    const first = commandChannel.withLock((command) => {
-      void command.mdi("G1 X1").wait();
-      throw new Error("callback failed");
-    });
-    const second = commandChannel.withLock(() => {
-      events.push("second-start");
-    });
-
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(events).toEqual([]);
-
-    releaseWait();
-    await expect(first).rejects.toThrow("callback failed");
-    await second;
-
-    expect(events).toEqual(["second-start"]);
-  });
-
-  it("reuses the lock for nested withLock calls", async () => {
-    const events: string[] = [];
-
-    await commandChannel.withLock(async () => {
-      events.push("outer-start");
-      await commandChannel.withLock(async () => {
-        events.push("inner");
-      });
-      events.push("outer-end");
-    });
-
-    expect(events).toEqual(["outer-start", "inner", "outer-end"]);
+      channel.exclusive(callback, { timeout: 0 })
+    ).rejects.toThrow("finite positive number");
+    expect(callback).not.toHaveBeenCalled();
   });
 });

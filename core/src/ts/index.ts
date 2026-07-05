@@ -3,10 +3,11 @@ import { CommandChannel } from "./commandChannel";
 import { CommandChannelV2 } from "./commandChannelV2";
 import type {
   CommandHandle,
-  LockedCommandChannel,
   CommandAccepted,
-  CommandWaitOptions,
-  WaitableCommandHandle,
+  ExclusiveCommandChannel,
+  ExclusiveCommandHandle,
+  ExclusiveCommandOptions,
+  ExclusiveOptions,
 } from "./commandChannelV2";
 import { ErrorChannel, ErrorChannelOptions } from "./errorChannel";
 import { PositionLogger } from "./positionLogger";
@@ -43,9 +44,10 @@ export {
 export { StatWatcherOptions, ErrorChannelOptions };
 export type {
   CommandHandle,
-  LockedCommandChannel,
   CommandAccepted,
-  CommandWaitOptions,
-  WaitableCommandHandle,
+  ExclusiveCommandChannel,
+  ExclusiveCommandHandle,
+  ExclusiveCommandOptions,
+  ExclusiveOptions,
 };
 export { PositionLoggerOptions } from "./positionLogger";

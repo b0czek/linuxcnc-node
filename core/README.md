@@ -54,13 +54,44 @@ stat.destroy();
 import { CommandChannelV2 } from "@linuxcnc-node/core";
 
 const command = new CommandChannelV2();
-const cmd = command.mdi("G1 X10");
+const rapid = command.setRapidRate(0.5);
 
-await cmd; // waits until LinuxCNC accepts/echoes the command
+await rapid; // waits until LinuxCNC accepts/echoes the command
 
-await command.withLock(async (locked) => {
-  await locked.mdi("G1 X10").wait({ timeout: 5000 }); // waits for completion under exclusive command access
+// Exclusive commands are only available inside exclusive(). The transaction
+// auto-drains its own commands through completion in enqueue order. A second
+// exclusive() call while one is active rejects instead of queuing stale work.
+await command.exclusive((exclusive) => {
+  // Immediate commands inside exclusive() are acceptance barriers for later
+  // commands in the same callback.
+  exclusive.setFeedRate(0.8);
+  exclusive.mdi("G1 X10");
+  exclusive.mdi("G1 X20");
 });
+
+// Await completion explicitly when subsequent JavaScript depends on it.
+await command.exclusive(async (exclusive) => {
+  const move = exclusive.mdi("G1 X30");
+  const accepted = await move;
+  console.log(`Accepted as serial ${accepted.serial}`);
+  await exclusive.setFeedRate(0.5); // accepted while the move may still be running
+  await move.completed;
+});
+
+// Configure a default timeout and optionally override one command.
+await command.exclusive(
+  (exclusive) => {
+    exclusive.mdi("G1 X40");
+    exclusive.mdi("G1 X50", { timeout: 10000 });
+  },
+  { timeout: 5000 }
+);
+
+// Immediate controls are also available inside exclusive() and remain
+// acceptance-only. Preemptive commands are top-level only and cancel active
+// exclusive work.
+await command.setFeedRate(0.8);
+await command.stop();
 ```
 
 ## Documentation

@@ -12,6 +12,7 @@
     "install": "node-gyp configure && node-gyp build",
     "prepublishOnly": "pnpm run build",
     "test": "jest --runInBand",
+    "test:types": "tsc -p tsconfig.type-tests.json",
     "test:unit": "jest --runInBand --testPathPattern=tests/unit",
     "test:integration": "jest --runInBand --testPathPattern=tests/integration",
     "test:all": "pnpm run test:unit && pnpm run test:integration",
