@@ -92,7 +92,7 @@ export class StatusCoordinator {
     };
   }
 
-  stop(reason = new Error("Command channel disconnected.")): void {
+  stop(reason = new Error("Command transport disconnected.")): void {
     if (this.stopped) return;
     this.stopped = reason;
     if (this.timer) {
@@ -153,10 +153,7 @@ export class StatusCoordinator {
         }
       }
 
-      if (
-        !command.acceptanceObserved &&
-        now >= command.acceptanceDeadline
-      ) {
+      if (!command.acceptanceObserved && now >= command.acceptanceDeadline) {
         const error = new Error(
           `Command acceptance timed out for serial ${command.serial}.`
         );

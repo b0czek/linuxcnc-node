@@ -1,15 +1,13 @@
 import { StatChannel, StatWatcherOptions } from "./statChannel";
 import { CommandChannel } from "./commandChannel";
-import { CommandChannelV2 } from "./commandChannelV2";
+import { CommandTransport } from "./commandTransport";
 import type {
-  CommandHandle,
   CommandAccepted,
-  ExclusiveCommandChannel,
-  ExclusiveCommandHandle,
-  ExclusiveCommandOptions,
-  ExclusiveOptions,
-  ImmediateLockResource,
-} from "./commandChannelV2";
+  CommandTracking,
+  CommandTransportHandle,
+  CommandTransportOptions,
+  NativeCommandName,
+} from "./commandTransport";
 import { ErrorChannel, ErrorChannelOptions } from "./errorChannel";
 import { PositionLogger } from "./positionLogger";
 
@@ -38,18 +36,16 @@ export function getNmlFilePath(): string {
 export {
   StatChannel,
   CommandChannel,
-  CommandChannelV2,
+  CommandTransport,
   ErrorChannel,
   PositionLogger,
 };
 export { StatWatcherOptions, ErrorChannelOptions };
 export type {
-  CommandHandle,
   CommandAccepted,
-  ExclusiveCommandChannel,
-  ExclusiveCommandHandle,
-  ExclusiveCommandOptions,
-  ExclusiveOptions,
-  ImmediateLockResource,
+  CommandTracking,
+  CommandTransportHandle,
+  CommandTransportOptions,
+  NativeCommandName,
 };
 export { PositionLoggerOptions } from "./positionLogger";

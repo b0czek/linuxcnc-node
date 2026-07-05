@@ -5,8 +5,8 @@ Node.js bindings for the LinuxCNC NML interface. Control and monitor CNC machine
 ## Features
 
 - **StatChannel** - Real-time machine status monitoring with typed property change events
-- **CommandChannelV2** - Recommended command API with explicit acceptance and completion waits
-- **CommandChannel** - Legacy completion-waiting command API for compatibility
+- **CommandTransport** - Raw sent-command transport with echo-serial acceptance and optional completion tracking
+- **CommandChannel** - Completion-waiting command API
 - **ErrorChannel** - Receive error and operator messages from LinuxCNC
 - **PositionLogger** - High-frequency position logging for toolpath visualization
 
@@ -48,50 +48,24 @@ stat.destroy();
 
 ## Command Lifecycle
 
-`CommandChannelV2` models LinuxCNC command acceptance separately from command completion:
+`CommandTransport` models LinuxCNC command acceptance separately from optional command completion. It is intentionally raw binding infrastructure: callers send a native method name and tuple arguments, then layer any policy or scheduling above it.
 
 ```typescript
-import { CommandChannelV2 } from "@linuxcnc-node/core";
+import { CommandTransport } from "@linuxcnc-node/core";
 
-const command = new CommandChannelV2();
-const rapid = command.setRapidRate(0.5);
+const command = new CommandTransport();
+const rapid = command.send("setRapidRate", [0.5]);
 
-await rapid; // waits until LinuxCNC accepts/echoes the command
+await rapid.accepted; // waits until LinuxCNC accepts/echoes the command
 
-// Exclusive commands are only available inside exclusive(). The transaction
-// auto-drains its own commands through completion in enqueue order. A second
-// exclusive() call while one is active rejects instead of queuing stale work.
-await command.exclusive((exclusive) => {
-  // Immediate commands inside exclusive() are acceptance barriers for later
-  // commands in the same callback.
-  exclusive.setFeedRate(0.8);
-  exclusive.mdi("G1 X10");
-  exclusive.mdi("G1 X20");
+const move = command.send("mdi", ["G1 X30"], {
+  tracking: "completion",
+  completionTimeout: 5000,
 });
 
-// Await completion explicitly when subsequent JavaScript depends on it.
-await command.exclusive(async (exclusive) => {
-  const move = exclusive.mdi("G1 X30");
-  const accepted = await move;
-  console.log(`Accepted as serial ${accepted.serial}`);
-  await exclusive.setFeedRate(0.5); // accepted while the move may still be running
-  await move.completed;
-});
-
-// Configure a default timeout and optionally override one command.
-await command.exclusive(
-  (exclusive) => {
-    exclusive.mdi("G1 X40");
-    exclusive.mdi("G1 X50", { timeout: 10000 });
-  },
-  { timeout: 5000 }
-);
-
-// Immediate controls are also available inside exclusive() and remain
-// acceptance-only. Preemptive commands are top-level only and cancel active
-// exclusive work.
-await command.setFeedRate(0.8);
-await command.stop();
+const accepted = await move.accepted;
+console.log(`Accepted as serial ${accepted.serial}`);
+await move.completed;
 ```
 
 ## Documentation
