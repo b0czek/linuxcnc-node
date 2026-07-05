@@ -165,13 +165,18 @@ export class CommandTransport {
     name: NativeCommandName,
     args: readonly unknown[]
   ): unknown | Error {
-    const nativeMethod = this.nativeInstance[name] as unknown;
+    const nativeMethod = (
+      this.nativeInstance as unknown as Record<
+        NativeCommandName,
+        (...methodArgs: unknown[]) => unknown
+      >
+    )[name];
     if (typeof nativeMethod !== "function") {
       return new Error(`Unknown native command: ${String(name)}`);
     }
 
     try {
-      return nativeMethod.apply(this.nativeInstance, args);
+      return nativeMethod.apply(this.nativeInstance, [...args]);
     } catch (error: unknown) {
       return nativeDispatchError(error);
     }

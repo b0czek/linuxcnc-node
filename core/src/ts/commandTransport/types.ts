@@ -1,17 +1,5 @@
 import { RcsStatus } from "@linuxcnc-node/types";
-import type { NapiCommandChannelInstance } from "../native_type_interfaces";
-
-type NativeMethodName = {
-  [K in keyof NapiCommandChannelInstance]:
-    NapiCommandChannelInstance[K] extends (...args: any[]) => unknown
-      ? K
-      : never;
-}[keyof NapiCommandChannelInstance];
-
-export type NativeCommandName = Exclude<
-  NativeMethodName,
-  "disconnect" | "waitComplete" | "getStatusSnapshot"
->;
+export type { NativeCommandName } from "@linuxcnc-node/types";
 
 export type CommandTracking = "acceptance" | "completion";
 
