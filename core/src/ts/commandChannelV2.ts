@@ -324,6 +324,18 @@ export class CommandChannelV2 {
     nativeMethod: keyof NapiCommandChannelInstance,
     ...args: unknown[]
   ): CommandHandle {
+    const context = CommandChannelV2.lockContext.getStore();
+    if (context?.channel === this && context.active) {
+      // A public command called reentrantly from this channel's withLock()
+      // must join the lock's dispatch queue so it cannot overtake a locked
+      // command that is still waiting for LinuxCNC completion.
+      return new CommandHandleImpl(
+        this.queueLockedDispatch(context, () =>
+          this.acceptNativeCommand(nativeMethod, args)
+        )
+      );
+    }
+
     return new CommandHandleImpl(
       this.runWithCommandLock(() =>
         this.acceptNativeCommand(nativeMethod, args)
@@ -345,17 +357,14 @@ export class CommandChannelV2 {
     const dispatchDecision = new Promise<void>((resolve) => {
       releaseDispatch = resolve;
     });
-    const accepted = this.trackCommandLockOperation(
-      context.dispatchTail.then(() =>
-        this.acceptNativeCommand(nativeMethod, args)
-      )
-    );
-    context.dispatchTail = accepted
-      .then(async () => {
+    const accepted = this.queueLockedDispatch(
+      context,
+      () => this.acceptNativeCommand(nativeMethod, args),
+      async () => {
         await dispatchDecision;
         await completion;
-      })
-      .catch(() => undefined);
+      }
+    );
     queueMicrotask(releaseDispatch);
 
     return new WaitableCommandHandleImpl(
@@ -368,6 +377,22 @@ export class CommandChannelV2 {
         return this.trackCommandLockOperation(promise);
       }
     );
+  }
+
+  private queueLockedDispatch<T>(
+    context: CommandLockContext,
+    execute: () => Promise<T>,
+    afterDispatch?: () => Promise<unknown>
+  ): Promise<T> {
+    const dispatched = this.trackCommandLockOperation(
+      context.dispatchTail.then(execute)
+    );
+    context.dispatchTail = dispatched
+      .then(async () => {
+        await afterDispatch?.();
+      })
+      .catch(() => undefined);
+    return dispatched;
   }
 
   private rejectedLockedCommandHandle(): WaitableCommandHandle {
@@ -383,6 +408,15 @@ export class CommandChannelV2 {
   }
 
   private execLocalCompletion(execute: () => Promise<RcsStatus>): CommandHandle {
+    const context = CommandChannelV2.lockContext.getStore();
+    if (context?.channel === this && context.active) {
+      return new CommandHandleImpl(
+        this.queueLockedDispatch(context, () =>
+          this.acceptLocalCommand(execute)
+        )
+      );
+    }
+
     return new CommandHandleImpl(
       this.runWithCommandLock(() => this.acceptLocalCommand(execute))
     );
@@ -391,11 +425,13 @@ export class CommandChannelV2 {
   private execLockedLocalCompletion(
     execute: () => Promise<RcsStatus>
   ): WaitableCommandHandle {
-    const accepted = this.hasCommandLock()
-      ? this.trackCommandLockOperation(this.acceptLocalCommand(execute))
-      : Promise.reject(
-          new Error("Locked command channel can only be used inside withLock().")
-        );
+    const context = CommandChannelV2.lockContext.getStore();
+    if (context?.channel !== this || !context.active) {
+      return this.rejectedLockedCommandHandle();
+    }
+    const accepted = this.queueLockedDispatch(context, () =>
+      this.acceptLocalCommand(execute)
+    );
 
     return new WaitableCommandHandleImpl(
       accepted,

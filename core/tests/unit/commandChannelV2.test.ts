@@ -21,6 +21,7 @@ describe("CommandChannelV2", () => {
       mdi: jest.fn(),
       stop: jest.fn(),
       setTool: jest.fn(),
+      loadToolTable: jest.fn(),
       waitComplete: jest.fn(),
       waitCompleteForSerial: jest.fn(),
       disconnect: jest.fn(),
@@ -321,6 +322,63 @@ describe("CommandChannelV2", () => {
 
     expect(mockNativeInstance.mdi).toHaveBeenCalledTimes(2);
     expect(mockNativeInstance.mdi).toHaveBeenLastCalledWith("second");
+  });
+
+  it("serializes local tool updates with locked native dispatches", async () => {
+    let releaseSetTool!: () => void;
+    mockNativeInstance.setTool.mockReturnValue(
+      new Promise<RcsStatus>((resolve) => {
+        releaseSetTool = () => resolve(RcsStatus.DONE);
+      })
+    );
+    mockNativeInstance.loadToolTable.mockResolvedValue({
+      status: RcsStatus.DONE,
+      serial: 19,
+    });
+
+    const locked = commandChannel.withLock((command) => {
+      void command.setTool({ toolNo: 1 });
+      void command.loadToolTable();
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockNativeInstance.setTool).toHaveBeenCalledTimes(1);
+    expect(mockNativeInstance.loadToolTable).not.toHaveBeenCalled();
+
+    releaseSetTool();
+    await locked;
+
+    expect(mockNativeInstance.loadToolTable).toHaveBeenCalledTimes(1);
+  });
+
+  it("queues reentrant public commands behind locked waits", async () => {
+    let releaseFirstWait!: () => void;
+    mockNativeInstance.mdi
+      .mockResolvedValueOnce({ status: RcsStatus.DONE, serial: 20 })
+      .mockResolvedValueOnce({ status: RcsStatus.DONE, serial: 21 });
+    mockNativeInstance.waitCompleteForSerial.mockReturnValue(
+      new Promise<RcsStatus>((resolve) => {
+        releaseFirstWait = () => resolve(RcsStatus.DONE);
+      })
+    );
+
+    const locked = commandChannel.withLock((command) => {
+      void command.mdi("locked").wait();
+      void commandChannel.mdi("public");
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockNativeInstance.mdi).toHaveBeenCalledTimes(1);
+    expect(mockNativeInstance.mdi).toHaveBeenCalledWith("locked");
+
+    releaseFirstWait();
+    await locked;
+
+    expect(mockNativeInstance.mdi).toHaveBeenCalledTimes(2);
+    expect(mockNativeInstance.mdi).toHaveBeenLastCalledWith("public");
   });
 
   it("drains fire-and-forget waits before releasing a rejected lock", async () => {
