@@ -24,6 +24,7 @@ interface CommandLockContext {
   channel: CommandChannelV2;
   active: boolean;
   pending: Set<Promise<unknown>>;
+  dispatchTail: Promise<void>;
 }
 
 export interface CommandAccepted {
@@ -245,6 +246,7 @@ export class CommandChannelV2 {
       channel: this,
       active: true,
       pending: new Set(),
+      dispatchTail: Promise.resolve(),
     };
 
     try {
@@ -333,20 +335,50 @@ export class CommandChannelV2 {
     nativeMethod: keyof NapiCommandChannelInstance,
     ...args: unknown[]
   ): WaitableCommandHandle {
-    const accepted = this.hasCommandLock()
-      ? this.trackCommandLockOperation(
-          this.acceptNativeCommand(nativeMethod, args)
-        )
-      : Promise.reject(
-          new Error("Locked command channel can only be used inside withLock().")
-        );
+    const context = CommandChannelV2.lockContext.getStore();
+    if (context?.channel !== this || !context.active) {
+      return this.rejectedLockedCommandHandle();
+    }
+
+    let completion: Promise<unknown> | undefined;
+    let releaseDispatch!: () => void;
+    const dispatchDecision = new Promise<void>((resolve) => {
+      releaseDispatch = resolve;
+    });
+    const accepted = this.trackCommandLockOperation(
+      context.dispatchTail.then(() =>
+        this.acceptNativeCommand(nativeMethod, args)
+      )
+    );
+    context.dispatchTail = accepted
+      .then(async () => {
+        await dispatchDecision;
+        await completion;
+      })
+      .catch(() => undefined);
+    queueMicrotask(releaseDispatch);
 
     return new WaitableCommandHandleImpl(
       accepted,
       (serial, timeoutMs) =>
         this.nativeInstance.waitCompleteForSerial(serial, timeoutMs),
       () => this.hasCommandLock(),
-      (promise) => this.trackCommandLockOperation(promise)
+      (promise) => {
+        completion = promise;
+        return this.trackCommandLockOperation(promise);
+      }
+    );
+  }
+
+  private rejectedLockedCommandHandle(): WaitableCommandHandle {
+    const accepted = Promise.reject<CommandAccepted>(
+      new Error("Locked command channel can only be used inside withLock().")
+    );
+    return new WaitableCommandHandleImpl(
+      accepted,
+      () => Promise.reject(new Error("Command wait requires active withLock().")),
+      () => false,
+      (promise) => promise
     );
   }
 

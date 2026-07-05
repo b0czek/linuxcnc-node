@@ -292,6 +292,37 @@ describe("CommandChannelV2", () => {
     expect(events).toEqual(["first-callback-end", "second-start"]);
   });
 
+  it("serializes fire-and-forget locked command waits", async () => {
+    let releaseFirstWait!: () => void;
+    mockNativeInstance.mdi
+      .mockResolvedValueOnce({ status: RcsStatus.DONE, serial: 17 })
+      .mockResolvedValueOnce({ status: RcsStatus.DONE, serial: 18 });
+    mockNativeInstance.waitCompleteForSerial
+      .mockReturnValueOnce(
+        new Promise<RcsStatus>((resolve) => {
+          releaseFirstWait = () => resolve(RcsStatus.DONE);
+        })
+      )
+      .mockResolvedValueOnce(RcsStatus.DONE);
+
+    const locked = commandChannel.withLock((command) => {
+      void command.mdi("first").wait();
+      void command.mdi("second").wait();
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockNativeInstance.mdi).toHaveBeenCalledTimes(1);
+    expect(mockNativeInstance.mdi).toHaveBeenCalledWith("first");
+
+    releaseFirstWait();
+    await locked;
+
+    expect(mockNativeInstance.mdi).toHaveBeenCalledTimes(2);
+    expect(mockNativeInstance.mdi).toHaveBeenLastCalledWith("second");
+  });
+
   it("drains fire-and-forget waits before releasing a rejected lock", async () => {
     const events: string[] = [];
     let releaseWait!: () => void;
