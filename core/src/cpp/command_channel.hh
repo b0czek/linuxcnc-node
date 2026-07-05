@@ -33,9 +33,14 @@ namespace LinuxCNC
         std::string ini_filename_;
         std::string tool_table_filename_;
         CommandWaitMode command_wait_mode_ = CommandWaitMode::Complete;
+        std::size_t active_serial_waits_ = 0;
+        bool disconnect_pending_ = false;
 
         bool connect();
         void disconnect();
+        void closeChannels();
+        void retainSerialWait();
+        void releaseSerialWait();
         bool parseIniFile();
 
         // Getters for cached INI settings

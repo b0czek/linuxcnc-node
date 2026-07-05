@@ -140,11 +140,13 @@ namespace LinuxCNC
     void WaitCompleteForSerialWorker::OnOK()
     {
         deferred_.Resolve(Napi::Number::New(Env(), static_cast<int>(result_status_)));
+        channel_->releaseSerialWait();
     }
 
     void WaitCompleteForSerialWorker::OnError(const Napi::Error &error)
     {
         deferred_.Reject(error.Value());
+        channel_->releaseSerialWait();
     }
 
     // ProgramOpenWorker implementation

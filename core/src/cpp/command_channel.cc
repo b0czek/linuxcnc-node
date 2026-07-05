@@ -169,6 +169,7 @@ namespace LinuxCNC
                         // This is not a critical failure for basic command channel functionality
                     }
 
+                    disconnect_pending_ = false;
                     return true;
                 }
             }
@@ -235,6 +236,16 @@ namespace LinuxCNC
 
     void NapiCommandChannel::disconnect()
     {
+        disconnect_pending_ = true;
+        if (active_serial_waits_ != 0)
+        {
+            return;
+        }
+        closeChannels();
+    }
+
+    void NapiCommandChannel::closeChannels()
+    {
         delete c_channel_;
         c_channel_ = nullptr;
         delete s_channel_;
@@ -243,6 +254,21 @@ namespace LinuxCNC
         // Clear cached INI settings
         ini_filename_.clear();
         tool_table_filename_.clear();
+    }
+
+    void NapiCommandChannel::retainSerialWait()
+    {
+        ++active_serial_waits_;
+        Ref();
+    }
+
+    void NapiCommandChannel::releaseSerialWait()
+    {
+        if (--active_serial_waits_ == 0 && disconnect_pending_)
+        {
+            closeChannels();
+        }
+        Unref();
     }
 
     Napi::Value NapiCommandChannel::sendCommandAsync(const Napi::CallbackInfo &info, std::unique_ptr<RCS_CMD_MSG> cmd_msg, double timeout)
@@ -1121,6 +1147,7 @@ namespace LinuxCNC
         }
 
         auto deferred = Napi::Promise::Deferred::New(env);
+        retainSerialWait();
         WaitCompleteForSerialWorker *worker = new WaitCompleteForSerialWorker(deferred, this, serial, timeout);
         worker->Queue();
         return deferred.Promise();
