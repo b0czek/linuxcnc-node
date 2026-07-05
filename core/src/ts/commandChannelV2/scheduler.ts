@@ -3,9 +3,12 @@ import type { CommandName, ExclusiveCommandChannel } from "./commandPolicy";
 import {
   applyCommandDefaults,
   exclusiveCommandNames,
+  immediateLockResourceForCommand,
   immediateCommandNames,
   takeExclusiveOptions,
+  validateImmediateLockResources,
 } from "./commandPolicy";
+import type { ImmediateLockResource } from "./commandPolicy";
 import type {
   CommandAccepted,
   ExclusiveCommandHandle,
@@ -157,7 +160,8 @@ class ExclusiveTransaction<T> {
     ) => T | Promise<T>,
     private readonly startCommand: StartCommand,
     private readonly startImmediateCommand: StartImmediateCommand,
-    private readonly defaultTimeout?: number
+    private readonly defaultTimeout: number | undefined,
+    private readonly lockResources: ReadonlySet<ImmediateLockResource>
   ) {
     const facade: Partial<ExclusiveCommandChannel> = {};
     for (const name of exclusiveCommandNames()) {
@@ -217,6 +221,11 @@ class ExclusiveTransaction<T> {
 
   isSettled(): boolean {
     return this.callbackSettled;
+  }
+
+  locksImmediateCommand(name: CommandName): boolean {
+    const resource = immediateLockResourceForCommand(name);
+    return resource !== undefined && this.lockResources.has(resource);
   }
 
   async waitForChange(): Promise<void> {
@@ -347,10 +356,12 @@ export class CommandScheduler {
   ): Promise<T> {
     if (this.stopped) return Promise.reject(this.stopped);
     let timeout: number | undefined;
+    let locks: ImmediateLockResource[];
     try {
       timeout = validateTimeout(
         options.timeout ?? CommandScheduler.DEFAULT_COMPLETION_TIMEOUT
       );
+      locks = validateImmediateLockResources(options.locks);
     } catch (error: unknown) {
       return Promise.reject(error);
     }
@@ -363,7 +374,8 @@ export class CommandScheduler {
       callback,
       this.startCommand,
       this.startImmediateCommand,
-      timeout
+      timeout,
+      new Set(locks)
     );
     this.activeTransaction = transaction as ExclusiveTransaction<unknown>;
     transaction.startCallback();
@@ -375,6 +387,13 @@ export class CommandScheduler {
     const transaction = this.activeTransaction;
     this.activeTransaction = undefined;
     transaction?.cancel(reason);
+  }
+
+  lockErrorForImmediateCommand(name: CommandName): Error | undefined {
+    if (!this.activeTransaction?.locksImmediateCommand(name)) {
+      return undefined;
+    }
+    return new Error(`${name} is locked by active exclusive transaction.`);
   }
 
   stop(reason = new Error("Command channel disconnected.")): void {

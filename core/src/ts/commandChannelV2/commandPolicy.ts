@@ -108,6 +108,55 @@ export type ImmediateCommandName = {
   [K in CommandName]: CatalogPolicy<K> extends "immediate" ? K : never;
 }[CommandName];
 
+export const immediateLockResourceCatalog = {
+  feedControls: [
+    "setFeedRate",
+    "setFeedOverrideEnable",
+    "setFeedHoldEnable",
+    "setAdaptiveFeedEnable",
+  ],
+  rapidOverride: ["setRapidRate"],
+  spindleOverride: ["setSpindleOverride", "setSpindleOverrideEnable"],
+  velocity: ["setMaxVelocity"],
+  limitOverrides: ["overrideLimits"],
+  positionLimits: ["setMinPositionLimit", "setMaxPositionLimit"],
+  teleop: ["teleopEnable"],
+  jog: ["jogContinuous"],
+  spindle: [
+    "spindleOn",
+    "spindleIncrease",
+    "spindleDecrease",
+    "spindleOff",
+    "spindleBrake",
+  ],
+  coolant: ["setMist", "setFlood"],
+  outputs: ["setDigitalOutput", "setAnalogOutput"],
+  debug: ["setDebugLevel"],
+  operatorMessages: [
+    "sendOperatorError",
+    "sendOperatorText",
+    "sendOperatorDisplay",
+  ],
+  optionalStop: ["setOptionalStop"],
+  blockDelete: ["setBlockDelete"],
+} as const satisfies Record<string, readonly ImmediateCommandName[]>;
+
+export type ImmediateLockResource =
+  keyof typeof immediateLockResourceCatalog;
+
+const immediateCommandLockResourceMap = new Map<
+  ImmediateCommandName,
+  ImmediateLockResource
+>(
+  Object.entries(immediateLockResourceCatalog).flatMap(
+    ([resource, names]) =>
+      names.map((name) => [
+        name,
+        resource as ImmediateLockResource,
+      ])
+  )
+);
+
 export type TopLevelCommandName = {
   [K in CommandName]: CatalogPolicy<K> extends
     | "immediate"
@@ -203,6 +252,33 @@ export function topLevelCommandNames(): TopLevelCommandName[] {
     const policy = commandPolicyCatalog[name];
     return policy === "immediate" || policy === "preemptive" || policy === "state";
   }) as TopLevelCommandName[];
+}
+
+export function immediateLockResourceForCommand(
+  name: CommandName
+): ImmediateLockResource | undefined {
+  return immediateCommandLockResourceMap.get(name as ImmediateCommandName);
+}
+
+export function validateImmediateLockResources(
+  locks: readonly unknown[] | undefined
+): ImmediateLockResource[] {
+  if (locks === undefined) return [];
+  if (!Array.isArray(locks)) {
+    throw new RangeError("Exclusive locks must be an array.");
+  }
+
+  const validResources = new Set(Object.keys(immediateLockResourceCatalog));
+  const validated = new Set<ImmediateLockResource>();
+  for (const lock of locks) {
+    if (typeof lock !== "string" || !validResources.has(lock)) {
+      throw new RangeError(
+        `Invalid immediate lock resource: ${String(lock)}.`
+      );
+    }
+    validated.add(lock as ImmediateLockResource);
+  }
+  return [...validated];
 }
 
 export function takeExclusiveOptions(

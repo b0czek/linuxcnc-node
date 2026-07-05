@@ -1,4 +1,7 @@
 import { RcsStatus } from "@linuxcnc-node/types";
+import type { ImmediateLockResource } from "./commandPolicy";
+
+export type { ImmediateLockResource } from "./commandPolicy";
 
 export interface CommandAccepted {
   status: RcsStatus.DONE;
@@ -8,9 +11,14 @@ export interface CommandAccepted {
 export interface ExclusiveOptions {
   /** Completion timeout in milliseconds. */
   timeout?: number;
+  /** Immediate resources locked against competing top-level commands. */
+  locks?: readonly ImmediateLockResource[];
 }
 
-export type ExclusiveCommandOptions = ExclusiveOptions;
+export interface ExclusiveCommandOptions {
+  /** Completion timeout in milliseconds. */
+  timeout?: number;
+}
 
 export interface CommandHandle extends PromiseLike<CommandAccepted> {
   accepted: Promise<CommandAccepted>;

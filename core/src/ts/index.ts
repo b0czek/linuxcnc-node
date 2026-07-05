@@ -8,6 +8,7 @@ import type {
   ExclusiveCommandHandle,
   ExclusiveCommandOptions,
   ExclusiveOptions,
+  ImmediateLockResource,
 } from "./commandChannelV2";
 import { ErrorChannel, ErrorChannelOptions } from "./errorChannel";
 import { PositionLogger } from "./positionLogger";
@@ -49,5 +50,6 @@ export type {
   ExclusiveCommandHandle,
   ExclusiveCommandOptions,
   ExclusiveOptions,
+  ImmediateLockResource,
 };
 export { PositionLoggerOptions } from "./positionLogger";

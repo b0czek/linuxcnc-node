@@ -79,6 +79,47 @@ describe("Integration: CommandChannelV2 scheduler", () => {
     await transaction;
   });
 
+  it("locks declared immediate resources during active exclusive work", async () => {
+    let dwell!: ExclusiveCommandHandle;
+    let internalFeed:
+      | ReturnType<CommandChannelV2["setFeedRate"]>
+      | undefined;
+    const transaction = commandChannel.exclusive(
+      async (command) => {
+        dwell = command.mdi("G4 P1");
+        await dwell;
+        internalFeed = command.setFeedRate(0.8);
+        await internalFeed;
+        await dwell.completed;
+      },
+      { locks: ["feedControls"], timeout: 5000 }
+    );
+
+    await dwell;
+    await expect(commandChannel.setFeedRate(0.5)).rejects.toThrow(
+      "setFeedRate is locked by active exclusive transaction"
+    );
+
+    await waitFor(
+      () => internalFeed !== undefined,
+      "exclusive facade feed-rate command to be submitted"
+    );
+    await internalFeed;
+    await waitForStatus(
+      statChannel,
+      (status) => Math.abs(status.motion.traj.feedRateOverride - 0.8) < 0.001,
+      "exclusive facade feed override to change"
+    );
+
+    await transaction;
+    await commandChannel.setFeedRate(0.7);
+    await waitForStatus(
+      statChannel,
+      (status) => Math.abs(status.motion.traj.feedRateOverride - 0.7) < 0.001,
+      "top-level feed override to change after lock release"
+    );
+  });
+
   it("preempts active work and accepts a new exclusive transaction afterward", async () => {
     let dwell!: ExclusiveCommandHandle;
     const active = commandChannel.exclusive((command) => {
@@ -137,6 +178,21 @@ async function waitForStatus(
   while (Date.now() - start < timeout) {
     const status = statChannel.get();
     if (status && predicate(status)) {
+      return;
+    }
+    await delay(25);
+  }
+  throw new Error(`Timeout waiting for ${description}`);
+}
+
+async function waitFor(
+  predicate: () => boolean,
+  description: string,
+  timeout = 3000
+): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    if (predicate()) {
       return;
     }
     await delay(25);

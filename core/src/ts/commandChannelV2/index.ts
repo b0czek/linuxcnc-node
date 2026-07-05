@@ -31,9 +31,13 @@ export type {
   ExclusiveCommandHandle,
   ExclusiveCommandOptions,
   ExclusiveOptions,
+  ImmediateLockResource,
 } from "./types";
 export type { ExclusiveCommandChannel } from "./commandPolicy";
-export { commandPolicyCatalog } from "./commandPolicy";
+export {
+  commandPolicyCatalog,
+  immediateLockResourceCatalog,
+} from "./commandPolicy";
 
 interface NativeSentResult {
   serial: number;
@@ -116,6 +120,9 @@ export class CommandChannelV2 {
       this.scheduler.preempt(
         new Error(`Exclusive work was preempted by ${name}.`)
       );
+    } else {
+      const lockError = this.scheduler.lockErrorForImmediateCommand(name);
+      if (lockError) return rejectedHandle(lockError);
     }
     const execution = this.startNativeCommand(name, args, false);
     return new AcceptanceHandleImpl(execution.accepted);

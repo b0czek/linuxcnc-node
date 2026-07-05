@@ -65,6 +65,21 @@ describe("CommandChannelV2 policy scheduler", () => {
     await flush();
   }
 
+  async function expectFeedUnlocked(value: number): Promise<void> {
+    const previousCalls = native.setFeedRate.mock.calls.length;
+    const handle = channel.setFeedRate(value);
+    const serial = nextSerial;
+
+    expect(native.setFeedRate).toHaveBeenCalledTimes(previousCalls + 1);
+    expect(native.setFeedRate).toHaveBeenLastCalledWith(value);
+
+    await poll(serial, RcsStatus.DONE, 0);
+    await expect(handle).resolves.toEqual({
+      status: RcsStatus.DONE,
+      serial,
+    });
+  }
+
   it("builds disjoint public and exclusive facades from the policy catalog", async () => {
     expect(typeof channel.setRapidRate).toBe("function");
     expect(typeof channel.setOptionalStop).toBe("function");
@@ -146,6 +161,67 @@ describe("CommandChannelV2 policy scheduler", () => {
     await poll(2, RcsStatus.DONE);
     expect(native.mdi).toHaveBeenCalledTimes(2);
     await poll(3, RcsStatus.DONE);
+    await expect(transaction).resolves.toBeUndefined();
+  });
+
+  it("rejects top-level immediate commands for locked resources only", async () => {
+    const transaction = channel.exclusive(
+      (command) => {
+        void command.mdi("G4 P1");
+      },
+      { locks: ["feedControls"] }
+    );
+    await flush();
+
+    const locked = channel.setFeedRate(0.5);
+    expect(native.setFeedRate).not.toHaveBeenCalled();
+    await expect(locked).rejects.toThrow(
+      "setFeedRate is locked by active exclusive transaction"
+    );
+
+    const unrelated = channel.setRapidRate(0.5);
+    expect(native.setRapidRate).toHaveBeenCalledWith(0.5);
+    await poll(2, RcsStatus.EXEC, 0);
+    await expect(unrelated).resolves.toEqual({
+      status: RcsStatus.DONE,
+      serial: 2,
+    });
+
+    await poll(2, RcsStatus.DONE);
+    await expect(transaction).resolves.toBeUndefined();
+    await expectFeedUnlocked(0.75);
+  });
+
+  it("lets an exclusive facade call its locked immediate resources", async () => {
+    let feed: ReturnType<CommandChannelV2["setFeedRate"]> | undefined;
+    const transaction = channel.exclusive(
+      async (command) => {
+        const dwell = command.mdi("G4 P1");
+        await dwell;
+        feed = command.setFeedRate(0.8);
+        await feed;
+        await dwell.completed;
+      },
+      { locks: ["feedControls"] }
+    );
+    await flush();
+
+    const locked = channel.setFeedRate(0.5);
+    await expect(locked).rejects.toThrow(
+      "setFeedRate is locked by active exclusive transaction"
+    );
+
+    await poll(1, RcsStatus.EXEC, 0);
+    await flush();
+    expect(native.setFeedRate).toHaveBeenCalledTimes(1);
+    expect(native.setFeedRate).toHaveBeenCalledWith(0.8);
+
+    await poll(2, RcsStatus.EXEC);
+    await expect(feed).resolves.toEqual({
+      status: RcsStatus.DONE,
+      serial: 2,
+    });
+    await poll(2, RcsStatus.DONE);
     await expect(transaction).resolves.toBeUndefined();
   });
 
@@ -240,6 +316,31 @@ describe("CommandChannelV2 policy scheduler", () => {
     await transaction;
   });
 
+  it("preemptive commands bypass immediate locks and release them", async () => {
+    const active = channel.exclusive(
+      (command) => {
+        void command.mdi("active");
+      },
+      { locks: ["feedControls"] }
+    );
+    await flush();
+
+    await expect(channel.setFeedRate(0.5)).rejects.toThrow(
+      "setFeedRate is locked by active exclusive transaction"
+    );
+
+    const stopped = channel.stop();
+    expect(native.stop).toHaveBeenCalledTimes(1);
+    await expect(active).rejects.toThrow("preempted by stop");
+    await poll(2, RcsStatus.DONE, 0);
+    await expect(stopped).resolves.toEqual({
+      status: RcsStatus.DONE,
+      serial: 2,
+    });
+
+    await expectFeedUnlocked(0.75);
+  });
+
   it("clears busy state after an exclusive error and accepts new work afterward", async () => {
     const failed = channel.exclusive((command) => {
       void command.mdi("failed");
@@ -257,6 +358,56 @@ describe("CommandChannelV2 policy scheduler", () => {
     expect(native.mdi).toHaveBeenLastCalledWith("next");
     await poll(2, RcsStatus.DONE, 0);
     await expect(next).resolves.toBeUndefined();
+  });
+
+  it("releases immediate locks after success, command error, timeout, and callback error", async () => {
+    const succeeded = channel.exclusive(
+      (command) => {
+        void command.mdi("success");
+      },
+      { locks: ["feedControls"] }
+    );
+    await flush();
+    await poll(1, RcsStatus.DONE, 0);
+    await expect(succeeded).resolves.toBeUndefined();
+    await expectFeedUnlocked(0.61);
+
+    const failed = channel.exclusive(
+      (command) => {
+        void command.mdi("failed");
+      },
+      { locks: ["feedControls"] }
+    );
+    await flush();
+    await poll(nextSerial, RcsStatus.ERROR, 0);
+    await expect(failed).rejects.toThrow("RCS status: ERROR");
+    await expectFeedUnlocked(0.62);
+
+    const timedOut = channel.exclusive(
+      (command) => {
+        void command.mdi("slow");
+      },
+      { timeout: 50, locks: ["feedControls"] }
+    );
+    await flush();
+    await poll(nextSerial, RcsStatus.EXEC, 0);
+    jest.advanceTimersByTime(50);
+    await flush();
+    await expect(timedOut).rejects.toThrow(
+      "Command completion timed out"
+    );
+    await expectFeedUnlocked(0.63);
+
+    const callbackError = new Error("callback failed");
+    const callbackFailed = channel.exclusive(
+      () => {
+        throw callbackError;
+      },
+      { locks: ["feedControls"] }
+    );
+    await flush();
+    await expect(callbackFailed).rejects.toBe(callbackError);
+    await expectFeedUnlocked(0.64);
   });
 
   it("applies transaction timeout defaults and trailing command overrides", async () => {
@@ -406,11 +557,36 @@ describe("CommandChannelV2 policy scheduler", () => {
     expect(native.disconnect).toHaveBeenCalledTimes(1);
   });
 
+  it("releases immediate locks on disconnect", async () => {
+    const transaction = channel.exclusive(
+      (command) => {
+        void command.mdi("active");
+      },
+      { locks: ["feedControls"] }
+    );
+    await flush();
+
+    channel.disconnect();
+    await expect(transaction).rejects.toThrow("disconnected");
+
+    const afterDisconnect = channel.setFeedRate(0.5);
+    expect(native.setFeedRate).toHaveBeenCalledWith(0.5);
+    await expect(afterDisconnect).rejects.toThrow("disconnected");
+  });
+
   it("rejects invalid exclusive timeouts before invoking the callback", async () => {
     const callback = jest.fn();
     await expect(
       channel.exclusive(callback, { timeout: 0 })
     ).rejects.toThrow("finite positive number");
+    expect(callback).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid exclusive locks before invoking the callback", async () => {
+    const callback = jest.fn();
+    await expect(
+      channel.exclusive(callback, { locks: ["invalid"] as never })
+    ).rejects.toThrow("Invalid immediate lock resource: invalid");
     expect(callback).not.toHaveBeenCalled();
   });
 });

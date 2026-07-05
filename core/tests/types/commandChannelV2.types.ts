@@ -8,15 +8,22 @@ channel.setOptionalStop(true);
 channel.setBlockDelete(true);
 channel.stop();
 channel.setState(TaskState.OFF);
+channel.exclusive(() => undefined, {
+  locks: ["feedControls", "rapidOverride", "blockDelete"],
+});
 
 // @ts-expect-error Exclusive commands are not top-level methods.
 channel.mdi("G1 X10");
 // @ts-expect-error ON is completion-sensitive and must be exclusive.
 channel.setState(TaskState.ON);
+// @ts-expect-error Locks must name declared immediate resources.
+channel.exclusive(() => undefined, { locks: ["notAResource"] });
 
 channel.exclusive((command) => {
   command.setTaskMode(TaskMode.MDI);
   command.mdi("G1 X10", { timeout: 5000 });
+  // @ts-expect-error Locks are transaction options, not command options.
+  command.mdi("G1 X10", { locks: ["feedControls"] });
   command.runProgram({ timeout: 5000 });
   command.runProgram(10, { timeout: 5000 });
   command.setState(TaskState.ON);
