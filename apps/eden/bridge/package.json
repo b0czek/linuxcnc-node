@@ -1,0 +1,45 @@
+{
+  "name": "@linuxcnc-node/eden-bridge",
+  "version": "3.1.1",
+  "description": "Eden AppBus bridge for LinuxCNC Node services",
+  "main": "dist/backend.js",
+  "type": "commonjs",
+  "files": [
+    "dist",
+    "manifest.json",
+    "scripts"
+  ],
+  "scripts": {
+    "copy-addons": "node scripts/copy-addons.js",
+    "typecheck": "tsc --noEmit",
+    "build": "rm -rf *.edenite && npm run copy-addons && tsup && genesis build . -o eden-bridge.edenite",
+    "clean": "rm -rf dist build",
+    "rebuild": "npm run clean && npm run build",
+    "prepublishOnly": "npm run rebuild"
+  },
+  "keywords": [
+    "linuxcnc",
+    "eden",
+    "cnc",
+    "bridge"
+  ],
+  "license": "GPL-2.0-only",
+  "dependencies": {
+    "@edenapp/types": "catalog:",
+    "@linuxcnc-node/core": "workspace:*",
+    "@linuxcnc-node/gcode": "workspace:*",
+    "@linuxcnc-node/hal": "workspace:*",
+    "@linuxcnc-node/types": "workspace:*",
+    "@linuxcnc-node/eden-protocol": "workspace:*",
+    "dlv": "^1.1.3",
+    "picomatch": "^4.0.3"
+  },
+  "devDependencies": {
+    "@edenapp/genesis": "catalog:",
+    "@types/dlv": "^1.1.5",
+    "@types/node": "^20.0.0",
+    "@types/picomatch": "^4.0.2",
+    "tsup": "^8.5.1",
+    "typescript": "^5.0.0"
+  }
+}

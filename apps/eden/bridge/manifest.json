@@ -1,0 +1,38 @@
+{
+  "id": "com.linuxcnc-node.eden-bridge",
+  "name": "LinuxCNC Node Eden Bridge",
+  "version": "3.1.1",
+  "description": "Exposes LinuxCNC Node functionality through Eden AppBus services",
+  "author": "Dariusz Majnert",
+  "backend": {
+    "entry": "dist/backend.js"
+  },
+  "services": [
+    {
+      "name": "linuxcnc",
+      "description": "LinuxCNC status monitoring and command execution"
+    },
+    {
+      "name": "gcode",
+      "description": "G-code file parsing using LinuxCNC interpreter"
+    },
+    {
+      "name": "hal",
+      "description": "HAL component management and I/O access"
+    },
+    {
+      "name": "position-logger",
+      "description": "Machine position logging and history streaming"
+    }
+  ],
+  "include": [
+    "build/Release"
+  ],
+  "permissions": [
+    "appbus/expose"
+  ],
+  "build": {
+    "command": "node scripts/copy-addons.js",
+    "cwd": "."
+  }
+}

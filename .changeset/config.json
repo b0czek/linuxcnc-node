@@ -3,10 +3,9 @@
   "changelog": "@changesets/cli/changelog",
   "commit": false,
   "fixed": [],
-  "linked": [["@linuxcnc-node/core", "@linuxcnc-node/gcode", "@linuxcnc-node/hal", "@linuxcnc-node/types"]],
+  "linked": [["@linuxcnc-node/core", "@linuxcnc-node/gcode", "@linuxcnc-node/hal", "@linuxcnc-node/types", "@linuxcnc-node/eden-bridge", "@linuxcnc-node/eden-protocol"]],
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
   "ignore": []
 }
-

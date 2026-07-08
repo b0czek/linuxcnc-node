@@ -1,0 +1,29 @@
+{
+  "name": "@linuxcnc-node/eden-protocol",
+  "version": "3.1.1",
+  "description": "Eden AppBus protocol definitions for LinuxCNC Node services",
+  "types": "index.d.ts",
+  "scripts": {},
+  "author": "Dariusz Majnert",
+  "license": "MIT",
+  "dependencies": {
+    "@edenapp/types": "catalog:",
+    "@linuxcnc-node/types": "workspace:*"
+  },
+  "peerDependencies": {
+    "typescript": "*"
+  },
+  "files": [
+    "*.d.ts",
+    "README.md"
+  ],
+  "keywords": [
+    "eden",
+    "appbus",
+    "protocol",
+    "ipc",
+    "linuxcnc",
+    "hal",
+    "typescript"
+  ]
+}

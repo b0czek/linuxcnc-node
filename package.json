@@ -2,14 +2,8 @@
   "name": "linuxcnc-node",
   "version": "0.0.0",
   "private": true,
-  "description": "Node.js bindings for LinuxCNC",
+  "description": "LinuxCNC JavaScript and TypeScript monorepo",
   "packageManager": "pnpm@11.1.2",
-  "workspaces": [
-    "core",
-    "gcode",
-    "hal",
-    "types"
-  ],
   "scripts": {
     "changeset": "changeset",
     "ci": "pnpm run typecheck && pnpm test",
@@ -17,8 +11,8 @@
     "test": "pnpm --filter @linuxcnc-node/core test && pnpm --filter @linuxcnc-node/hal test && pnpm --filter @linuxcnc-node/gcode test",
     "pretest:unit": "pnpm --filter @linuxcnc-node/types build",
     "test:unit": "pnpm --filter @linuxcnc-node/core test:unit",
-    "typecheck": "pnpm --filter @linuxcnc-node/types build && pnpm --filter @linuxcnc-node/core build:ts && pnpm --filter @linuxcnc-node/core test:types && pnpm --filter @linuxcnc-node/hal build:ts && pnpm --filter @linuxcnc-node/gcode build:ts",
-    "build:packages": "pnpm --filter @linuxcnc-node/types build && pnpm --filter @linuxcnc-node/core build && pnpm --filter @linuxcnc-node/hal build && pnpm --filter @linuxcnc-node/gcode build",
+    "typecheck": "pnpm --filter @linuxcnc-node/types build && pnpm --filter @linuxcnc-node/core build:ts && pnpm --filter @linuxcnc-node/core test:types && pnpm --filter @linuxcnc-node/hal build:ts && pnpm --filter @linuxcnc-node/gcode build:ts && pnpm --filter @linuxcnc-node/eden-bridge typecheck",
+    "build:packages": "pnpm --filter @linuxcnc-node/types build && pnpm --filter @linuxcnc-node/core build && pnpm --filter @linuxcnc-node/hal build && pnpm --filter @linuxcnc-node/gcode build && pnpm --filter @linuxcnc-node/eden-bridge build",
     "version": "changeset version",
     "publish": "changeset publish"
   },

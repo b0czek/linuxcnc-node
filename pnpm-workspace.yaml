@@ -1,5 +1,16 @@
 packages:
-  - core
-  - gcode
-  - hal
-  - types
+  - packages/*
+  - apps/eden/*
+  - apps/examples/*
+
+catalog:
+  '@edenapp/genesis': ^0.10.1
+  '@edenapp/types': ^0.10.1
+  
+allowBuilds:
+  '@linuxcnc-node/core': true
+  '@linuxcnc-node/gcode': true
+  '@linuxcnc-node/hal': true
+  electron: true
+  electron-winstaller: true
+  esbuild: true

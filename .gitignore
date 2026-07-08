@@ -2,5 +2,7 @@ node_modules
 build
 dist
 coverage
-core/docs
+packages/core/docs
+*.edenite
+*.expanded
 *.tgz
