@@ -24,6 +24,11 @@
     "bridge"
   ],
   "license": "GPL-2.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/b0czek/linuxcnc-node.git",
+    "directory": "apps/eden/bridge"
+  },
   "dependencies": {
     "@edenapp/types": "catalog:",
     "@linuxcnc-node/core": "workspace:*",

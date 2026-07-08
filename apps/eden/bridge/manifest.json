@@ -1,7 +1,7 @@
 {
   "id": "com.linuxcnc-node.eden-bridge",
   "name": "LinuxCNC Node Eden Bridge",
-  "version": "3.1.1",
+  "version": "3.2.0",
   "description": "Exposes LinuxCNC Node functionality through Eden AppBus services",
   "author": "Dariusz Majnert",
   "backend": {

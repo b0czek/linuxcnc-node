@@ -5,6 +5,11 @@
   "types": "index.d.ts",
   "scripts": {},
   "author": "Dariusz Majnert",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/b0czek/linuxcnc-node.git",
+    "directory": "packages/eden-protocol"
+  },
   "license": "MIT",
   "dependencies": {
     "@edenapp/types": "catalog:",
