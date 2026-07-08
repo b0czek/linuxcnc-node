@@ -10,6 +10,11 @@ import {
   ToolEntry,
 } from "@linuxcnc-node/types";
 
+/**
+ * Command API that resolves each async command after LinuxCNC reports
+ * completion. Use CommandTransport when you need raw sent-command acceptance
+ * and optional completion tracking.
+ */
 export class CommandChannel {
   private nativeInstance: NapiCommandChannelInstance;
 

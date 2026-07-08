@@ -13,6 +13,12 @@ namespace LinuxCNC
 {
     class NapiCommandChannel;
 
+    enum class CommandWaitMode
+    {
+        Complete,
+        Sent
+    };
+
     // AsyncWorker class for handling commands asynchronously
     class CommandWorker : public Napi::AsyncWorker
     {
@@ -42,7 +48,11 @@ namespace LinuxCNC
     class ProgramOpenWorker : public Napi::AsyncWorker
     {
     public:
-        ProgramOpenWorker(const Napi::CallbackInfo &info, std::string file_path, NapiCommandChannel *channel);
+        ProgramOpenWorker(const Napi::CallbackInfo &info,
+                          std::string file_path,
+                          NapiCommandChannel *channel,
+                          CommandWaitMode wait_mode,
+                          double completion_timeout);
         Napi::Promise GetPromise() { return deferred_.Promise(); }
 
     protected:
@@ -54,10 +64,16 @@ namespace LinuxCNC
         Napi::Promise::Deferred deferred_;
         std::string file_path_;
         NapiCommandChannel *channel_;
+        std::unique_ptr<RCS_STAT_CHANNEL> status_channel_;
         RCS_STATUS result_status_;
+        CommandWaitMode wait_mode_;
+        double completion_timeout_;
+        int final_serial_;
 
-        RCS_STATUS waitCommandComplete();
+        bool connectStatusChannel();
+        RCS_STATUS waitCommandComplete(int serial);
         RCS_STATUS handleRemoteFileTransfer(EMC_TASK_PLAN_OPEN &open_msg);
+        void releaseChannel();
     };
 
     // AsyncWorker for SetTool command

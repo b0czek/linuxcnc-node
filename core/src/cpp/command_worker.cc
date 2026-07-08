@@ -38,7 +38,6 @@ namespace LinuxCNC
         Napi::Env env = Env();
         Napi::HandleScope scope(env);
 
-        // Call the callback with the result status
         Callback().Call({Napi::Number::New(env, static_cast<int>(result_status_))});
     }
 
@@ -81,12 +80,19 @@ namespace LinuxCNC
     }
 
     // ProgramOpenWorker implementation
-    ProgramOpenWorker::ProgramOpenWorker(const Napi::CallbackInfo &info, std::string file_path, NapiCommandChannel *channel)
+    ProgramOpenWorker::ProgramOpenWorker(const Napi::CallbackInfo &info,
+                                         std::string file_path,
+                                         NapiCommandChannel *channel,
+                                         CommandWaitMode wait_mode,
+                                         double completion_timeout)
         : Napi::AsyncWorker(info.Env()),
           deferred_(Napi::Promise::Deferred::New(info.Env())),
           file_path_(std::move(file_path)),
           channel_(channel),
-          result_status_(RCS_STATUS::UNINITIALIZED)
+          result_status_(RCS_STATUS::UNINITIALIZED),
+          wait_mode_(wait_mode),
+          completion_timeout_(completion_timeout),
+          final_serial_(0)
     {
     }
 
@@ -94,6 +100,13 @@ namespace LinuxCNC
     {
         try
         {
+            if (!connectStatusChannel())
+            {
+                result_status_ = RCS_STATUS::ERROR;
+                SetError("Failed to connect private program-open status channel");
+                return;
+            }
+
             // First close any open program
             EMC_TASK_PLAN_CLOSE close_msg;
             if (channel_->c_channel_->write(&close_msg))
@@ -103,7 +116,7 @@ namespace LinuxCNC
                 return;
             }
 
-            RCS_STATUS close_status = waitCommandComplete();
+            RCS_STATUS close_status = waitCommandComplete(close_msg.serial_number);
             if (close_status != RCS_STATUS::DONE)
             {
                 result_status_ = close_status;
@@ -126,9 +139,9 @@ namespace LinuxCNC
             open_msg.remote_filesize = 0;
 
             // Handle remote file transfer if necessary
-            if (channel_->s_channel_ && channel_->s_channel_->cms &&
-                channel_->s_channel_->cms->ProcessType == CMS_REMOTE_TYPE &&
-                strcmp(channel_->s_channel_->cms->ProcessName, "emc") != 0)
+            if (status_channel_->cms &&
+                status_channel_->cms->ProcessType == CMS_REMOTE_TYPE &&
+                strcmp(status_channel_->cms->ProcessName, "emc") != 0)
             {
                 result_status_ = handleRemoteFileTransfer(open_msg);
             }
@@ -141,7 +154,10 @@ namespace LinuxCNC
                     SetError("Failed to send open command");
                     return;
                 }
-                result_status_ = waitCommandComplete();
+                final_serial_ = open_msg.serial_number;
+                result_status_ = wait_mode_ == CommandWaitMode::Sent
+                                     ? RCS_STATUS::DONE
+                                     : waitCommandComplete(final_serial_);
             }
         }
         catch (const std::exception &e)
@@ -153,17 +169,57 @@ namespace LinuxCNC
 
     void ProgramOpenWorker::OnOK()
     {
-        deferred_.Resolve(Napi::Number::New(Env(), static_cast<int>(result_status_)));
+        if (wait_mode_ == CommandWaitMode::Sent)
+        {
+            deferred_.Resolve(Napi::Number::New(Env(), final_serial_));
+        }
+        else
+        {
+            deferred_.Resolve(Napi::Number::New(Env(), static_cast<int>(result_status_)));
+        }
+        releaseChannel();
     }
 
     void ProgramOpenWorker::OnError(const Napi::Error &error)
     {
         deferred_.Reject(error.Value());
+        releaseChannel();
     }
 
-    RCS_STATUS ProgramOpenWorker::waitCommandComplete()
+    bool ProgramOpenWorker::connectStatusChannel()
     {
-        return channel_->waitCommandComplete();
+        status_channel_ = std::make_unique<RCS_STAT_CHANNEL>(
+            emcFormat, "emcStatus", "xemc", GetNmlFileCStr());
+        return status_channel_ && status_channel_->valid();
+    }
+
+    RCS_STATUS ProgramOpenWorker::waitCommandComplete(int serial)
+    {
+        bool serial_observed = false;
+        double start = etime();
+        do
+        {
+            double now = etime();
+            if (status_channel_->peek() == EMC_STAT_TYPE)
+            {
+                EMC_STAT *stat = static_cast<EMC_STAT *>(status_channel_->get_address());
+                if (stat)
+                {
+                    if (stat->echo_serial_number >= serial)
+                    {
+                        serial_observed = true;
+                    }
+                    if (serial_observed &&
+                        (stat->status == RCS_STATUS::DONE ||
+                         stat->status == RCS_STATUS::ERROR))
+                    {
+                        return stat->status;
+                    }
+                }
+            }
+            esleep(std::min(completion_timeout_ - (now - start), EMC_COMMAND_DELAY_DEFAULT));
+        } while (etime() - start < completion_timeout_);
+        return RCS_STATUS::UNINITIALIZED;
     }
 
     RCS_STATUS ProgramOpenWorker::handleRemoteFileTransfer(EMC_TASK_PLAN_OPEN &open_msg)
@@ -188,16 +244,20 @@ namespace LinuxCNC
 
         size_t bytes_read_total = 0;
         RCS_STATUS last_chunk_status = RCS_STATUS::UNINITIALIZED;
+        bool send_empty_file = filesize == 0;
 
-        while (bytes_read_total < (size_t)filesize)
+        while (send_empty_file || bytes_read_total < (size_t)filesize)
         {
+            send_empty_file = false;
             size_t bytes_to_read = sizeof(open_msg.remote_buffer);
             if (bytes_read_total + bytes_to_read > (size_t)filesize)
             {
                 bytes_to_read = filesize - bytes_read_total;
             }
 
-            size_t actually_read = fread(open_msg.remote_buffer, 1, bytes_to_read, fd);
+            size_t actually_read = bytes_to_read == 0
+                                       ? 0
+                                       : fread(open_msg.remote_buffer, 1, bytes_to_read, fd);
             if (actually_read == 0 && ferror(fd))
             {
                 fclose(fd);
@@ -220,7 +280,16 @@ namespace LinuxCNC
                 return RCS_STATUS::ERROR;
             }
 
-            last_chunk_status = waitCommandComplete();
+            final_serial_ = open_msg.serial_number;
+            const bool final_chunk =
+                bytes_read_total + actually_read >= static_cast<size_t>(filesize);
+            if (wait_mode_ == CommandWaitMode::Sent && final_chunk)
+            {
+                fclose(fd);
+                return RCS_STATUS::DONE;
+            }
+
+            last_chunk_status = waitCommandComplete(final_serial_);
             if (last_chunk_status != RCS_STATUS::DONE)
             {
                 fclose(fd);
@@ -232,6 +301,16 @@ namespace LinuxCNC
 
         fclose(fd);
         return last_chunk_status;
+    }
+
+    void ProgramOpenWorker::releaseChannel()
+    {
+        if (!channel_)
+        {
+            return;
+        }
+        channel_->releaseExceptionalWorker();
+        channel_ = nullptr;
     }
 
     // SetToolWorker implementation

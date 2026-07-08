@@ -1,5 +1,13 @@
 import { StatChannel, StatWatcherOptions } from "./statChannel";
 import { CommandChannel } from "./commandChannel";
+import { CommandTransport } from "./commandTransport";
+import type {
+  CommandAccepted,
+  CommandTracking,
+  CommandTransportHandle,
+  CommandTransportOptions,
+  NativeCommandName,
+} from "./commandTransport";
 import { ErrorChannel, ErrorChannelOptions } from "./errorChannel";
 import { PositionLogger } from "./positionLogger";
 
@@ -25,6 +33,19 @@ export function getNmlFilePath(): string {
   return addon.getNmlFilePath();
 }
 
-export { StatChannel, CommandChannel, ErrorChannel, PositionLogger };
+export {
+  StatChannel,
+  CommandChannel,
+  CommandTransport,
+  ErrorChannel,
+  PositionLogger,
+};
 export { StatWatcherOptions, ErrorChannelOptions };
+export type {
+  CommandAccepted,
+  CommandTracking,
+  CommandTransportHandle,
+  CommandTransportOptions,
+  NativeCommandName,
+};
 export { PositionLoggerOptions } from "./positionLogger";

@@ -31,9 +31,15 @@ namespace LinuxCNC
         int last_serial_ = 0;
         std::string ini_filename_;
         std::string tool_table_filename_;
+        CommandWaitMode command_wait_mode_ = CommandWaitMode::Complete;
+        std::size_t active_exceptional_workers_ = 0;
+        bool disconnect_pending_ = false;
 
         bool connect();
         void disconnect();
+        void closeChannels();
+        void retainExceptionalWorker();
+        void releaseExceptionalWorker();
         bool parseIniFile();
 
         // Getters for cached INI settings
@@ -42,6 +48,7 @@ namespace LinuxCNC
 
         // Helper for sending commands asynchronously
         Napi::Value sendCommandAsync(const Napi::CallbackInfo &info, std::unique_ptr<RCS_CMD_MSG> cmd_msg, double timeout = 5.0);
+        double getCommandTimeout(CommandWaitMode wait_mode);
 
         // Helper methods for command completion waiting
         RCS_STATUS waitCommandComplete();
@@ -118,6 +125,7 @@ namespace LinuxCNC
         // Misc
         Napi::Value Disconnect(const Napi::CallbackInfo &info);
         Napi::Value WaitComplete(const Napi::CallbackInfo &info);
+        Napi::Value GetStatusSnapshot(const Napi::CallbackInfo &info);
         Napi::Value GetSerial(const Napi::CallbackInfo &info);
     };
 
