@@ -42,7 +42,7 @@ jobs:
         run: pnpm --filter @linuxcnc-node/types build
 
       - name: Build docs
-        run: pnpm --filter @linuxcnc-node/core docs
+        run: pnpm --filter @linuxcnc-node/core run docs
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
