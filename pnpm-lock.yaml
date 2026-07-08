@@ -7,8 +7,8 @@ settings:
 catalogs:
   default:
     '@edenapp/genesis':
-      specifier: ^0.10.1
-      version: 0.10.1
+      specifier: ^0.10.2
+      version: 0.10.2
     '@edenapp/types':
       specifier: ^0.10.1
       version: 0.10.1
@@ -50,7 +50,7 @@ importers:
     devDependencies:
       '@edenapp/genesis':
         specifier: 'catalog:'
-        version: 0.10.1
+        version: 0.10.2
       '@types/dlv':
         specifier: ^1.1.5
         version: 1.1.5
@@ -591,13 +591,16 @@ packages:
     resolution: {integrity: sha512-0cp4PsWQ/9avqTVMCtZ+GirikIA36ikvjtHweU4/j8yLtgObI0+JUPhYFScgwlteveGB1rt3Cm8UhN04XayDig==}
     engines: {node: '>= 8.9.0'}
 
-  '@edenapp/genesis@0.10.1':
-    resolution: {integrity: sha512-zgqj3euwFKUSHKyCp+G7/kBG/erPMYX/RA8in4tEPb/OMsReJFxUSEgMErv7qHt3JVl5TQ8/+AqbOT9eFQLu3A==}
+  '@edenapp/genesis@0.10.2':
+    resolution: {integrity: sha512-ntD8SXNnSrRl65fkvyO6ygru1M7EUWlGdnb/ql8+7dQ5ta0Ox35laHu1l5jdB4CcS6eKHVZ6UVjY5bLahw9Txg==}
     engines: {node: '>=18.0.0'}
     hasBin: true
 
   '@edenapp/types@0.10.1':
     resolution: {integrity: sha512-gx6HKE9+Y6sUu9U9uwcrl5K+aL5tq8a/Z1jmlu2At+7OsUle7Xu8PricD4TGszs94ZI2i5+5Eg1X1wb7sDq4FQ==}
+
+  '@edenapp/types@0.10.2':
+    resolution: {integrity: sha512-hCbDKKyOMfK9KfiR4rVag/ukIpsfdLC+9dIbAylQG4X8oh6rzM2DvHVMUp3qpcyQ53pZ9VW/RosbUwHAhI4xsA==}
 
   '@electron/asar@3.4.1':
     resolution: {integrity: sha512-i4/rNPRS84t0vSRa2HorerGRXWyF4vThfHesw0dmcWHp+cspK743UanA0suA5Q5y8kzY2y6YKrvbIUn69BCAiA==}
@@ -5005,9 +5008,9 @@ snapshots:
       ajv: 6.15.0
       ajv-keywords: 3.5.2(ajv@6.15.0)
 
-  '@edenapp/genesis@0.10.1':
+  '@edenapp/genesis@0.10.2':
     dependencies:
-      '@edenapp/types': 0.10.1
+      '@edenapp/types': 0.10.2
       chalk: 4.1.2
       cli-progress: 3.12.0
       commander: 11.1.0
@@ -5015,6 +5018,8 @@ snapshots:
       zstd-codec: 0.1.5
 
   '@edenapp/types@0.10.1': {}
+
+  '@edenapp/types@0.10.2': {}
 
   '@electron/asar@3.4.1':
     dependencies:
