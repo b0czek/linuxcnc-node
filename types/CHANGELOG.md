@@ -1,5 +1,11 @@
 # @linuxcnc-node/types
 
+## 3.1.1
+
+### Patch Changes
+
+- unify the packages verions
+
 ## 3.0.0
 
 ### Major Changes

@@ -1,5 +1,13 @@
 # @linuxcnc-node/hal
 
+## 3.1.1
+
+### Patch Changes
+
+- unify the packages verions
+- Updated dependencies
+  - @linuxcnc-node/types@3.1.1
+
 ## 3.0.0
 
 ### Major Changes
