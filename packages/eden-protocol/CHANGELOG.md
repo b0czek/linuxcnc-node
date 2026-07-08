@@ -1,5 +1,16 @@
 # @linuxcnc-node/eden-protocol
 
+## 3.2.0
+
+### Minor Changes
+
+- absorb eden bridge
+
+### Patch Changes
+
+- Updated dependencies
+  - @linuxcnc-node/types@3.2.0
+
 ## 0.5.0
 
 ### Minor Changes

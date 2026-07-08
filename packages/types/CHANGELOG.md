@@ -1,5 +1,11 @@
 # @linuxcnc-node/types
 
+## 3.2.0
+
+### Minor Changes
+
+- absorb eden bridge
+
 ## 3.1.1
 
 ### Patch Changes
