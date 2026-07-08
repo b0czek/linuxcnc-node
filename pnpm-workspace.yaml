@@ -4,7 +4,7 @@ packages:
   - apps/examples/*
 
 catalog:
-  '@edenapp/genesis': ^0.10.1
+  '@edenapp/genesis': ^0.10.2
   '@edenapp/types': ^0.10.1
   
 allowBuilds:
