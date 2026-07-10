@@ -21,6 +21,6 @@
     "typescript": "^5.3.3",
     "vite": "^5.0.12",
     "vite-plugin-electron": "^0.15.6",
-    "vite-plugin-electron-renderer": "^0.14.5"
+    "vite-plugin-electron-renderer": "^1.0.0"
   }
 }
