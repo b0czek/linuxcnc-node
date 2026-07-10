@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@linuxcnc-node/gcode": "workspace:*",
-    "three": "^0.160.0"
+    "three": "^0.185.1"
   },
   "devDependencies": {
     "@linuxcnc-node/types": "workspace:*",
