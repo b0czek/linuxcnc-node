@@ -752,10 +752,20 @@ index 59a6da5bf6..3cd3b11a98 100644
      PyModule_AddStringConstant(m, "PREFIX", EMC2_HOME);
      PyModule_AddStringConstant(m, "SHARE", EMC2_HOME "/share");
 diff --git a/src/emc/usr_intf/emcsh.cc b/src/emc/usr_intf/emcsh.cc
-index 7664041959..98ab8b842b 100644
+index 7664041959..9112dce1de 100644
 --- a/src/emc/usr_intf/emcsh.cc
 +++ b/src/emc/usr_intf/emcsh.cc
-@@ -3582,6 +3582,7 @@ static int localround(ClientData /*clientdata*/,
+@@ -20,7 +20,9 @@
+ #include <signal.h>
+ #include <math.h>
+ #include <tcl.h>
++#ifndef LINUXCNC_HEADLESS
+ #include <tk.h>
++#endif
+ 
+ #include <rtapi_string.h>
+ #include <linuxcnc.h>
+@@ -3582,6 +3584,7 @@ static int localround(ClientData /*clientdata*/,
      return TCL_OK;
  }
  
@@ -763,7 +773,7 @@ index 7664041959..98ab8b842b 100644
  #include <X11/extensions/Xinerama.h>
  
  static int multihead(ClientData /*clientdata*/,
-@@ -3621,6 +3622,7 @@ static int multihead(ClientData /*clientdata*/,
+@@ -3621,6 +3624,7 @@ static int multihead(ClientData /*clientdata*/,
      }
      return TCL_OK;
  }
@@ -771,7 +781,7 @@ index 7664041959..98ab8b842b 100644
  
  static void sigQuit(int /*sig*/)
  {
-@@ -3996,8 +3998,10 @@ int Linuxcnc_Init(Tcl_Interp * interp)
+@@ -3996,8 +4000,10 @@ int Linuxcnc_Init(Tcl_Interp * interp)
      Tcl_CreateObjCommand(interp, "round", localround, (ClientData) NULL,
  			 (Tcl_CmdDeleteProc *) NULL);
  
@@ -782,7 +792,7 @@ index 7664041959..98ab8b842b 100644
  
      /*
       * Specify a user-specific startup file to invoke if the application
-@@ -4016,4 +4020,3 @@ int Linuxcnc_Init(Tcl_Interp * interp)
+@@ -4016,4 +4022,3 @@ int Linuxcnc_Init(Tcl_Interp * interp)
  
      return TCL_OK;
  }
