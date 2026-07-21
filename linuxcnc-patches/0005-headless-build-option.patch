@@ -12,7 +12,7 @@ Failed to create stream fd: Operation not permitted
 Failed to create stream fd: Operation not permitted
 Failed to create stream fd: Operation not permitted
 diff --git a/debian/configure b/debian/configure
-index 096b3f4a5e..c8946a0cb2 100755
+index 096b3f4a5e..7eed1f95eb 100755
 --- a/debian/configure
 +++ b/debian/configure
 @@ -122,6 +122,13 @@ TCLTK_VERSION=8.6
@@ -20,7 +20,7 @@ index 096b3f4a5e..c8946a0cb2 100755
  PYTHON_IMAGING_TK=python3-pil.imagetk
  QTVCP_DEPENDS="python3-qtpy,\n    python3-pyqt5,\n    python3-pyqt5.qsci,\n    python3-pyqt5.qtsvg,\n    python3-pyqt5.qtopengl,\n    python3-opencv,\n    python3-dbus,\n    python3-espeak,\n    python3-dbus.mainloop.pyqt5,\n    python3-pyqt5.qtwebengine,\n    espeak-ng,\n    pyqt5-dev-tools,\n    gstreamer1.0-tools,\n    espeak,\n    sound-theme-freedesktop"
 +GUI_RUNTIME_DEPENDS="blt,\n    mesa-utils,\n    python3-tk,\n    python3-cairo,\n    python3-gi-cairo,\n    python3-opengl,\n    python3-configobj,\n    python3-xlib,\n    libgtksourceview-4-dev,\n    tk@TCLTK_VERSION@,\n    bwidget (>= 1.7),\n    tclx,\n    $QTVCP_DEPENDS"
-+GUI_RUNTIME_RECOMMENDS="linuxcnc-doc-en | linuxcnc-doc,\n    librsvg2-dev,\n    x11-xserver-utils,\n    $PYTHON_IMAGING_TK"
++GUI_RUNTIME_RECOMMENDS="Recommends:\n    linuxcnc-doc-en | linuxcnc-doc,\n    librsvg2-dev,\n    x11-xserver-utils,\n    $EXTRA_RECOMMENDS,\n    $PYTHON_IMAGING,\n    $PYTHON_IMAGING_TK"
 +if [[ " ${DEB_BUILD_PROFILES:-} " == *" pkg.linuxcnc.headless "* ]]; then
 +    GUI_RUNTIME_DEPENDS=''
 +    GUI_RUNTIME_RECOMMENDS=''
@@ -38,7 +38,11 @@ index 096b3f4a5e..c8946a0cb2 100755
      -e "s#@KERNEL_DEPENDS@#$KERNEL_DEPENDS#g" \
      -e "s#@KERNEL_DEPENDS_BUILD@#$KERNEL_DEPENDS_BUILD#g" \
      -e "s#@KERNEL_HEADERS@#$KERNEL_HEADERS#g" \
-@@ -211,7 +220,14 @@ subst control.main-pkg.in >> control
+@@ -208,10 +217,18 @@ subst control.top.in > control
+ 
+ echo >> control
+ subst control.main-pkg.in >> control
++printf '\n' >> control
  
  subst linuxcnc.install.in > ${MAIN_PACKAGE_NAME}.install
  subst linuxcnc.lintian-overrides.in > ${MAIN_PACKAGE_NAME}.lintian-overrides
@@ -55,10 +59,10 @@ index 096b3f4a5e..c8946a0cb2 100755
  subst rules.in > rules
  chmod +x rules
 diff --git a/debian/control.main-pkg.in b/debian/control.main-pkg.in
-index 56653dc082..8fcdfdaa1a 100644
+index 56653dc082..9b0f41b9f7 100644
 --- a/debian/control.main-pkg.in
 +++ b/debian/control.main-pkg.in
-@@ -13,31 +13,16 @@ Depends:
+@@ -13,32 +13,13 @@ Depends:
      ${shlibs:Depends},
      @KERNEL_DEPENDS@,
      @MODUTILS_DEPENDS@,
@@ -81,28 +85,28 @@ index 56653dc082..8fcdfdaa1a 100644
 -    @QTVCP_DEPENDS@,
      procps, psmisc,
      udev
- Recommends:
+-Recommends:
 -    linuxcnc-doc-en | linuxcnc-doc,
 -    librsvg2-dev,
 -    x11-xserver-utils,
-+    @GUI_RUNTIME_RECOMMENDS@,
-     @EXTRA_RECOMMENDS@,
+-    @EXTRA_RECOMMENDS@,
 -    @PYTHON_IMAGING@,
 -    @PYTHON_IMAGING_TK@
-+    @PYTHON_IMAGING@
- Suggests:
+-Suggests:
++@GUI_RUNTIME_RECOMMENDS@Suggests:
      mesaflash,
      python3-poppler-qt5,
-@@ -88,4 +73,3 @@ Description: motion controller for CNC machines and robots
+     onboard
+@@ -88,4 +69,3 @@ Description: motion controller for CNC machines and robots
   has been used for numerous other applications.
   .
   This package provides the main package for LinuxCNC.
 -
 diff --git a/debian/control.top.in b/debian/control.top.in
-index 0adf912110..f7defb8a52 100644
+index 0adf912110..eb42b5f3ca 100644
 --- a/debian/control.top.in
 +++ b/debian/control.top.in
-@@ -14,25 +14,25 @@ Build-Depends:
+@@ -14,57 +14,58 @@ Build-Depends:
      @EXTRA_BUILD@,
      groff-base <!nodoc>,
      imagemagick <!nodoc>,
@@ -134,9 +138,10 @@ index 0adf912110..f7defb8a52 100644
 -    libxmu-dev,
 +    libxmu-dev <!pkg.linuxcnc.headless>,
      netcat-traditional | netcat-openbsd | netcat,
-     netpbm,
+-    netpbm,
++    netpbm <!pkg.linuxcnc.headless>,
      po4a <!nodoc>,
-@@ -40,11 +40,11 @@ Build-Depends:
+     procps,
      psmisc,
      python3,
      python3-dev,
@@ -145,12 +150,52 @@ index 0adf912110..f7defb8a52 100644
 +    python3-tk <!pkg.linuxcnc.headless>,
 +    python3-xlib <!pkg.linuxcnc.headless>,
      tcl@TCLTK_VERSION@-dev,
-     tclx,
+-    tclx,
 -    tk@TCLTK_VERSION@-dev,
+-    xvfb <!nocheck>,
+-    x11-xserver-utils <!nocheck>,
+-    python3-opengl <!nocheck>,
+-    python3-pyqt5 <!nocheck>,
+-    python3-pyqt5.qsci <!nocheck>,
+-    python3-pyqt5.qtsvg <!nocheck>,
+-    python3-pyqt5.qtopengl <!nocheck>,
+-    python3-pyqt5.qtwebengine <!nocheck>,
+-    pyqt5-dev-tools <!nocheck>,
+-    python3-dbus <!nocheck>,
+-    python3-dbus.mainloop.pyqt5 <!nocheck>,
+-    python3-qtpy <!nocheck>,
+-    python3-cairo <!nocheck>,
+-    python3-gi <!nocheck>,
+-    python3-gi-cairo <!nocheck>,
+-    gir1.2-gtk-3.0 <!nocheck>,
+-    gir1.2-gtksource-4 <!nocheck>,
++    tclx <!pkg.linuxcnc.headless>,
 +    tk@TCLTK_VERSION@-dev <!pkg.linuxcnc.headless>,
-     xvfb <!nocheck>,
-     x11-xserver-utils <!nocheck>,
-     python3-opengl <!nocheck>,
++    xvfb <!nocheck !pkg.linuxcnc.headless>,
++    x11-xserver-utils <!nocheck !pkg.linuxcnc.headless>,
++    python3-opengl <!nocheck !pkg.linuxcnc.headless>,
++    python3-pyqt5 <!nocheck !pkg.linuxcnc.headless>,
++    python3-pyqt5.qsci <!nocheck !pkg.linuxcnc.headless>,
++    python3-pyqt5.qtsvg <!nocheck !pkg.linuxcnc.headless>,
++    python3-pyqt5.qtopengl <!nocheck !pkg.linuxcnc.headless>,
++    python3-pyqt5.qtwebengine <!nocheck !pkg.linuxcnc.headless>,
++    pyqt5-dev-tools <!nocheck !pkg.linuxcnc.headless>,
++    python3-dbus <!nocheck !pkg.linuxcnc.headless>,
++    python3-dbus.mainloop.pyqt5 <!nocheck !pkg.linuxcnc.headless>,
++    python3-qtpy <!nocheck !pkg.linuxcnc.headless>,
++    python3-cairo <!nocheck !pkg.linuxcnc.headless>,
++    python3-gi <!nocheck !pkg.linuxcnc.headless>,
++    python3-gi-cairo <!nocheck !pkg.linuxcnc.headless>,
++    gir1.2-gtk-3.0 <!nocheck !pkg.linuxcnc.headless>,
++    gir1.2-gtksource-4 <!nocheck !pkg.linuxcnc.headless>,
+     python3-numpy <!nocheck>,
+-    python3-configobj <!nocheck>,
++    python3-configobj <!nocheck !pkg.linuxcnc.headless>,
+     libfmt-dev,
++    libglib2.0-dev,
+     yapps2
+ Build-Depends-Indep:
+     @DOC_DEPENDS@,
 diff --git a/debian/linuxcnc-headless.install.in b/debian/linuxcnc-headless.install.in
 new file mode 100644
 index 0000000000..2660b6ba4a

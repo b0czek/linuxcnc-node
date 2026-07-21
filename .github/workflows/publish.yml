@@ -91,7 +91,7 @@ jobs:
           cd "${LINUXCNC_DIR}"
           export DEB_BUILD_PROFILES="pkg.linuxcnc.headless nodoc"
           ./debian/configure no-docs
-          if ! sudo env DEB_BUILD_PROFILES="${DEB_BUILD_PROFILES}" apt-get build-dep -y --no-install-recommends .; then
+          if ! sudo env DEB_BUILD_PROFILES="${DEB_BUILD_PROFILES}" apt-get -P "pkg.linuxcnc.headless,nodoc" build-dep -y --no-install-recommends .; then
             dpkg-checkbuilddeps || true
             exit 1
           fi
