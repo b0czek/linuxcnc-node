@@ -89,8 +89,9 @@ jobs:
           sudo apt-get install -y build-essential dpkg-dev
 
           cd "${LINUXCNC_DIR}"
+          export DEB_BUILD_PROFILES="pkg.linuxcnc.headless nodoc"
           ./debian/configure no-docs
-          if ! sudo apt-get build-dep -y --no-install-recommends .; then
+          if ! sudo env DEB_BUILD_PROFILES="${DEB_BUILD_PROFILES}" apt-get build-dep -y --no-install-recommends .; then
             dpkg-checkbuilddeps || true
             exit 1
           fi
@@ -112,8 +113,7 @@ jobs:
             libmodbus5 \
             libtirpc3t64 \
             libudev1 \
-            libusb-1.0-0 \
-            libx11-6
+            libusb-1.0-0
 
       - name: Build LinuxCNC
         if: steps.linuxcnc-cache.outputs.cache-hit != 'true'
@@ -125,7 +125,10 @@ jobs:
 
           cd "${LINUXCNC_DIR}/src"
           ./autogen.sh
-          ./configure --with-realtime=uspace
+          ./configure --with-realtime=uspace \
+            --enable-headless \
+            --disable-build-documentation \
+            --disable-build-manpages
           make -j"$(nproc)"
 
       - name: Set LinuxCNC runtime permissions
