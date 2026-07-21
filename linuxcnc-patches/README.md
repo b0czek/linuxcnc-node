@@ -121,3 +121,17 @@ spindle/coolant while stopped, restore them without adding a task-level spindle-
 wait, preserves the normal next-feed at-speed wait after rapid motion,
 completes the same program, and waits for active `G33` threading and `G33.1`
 rigid-tap synchronized motion to finish before entering `STOPPED`.
+
+### 0005 — Headless and documentation-free build options
+
+Adds the Autoconf-standard `--enable-headless` option for backend-only builds
+and the independent `--disable-build-manpages` option. Headless builds retain
+the controller, realtime/HAL stack, interpreters, remote interfaces, and core
+Python and Tcl APIs while omitting LinuxCNC-supplied GUIs, graphical probes,
+assets, samples, and desktop integration. The launcher requires an explicit
+INI path but continues to execute an external `[DISPLAY] DISPLAY` command.
+
+The Debian build profiles `pkg.linuxcnc.headless` and `nodoc` select the
+corresponding configure options and packaging manifests. With no new options
+or profiles, the existing GUI, documentation, manpage, and packaging behavior
+is unchanged.
