@@ -4,6 +4,14 @@
       "target_name": "nml_addon",
       "sources": [
         "src/cpp/nml_addon.cc",
+        # liblinuxcnc.a also contains milltask-only objects.  A Node process
+        # is a standalone NML client, so compile the client-side message
+        # implementations below instead of inheriting task-process symbols
+        # from that archive.
+        "src/cpp/linuxcnc_emc_globals.cc",
+        "src/cpp/linuxcnc_emc_format.cc",
+        "src/cpp/linuxcnc_emc_ops.cc",
+        "src/cpp/linuxcnc_modal_state.cc",
         "src/cpp/common.cc",
         "src/cpp/stat_channel.cc",
         "src/cpp/command_channel.cc",
@@ -70,7 +78,6 @@
             }]
           ],
           "libraries": [
-            "-llinuxcnc",
             "-lnml",
             "-llinuxcncini",
             "-ltooldata"

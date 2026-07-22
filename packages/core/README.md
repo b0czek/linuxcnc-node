@@ -2,6 +2,22 @@
 
 Node.js bindings for the LinuxCNC NML interface. Control and monitor CNC machines running LinuxCNC directly from JavaScript/TypeScript.
 
+## Native linking model
+
+The core addon is an out-of-process NML client. LinuxCNC's `liblinuxcnc.a`
+archive is not a client library: it also contains task/INI objects whose
+symbols are supplied by the `milltask` executable. Linking that archive into a
+Node process leaves unresolved task symbols at addon load time.
+
+The native target therefore links the client libraries (`libnml`,
+`liblinuxcncini`, and `libtooldata`) and compiles the small NML message
+implementation units it needs from the pinned LinuxCNC source tree. The
+`linuxcnc_emc_*` and `linuxcnc_modal_state` translation units are deliberately
+thin wrappers around those upstream sources; they keep the addon standalone
+without duplicating or stubbing LinuxCNC protocol behavior. If LinuxCNC later
+publishes a dedicated client/NML library, this local-source bridge should be
+replaced by that library.
+
 ## Features
 
 - **StatChannel** - Real-time machine status monitoring with typed property change events
