@@ -652,6 +652,30 @@ describe("HAL Module Tests", () => {
       });
     });
 
+    describe("topology and batch values", () => {
+      it("reads explicitly typed references in input order", () => {
+        const refs = [
+          { kind: "pin" as const, name: `${compA_name}.out.float` },
+          { kind: "param" as const, name: `${compA_name}.param.s32.rw` },
+        ];
+        expect(hal.getValues(refs)).toEqual([98.76, -12345]);
+      });
+
+      it("rejects a missing reference without returning a partial result", async () => {
+        await expectHalError(
+          () => hal.getValues([{ kind: "pin", name: uniqueName("missing-batch") }]),
+          /get_values: pin .* not found/
+        );
+      });
+
+      it("reports components and exposes function/thread collections", () => {
+        const componentInfo = hal.getInfoComponents().find((item) => item.name === compA_name);
+        expect(componentInfo).toMatchObject({ name: compA_name, kind: "user", ready: true });
+        expect(Array.isArray(hal.getInfoFunctions())).toBe(true);
+        expect(Array.isArray(hal.getInfoThreads())).toBe(true);
+      });
+    });
+
     describe("getInfoPins(), getInfoSignals(), getInfoParams()", () => {
       const infoCompName = uniqueName("info-comp");
       const infoComp = new hal.HalComponent(infoCompName);

@@ -6,6 +6,7 @@
 
 #include "hal_utils.h"
 #include "hal_component.h"
+#include "scope_controller.h"
 
 Napi::Value HalDataContentToNapiValue(Napi::Env env, hal_type_t type, void *data_ptr)
 {
@@ -325,6 +326,181 @@ Napi::Value GetValue(const Napi::CallbackInfo &info)
     return env.Null();
 }
 
+static void *ResolveValueUnlocked(const std::string &kind, const std::string &name, hal_type_t *type)
+{
+    if (kind == "param") {
+        hal_param_t *param = halpr_find_param_by_name(name.c_str());
+        if (param) {
+            *type = param->type;
+            return SHMPTR(param->data_ptr);
+        }
+    } else if (kind == "pin") {
+        hal_pin_t *pin = halpr_find_pin_by_name(name.c_str());
+        if (pin) {
+            *type = pin->type;
+            if (pin->signal) {
+                hal_sig_t *sig = static_cast<hal_sig_t *>(SHMPTR(pin->signal));
+                return SHMPTR(sig->data_ptr);
+            }
+            return &(pin->dummysig);
+        }
+    } else if (kind == "signal") {
+        hal_sig_t *sig = halpr_find_sig_by_name(name.c_str());
+        if (sig) {
+            *type = sig->type;
+            return SHMPTR(sig->data_ptr);
+        }
+    }
+    return nullptr;
+}
+
+Napi::Value GetValues(const Napi::CallbackInfo &info)
+{
+    Napi::Env env = info.Env();
+    if (info.Length() < 1 || !info[0].IsArray()) {
+        Napi::TypeError::New(env, "Array of { kind, name } references expected").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+    if (!hal_data) {
+        ThrowHalError(env, "HAL not initialized for get_values");
+        return env.Null();
+    }
+
+    Napi::Array refs = info[0].As<Napi::Array>();
+    struct Ref { std::string kind; std::string name; };
+    std::vector<Ref> parsed;
+    parsed.reserve(refs.Length());
+    for (uint32_t i = 0; i < refs.Length(); ++i) {
+        Napi::Value value = refs.Get(i);
+        if (!value.IsObject()) {
+            Napi::TypeError::New(env, "Every HAL reference must be an object").ThrowAsJavaScriptException();
+            return env.Null();
+        }
+        Napi::Object ref = value.As<Napi::Object>();
+        Napi::Value kind = ref.Get("kind");
+        Napi::Value name = ref.Get("name");
+        if (!kind.IsString() || !name.IsString()) {
+            Napi::TypeError::New(env, "Every HAL reference requires string kind and name").ThrowAsJavaScriptException();
+            return env.Null();
+        }
+        Ref entry{kind.As<Napi::String>().Utf8Value(), name.As<Napi::String>().Utf8Value()};
+        if (entry.kind != "pin" && entry.kind != "param" && entry.kind != "signal") {
+            Napi::TypeError::New(env, "HAL reference kind must be pin, param, or signal").ThrowAsJavaScriptException();
+            return env.Null();
+        }
+        parsed.push_back(std::move(entry));
+    }
+
+    Napi::Array result = Napi::Array::New(env, parsed.size());
+    rtapi_mutex_get(&(hal_data->mutex));
+    for (uint32_t i = 0; i < parsed.size(); ++i) {
+        hal_type_t type = HAL_TYPE_UNSPECIFIED;
+        void *data = ResolveValueUnlocked(parsed[i].kind, parsed[i].name, &type);
+        if (!data) {
+            rtapi_mutex_give(&(hal_data->mutex));
+            ThrowHalError(env, "get_values: " + parsed[i].kind + " '" + parsed[i].name + "' not found");
+            return env.Null();
+        }
+        result.Set(i, HalDataContentToNapiValue(env, type, data));
+        if (env.IsExceptionPending()) {
+            rtapi_mutex_give(&(hal_data->mutex));
+            return env.Null();
+        }
+    }
+    rtapi_mutex_give(&(hal_data->mutex));
+    return result;
+}
+
+Napi::Value GetInfoComponents(const Napi::CallbackInfo &info)
+{
+    Napi::Env env = info.Env();
+    if (!hal_data) { ThrowHalError(env, "HAL not initialized"); return env.Null(); }
+    Napi::Array result = Napi::Array::New(env);
+    uint32_t index = 0;
+    rtapi_mutex_get(&(hal_data->mutex));
+    SHMFIELD(hal_comp_t) next = hal_data->comp_list_ptr;
+    while (next) {
+        hal_comp_t *comp = static_cast<hal_comp_t *>(SHMPTR(next));
+        Napi::Object item = Napi::Object::New(env);
+        item.Set("id", comp->comp_id);
+        item.Set("name", comp->name);
+        const char *kind = comp->type == COMPONENT_TYPE_USER ? "user" :
+            comp->type == COMPONENT_TYPE_REALTIME ? "realtime" :
+            comp->type == COMPONENT_TYPE_OTHER ? "other" : "unknown";
+        item.Set("kind", kind);
+        item.Set("ready", comp->ready != 0);
+        if (comp->pid > 0) item.Set("pid", comp->pid);
+        result.Set(index++, item);
+        next = comp->next_ptr;
+    }
+    rtapi_mutex_give(&(hal_data->mutex));
+    return result;
+}
+
+Napi::Value GetInfoFunctions(const Napi::CallbackInfo &info)
+{
+    Napi::Env env = info.Env();
+    if (!hal_data) { ThrowHalError(env, "HAL not initialized"); return env.Null(); }
+    Napi::Array result = Napi::Array::New(env);
+    uint32_t index = 0;
+    rtapi_mutex_get(&(hal_data->mutex));
+    SHMFIELD(hal_funct_t) next = hal_data->funct_list_ptr;
+    while (next) {
+        hal_funct_t *funct = static_cast<hal_funct_t *>(SHMPTR(next));
+        hal_comp_t *owner = static_cast<hal_comp_t *>(SHMPTR(funct->owner_ptr));
+        Napi::Object item = Napi::Object::New(env);
+        item.Set("name", funct->name);
+        item.Set("ownerId", owner->comp_id);
+        item.Set("ownerName", owner->name);
+        item.Set("usesFp", funct->uses_fp != 0);
+        item.Set("reentrant", funct->reentrant != 0);
+        item.Set("users", funct->users);
+        if (funct->runtime) item.Set("runtime", *funct->runtime);
+        item.Set("maxRuntime", funct->maxtime);
+        item.Set("maxRuntimeIncreased", funct->maxtime_increased != 0);
+        result.Set(index++, item);
+        next = funct->next_ptr;
+    }
+    rtapi_mutex_give(&(hal_data->mutex));
+    return result;
+}
+
+Napi::Value GetInfoThreads(const Napi::CallbackInfo &info)
+{
+    Napi::Env env = info.Env();
+    if (!hal_data) { ThrowHalError(env, "HAL not initialized"); return env.Null(); }
+    Napi::Array result = Napi::Array::New(env);
+    uint32_t index = 0;
+    rtapi_mutex_get(&(hal_data->mutex));
+    SHMFIELD(hal_thread_t) next = hal_data->thread_list_ptr;
+    while (next) {
+        hal_thread_t *thread = static_cast<hal_thread_t *>(SHMPTR(next));
+        Napi::Object item = Napi::Object::New(env);
+        item.Set("name", thread->name);
+        item.Set("periodNs", Napi::Number::New(env, thread->period));
+        item.Set("priority", thread->priority);
+        item.Set("usesFp", thread->uses_fp != 0);
+        item.Set("running", hal_data->threads_running != 0);
+        if (thread->runtime) item.Set("runtime", *thread->runtime);
+        item.Set("maxRuntime", thread->maxtime);
+        Napi::Array functions = Napi::Array::New(env);
+        uint32_t functionIndex = 0;
+        hal_list_t *root = &(thread->funct_list);
+        hal_list_t *entry = list_next(root);
+        while (entry != root) {
+            hal_funct_entry_t *functionEntry = reinterpret_cast<hal_funct_entry_t *>(entry);
+            hal_funct_t *funct = static_cast<hal_funct_t *>(SHMPTR(functionEntry->funct_ptr));
+            functions.Set(functionIndex++, funct->name);
+            entry = list_next(entry);
+        }
+        item.Set("functions", functions);
+        result.Set(index++, item);
+        next = thread->next_ptr;
+    }
+    rtapi_mutex_give(&(hal_data->mutex));
+    return result;
+}
+
 Napi::Object ConvertPinInfo(Napi::Env env, hal_pin_t *pin)
 {
     Napi::Object pin_info = Napi::Object::New(env);
@@ -587,6 +763,7 @@ Napi::Object InitModule(Napi::Env env, Napi::Object exports)
 {
     // Initialize HalComponentWrapper (registers the class "HalComponent")
     HalComponentWrapper::Init(env, exports); // exports will get "HalComponent" property
+    ScopeControllerWrapper::Init(env, exports);
 
     // Global functions
     exports.Set(Napi::String::New(env, "component_exists"), Napi::Function::New(env, ComponentExists));
@@ -598,6 +775,10 @@ Napi::Object InitModule(Napi::Env env, Napi::Object exports)
     exports.Set(Napi::String::New(env, "new_sig"), Napi::Function::New(env, NewSignal));
     exports.Set(Napi::String::New(env, "pin_has_writer"), Napi::Function::New(env, PinHasWriter));
     exports.Set(Napi::String::New(env, "get_value"), Napi::Function::New(env, GetValue));
+    exports.Set(Napi::String::New(env, "get_values"), Napi::Function::New(env, GetValues));
+    exports.Set(Napi::String::New(env, "get_info_components"), Napi::Function::New(env, GetInfoComponents));
+    exports.Set(Napi::String::New(env, "get_info_functions"), Napi::Function::New(env, GetInfoFunctions));
+    exports.Set(Napi::String::New(env, "get_info_threads"), Napi::Function::New(env, GetInfoThreads));
     exports.Set(Napi::String::New(env, "get_info_pins"), Napi::Function::New(env, GetInfoPins));
     exports.Set(Napi::String::New(env, "get_info_signals"), Napi::Function::New(env, GetInfoSignals));
     exports.Set(Napi::String::New(env, "get_info_params"), Napi::Function::New(env, GetInfoParams));

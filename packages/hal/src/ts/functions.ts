@@ -5,6 +5,10 @@ import type {
   HalSignalInfo,
   HalParamInfo,
   HalValue,
+  HalItemRef,
+  HalComponentInfo,
+  HalFunctionInfo,
+  HalThreadInfo,
 } from "@linuxcnc-node/types";
 import {
   halNative,
@@ -69,6 +73,19 @@ export const disconnect = (pinName: string): boolean => {
 export const getValue = (name: string): HalValue => {
   return halNative.get_value(name);
 };
+
+/** Reads several explicitly identified values while holding the HAL mutex once. */
+export const getValues = (refs: readonly HalItemRef[]): HalValue[] =>
+  halNative.get_values(refs);
+
+export const getInfoComponents = (): HalComponentInfo[] =>
+  halNative.get_info_components();
+
+export const getInfoFunctions = (): HalFunctionInfo[] =>
+  halNative.get_info_functions();
+
+export const getInfoThreads = (): HalThreadInfo[] =>
+  halNative.get_info_threads();
 
 /**
  * Retrieves a list of all HAL pins currently in the system.

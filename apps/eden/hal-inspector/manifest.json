@@ -1,0 +1,21 @@
+{
+  "id": "com.linuxcnc-node.hal-inspector",
+  "name": "HAL Inspector",
+  "version": "0.1.0",
+  "description": "Explore, watch, safely edit, and scope LinuxCNC HAL values",
+  "author": "Dariusz Majnert",
+  "icon": "icon.svg",
+  "build": { "command": "npm run build" },
+  "backend": { "entry": "backend/dist/backend.cjs" },
+  "frontend": { "entry": "frontend/dist/index.html" },
+  "include": ["build/Release/hal_addon.node"],
+  "window": {
+    "mode": "both",
+    "defaultMode": "tiled",
+    "defaultSize": { "width": 1280, "height": 800 },
+    "minSize": { "width": 760, "height": 520 },
+    "resizable": true,
+    "movable": true
+  },
+  "permissions": ["db/rw"]
+}

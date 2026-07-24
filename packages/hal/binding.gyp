@@ -5,6 +5,7 @@
       "sources": [
         "src/cpp/hal_addon.cc",
         "src/cpp/hal_component.cc"
+        ,"src/cpp/scope_controller.cc"
       ],
       "include_dirs": [
         "<!@(node -p \"require('node-addon-api').include\")"
