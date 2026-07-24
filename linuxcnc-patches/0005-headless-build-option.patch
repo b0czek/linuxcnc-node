@@ -395,7 +395,7 @@ index 482d453198..8a03c8d78b 100644
  
  # And make userspace depend on $(TARGETS)
  userspace: $(TARGETS)
-@@ -678,10 +703,49 @@ install-dirs:
+@@ -678,10 +703,50 @@ install-dirs:
  		$(DESTDIR)$(datadir)/linuxcnc/pncconf/pncconf-help \
  		$(DESTDIR)$(datadir)/linuxcnc/hallib
  
