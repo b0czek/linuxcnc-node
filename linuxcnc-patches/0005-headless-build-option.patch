@@ -416,6 +416,7 @@ index 482d453198..8a03c8d78b 100644
 +	$(FILE) ../lib/hallib/* $(DESTDIR)$(datadir)/linuxcnc/hallib
 +	$(EXE) $(filter-out ../bin/rtapi_app ../bin/linuxcnc_module_helper ../bin/pci_write ../bin/pci_read ../bin/test_rtapi_vsnprintf, $(filter ../bin/%,$(TARGETS))) $(DESTDIR)$(bindir)
 +	$(EXE) ../scripts/linuxcnc ../scripts/linuxcnc_info ../scripts/linuxcnc_var $(DESTDIR)$(bindir)
++	$(EXE) ../bin/linuxcnc_check_ini $(DESTDIR)$(bindir)
 +	$(FILE) $(filter ../lib/%.a ../lib/%.so.0 ../lib/%.so.1,$(TARGETS)) $(DESTDIR)$(libdir)
 +	cp --no-dereference $(wildcard ../lib/*.so) $(DESTDIR)$(libdir)
 +	$(FILE) ../lib/linuxcnc/canterp.so $(DESTDIR)$(libdir)/linuxcnc/
@@ -833,4 +834,3 @@ index 42a52579ce..ce1db76a68 100644
  USERSRCS += $(USER_COMP_SRCS)
  
  $(patsubst %, ../bin/%, $(USER_COMP_PY)) : ../bin/%: hal/user_comps/%.py
-
