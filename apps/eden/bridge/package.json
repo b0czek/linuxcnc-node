@@ -1,6 +1,6 @@
 {
   "name": "@linuxcnc-node/eden-bridge",
-  "version": "3.2.0",
+  "version": "3.2.1",
   "description": "Eden AppBus bridge for LinuxCNC Node services",
   "main": "dist/backend.js",
   "type": "commonjs",

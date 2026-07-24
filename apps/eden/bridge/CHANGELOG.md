@@ -1,5 +1,16 @@
 # @linuxcnc-node/eden-bridge
 
+## 3.2.1
+
+### Patch Changes
+
+- Updated dependencies [b6f0c1f]
+  - @linuxcnc-node/core@3.2.1
+  - @linuxcnc-node/gcode@3.2.1
+  - @linuxcnc-node/hal@3.2.1
+  - @linuxcnc-node/types@3.2.1
+  - @linuxcnc-node/eden-protocol@3.2.1
+
 ## 3.2.0
 
 ### Minor Changes
