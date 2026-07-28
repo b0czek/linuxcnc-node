@@ -21,8 +21,8 @@ namespace LinuxCNC
                                                                        InstanceMethod("getCurrentPosition", &NapiPositionLogger::GetCurrentPosition),
                                                                        InstanceMethod("getMotionHistory", &NapiPositionLogger::GetMotionHistory),
                                                                        InstanceMethod("getHistoryCount", &NapiPositionLogger::GetHistoryCount),
-                                                                       InstanceMethod("getDeltaSince", &NapiPositionLogger::GetDeltaSince),
-                                                                       InstanceMethod("getCurrentCursor", &NapiPositionLogger::GetCurrentCursor),
+                                                                       InstanceMethod("getHistoryUpdate", &NapiPositionLogger::GetHistoryUpdate),
+                                                                       InstanceMethod("resetHistoryUpdates", &NapiPositionLogger::ResetHistoryUpdates),
                                                                    });
 
     constructor = Napi::Persistent(func);
@@ -202,54 +202,88 @@ namespace LinuxCNC
     return Napi::Number::New(env, static_cast<uint32_t>(position_history_.size()));
   }
 
-  Napi::Value NapiPositionLogger::GetCurrentCursor(const Napi::CallbackInfo &info)
+  Napi::Value NapiPositionLogger::ResetHistoryUpdates(const Napi::CallbackInfo &info)
   {
-    Napi::Env env = info.Env();
-    return Napi::Number::New(env, static_cast<uint32_t>(cursor_.load()));
+    std::lock_guard<std::mutex> lock(history_mutex_);
+    stream_force_reset_ = true;
+    return info.Env().Undefined();
   }
 
-  Napi::Value NapiPositionLogger::GetDeltaSince(const Napi::CallbackInfo &info)
+  Napi::Value NapiPositionLogger::GetHistoryUpdate(const Napi::CallbackInfo &info)
   {
     Napi::Env env = info.Env();
-
-    size_t requested_cursor = 0;
-    if (info.Length() > 0 && info[0].IsNumber())
-    {
-      requested_cursor = static_cast<size_t>(info[0].As<Napi::Number>().Uint32Value());
-    }
-
     std::lock_guard<std::mutex> lock(history_mutex_);
 
-    size_t current_cursor = cursor_.load();
-    size_t oldest = oldest_cursor_.load();
+    const size_t current_cursor = cursor_.load();
+    const size_t oldest_cursor = oldest_cursor_.load();
+    const size_t current_count = position_history_.size();
+    const bool has_tail = !position_history_.empty();
+    const bool tail_changed =
+        has_tail != stream_has_tail_ ||
+        (has_tail && PositionLoggerUtils::isPositionChanged(position_history_.back(), stream_tail_));
+    const bool cursor_stale =
+        stream_cursor_ < oldest_cursor &&
+        !(current_count == 0 && stream_history_count_ == 0 && stream_cursor_ == current_cursor);
 
-    // Create result object
-    Napi::Object result = Napi::Object::New(env);
+    size_t start_index = current_count;
+    size_t point_count = 0;
+    size_t replace_count = 0;
+    bool replace_all = false;
 
-    // Check if requested cursor is stale (history has wrapped past it)
-    bool was_reset = requested_cursor < oldest;
-    result.Set("wasReset", Napi::Boolean::New(env, was_reset));
-    result.Set("cursor", Napi::Number::New(env, static_cast<uint32_t>(current_cursor)));
+    if (stream_force_reset_ || cursor_stale)
+    {
+      start_index = 0;
+      point_count = current_count;
+      replace_all = true;
+    }
+    else
+    {
+      const size_t added_count =
+          current_cursor > stream_cursor_ ? current_cursor - stream_cursor_ : 0;
 
-    // Calculate start position in history vector
-    size_t start_cursor = was_reset ? oldest : requested_cursor;
-    size_t delta_count = current_cursor > start_cursor ? current_cursor - start_cursor : 0;
+      if (added_count > 0)
+      {
+        replace_count = stream_history_count_ > 0 ? 1 : 0;
+        point_count = std::min(current_count, added_count + replace_count);
+        start_index = current_count - point_count;
+      }
+      else if (tail_changed)
+      {
+        if (has_tail)
+        {
+          start_index = current_count - 1;
+          point_count = 1;
+          replace_count = stream_has_tail_ ? 1 : 0;
+        }
+        else
+        {
+          start_index = 0;
+          replace_all = true;
+        }
+      }
+    }
 
-    // Clamp to actual history size
-    delta_count = std::min(delta_count, position_history_.size());
+    stream_cursor_ = current_cursor;
+    stream_history_count_ = current_count;
+    stream_has_tail_ = has_tail;
+    if (has_tail)
+    {
+      stream_tail_ = position_history_.back();
+    }
+    stream_force_reset_ = false;
 
-    // Calculate starting index in the vector
-    // The vector may not be at max capacity yet
-    size_t start_index = position_history_.size() - delta_count;
+    if (point_count == 0 && !replace_all)
+    {
+      return env.Null();
+    }
 
-    // Create Float64Array with results
     constexpr size_t STRIDE = 10;
-    Napi::Float64Array points = Napi::Float64Array::New(env, delta_count * STRIDE);
+    Napi::Float64Array points = Napi::Float64Array::New(env, point_count * STRIDE);
 
-    for (size_t i = 0; i < delta_count; ++i)
+    for (size_t i = 0; i < point_count; ++i)
     {
       const PositionPoint &point = position_history_[start_index + i];
-      size_t offset = i * STRIDE;
+      const size_t offset = i * STRIDE;
 
       points[offset + 0] = point.x;
       points[offset + 1] = point.y;
@@ -263,8 +297,16 @@ namespace LinuxCNC
       points[offset + 9] = static_cast<double>(point.motionType);
     }
 
+    Napi::Object result = Napi::Object::New(env);
     result.Set("points", points);
-    result.Set("count", Napi::Number::New(env, static_cast<uint32_t>(delta_count)));
+    if (replace_all)
+    {
+      result.Set("replace", Napi::String::New(env, "all"));
+    }
+    else
+    {
+      result.Set("replace", Napi::Number::New(env, static_cast<uint32_t>(replace_count)));
+    }
 
     return result;
   }
@@ -345,8 +387,14 @@ namespace LinuxCNC
           }
         }
 
-        // Update position tracking
-        second_last_position = last_position;
+        // Keep the penultimate comparison point aligned with the penultimate
+        // stored history point. When the current endpoint only replaces the
+        // back of the history, leave this point fixed so curvature can
+        // accumulate across samples.
+        if (should_log)
+        {
+          second_last_position = last_position;
+        }
         last_position = current;
 
         if (first_run)

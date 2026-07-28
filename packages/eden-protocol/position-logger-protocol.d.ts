@@ -31,16 +31,26 @@ export type { PositionLoggerIndex };
 export interface PositionLoggerProtocol extends ChannelProtocol {
   hostMessages: {
     /**
-     * Delta position update (pushed at configured interval)
-     * Contains only NEW points since the last update for this connection.
+     * @deprecated Use position-history-update for exact endpoint replacement.
+     * Append-only position samples pushed at the configured interval.
      */
     "position-update": {
-      /** New points since last update (Float64Array with POSITION_STRIDE per point) */
+      /** Trace samples to append. */
       points: Float64Array;
-      /** Number of new points in this update */
+      /** Number of points in this update. */
       count: number;
-      /** Server-side cursor after this update (monotonic, for sync verification) */
+      /** Monotonic stream cursor after this update. */
       cursor: number;
+    };
+
+    /** Exact position history mutation pushed at the configured interval. */
+    "position-history-update": {
+      /** Monotonic stream cursor after this update. */
+      cursor: number;
+      /** 0 appends, 1 corrects the tail, and "all" replaces the snapshot. */
+      replace: number | "all";
+      /** Replacement and/or appended points. */
+      points: Float64Array;
     };
 
     /** Backend error */

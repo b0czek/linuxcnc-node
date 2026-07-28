@@ -46,6 +46,8 @@ describe("PositionLogger", () => {
         .mockReturnValue(new Float64Array(mockPositionData)),
       getMotionHistory: jest.fn().mockReturnValue(new Float64Array(0)),
       getHistoryCount: jest.fn().mockReturnValue(0),
+      getHistoryUpdate: jest.fn().mockReturnValue(null),
+      resetHistoryUpdates: jest.fn(),
     };
 
     (addon.NativePositionLogger as jest.Mock).mockImplementation(
@@ -177,6 +179,20 @@ describe("PositionLogger", () => {
 
       // Should request last 10 from total of 50: startIndex = 50 - 10 = 40
       expect(mockNativeLogger.getMotionHistory).toHaveBeenCalledWith(40, 10);
+    });
+  });
+
+  describe("history updates", () => {
+    it("should return the next native history update", () => {
+      const update = {
+        points: createMockHistoryArray([mockPositionData]),
+        replace: 1,
+      };
+      mockNativeLogger.getHistoryUpdate.mockReturnValue(update);
+
+      const logger = new PositionLogger();
+
+      expect(logger.getHistoryUpdate()).toBe(update);
     });
   });
 });

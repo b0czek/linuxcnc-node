@@ -79,4 +79,9 @@ export interface NapiPositionLoggerInstance {
   getCurrentPosition(): Float64Array | null;
   getMotionHistory(startIndex?: number, count?: number): Float64Array;
   getHistoryCount(): number;
+  getHistoryUpdate(): {
+    points: Float64Array;
+    replace: number | "all";
+  } | null;
+  resetHistoryUpdates(): void;
 }

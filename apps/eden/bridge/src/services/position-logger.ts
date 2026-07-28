@@ -16,9 +16,7 @@ const UPDATE_INTERVAL_MS = 50;
 // Shared position logger instance
 let logger: PositionLogger | null = null;
 
-// Cursor tracking
 let cursor = 0;
-let lastHistoryCount = 0;
 
 // Connected clients
 const connections = new Map<string, HostConnection<PositionLoggerProtocol>>();
@@ -35,26 +33,26 @@ function startUpdateLoop(): void {
   updateInterval = setInterval(() => {
     if (!logger || connections.size === 0) return;
 
-    const currentCount = logger.getHistoryCount();
-    if (currentCount <= lastHistoryCount) return;
-
-    // Get new points since last update
-    const newPointCount = currentCount - lastHistoryCount;
-    const newPoints = logger.getMotionHistory(lastHistoryCount, newPointCount);
+    const update = logger.getHistoryUpdate();
+    if (!update) return;
 
     cursor++;
-    lastHistoryCount = currentCount;
 
-    // Push to all connected clients - cast to any to handle type conflicts
-    const message = {
-      points: newPoints,
-      count: newPointCount,
+    const historyMessage = {
+      points: update.points,
+      replace: update.replace,
+      cursor,
+    };
+    const legacyMessage = {
+      points: update.points,
+      count: update.points.length / POSITION_STRIDE,
       cursor,
     };
 
     for (const conn of connections.values()) {
       try {
-        conn.send("position-update", message);
+        conn.send("position-update", legacyMessage);
+        conn.send("position-history-update", historyMessage);
       } catch (err) {
         console.error("[PositionLogger] Error sending update:", err);
       }
@@ -109,7 +107,7 @@ export function initPositionLoggerService(): void {
           maxHistorySize: maxHistory ?? 10000,
         });
 
-        lastHistoryCount = 0;
+        logger.resetHistoryUpdates();
         cursor++;
 
         // Start update loop if not running
@@ -135,7 +133,7 @@ export function initPositionLoggerService(): void {
         }
 
         logger.clear();
-        lastHistoryCount = 0;
+        logger.resetHistoryUpdates();
         cursor++;
 
         return { success: true };

@@ -33,10 +33,8 @@ namespace LinuxCNC
     Napi::Value GetCurrentPosition(const Napi::CallbackInfo &info);
     Napi::Value GetMotionHistory(const Napi::CallbackInfo &info);
     Napi::Value GetHistoryCount(const Napi::CallbackInfo &info);
-
-    // Delta-based access methods
-    Napi::Value GetDeltaSince(const Napi::CallbackInfo &info);
-    Napi::Value GetCurrentCursor(const Napi::CallbackInfo &info);
+    Napi::Value GetHistoryUpdate(const Napi::CallbackInfo &info);
+    Napi::Value ResetHistoryUpdates(const Napi::CallbackInfo &info);
 
     // Internal methods
     void LoggerThread();
@@ -58,11 +56,18 @@ namespace LinuxCNC
     double logging_interval_; // in seconds
     size_t max_history_size_;
 
-    // Cursor tracking for delta updates
+    // Logical insertion cursors used to detect bounded-history rollover.
     // cursor_ is monotonically increasing, representing total points ever added
     // When history wraps, oldest_cursor_ advances to indicate dropped points
     std::atomic<size_t> cursor_;        // Current cursor (next insert position in logical space)
     std::atomic<size_t> oldest_cursor_; // Oldest cursor still in history
+
+    // State for the single-consumer atomic history update stream.
+    size_t stream_cursor_ = 0;
+    size_t stream_history_count_ = 0;
+    PositionPoint stream_tail_{};
+    bool stream_has_tail_ = false;
+    bool stream_force_reset_ = true;
 
     static constexpr double DEFAULT_INTERVAL = 0.01; // 10ms
     static constexpr size_t DEFAULT_MAX_HISTORY = 10000;

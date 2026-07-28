@@ -7,15 +7,11 @@ export interface PositionLoggerOptions {
   maxHistorySize?: number;
 }
 
-export interface DeltaResult {
-  /** Points since the requested cursor */
+export interface PositionHistoryUpdate {
+  /** Replacement and/or appended points */
   points: Float64Array;
-  /** Number of points returned */
-  count: number;
-  /** Current server cursor */
-  cursor: number;
-  /** True if requested cursor was stale (history wrapped), client should reset */
-  wasReset: boolean;
+  /** Number of trailing points to replace, or the complete history */
+  replace: number | "all";
 }
 
 /**
@@ -51,9 +47,7 @@ export class PositionLogger {
     this.nativeLogger.stop();
   }
 
-  /**
-   * Clear the position history (invalidates all previous cursors)
-   */
+  /** Clear the position history. */
   clear(): void {
     this.nativeLogger.clear();
   }
@@ -94,6 +88,21 @@ export class PositionLogger {
   }
 
   /**
+   * Get the next atomic history mutation for a single streaming consumer.
+   * @returns Exact tail replacement update, or null when history did not change
+   */
+  getHistoryUpdate(): PositionHistoryUpdate | null {
+    return this.nativeLogger.getHistoryUpdate();
+  }
+
+  /**
+   * Make the next history update replace the consumer's complete snapshot.
+   */
+  resetHistoryUpdates(): void {
+    this.nativeLogger.resetHistoryUpdates();
+  }
+
+  /**
    * Get the most recent points from the history
    * @param count Number of recent points to get (default: 10)
    * @returns Float64Array with 10 values per point
@@ -106,23 +115,5 @@ export class PositionLogger {
     const actualCount = Math.min(count, totalCount);
 
     return this.getMotionHistory(startIndex, actualCount);
-  }
-
-  /**
-   * Get the current cursor position (monotonic counter of points ever added)
-   * @returns Current cursor value
-   */
-  getCurrentCursor(): number {
-    return this.nativeLogger.getCurrentCursor();
-  }
-
-  /**
-   * Get delta points since a given cursor position
-   * Use this for efficient incremental updates instead of fetching full history.
-   * @param cursor Last known cursor (0 for full history)
-   * @returns Delta result with points, count, new cursor, and wasReset flag
-   */
-  getDeltaSince(cursor: number): DeltaResult {
-    return this.nativeLogger.getDeltaSince(cursor);
   }
 }

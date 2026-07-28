@@ -48,4 +48,7 @@ export type {
   CommandTransportOptions,
   NativeCommandName,
 };
-export { PositionLoggerOptions } from "./positionLogger";
+export {
+  PositionHistoryUpdate,
+  PositionLoggerOptions,
+} from "./positionLogger";
