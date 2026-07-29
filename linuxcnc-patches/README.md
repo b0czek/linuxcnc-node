@@ -135,3 +135,18 @@ The Debian build profiles `pkg.linuxcnc.headless` and `nodoc` select the
 corresponding configure options and packaging manifests. With no new options
 or profiles, the existing GUI, documentation, manpage, and packaging behavior
 is unchanged.
+
+### 0006 — Ordered realtime component search path
+
+Adds the trusted `HAL_RTMOD_PATH` runtime search path and the configure-time
+`--with-extra-rtlib-dirs=DIR[:DIR...]` trust set. Ordinary realtime components
+are resolved by name across the ordered path and the first regular-file match
+is final, while the internal `rtapi` and `hal_lib` modules remain pinned to the
+standard LinuxCNC realtime module directory. Invalid, relative, empty, and
+unauthorized path configurations are rejected as a whole, and canonical path
+checks prevent trusted-directory symlink escapes.
+
+The shared resolver is used by `halcmd`, `halrmt`, userspace `rtapi_app`, shell
+completion, and the setuid module helper. `linuxcnc` and `halrun` continue to
+export `HAL_RTMOD_DIR` and only supply the standard `HAL_RTMOD_PATH` default
+when the caller did not set one. No Node.js ABI or binding changes are needed.

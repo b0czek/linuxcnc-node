@@ -1,0 +1,874 @@
+From 690bc1f56f786f237ca5b3c5e71b1e6de00f43f2 Mon Sep 17 00:00:00 2001
+From: Dariusz <dariusz@localhost>
+Date: Wed, 29 Jul 2026 14:39:31 +0200
+Subject: [PATCH] hal: add ordered trusted realtime component search path
+
+---
+ docs/src/man/man1/halcmd.1.adoc   |  22 ++++
+ scripts/halrun.in                 |   3 +
+ scripts/linuxcnc.in               |   3 +
+ src/configure.ac                  |  20 +++
+ src/hal/utils/Submakefile         |   6 +-
+ src/hal/utils/halcmd_commands.cc  |  35 ++----
+ src/hal/utils/halcmd_completion.c |  49 ++++++--
+ src/hal/utils/halrmt.c            |  43 +++----
+ src/module_helper/Submakefile     |   3 +-
+ src/module_helper/module_helper.c |  11 +-
+ src/rtapi/Submakefile             |   1 +
+ src/rtapi/rtmod_path.c            | 195 ++++++++++++++++++++++++++++++
+ src/rtapi/rtmod_path.h            |  34 ++++++
+ src/rtapi/uspace_rtapi_main.cc    |  36 ++++--
+ tests/rtmod-path/load.hal         |   2 +
+ tests/rtmod-path/test.c           |  73 +++++++++++
+ tests/rtmod-path/test.sh          |   8 ++
+ 17 files changed, 469 insertions(+), 75 deletions(-)
+ create mode 100644 src/rtapi/rtmod_path.c
+ create mode 100644 src/rtapi/rtmod_path.h
+ create mode 100644 tests/rtmod-path/load.hal
+ create mode 100644 tests/rtmod-path/test.c
+ create mode 100755 tests/rtmod-path/test.sh
+
+diff --git a/docs/src/man/man1/halcmd.1.adoc b/docs/src/man/man1/halcmd.1.adoc
+index 6c6b19b528..4d010eeca1 100644
+--- a/docs/src/man/man1/halcmd.1.adoc
++++ b/docs/src/man/man1/halcmd.1.adoc
+@@ -300,6 +300,28 @@ variable substitution take place.
+ 
+ === Environment Variables
+ 
++*HAL_RTMOD_PATH* is the complete ordered, colon-separated search path used by
++*loadrt*.  The first regular file named `<component><module-extension>` wins.
++When it is unset, the compiled standard realtime module directory is used.
++An explicitly empty value, relative directory, empty element, or directory not
++compiled into LinuxCNC's trust set is rejected in full.  A selected file that
++fails to load is reported without trying a later copy.  The protected *rtapi*
++and *hal_lib* modules are always loaded from the standard directory.
++
++Additional trusted directories are selected at build time with
++`./configure --with-extra-rtlib-dirs=DIR[:DIR...]`; every entry must be
++absolute.  For example, a build trusting `/opt/integrator/rtlib` may use:
++
++----
++HAL_RTMOD_PATH=/opt/integrator/rtlib:/usr/lib/linuxcnc/modules
++----
++
++*HAL_RTMOD_DIR* remains available as the standard single realtime module
++directory for compatibility.  *linuxcnc* and *halrun* preserve a caller's
++*HAL_RTMOD_PATH*, otherwise they initialize it to that standard directory.
++The userspace realtime master captures the path at startup, so restart the
++realtime session after changing it.
++
+ Environment variables have the following formats:
+ 
+ - *$ENVVAR* followed by end-of-line or whitespace
+diff --git a/scripts/halrun.in b/scripts/halrun.in
+index a406dd17ad..53d9405f55 100644
+--- a/scripts/halrun.in
++++ b/scripts/halrun.in
+@@ -5,6 +5,9 @@ REALTIME=@REALTIME@
+ THIS=$(basename "$0")
+ 
+ export HAL_RTMOD_DIR=@EMC2_RTLIB_DIR@
++if [ -z "${HAL_RTMOD_PATH+x}" ]; then
++    export HAL_RTMOD_PATH=@EMC2_RTLIB_DIR@
++fi
+ 
+ help () {
+ halcmd -h
+diff --git a/scripts/linuxcnc.in b/scripts/linuxcnc.in
+index 3eaca77e7b..e373fbbf5a 100644
+--- a/scripts/linuxcnc.in
++++ b/scripts/linuxcnc.in
+@@ -819,6 +819,9 @@ fi
+ # 4.3.3. export the location of the HAL realtime modules so that
+ # "halcmd loadrt" can find them
+ HAL_RTMOD_DIR=$LINUXCNC_RTLIB_DIR; export HAL_RTMOD_DIR
++if [ -z "${HAL_RTMOD_PATH+x}" ]; then
++    HAL_RTMOD_PATH=$LINUXCNC_RTLIB_DIR; export HAL_RTMOD_PATH
++fi
+ echo "$(basename "$0") TPMOD=$TPMOD HOMEMOD=$HOMEMOD EMCMOT=${EMCMOT%.*}"
+ # The HALCMD variable must be split because it may contain options.
+ # shellcheck disable=SC2086
+diff --git a/src/configure.ac b/src/configure.ac
+index c1289732f6..7f05e1dc96 100644
+--- a/src/configure.ac
++++ b/src/configure.ac
+@@ -685,6 +685,26 @@ AC_SUBST([TOOL_NML])
+ AC_DEFINE_UNQUOTED([EMC2_DEFAULT_NMLFILE], "$DEFAULT_NMLFILE", [Default nml file])
+ AC_DEFINE_UNQUOTED([EMC2_DEFAULT_TOOLTABLE], "$DEFAULT_TOOLTABLE", [Default nml file])
+ 
++AC_ARG_WITH([extra-rtlib-dirs],
++    AS_HELP_STRING([--with-extra-rtlib-dirs=DIR[:DIR...]],
++                   [additional trusted realtime component directories]),
++    [EXTRA_RTLIB_DIRS="$withval"], [EXTRA_RTLIB_DIRS=""])
++if test -n "$EXTRA_RTLIB_DIRS"; then
++    old_IFS=$IFS
++    IFS=:
++    for rtlib_dir in $EXTRA_RTLIB_DIRS; do
++        case "$rtlib_dir" in
++            /*) ;;
++            *) AC_MSG_ERROR([--with-extra-rtlib-dirs entries must be non-empty absolute paths]) ;;
++        esac
++    done
++    IFS=$old_IFS
++    case "$EXTRA_RTLIB_DIRS" in *::*|:*|*:) AC_MSG_ERROR([--with-extra-rtlib-dirs contains an empty entry]) ;; esac
++fi
++AC_DEFINE_UNQUOTED([EMC2_EXTRA_RTLIB_DIRS], ["$EXTRA_RTLIB_DIRS"],
++                   [Additional trusted realtime component directories])
++AC_SUBST([EXTRA_RTLIB_DIRS])
++
+ ##############################################################################
+ # Subsection 3.4 - define default dirs, these get used in a lot of places    #
+ # we decide based on RIP or install where stuff goes                         #
+diff --git a/src/hal/utils/Submakefile b/src/hal/utils/Submakefile
+index 12d60b7b9d..b4c100e2e2 100644
+--- a/src/hal/utils/Submakefile
++++ b/src/hal/utils/Submakefile
+@@ -1,5 +1,5 @@
+-HALCMDSRCS := hal/utils/halcmd.c hal/utils/halcmd_commands.cc hal/utils/halcmd_main.c
+-HALSHSRCS := hal/utils/halcmd.c hal/utils/halcmd_commands.cc hal/utils/halsh.c
++HALCMDSRCS := hal/utils/halcmd.c hal/utils/halcmd_commands.cc hal/utils/halcmd_main.c rtapi/rtmod_path.c
++HALSHSRCS := hal/utils/halcmd.c hal/utils/halcmd_commands.cc hal/utils/halsh.c rtapi/rtmod_path.c
+ 
+ ifneq ($(READLINE_LIBS),)
+ HALCMDSRCS += hal/utils/halcmd_completion.c
+@@ -18,7 +18,7 @@ TARGETS += ../tcl/hal.so
+ 	$(Q)$(CXX) $(LDFLAGS) -o $@ $^ $(READLINE_LIBS)
+ TARGETS += ../bin/halcmd
+ 
+-HALRMTSRCS := hal/utils/halrmt.c
++HALRMTSRCS := hal/utils/halrmt.c rtapi/rtmod_path.c
+ USERSRCS += $(HALRMTSRCS)
+ 
+ ../bin/halrmt: $(call TOOBJS, $(HALRMTSRCS)) ../lib/liblinuxcnchal.so.0
+diff --git a/src/hal/utils/halcmd_commands.cc b/src/hal/utils/halcmd_commands.cc
+index 5a7eb70f9f..78b34ff978 100644
+--- a/src/hal/utils/halcmd_commands.cc
++++ b/src/hal/utils/halcmd_commands.cc
+@@ -42,6 +42,7 @@
+ #include <hal.h>		// HAL public API decls
+ #include "../hal_priv.h"	// private HAL decls
+ #include "halcmd_commands.h"
++#include "rtapi/rtmod_path.h"
+ #include <rtapi_mutex.h>
+ #include <rtapi_string.h>	// rtapi_strlcpy
+ 
+@@ -1168,39 +1169,25 @@ int do_loadrt_cmd(char *mod_name, char *args[])
+     argv[m++] = NULL;
+     retval = do_loadusr_cmd(argv);
+ #else
+-    static const char *rtmod_dir = EMC2_RTLIB_DIR;
+-    struct stat stat_buf;
++    rtmod_path_t rtmod_path;
++    char path_error[MAX_CMD_LEN+1];
+     char mod_path[MAX_CMD_LEN+1];
+ 
+     if (hal_get_lock()&HAL_LOCK_LOAD) {
+ 	halcmd_error("HAL is locked, loading of modules is not permitted\n");
+ 	return -EPERM;
+     }
+-    if ( (strlen(rtmod_dir)+strlen(mod_name)+5) > MAX_CMD_LEN ) {
+-	halcmd_error("Module path too long\n");
+-	return -1;
+-    }
+-
+-    /* make full module name '<path>/<name>.o' */
+-    {
+-        int r;
+-        r = snprintf(mod_path, sizeof(mod_path), "%s/%s%s", rtmod_dir, mod_name, MODULE_EXT);
+-        if (r < 0) {
+-            halcmd_error("error making module path for %s/%s%s\n", rtmod_dir, mod_name, MODULE_EXT);
+-            return -1;
+-        } else if (r >= (int)sizeof(mod_path)) {
+-            // truncation!
+-            halcmd_error("module path too long (max %lu) for %s/%s%s\n", (unsigned long)sizeof(mod_path)-1, rtmod_dir, mod_name, MODULE_EXT);
+-            return -1;
+-        }
++    if (rtmod_path_init(&rtmod_path, getenv("HAL_RTMOD_PATH"), path_error, sizeof(path_error))) {
++        halcmd_error("%s\n", path_error);
++        return -1;
+     }
+-
+-    /* is there a file with that name? */
+-    if ( stat(mod_path, &stat_buf) != 0 ) {
+-        /* can't find it */
+-        halcmd_error("Can't find module '%s' in %s\n", mod_name, rtmod_dir);
++    if (rtmod_path_resolve(&rtmod_path, mod_name, 0, mod_path, sizeof(mod_path),
++                           path_error, sizeof(path_error))) {
++        halcmd_error("%s\n", path_error);
++        rtmod_path_free(&rtmod_path);
+         return -1;
+     }
++    rtmod_path_free(&rtmod_path);
+     
+     argv[0] = EMC2_BIN_DIR "/linuxcnc_module_helper";
+     argv[1] = "insert";
+diff --git a/src/hal/utils/halcmd_completion.c b/src/hal/utils/halcmd_completion.c
+index 65c304c2bf..c26c6ecad1 100644
+--- a/src/hal/utils/halcmd_completion.c
++++ b/src/hal/utils/halcmd_completion.c
+@@ -38,6 +38,7 @@
+  */
+ 
+ #include "halcmd_completion.h"
++#include "rtapi/rtmod_path.h"
+ #include "config.h"
+ #include <rtapi.h>		/* RTAPI realtime OS API */
+ #include <hal.h>		/* HAL public API decls */
+@@ -45,6 +46,7 @@
+ #include <rtapi_mutex.h>
+ #include <string.h>
+ #include <ctype.h>
++#include <limits.h>
+ 
+ static int argno;
+ 
+@@ -484,6 +486,7 @@ static char *pin_generator(const char *text, int state) {
+ }
+ 
+ #include <dirent.h>
++#include <stdlib.h>
+ 
+ static int startswith(const char *string, const char *stem) {
+     return strncmp(string, stem, strlen(stem)) == 0;
+@@ -528,26 +531,55 @@ static char *loadusr_generator(const char *text, int state) {
+ static char *loadrt_generator(const char *text, int state) {
+     static int len;
+     static DIR *d;
++    static rtmod_path_t path;
++    static size_t dir_index;
++    static char **seen;
++    static size_t seen_count;
+     struct dirent *ent;
+ 
+     if(!state) {
++        char error[256];
++        size_t i;
+         len = strlen(text);
+-        d = opendir(EMC2_RTLIB_DIR);
++        d = NULL;
++        dir_index = 0;
++        for (i = 0; i < seen_count; i++) free(seen[i]);
++        free(seen); seen = NULL; seen_count = 0;
++        rtmod_path_free(&path);
++        if (rtmod_path_init(&path, getenv("HAL_RTMOD_PATH"), error, sizeof(error))) return NULL;
++        if (path.count) d = opendir(path.dirs[0]);
+     }
+ 
+-    while(d && (ent = readdir(d))) {
++    while(dir_index < path.count) {
++      while(d && (ent = readdir(d))) {
+         char *result;
+-        if(!strstr(ent->d_name, MODULE_EXT)) continue;
+-        if(startswith(ent->d_name, "rtapi.")) continue;
++        char resolved[PATH_MAX], expected[PATH_MAX], error[256];
++        size_t namelen = strlen(ent->d_name), extlen = strlen(MODULE_EXT), i;
++        int duplicate = 0;
++        if(namelen <= extlen || strcmp(ent->d_name + namelen - extlen, MODULE_EXT)) continue;
++        if(!strcmp(ent->d_name, "rtapi" MODULE_EXT) || !strcmp(ent->d_name, "hal_lib" MODULE_EXT)) continue;
+         if(strncmp(text, ent->d_name, len) != 0) continue;
+         result = strdup(ent->d_name);
+         if(!result)
+             return NULL;
+-        result[strlen(result) - strlen(MODULE_EXT)] = 0;
++        result[namelen - extlen] = 0;
++        if (snprintf(expected, sizeof(expected), "%s/%s", path.dirs[dir_index], ent->d_name) >= (int)sizeof(expected) ||
++            rtmod_path_resolve(&path, result, 0, resolved, sizeof(resolved), error, sizeof(error)) ||
++            strcmp(resolved, expected)) {
++            free(result);
++            continue;
++        }
++        for (i = 0; i < seen_count; i++) if (!strcmp(seen[i], result)) duplicate = 1;
++        if (duplicate) { free(result); continue; }
++        seen = realloc(seen, (seen_count + 1) * sizeof(*seen));
++        if (!seen) { free(result); return NULL; }
++        seen[seen_count++] = strdup(result);
+         return result;
+-    }
+-    if (d != NULL) {
+-        closedir(d);
++      }
++      if (d) closedir(d);
++      d = NULL;
++      dir_index++;
++      if (dir_index < path.count) d = opendir(path.dirs[dir_index]);
+     }
+     return NULL;
+ }
+@@ -747,4 +779,3 @@ void halcmd_init_readline() {
+     rl_readline_name = "halcmd";
+     rl_attempted_completion_function = rlcompleter;
+ }
+-
+diff --git a/src/hal/utils/halrmt.c b/src/hal/utils/halrmt.c
+index 4d20d98e3b..30dc912580 100644
+--- a/src/hal/utils/halrmt.c
++++ b/src/hal/utils/halrmt.c
+@@ -274,6 +274,7 @@
+ ****************************************************************************/
+ 
+ #include "config.h"
++#include "rtapi/rtmod_path.h"
+ 
+ #define _REENTRANT
+ 
+@@ -1127,11 +1128,10 @@ static int doLoadRt(char *mod_name, char *args[], connectionRecType *context)
+     hal_comp_t *comp;
+     char *cp1;
+     const char *nakStr = "SET LOADRT NAK";
++    int m=0;
++    char *argv[MAX_TOK+4];
+ 
+ #if defined(RTAPI_USPACE)
+-#if 0
+-    argv[m++] = "-Wn";
+-    argv[m++] = mod_name;
+     argv[m++] = EMC2_BIN_DIR "/rtapi_app";
+     argv[m++] = "load";
+     argv[m++] = mod_name;
+@@ -1140,13 +1140,10 @@ static int doLoadRt(char *mod_name, char *args[], connectionRecType *context)
+         argv[m++] = args[n++];
+     }
+     argv[m++] = NULL;
+-//    retval = do_loadusr_cmd(argv);
+-#endif
++    retval = hal_systemv(argv, context);
+ #else
+-    int m=0;
+-    char *argv[MAX_TOK+3];
+-    static char *rtmod_dir = EMC2_RTLIB_DIR;
+-    struct stat stat_buf;
++    rtmod_path_t rtmod_path;
++    char path_error[MAX_CMD_LEN+1];
+     char mod_path[MAX_CMD_LEN+1];
+ 
+     if (hal_get_lock()&HAL_LOCK_LOAD) {
+@@ -1154,24 +1151,14 @@ static int doLoadRt(char *mod_name, char *args[], connectionRecType *context)
+       sockWriteError(nakStr, context);
+ 	return -EPERM;
+     }
+-    if ( (strlen(rtmod_dir)+strlen(mod_name)+5) > MAX_CMD_LEN ) {
+-      snprintf(errorStr, sizeof(errorStr), "Module path too long");
++    if (rtmod_path_init(&rtmod_path, getenv("HAL_RTMOD_PATH"), path_error, sizeof(path_error)) ||
++        rtmod_path_resolve(&rtmod_path, mod_name, 0, mod_path, sizeof(mod_path), path_error, sizeof(path_error))) {
++      snprintf(errorStr, sizeof(errorStr), "%s", path_error);
+       sockWriteError(nakStr, context);
+-	return -1;
+-    }
+-
+-    /* make full module name '<path>/<name>.o' */
+-    rtapi_strxcpy (mod_path, rtmod_dir);
+-    rtapi_strxcat (mod_path, "/");
+-    rtapi_strxcat (mod_path, mod_name);
+-    rtapi_strxcat (mod_path, MODULE_EXT);
+-    /* is there a file with that name? */
+-    if ( stat(mod_path, &stat_buf) != 0 ) {
+-        /* can't find it */
+-      snprintf(errorStr, sizeof(errorStr), "Can't find module '%s' in %s", mod_name, rtmod_dir);
+-      sockWriteError(nakStr, context);
+-        return -1;
++      rtmod_path_free(&rtmod_path);
++      return -1;
+     }
++    rtmod_path_free(&rtmod_path);
+     
+     // TODO - FIXME - remove test after 2.2.x when blocks isn't functional anymore
+     if (strncmp(mod_name, "blocks", 6) == 0) {
+@@ -1381,8 +1368,13 @@ static int unloadrt_comp(char *mod_name)
+     }
+     if ( pid == 0 ) {
+ 	/* this is the child process - prepare to exec() rmmod */
++#if defined(RTAPI_USPACE)
++	argv[0] = EMC2_BIN_DIR "/rtapi_app";
++	argv[1] = "unload";
++#else
+ 	argv[0] = EMC2_BIN_DIR "/linuxcnc_module_helper";
+ 	argv[1] = "remove";
++#endif
+ 	argv[2] = mod_name;
+ 	/* add a NULL to terminate the argv array */
+ 	argv[3] = NULL;
+@@ -3625,4 +3617,3 @@ int main(int argc, char **argv)
+ 	return 0;
+     }
+ }
+-
+diff --git a/src/module_helper/Submakefile b/src/module_helper/Submakefile
+index c378790c8f..66f47b4ff6 100644
+--- a/src/module_helper/Submakefile
++++ b/src/module_helper/Submakefile
+@@ -1,6 +1,7 @@
+ ifneq ("$(RTPREFIX)","sim")
+ MODULE_HELPERSRCS := \
+-	module_helper/module_helper.c
++	module_helper/module_helper.c \
++	rtapi/rtmod_path.c
+ USERSRCS += $(MODULE_HELPERSRCS)
+ 
+ ifneq ($(rip_moduledir),)
+diff --git a/src/module_helper/module_helper.c b/src/module_helper/module_helper.c
+index f22c651ba5..83f94cc6da 100644
+--- a/src/module_helper/module_helper.c
++++ b/src/module_helper/module_helper.c
+@@ -36,6 +36,7 @@ think of a better way.
+ #include <sys/utsname.h>
+ 
+ #include "config.h"
++#include "rtapi/rtmod_path.h"
+ 
+ /* module name, between last / and ., must be one of these */
+ /* if one module name is a prefix of the other (e.g., "rtai" is a prefix to
+@@ -130,10 +131,11 @@ char *check_whitelist(char *target, char *table[]) {
+ void check_whitelist_module_path(char *mod, int argc, char **argv) {
+     char *ext, *end;
+     char *last_slash = strrchr(mod, '/');
++    char component[NAME_MAX + 1];
+ 
+     if(!last_slash || strstr(mod, "..")) error(argc, argv);
+ 
+-    if(strncmp(mod, EMC2_RTLIB_DIR, strlen(EMC2_RTLIB_DIR)) == 0)
++    if(rtmod_path_is_trusted_file(mod, component, sizeof(component)))
+         return;
+ 
+     ext = check_whitelist(last_slash + 1, module_whitelist);
+@@ -142,7 +144,10 @@ void check_whitelist_module_path(char *mod, int argc, char **argv) {
+     end = check_whitelist(ext, ext_whitelist);
+     if(!end || *end) error(argc, argv);
+ 
+-    if(!check_whitelist(mod, path_whitelist)) error(argc, argv);
++    {
++        char *after = check_whitelist(mod, path_whitelist);
++        if(!after || *after != '/') error(argc, argv);
++    }
+ }
+ 
+ #include <sys/types.h>
+@@ -156,6 +161,8 @@ void check_whitelist_module(char *mod, int argc, char **argv) {
+     char *end;
+     DIR *d = opendir(EMC2_RTLIB_DIR);
+ 
++    if (rtmod_path_is_trusted_module(mod)) return;
++
+     if(d) {
+         char buf[NAME_MAX + 1];
+         snprintf(buf, NAME_MAX, "%s%s", mod, MODULE_EXT);
+diff --git a/src/rtapi/Submakefile b/src/rtapi/Submakefile
+index 0ca738d01a..1798fd9491 100644
+--- a/src/rtapi/Submakefile
++++ b/src/rtapi/Submakefile
+@@ -32,6 +32,7 @@ $(patsubst ./rtapi/%,../include/%,$(RTAPIINCS)): ../include/%.h: ./rtapi/%.h
+ ifeq ($(BUILD_SYS),uspace)
+ 
+ RTAPI_APP_SRCS := \
++	rtapi/rtmod_path.c \
+ 	rtapi/uspace_rtapi_main.cc \
+ 	rtapi/uspace_rtapi_app.cc \
+ 	rtapi/uspace_rtapi_parport.cc \
+diff --git a/src/rtapi/rtmod_path.c b/src/rtapi/rtmod_path.c
+new file mode 100644
+index 0000000000..763fe5f9b3
+--- /dev/null
++++ b/src/rtapi/rtmod_path.c
+@@ -0,0 +1,195 @@
++#include "config.h"
++#include "rtmod_path.h"
++
++#include <dirent.h>
++#include <errno.h>
++#include <limits.h>
++#include <stdarg.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <sys/stat.h>
++#include <unistd.h>
++
++#ifndef EMC2_EXTRA_RTLIB_DIRS
++#define EMC2_EXTRA_RTLIB_DIRS ""
++#endif
++
++static void set_error(char *error, size_t size, const char *format, ...) {
++    va_list ap;
++    if (!error || !size) return;
++    va_start(ap, format);
++    vsnprintf(error, size, format, ap);
++    va_end(ap);
++}
++
++static char *normalize(const char *value) {
++    size_t n;
++    char *copy;
++    if (!value || value[0] != '/') return NULL;
++    copy = strdup(value);
++    if (!copy) return NULL;
++    n = strlen(copy);
++    while (n > 1 && copy[n - 1] == '/') copy[--n] = 0;
++    return copy;
++}
++
++static int append_unique(rtmod_path_t *path, char *dir) {
++    size_t i;
++    char **next;
++    for (i = 0; i < path->count; i++) {
++        if (!strcmp(path->dirs[i], dir)) { free(dir); return 0; }
++    }
++    next = (char **)realloc(path->dirs, (path->count + 1) * sizeof(char *));
++    if (!next) { free(dir); return -1; }
++    path->dirs = next;
++    path->dirs[path->count++] = dir;
++    return 0;
++}
++
++static int parse_list(const char *list, rtmod_path_t *path, int reject_empty,
++                      char *error, size_t error_size) {
++    const char *start = list, *end;
++    if (!list || !*list) {
++        if (reject_empty) set_error(error, error_size, "HAL_RTMOD_PATH must not be empty");
++        return reject_empty ? -1 : 0;
++    }
++    do {
++        char *entry, *norm;
++        size_t len;
++        end = strchr(start, ':');
++        len = end ? (size_t)(end - start) : strlen(start);
++        if (!len) {
++            set_error(error, error_size, "realtime module path contains an empty element");
++            return -1;
++        }
++        entry = (char *)malloc(len + 1);
++        if (!entry) return -1;
++        memcpy(entry, start, len); entry[len] = 0;
++        norm = normalize(entry); free(entry);
++        if (!norm) {
++            set_error(error, error_size, "realtime module directory must be absolute: %.*s", (int)len, start);
++            return -1;
++        }
++        if (append_unique(path, norm)) return -1;
++        start = end ? end + 1 : NULL;
++    } while (start);
++    return 0;
++}
++
++static int trusted_dir(const char *dir) {
++    rtmod_path_t trusted = {0};
++    char combined[PATH_MAX * 2];
++    size_t i;
++    int found = 0;
++    if (EMC2_EXTRA_RTLIB_DIRS[0])
++        snprintf(combined, sizeof(combined), "%s:%s", EMC2_RTLIB_DIR, EMC2_EXTRA_RTLIB_DIRS);
++    else
++        snprintf(combined, sizeof(combined), "%s", EMC2_RTLIB_DIR);
++    if (parse_list(combined, &trusted, 1, NULL, 0)) return 0;
++    for (i = 0; i < trusted.count; i++) if (!strcmp(dir, trusted.dirs[i])) found = 1;
++    rtmod_path_free(&trusted);
++    return found;
++}
++
++int rtmod_path_init(rtmod_path_t *path, const char *env_path,
++                    char *error, size_t error_size) {
++    size_t i;
++    memset(path, 0, sizeof(*path));
++    if (parse_list(env_path ? env_path : EMC2_RTLIB_DIR, path, 1, error, error_size)) goto fail;
++    for (i = 0; i < path->count; i++) {
++        if (!trusted_dir(path->dirs[i])) {
++            set_error(error, error_size, "unauthorized realtime module directory: %s", path->dirs[i]);
++            goto fail;
++        }
++    }
++    return 0;
++fail:
++    rtmod_path_free(path);
++    return -1;
++}
++
++void rtmod_path_free(rtmod_path_t *path) {
++    size_t i;
++    if (!path) return;
++    for (i = 0; i < path->count; i++) free(path->dirs[i]);
++    free(path->dirs); path->dirs = NULL; path->count = 0;
++}
++
++int rtmod_name_valid(const char *name) {
++    return name && *name && !strchr(name, '/') && !strstr(name, "..");
++}
++
++static int contained_file(const char *dir, const char *candidate) {
++    char real_dir[PATH_MAX], real_file[PATH_MAX];
++    size_t n;
++    if (!realpath(dir, real_dir) || !realpath(candidate, real_file)) return 0;
++    n = strlen(real_dir);
++    return !strncmp(real_dir, real_file, n) && real_file[n] == '/';
++}
++
++int rtmod_path_resolve(const rtmod_path_t *path, const char *name,
++                       int core_module, char *result, size_t result_size,
++                       char *error, size_t error_size) {
++    size_t i, count = core_module ? 1 : path->count;
++    struct stat st;
++    if (!rtmod_name_valid(name)) {
++        set_error(error, error_size, "invalid realtime component name '%s'", name ? name : "");
++        return -1;
++    }
++    for (i = 0; i < count; i++) {
++        const char *dir = core_module ? EMC2_RTLIB_DIR : path->dirs[i];
++        int n = snprintf(result, result_size, "%s/%s%s", dir, name, MODULE_EXT);
++        if (n < 0 || (size_t)n >= result_size) {
++            set_error(error, error_size, "realtime module path is too long"); return -1;
++        }
++        if (!stat(result, &st) && S_ISREG(st.st_mode)) {
++            if (!contained_file(dir, result)) {
++                set_error(error, error_size, "realtime module escapes trusted directory: %s", result);
++                return -1;
++            }
++            return 0;
++        }
++    }
++    if (core_module)
++        set_error(error, error_size, "can't find realtime component '%s'; searched: %s", name, EMC2_RTLIB_DIR);
++    else {
++        size_t used = (size_t)snprintf(error, error_size, "can't find realtime component '%s'; searched:", name);
++        for (i = 0; i < path->count && used < error_size; i++)
++            used += (size_t)snprintf(error + used, error_size - used, "%s%s", i ? ":" : " ", path->dirs[i]);
++    }
++    return -1;
++}
++
++int rtmod_path_is_trusted_file(const char *filename, char *module_name,
++                               size_t module_name_size) {
++    char copy[PATH_MAX], *slash, *ext;
++    struct stat st;
++    if (!filename || strlen(filename) >= sizeof(copy)) return 0;
++    strcpy(copy, filename); slash = strrchr(copy, '/');
++    if (!slash || copy[0] != '/' || strstr(filename, "..")) return 0;
++    *slash++ = 0;
++    if (!trusted_dir(copy) || stat(filename, &st) || !S_ISREG(st.st_mode) || !contained_file(copy, filename)) return 0;
++    ext = strstr(slash, MODULE_EXT);
++    if (!ext || ext[strlen(MODULE_EXT)] || ext == slash) return 0;
++    *ext = 0;
++    if (!rtmod_name_valid(slash) || strlen(slash) >= module_name_size) return 0;
++    if ((!strcmp(slash, "rtapi") || !strcmp(slash, "hal_lib")) && strcmp(copy, EMC2_RTLIB_DIR)) return 0;
++    strcpy(module_name, slash);
++    return 1;
++}
++
++int rtmod_path_is_trusted_module(const char *name) {
++    rtmod_path_t trusted = {0};
++    char combined[PATH_MAX * 2], candidate[PATH_MAX], error[256];
++    if (!rtmod_name_valid(name)) return 0;
++    if (EMC2_EXTRA_RTLIB_DIRS[0])
++        snprintf(combined, sizeof(combined), "%s:%s", EMC2_RTLIB_DIR, EMC2_EXTRA_RTLIB_DIRS);
++    else
++        snprintf(combined, sizeof(combined), "%s", EMC2_RTLIB_DIR);
++    if (rtmod_path_init(&trusted, combined, error, sizeof(error))) return 0;
++    if (!rtmod_path_resolve(&trusted, name, 0, candidate, sizeof(candidate), error, sizeof(error))) {
++        rtmod_path_free(&trusted); return 1;
++    }
++    rtmod_path_free(&trusted); return 0;
++}
+diff --git a/src/rtapi/rtmod_path.h b/src/rtapi/rtmod_path.h
+new file mode 100644
+index 0000000000..7d35c26538
+--- /dev/null
++++ b/src/rtapi/rtmod_path.h
+@@ -0,0 +1,34 @@
++#ifndef LINUXCNC_RTMOD_PATH_H
++#define LINUXCNC_RTMOD_PATH_H
++
++#include <stddef.h>
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++typedef struct rtmod_path {
++    char **dirs;
++    size_t count;
++} rtmod_path_t;
++
++/* Parse HAL_RTMOD_PATH (or use EMC2_RTLIB_DIR when env_path is NULL),
++   normalize duplicate trailing slashes, and enforce the compiled trust set. */
++int rtmod_path_init(rtmod_path_t *path, const char *env_path,
++                    char *error, size_t error_size);
++void rtmod_path_free(rtmod_path_t *path);
++
++/* Resolve name+MODULE_EXT.  core_module restricts lookup to EMC2_RTLIB_DIR. */
++int rtmod_path_resolve(const rtmod_path_t *path, const char *name,
++                       int core_module, char *result, size_t result_size,
++                       char *error, size_t error_size);
++
++int rtmod_name_valid(const char *name);
++int rtmod_path_is_trusted_file(const char *filename, char *module_name,
++                               size_t module_name_size);
++int rtmod_path_is_trusted_module(const char *name);
++
++#ifdef __cplusplus
++}
++#endif
++#endif
+diff --git a/src/rtapi/uspace_rtapi_main.cc b/src/rtapi/uspace_rtapi_main.cc
+index e04bf25545..7186ab0854 100644
+--- a/src/rtapi/uspace_rtapi_main.cc
++++ b/src/rtapi/uspace_rtapi_main.cc
+@@ -26,6 +26,7 @@
+ #include <sys/un.h>
+ #include <sys/stat.h>
+ #include <fcntl.h>
++#include <limits.h>
+ #include <unistd.h>
+ #include <errno.h>
+ #include <dlfcn.h>
+@@ -59,6 +60,20 @@
+ #include <hal.h>
+ #include "hal/hal_priv.h"
+ #include "uspace_common.h"
++#include "rtmod_path.h"
++
++static rtmod_path_t component_path;
++static bool component_path_ready;
++static std::string component_path_error;
++
++static void capture_component_path() {
++    char error[1024];
++    if (component_path_ready || !component_path_error.empty()) return;
++    if (rtmod_path_init(&component_path, getenv("HAL_RTMOD_PATH"), error, sizeof(error)))
++        component_path_error = error;
++    else
++        component_path_ready = true;
++}
+ 
+ static RtapiApp &App();
+ 
+@@ -221,18 +236,19 @@ static int do_comp_args(void *module, const std::vector<std::string> &args) {
+ static int do_load_cmd(const std::string &name, const std::vector<std::string> &args) {
+     void *w = modules[name];
+     if (w == NULL) {
+-        //Sanitize the name
+-        if (name.find("/") != std::string::npos || name.find("..") != std::string::npos) {
+-            rtapi_print_msg(
+-                RTAPI_MSG_ERR,
+-                "%s: Not allowed as module name. Slashes or with \"..\" (even /a..b/) are not allowed.\n",
+-                name.c_str()
+-            );
++        char what[PATH_MAX], error[1024];
++        capture_component_path();
++        if (!component_path_ready) {
++            rtapi_print_msg(RTAPI_MSG_ERR, "rtapi_app: %s\n", component_path_error.c_str());
++            return -1;
++        }
++        int core_module = name == "rtapi" || name == "hal_lib";
++        if (rtmod_path_resolve(&component_path, name.c_str(), core_module,
++                               what, sizeof(what), error, sizeof(error))) {
++            rtapi_print_msg(RTAPI_MSG_ERR, "%s\n", error);
+             return -1;
+         }
+-        std::string what;
+-        what = fmt::format("{}/{}.so", EMC2_RTLIB_DIR, name);
+-        void *module = modules[name] = dlopen(what.c_str(), RTLD_GLOBAL | RTLD_NOW);
++        void *module = modules[name] = dlopen(what, RTLD_GLOBAL | RTLD_NOW);
+         if (!module) {
+             rtapi_print_msg(RTAPI_MSG_ERR, "%s: dlopen: %s\n", name.c_str(), dlerror());
+             modules.erase(name);
+diff --git a/tests/rtmod-path/load.hal b/tests/rtmod-path/load.hal
+new file mode 100644
+index 0000000000..b44392754d
+--- /dev/null
++++ b/tests/rtmod-path/load.hal
+@@ -0,0 +1,2 @@
++loadrt and2 count=1
++unloadrt all
+diff --git a/tests/rtmod-path/test.c b/tests/rtmod-path/test.c
+new file mode 100644
+index 0000000000..3bc258f2fe
+--- /dev/null
++++ b/tests/rtmod-path/test.c
+@@ -0,0 +1,73 @@
++#include "config.h"
++#include "rtapi/rtmod_path.h"
++
++#include <assert.h>
++#include <fcntl.h>
++#include <limits.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <sys/stat.h>
++#include <unistd.h>
++
++static void touch_file(const char *path, const char *value) {
++    int fd = open(path, O_CREAT | O_TRUNC | O_WRONLY, 0600);
++    assert(fd >= 0);
++    assert(write(fd, value, strlen(value)) == (ssize_t)strlen(value));
++    close(fd);
++}
++
++int main(void) {
++    rtmod_path_t path = {0};
++    char extras[PATH_MAX * 2], *a, *b, *colon;
++    char ordered[PATH_MAX * 2], result[PATH_MAX], error[1024];
++    char fa[PATH_MAX], fb[PATH_MAX], escaped[PATH_MAX], outside[PATH_MAX];
++    const char *name = "rtmod_path_fixture";
++
++    assert(rtmod_path_init(&path, NULL, error, sizeof(error)) == 0);
++    assert(path.count == 1 && !strcmp(path.dirs[0], EMC2_RTLIB_DIR));
++    rtmod_path_free(&path);
++    assert(rtmod_path_init(&path, "", error, sizeof(error)) < 0);
++    assert(rtmod_path_init(&path, "relative", error, sizeof(error)) < 0);
++    assert(rtmod_path_init(&path, "/tmp::/var", error, sizeof(error)) < 0);
++    assert(rtmod_path_init(&path, "/definitely/not/trusted", error, sizeof(error)) < 0);
++    assert(!rtmod_name_valid("../bad") && !rtmod_name_valid("bad/name"));
++
++    strcpy(extras, EMC2_EXTRA_RTLIB_DIRS);
++    colon = strchr(extras, ':');
++    if (!colon) {
++        puts("rtmod-path: configure with two extra rtlib directories for ordered lookup tests");
++        return 0;
++    }
++    *colon = 0; a = extras; b = colon + 1;
++    assert(*a && *b && !strchr(b, ':'));
++    mkdir(a, 0700); mkdir(b, 0700);
++    snprintf(fa, sizeof(fa), "%s/%s%s", a, name, MODULE_EXT);
++    snprintf(fb, sizeof(fb), "%s/%s%s", b, name, MODULE_EXT);
++    touch_file(fa, "first-broken-copy"); touch_file(fb, "second-copy");
++
++    snprintf(ordered, sizeof(ordered), "%s:%s:%s", a, a, b);
++    assert(rtmod_path_init(&path, ordered, error, sizeof(error)) == 0 && path.count == 2);
++    assert(rtmod_path_resolve(&path, name, 0, result, sizeof(result), error, sizeof(error)) == 0);
++    assert(!strcmp(result, fa)); /* selection is final; loaders must not fall through */
++    rtmod_path_free(&path);
++
++    snprintf(ordered, sizeof(ordered), "%s:%s", b, a);
++    assert(rtmod_path_init(&path, ordered, error, sizeof(error)) == 0);
++    assert(rtmod_path_resolve(&path, name, 0, result, sizeof(result), error, sizeof(error)) == 0);
++    assert(!strcmp(result, fb));
++    assert(rtmod_path_resolve(&path, "missing_fixture", 0, result, sizeof(result), error, sizeof(error)) < 0);
++    assert(strstr(error, a) && strstr(error, b));
++
++    snprintf(outside, sizeof(outside), "/tmp/rtmod-path-outside-%ld%s", (long)getpid(), MODULE_EXT);
++    touch_file(outside, "outside");
++    snprintf(escaped, sizeof(escaped), "%s/rtmod_path_escape%s", a, MODULE_EXT);
++    unlink(escaped); assert(symlink(outside, escaped) == 0);
++    assert(rtmod_path_resolve(&path, "rtmod_path_escape", 0, result, sizeof(result), error, sizeof(error)) < 0);
++    assert(strstr(error, "escapes trusted directory"));
++    rtmod_path_free(&path);
++
++    unlink(fa); unlink(fb); unlink(escaped); unlink(outside);
++    puts("rtmod-path: all tests passed");
++    return 0;
++}
+diff --git a/tests/rtmod-path/test.sh b/tests/rtmod-path/test.sh
+new file mode 100755
+index 0000000000..d4e8e6777f
+--- /dev/null
++++ b/tests/rtmod-path/test.sh
+@@ -0,0 +1,8 @@
++#!/bin/sh
++set -eu
++
++cc -std=c11 -D_GNU_SOURCE -Wall -Wextra -Wno-format-truncation \
++    -I../../src -I../../src/rtapi \
++    ../../src/rtapi/rtmod_path.c test.c -o test_rtmod_path
++./test_rtmod_path
++rm -f test_rtmod_path
+-- 
+2.53.0
+
