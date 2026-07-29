@@ -15,8 +15,8 @@
     "package": "npm run build && genesis build . -o hal-inspector.edenite"
   },
   "dependencies": {
-    "@edenapp/babel": "^0.10.2",
-    "@edenapp/types": "^0.10.2",
+    "@edenapp/babel": "catalog:",
+    "@edenapp/types": "catalog:",
     "@kobalte/core": "^0.13.11",
     "@linuxcnc-node/hal": "workspace:*",
     "@linuxcnc-node/types": "workspace:*",
@@ -27,7 +27,7 @@
   },
   "devDependencies": {
     "@edenapp/genesis": "catalog:",
-    "@edenapp/scripts": "^0.11.0",
+    "@edenapp/scripts": "catalog:",
     "@types/node": "^22.0.0",
     "tsup": "^8.5.1",
     "typescript": "^5.3.0",

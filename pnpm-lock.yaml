@@ -6,7 +6,13 @@ settings:
 
 catalogs:
   default:
+    '@edenapp/babel':
+      specifier: ^0.11.1
+      version: 0.11.1
     '@edenapp/genesis':
+      specifier: ^0.11.1
+      version: 0.11.1
+    '@edenapp/scripts':
       specifier: ^0.11.1
       version: 0.11.1
     '@edenapp/types':
@@ -112,11 +118,11 @@ importers:
   apps/eden/hal-inspector:
     dependencies:
       '@edenapp/babel':
-        specifier: ^0.10.2
-        version: 0.10.2(solid-js@1.9.14)
+        specifier: 'catalog:'
+        version: 0.11.1(solid-js@1.9.14)
       '@edenapp/types':
-        specifier: ^0.10.2
-        version: 0.10.2
+        specifier: 'catalog:'
+        version: 0.11.1
       '@kobalte/core':
         specifier: ^0.13.11
         version: 0.13.12(solid-js@1.9.14)
@@ -143,7 +149,7 @@ importers:
         specifier: 'catalog:'
         version: 0.11.1
       '@edenapp/scripts':
-        specifier: ^0.11.0
+        specifier: 'catalog:'
         version: 0.11.1
       '@types/node':
         specifier: ^22.0.0
@@ -690,8 +696,8 @@ packages:
     resolution: {integrity: sha512-0cp4PsWQ/9avqTVMCtZ+GirikIA36ikvjtHweU4/j8yLtgObI0+JUPhYFScgwlteveGB1rt3Cm8UhN04XayDig==}
     engines: {node: '>= 8.9.0'}
 
-  '@edenapp/babel@0.10.2':
-    resolution: {integrity: sha512-pHuGbeALRPX55QgKciJQg/ybw3TPuQor/fsTx2TsqX91nqqnzyeqU2s6/H6+XpTpbUj//fgn3ubXOukHvgw8zA==}
+  '@edenapp/babel@0.11.1':
+    resolution: {integrity: sha512-iZHNpATn92mJIlqXcGu6/LcGylIBsenDcgCjOHyDKf96A3Bqe9F7F6xJQc22maekC27nZeRUQr1BPXCV5HNPDw==}
     peerDependencies:
       solid-js: ^1.9.0
 
@@ -703,9 +709,6 @@ packages:
   '@edenapp/scripts@0.11.1':
     resolution: {integrity: sha512-S36LDEDHHMZN5HEgcZ6ElwBrmWXRRzQ0GWgXbtXZ1ox3K0GYWfuaeRK0xmQ43oOgcSA/O0zNvs7lb1lGL1BKvw==}
     hasBin: true
-
-  '@edenapp/types@0.10.2':
-    resolution: {integrity: sha512-hCbDKKyOMfK9KfiR4rVag/ukIpsfdLC+9dIbAylQG4X8oh6rzM2DvHVMUp3qpcyQ53pZ9VW/RosbUwHAhI4xsA==}
 
   '@edenapp/types@0.11.1':
     resolution: {integrity: sha512-OYx8bQ+x98Pq/k+yL8ODwDtFXwYTEa0EbIXfOd3fZLIK1/uwwRmAmOGVhggufREeWr5rNk2AgGtt3nnviHtJEQ==}
@@ -5403,7 +5406,7 @@ snapshots:
       ajv: 6.15.0
       ajv-keywords: 3.5.2(ajv@6.15.0)
 
-  '@edenapp/babel@0.10.2(solid-js@1.9.14)':
+  '@edenapp/babel@0.11.1(solid-js@1.9.14)':
     dependencies:
       i18next: 23.16.8
       solid-js: 1.9.14
@@ -5422,8 +5425,6 @@ snapshots:
       '@edenapp/genesis': 0.11.1
       '@edenapp/types': 0.11.1
       commander: 11.1.0
-
-  '@edenapp/types@0.10.2': {}
 
   '@edenapp/types@0.11.1': {}
 
