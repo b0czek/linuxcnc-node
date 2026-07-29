@@ -31,10 +31,10 @@ import type {
 
 const runFile = promisify(execFile);
 const api = worker!.getAppAPI() as HostConnection<HalInspectorProtocol>;
-const component = new HalComponent(`hal-inspector-${process.pid}`);
-component.ready();
 
-let connected = true;
+let component: HalComponent | null = null;
+let connected = false;
+let startupError = "HAL Inspector is starting";
 let topologyRevision = 0;
 let topology: TopologySnapshot | null = null;
 let topologyFingerprint = "";
@@ -265,6 +265,7 @@ function queued<T>(
 }
 
 api.handle("bootstrap/get", () => {
+  if (!connected) return fail("DISCONNECTED", startupError);
   try {
     const value: Bootstrap = {
       connected,
@@ -278,6 +279,7 @@ api.handle("bootstrap/get", () => {
   }
 });
 api.handle("topology/refresh", () => {
+  if (!connected) return fail("DISCONNECTED", startupError);
   try {
     return ok(refreshTopology());
   } catch (error) {
@@ -405,18 +407,40 @@ function cleanup(): void {
   scope = null;
 }
 
-refreshTopology();
-restartValueTimer();
-topologyTimer = setInterval(() => {
-  if (visible) {
-    try {
-      refreshTopology(true);
-    } catch {
-      /* connection event comes from value poll */
-    }
+function initialize(): void {
+  try {
+    component = new HalComponent(`hal-inspector-${process.pid}`);
+    component.ready();
+    refreshTopology();
+    restartValueTimer();
+    topologyTimer = setInterval(() => {
+      if (visible) {
+        try {
+          refreshTopology(true);
+        } catch {
+          /* connection event comes from value poll */
+        }
+      }
+    }, 2000);
+    connected = true;
+    startupError = "";
+    api.send("connection/state", { connected: true });
+  } catch (error) {
+    connected = false;
+    startupError = error instanceof Error ? error.message : String(error);
+    console.error("HAL initialization failed:", error);
+    api.send("connection/state", {
+      connected: false,
+      message: startupError,
+    });
   }
-}, 2000);
-api.send("connection/state", { connected: true });
+}
+
+// Eden marks a backend ready only after this module finishes evaluating.
+// Defer native HAL attachment so a slow or unavailable HAL cannot consume the
+// process manager's startup timeout before the frontend/backend IPC is ready.
+setImmediate(initialize);
+
 process.once("exit", cleanup);
 process.once("SIGTERM", () => {
   cleanup();
