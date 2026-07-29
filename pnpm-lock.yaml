@@ -142,6 +142,9 @@ importers:
       '@edenapp/genesis':
         specifier: 'catalog:'
         version: 0.11.1
+      '@edenapp/scripts':
+        specifier: ^0.11.0
+        version: 0.11.1
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.1
@@ -695,6 +698,10 @@ packages:
   '@edenapp/genesis@0.11.1':
     resolution: {integrity: sha512-LfFyw3hnMTPsUTmp+3ETQV3Wy/wLW4A/Csl2jMA4LyrnrISWbMfV3TD0eQD4apWeCRKwbtUi/HXDfUTXrpp5FQ==}
     engines: {node: '>=18.0.0'}
+    hasBin: true
+
+  '@edenapp/scripts@0.11.1':
+    resolution: {integrity: sha512-S36LDEDHHMZN5HEgcZ6ElwBrmWXRRzQ0GWgXbtXZ1ox3K0GYWfuaeRK0xmQ43oOgcSA/O0zNvs7lb1lGL1BKvw==}
     hasBin: true
 
   '@edenapp/types@0.10.2':
@@ -5409,6 +5416,12 @@ snapshots:
       commander: 11.1.0
       tar: 7.5.13
       zstd-codec: 0.1.5
+
+  '@edenapp/scripts@0.11.1':
+    dependencies:
+      '@edenapp/genesis': 0.11.1
+      '@edenapp/types': 0.11.1
+      commander: 11.1.0
 
   '@edenapp/types@0.10.2': {}
 
