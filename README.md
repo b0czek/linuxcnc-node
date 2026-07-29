@@ -2,8 +2,9 @@
 
 LinuxCNC Node is an open-source JavaScript and TypeScript monorepo for building
 applications on top of LinuxCNC. It includes native Node.js bindings, shared
-TypeScript types, G-code tooling, Eden AppBus integration, example applications,
-and the LinuxCNC patch set used by the maintained packages.
+TypeScript types, G-code tooling, [Eden](https://github.com/b0czek/eden) AppBus
+integration, example applications, and the LinuxCNC patch set used by the
+maintained packages.
 
 > **Compatibility:** Starting with v3, these packages are purpose-built for
 > **LinuxCNC 2.10** at the pinned
