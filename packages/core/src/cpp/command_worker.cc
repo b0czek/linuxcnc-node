@@ -353,11 +353,11 @@ namespace LinuxCNC
             for (int i = 0; i < 9; ++i)
             {
                 CoordType coordType = static_cast<CoordType>(i);
-                const char *coordName = getCoordName(coordType);
+                Napi::Value coordValue = offsetObj.Get(static_cast<uint32_t>(i));
 
-                if (offsetObj.Has(coordName) && offsetObj.Get(coordName).IsNumber())
+                if (coordValue.IsNumber())
                 {
-                    offsetCoords_[coordType] = offsetObj.Get(coordName).As<Napi::Number>().DoubleValue();
+                    offsetCoords_[coordType] = coordValue.As<Napi::Number>().DoubleValue();
                 }
             }
         }
@@ -507,14 +507,6 @@ namespace LinuxCNC
     void SetToolWorker::OnError(const Napi::Error &error)
     {
         deferred_.Reject(error.Value());
-    }
-
-    // Helper method to get coordinate field name
-    const char *SetToolWorker::getCoordName(CoordType type)
-    {
-        static const std::map<CoordType, const char *> names = {
-            {CoordType::X, "x"}, {CoordType::Y, "y"}, {CoordType::Z, "z"}, {CoordType::A, "a"}, {CoordType::B, "b"}, {CoordType::C, "c"}, {CoordType::U, "u"}, {CoordType::V, "v"}, {CoordType::W, "w"}};
-        return names.at(type);
     }
 
     // Helper method to get pointer to coordinate field in CANON_TOOL_TABLE

@@ -875,11 +875,7 @@ export class CommandChannel {
    *   toolNo: 1,
    *   pocketNo: 1,
    *   diameter: 6.35,
-   *   offset: {
-   *     x: 0,
-   *     y: 0,
-   *     z: 25.4
-   *   }
+   *   offset: Float64Array.from([0, 0, 25.4, 0, 0, 0, 0, 0, 0])
    * });
    * ```
    */

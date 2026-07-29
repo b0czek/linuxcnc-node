@@ -117,7 +117,6 @@ namespace LinuxCNC
         std::map<CoordType, double> offsetCoords_;
 
         // Helper methods
-        static const char *getCoordName(CoordType type);
         static double *getCoordField(CANON_TOOL_TABLE &toolData, CoordType type);
     };
 
