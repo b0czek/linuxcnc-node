@@ -885,6 +885,17 @@ export class CommandChannel {
     return this.exec(this.nativeInstance.setTool, toolEntry);
   }
 
+  /**
+   * Deletes a tool from the in-memory tool table and its configured `.tbl` file.
+   *
+   * @param toolNo - Number of the tool to delete
+   * @returns Promise resolving to RcsStatus indicating command completion
+   * @throws If the tool number is not present in the tool table
+   */
+  async deleteTool(toolNo: number): Promise<RcsStatus> {
+    return this.exec(this.nativeInstance.deleteTool, toolNo);
+  }
+
   // --- IO Commands ---
   /**
    * Sets the state of a digital output pin

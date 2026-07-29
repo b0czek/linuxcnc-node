@@ -120,4 +120,22 @@ namespace LinuxCNC
         static double *getCoordField(CANON_TOOL_TABLE &toolData, CoordType type);
     };
 
+    // AsyncWorker for DeleteTool command
+    class DeleteToolWorker : public Napi::AsyncWorker
+    {
+    public:
+        DeleteToolWorker(Napi::Promise::Deferred deferred, int toolNo, const std::string &toolTableFilename);
+
+    protected:
+        void Execute() override;
+        void OnOK() override;
+        void OnError(const Napi::Error &error) override;
+
+    private:
+        Napi::Promise::Deferred deferred_;
+        int toolNo_;
+        std::string tool_table_filename_;
+        RCS_STATUS result_status_;
+    };
+
 }

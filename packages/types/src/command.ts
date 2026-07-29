@@ -61,6 +61,7 @@ export interface NativeCommandArguments {
   setFlood: [on: boolean];
   loadToolTable: [];
   setTool: [toolEntry: RecursivePartial<ToolEntry> & { toolNo: number }];
+  deleteTool: [toolNo: number];
   setDigitalOutput: [index: number, value: boolean];
   setAnalogOutput: [index: number, value: number];
   setDebugLevel: [level: EmcDebug];

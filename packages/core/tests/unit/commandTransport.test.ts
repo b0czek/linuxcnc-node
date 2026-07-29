@@ -17,6 +17,7 @@ interface NativeCommandChannelMock {
   runProgram: jest.Mock;
   setFeedRate: jest.Mock;
   setTool: jest.Mock;
+  deleteTool: jest.Mock;
   getStatusSnapshot: jest.Mock;
   disconnect: jest.Mock;
   serial: number;
@@ -37,6 +38,7 @@ describe("CommandTransport", () => {
       runProgram: jest.fn(() => Promise.resolve({ serial: ++nextSerial })),
       setFeedRate: jest.fn(() => ++nextSerial),
       setTool: jest.fn(() => Promise.resolve(RcsStatus.DONE)),
+      deleteTool: jest.fn(() => Promise.resolve(RcsStatus.DONE)),
       getStatusSnapshot: jest.fn(() => ({ ...snapshot })),
       disconnect: jest.fn(),
       serial: 41,
@@ -125,6 +127,19 @@ describe("CommandTransport", () => {
     });
 
     expect(native.setTool).toHaveBeenCalledWith({ toolNo: 1 });
+    await expect(handle.accepted).resolves.toEqual({
+      status: RcsStatus.DONE,
+      serial: null,
+    });
+    await expect(handle.completed).resolves.toBe(RcsStatus.DONE);
+  });
+
+  it("handles deleteTool as a local non-serial command", async () => {
+    const handle = transport.send("deleteTool", [7], {
+      tracking: "completion",
+    });
+
+    expect(native.deleteTool).toHaveBeenCalledWith(7);
     await expect(handle.accepted).resolves.toEqual({
       status: RcsStatus.DONE,
       serial: null,

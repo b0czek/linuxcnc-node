@@ -92,6 +92,7 @@ namespace LinuxCNC
                                                                            // Tool
                                                                            InstanceMethod("loadToolTable", &NapiCommandChannel::LoadToolTable),
                                                                            InstanceMethod("setTool", &NapiCommandChannel::SetTool),
+                                                                           InstanceMethod("deleteTool", &NapiCommandChannel::DeleteTool),
                                                                            // IO
                                                                            InstanceMethod("setDigitalOutput", &NapiCommandChannel::SetDigitalOutput),
                                                                            InstanceMethod("setAnalogOutput", &NapiCommandChannel::SetAnalogOutput),
@@ -1004,6 +1005,40 @@ namespace LinuxCNC
         SetToolWorker *worker = new SetToolWorker(deferred, toolEntry, tool_table_filename_);
         worker->Queue();
 
+        return deferred.Promise();
+    }
+
+    Napi::Value NapiCommandChannel::DeleteTool(const Napi::CallbackInfo &info)
+    {
+        Napi::Env env = info.Env();
+
+        if (info.Length() < 1 || !info[0].IsNumber())
+        {
+            Napi::TypeError::New(env, "DeleteTool requires toolNo (number)").ThrowAsJavaScriptException();
+            return env.Null();
+        }
+
+        if (!s_channel_ || !s_channel_->valid())
+        {
+            if (!connect())
+            {
+                Napi::Error::New(env, "Status channel not connected and failed to reconnect").ThrowAsJavaScriptException();
+                return env.Null();
+            }
+        }
+
+        if (tool_table_filename_.empty() && !parseIniFile())
+        {
+            Napi::Error::New(env, "Failed to get tool table filename from INI file").ThrowAsJavaScriptException();
+            return env.Null();
+        }
+
+        auto deferred = Napi::Promise::Deferred::New(env);
+        auto *worker = new DeleteToolWorker(
+            deferred,
+            info[0].As<Napi::Number>().Int32Value(),
+            tool_table_filename_);
+        worker->Queue();
         return deferred.Promise();
     }
 

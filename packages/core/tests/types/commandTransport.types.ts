@@ -12,6 +12,7 @@ const completed = transport.send("runProgram", [0], {
 completed.completed?.then((status) => status);
 
 transport.send("setTool", [{ toolNo: 1 }], { tracking: "completion" });
+transport.send("deleteTool", [1], { tracking: "completion" });
 
 // @ts-expect-error Unknown native commands are rejected at compile time.
 transport.send("notACommand", []);

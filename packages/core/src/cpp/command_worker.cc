@@ -536,4 +536,64 @@ namespace LinuxCNC
             return nullptr;
         }
     }
+
+    DeleteToolWorker::DeleteToolWorker(Napi::Promise::Deferred deferred, int toolNo, const std::string &toolTableFilename)
+        : AsyncWorker(deferred.Env()), deferred_(deferred), toolNo_(toolNo), tool_table_filename_(toolTableFilename), result_status_(RCS_STATUS::ERROR)
+    {
+    }
+
+    void DeleteToolWorker::Execute()
+    {
+        try
+        {
+            if (tool_mmap_user() != 0)
+            {
+                SetError("Failed to initialize tool memory map");
+                return;
+            }
+
+            const int idx = tooldata_find_index_for_tool(toolNo_);
+            CANON_TOOL_TABLE existingData;
+            if (idx < 0 || tooldata_get(&existingData, idx) != IDX_OK || existingData.toolno != toolNo_)
+            {
+                SetError("Tool not found: " + std::to_string(toolNo_));
+                return;
+            }
+
+            if (tooldata_put(tooldata_entry_init(), idx) == IDX_FAIL)
+            {
+                SetError("Failed to delete tool " + std::to_string(toolNo_));
+                return;
+            }
+
+            if (tool_table_filename_.empty())
+            {
+                SetError("Tool table filename not available - INI file may not have been parsed");
+                return;
+            }
+
+            if (tooldata_save(tool_table_filename_.c_str()) != 0)
+            {
+                SetError("Failed to save tool table to " + tool_table_filename_);
+                return;
+            }
+
+            result_status_ = RCS_STATUS::DONE;
+        }
+        catch (const std::exception &e)
+        {
+            SetError(std::string("DeleteTool execution failed: ") + e.what());
+        }
+    }
+
+    void DeleteToolWorker::OnOK()
+    {
+        Napi::Env env = Env();
+        deferred_.Resolve(Napi::Number::New(env, static_cast<int>(result_status_)));
+    }
+
+    void DeleteToolWorker::OnError(const Napi::Error &error)
+    {
+        deferred_.Reject(error.Value());
+    }
 }

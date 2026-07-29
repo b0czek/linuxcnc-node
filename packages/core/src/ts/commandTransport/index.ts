@@ -21,7 +21,7 @@ interface NativeSentResult {
   serial: number;
 }
 
-const LOCAL_COMMANDS = new Set<NativeCommandName>(["setTool"]);
+const LOCAL_COMMANDS = new Set<NativeCommandName>(["setTool", "deleteTool"]);
 
 export class CommandTransport {
   private readonly nativeInstance: NapiCommandChannelInstance;

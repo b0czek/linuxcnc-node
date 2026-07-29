@@ -111,6 +111,7 @@ namespace LinuxCNC
         // Tool Commands
         Napi::Value LoadToolTable(const Napi::CallbackInfo &info);
         Napi::Value SetTool(const Napi::CallbackInfo &info);
+        Napi::Value DeleteTool(const Napi::CallbackInfo &info);
 
         // IO Commands
         Napi::Value SetDigitalOutput(const Napi::CallbackInfo &info);
