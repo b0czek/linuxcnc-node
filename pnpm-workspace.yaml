@@ -4,8 +4,8 @@ packages:
   - apps/examples/*
 
 catalog:
-  '@edenapp/genesis': ^0.10.1
-  '@edenapp/types': ^0.10.1
+  '@edenapp/genesis': ^0.11.1
+  '@edenapp/types': ^0.11.1
   
 allowBuilds:
   '@linuxcnc-node/core': true
