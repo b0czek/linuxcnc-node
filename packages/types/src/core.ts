@@ -18,6 +18,9 @@ import {
 /** Stride for position data in Float64Array: x, y, z, a, b, c, u, v, w, motionType */
 export const POSITION_STRIDE = 10;
 
+/** Axis names supported by the LinuxCNC coordinate system. */
+export type AxisName = "X" | "Y" | "Z" | "A" | "B" | "C" | "U" | "V" | "W";
+
 /** Index constants for position logger data in Float64Array (10 elements with MotionType) */
 export enum PositionLoggerIndex {
   X = 0,
@@ -600,7 +603,7 @@ export interface TrajectoryStat {
   spindles: number;
 
   /** Available axes as defined by [TRAJ]COORDINATES in the INI file. */
-  availableAxes: ("X" | "Y" | "Z" | "A" | "B" | "C" | "U" | "V" | "W")[];
+  availableAxes: AxisName[];
 
   /** Mode of the Motion controller. One of COORD, FREE, TELEOP. */
   mode: TrajMode;
