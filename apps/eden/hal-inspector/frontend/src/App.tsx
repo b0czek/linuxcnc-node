@@ -7,7 +7,6 @@ import {
   FaSolidChartLine,
   FaSolidChevronDown,
   FaSolidChevronRight,
-  FaSolidChevronUp,
   FaSolidCircleDot,
   FaSolidClock,
   FaSolidCode,
@@ -237,10 +236,9 @@ const App: Component = () => {
   const [selected, setSelected] = createSignal<Row | null>(null);
   const [watches, setWatches] = createSignal<HalItemRef[]>([]);
   const [values, setValues] = createSignal(new Map<string, HalValue>());
-  const [activeTab, setActiveTab] = createSignal("browse");
+  const [activeTab, setActiveTab] = createSignal<"browse" | "watch" | "scope">("browse");
   const [expandedGroups, setExpandedGroups] = createSignal(new Set<string>());
   const [treeOpen, setTreeOpen] = createSignal(false);
-  const [drawerExpanded, setDrawerExpanded] = createSignal(false);
   const [scopeStatus, setScopeStatus] = createSignal<ScopeStatus | null>(null);
   const [capture, setCapture] = createSignal<ScopeCapture | null>(null);
   const [channels, setChannels] = createSignal<Array<HalItemRef | null>>(
@@ -459,7 +457,7 @@ const App: Component = () => {
   createEffect(() =>
     api.send("ui/state", {
       visible: document.visibilityState === "visible",
-      scopeExpanded: drawerExpanded(),
+      scopeExpanded: activeTab() === "scope",
     })
   );
 
@@ -473,7 +471,7 @@ const App: Component = () => {
         if (p.version === 1) {
           setWatches(p.watches ?? []);
           setIntervalMs(p.intervalMs ?? 100);
-          setDrawerExpanded(Boolean(p.drawerExpanded));
+          if (p.drawerExpanded) setActiveTab("scope");
           setChannels((p.channels ?? Array(16).fill(null)).slice(0, 16));
           setScopeThread(p.threadName ?? "");
           setScopeMultiplier(Math.max(1, p.multiplier ?? 1));
@@ -494,7 +492,7 @@ const App: Component = () => {
       ...DEFAULTS,
       watches: watches(),
       intervalMs: intervalMs(),
-      drawerExpanded: drawerExpanded(),
+      drawerExpanded: activeTab() === "scope",
       channels: channels(),
       threadName: scopeThread(),
       multiplier: scopeMultiplier(),
@@ -511,7 +509,7 @@ const App: Component = () => {
   createEffect(() => {
     watches();
     channels();
-    drawerExpanded();
+    activeTab();
     intervalMs();
     scopeThread();
     scopeMultiplier();
@@ -557,7 +555,7 @@ const App: Component = () => {
         current.map((value, index) => (index === free ? ref : value))
       );
     }
-    setDrawerExpanded(true);
+    setActiveTab("scope");
     await configureScope();
   }
   async function configureScope() {
@@ -649,7 +647,7 @@ const App: Component = () => {
     const visibility = () =>
       api.send("ui/state", {
         visible: document.visibilityState === "visible",
-        scopeExpanded: drawerExpanded(),
+        scopeExpanded: activeTab() === "scope",
       });
     document.addEventListener("visibilitychange", visibility);
     onCleanup(() =>
@@ -743,11 +741,22 @@ const App: Component = () => {
             <span class="btn-label">{t("inspector.menu")}</span>
           </button>
           <div>
-            <h1>{categoryLabels[category()]()}</h1>
+            <h1>
+              {activeTab() === "scope"
+                ? t("inspector.scope")
+                : categoryLabels[category()]()}
+            </h1>
             <span class="eden-text-sm eden-text-secondary">
-              {sourceRows().length.toLocaleString()} items
+              {activeTab() === "scope"
+                ? `${scopeStatus()?.recordLength ?? 0} samples · ${
+                    scopeStatus()?.samplePeriodNs
+                      ? `${(1e9 / scopeStatus()!.samplePeriodNs).toFixed(0)} Hz`
+                      : "— Hz"
+                  }`
+                : `${sourceRows().length.toLocaleString()} items`}
             </span>
           </div>
+          <Show when={activeTab() !== "scope"}>
           <label class="search">
             <span aria-hidden="true" class="search-icon">
               <FaSolidMagnifyingGlass size={18} />
@@ -767,6 +776,7 @@ const App: Component = () => {
           >
             <FaSolidRotateRight size={18} />
           </button>
+          </Show>
         </header>
           <div class="tabs-bar">
             <Tabs.List
@@ -790,6 +800,18 @@ const App: Component = () => {
                 {t("inspector.watch")}{" "}
                 <span class="eden-badge eden-badge-sm">{watches().length}</span>
               </Tabs.Trigger>
+              <Tabs.Trigger
+                class={`eden-tab eden-tab-pill ${
+                  activeTab() === "scope" ? "eden-tab-active" : ""
+                }`}
+                value="scope"
+              >
+                <FaSolidWaveSquare size={15} />
+                {t("inspector.scope")}
+                <span class="eden-badge eden-badge-sm">
+                  {scopeStatus()?.state ?? "idle"}
+                </span>
+              </Tabs.Trigger>
             </Tabs.List>
             <Show when={activeTab() === "watch" && watches().length > 0}>
               <button
@@ -802,6 +824,7 @@ const App: Component = () => {
             </Show>
           </div>
           </div>
+          <Show when={activeTab() !== "scope"}>
           <div class="list-detail">
             <div
               ref={listElement}
@@ -986,85 +1009,46 @@ const App: Component = () => {
               </aside>
             </Show>
           </div>
-        </Tabs.Root>
-        <section class={`scope-drawer ${drawerExpanded() ? "expanded" : ""}`}>
-          <header class="scope-bar">
-            <button
-              class="scope-title"
-              onClick={() => setDrawerExpanded(!drawerExpanded())}
-            >
-              <span class="scope-wave">
-                <FaSolidWaveSquare size={22} />
-              </span>
-              <strong>{t("inspector.scope")}</strong>
-              <span
-                class={`eden-badge eden-badge-sm ${
-                  scopeStatus()?.state === "done" ? "eden-badge-success" : ""
-                }`}
-              >
-                {scopeStatus()?.state ?? "idle"}
-              </span>
-            </button>
-            <div class="scope-summary">
-              <span>{scopeStatus()?.recordLength ?? 0} samples</span>
-              <span>
-                {scopeStatus()?.samplePeriodNs
-                  ? `${(1e9 / scopeStatus()!.samplePeriodNs).toFixed(0)} Hz`
-                  : "— Hz"}
-              </span>
-            </div>
-            <button
-              class="eden-btn eden-btn-ghost"
-              onClick={() => setDrawerExpanded(!drawerExpanded())}
-            >
-              {drawerExpanded() ? (
-                <>
-                  <FaSolidChevronDown size={16} />
-                  <span class="btn-label">{t("inspector.collapse")}</span>
-                </>
-              ) : (
-                <>
-                  <FaSolidChevronUp size={16} />
-                  <span class="btn-label">{t("inspector.expand")}</span>
-                </>
-              )}
-            </button>
-          </header>
-          <Show when={drawerExpanded()}>
+          </Show>
+          <Show when={activeTab() === "scope"}>
+          <section class="scope-panel">
             <div class="scope-body">
               <div class="scope-toolbar">
+                <div class="scope-actions">
                 <button
-                  class="eden-btn eden-btn-primary"
+                  class="eden-btn eden-btn-sm eden-btn-primary"
                   onClick={() => scopeAction("continuous")}
                 >
                   <FaSolidPlay size={16} />
                   <span class="btn-label">{t("inspector.continuous")}</span>
                 </button>
                 <button
-                  class="eden-btn eden-btn-outline"
+                  class="eden-btn eden-btn-sm eden-btn-outline"
                   onClick={() => scopeAction("single")}
                 >
                   <FaSolidCircleDot size={16} />
                   <span class="btn-label">{t("inspector.single")}</span>
                 </button>
                 <button
-                  class="eden-btn eden-btn-outline"
+                  class="eden-btn eden-btn-sm eden-btn-outline"
                   onClick={() => scopeAction("stop")}
                 >
                   <FaSolidSquare size={16} />
                   <span class="btn-label">{t("inspector.stop")}</span>
                 </button>
                 <button
-                  class="eden-btn eden-btn-ghost"
+                  class="eden-btn eden-btn-sm eden-btn-ghost"
                   onClick={() => scopeAction("force")}
                 >
                   <FaSolidBolt size={16} />
                   <span class="btn-label">{t("inspector.force")}</span>
                 </button>
+                </div>
+                <div class="scope-acquisition">
                 <label class="scope-field">
                   <span>{t("inspector.thread")}</span>
                   <select
-                    class="eden-input"
+                    class="eden-input eden-input-sm"
                     value={scopeThread()}
                     onChange={(event) => {
                       setScopeThread(event.currentTarget.value);
@@ -1085,7 +1069,7 @@ const App: Component = () => {
                 <label class="scope-field compact">
                   <span>{t("inspector.multiplier")}</span>
                   <input
-                    class="eden-input"
+                    class="eden-input eden-input-sm"
                     type="number"
                     min="1"
                     max={Math.min(
@@ -1104,11 +1088,12 @@ const App: Component = () => {
                     }}
                   />
                 </label>
+                </div>
               </div>
               <div class="trigger-toolbar" aria-label="Trigger controls">
                 <div class="eden-btn-group">
                   <button
-                    class={`eden-btn ${
+                    class={`eden-btn eden-btn-sm ${
                       triggerMode() === "auto"
                         ? "eden-btn-primary"
                         : "eden-btn-outline"
@@ -1121,7 +1106,7 @@ const App: Component = () => {
                     {t("inspector.auto")}
                   </button>
                   <button
-                    class={`eden-btn ${
+                    class={`eden-btn eden-btn-sm ${
                       triggerMode() === "normal"
                         ? "eden-btn-primary"
                         : "eden-btn-outline"
@@ -1135,7 +1120,7 @@ const App: Component = () => {
                   </button>
                 </div>
                 <select
-                  class="eden-input trigger-channel"
+                  class="eden-input eden-input-sm trigger-channel"
                   aria-label="Trigger channel"
                   value={activeTriggerChannel()}
                   onChange={(event) => {
@@ -1156,7 +1141,7 @@ const App: Component = () => {
                   </For>
                 </select>
                 <select
-                  class="eden-input trigger-edge"
+                  class="eden-input eden-input-sm trigger-edge"
                   value={triggerEdge()}
                   onChange={(event) => {
                     setTriggerEdge(
@@ -1171,7 +1156,7 @@ const App: Component = () => {
                 <label class="scope-field compact">
                   <span>Level</span>
                   <input
-                    class="eden-input"
+                    class="eden-input eden-input-sm"
                     type="number"
                     step="any"
                     value={triggerLevel()}
@@ -1230,8 +1215,9 @@ const App: Component = () => {
                 </For>
               </div>
             </div>
+          </section>
           </Show>
-        </section>
+        </Tabs.Root>
       </section>
       <Dialog.Root
         open={Boolean(editRef())}
