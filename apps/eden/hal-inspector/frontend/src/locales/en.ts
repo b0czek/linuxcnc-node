@@ -7,5 +7,5 @@ export const en = { inspector: {
   scope: "Oscilloscope", expand: "Expand", collapse: "Collapse", continuous: "Continuous", single: "Single",
   stop: "Stop", force: "Force trigger", auto: "Auto", normal: "Normal", rising: "Rising", falling: "Falling",
   thread: "Thread", multiplier: "Multiplier", noChannels: "Add a supported pin, parameter, or signal to begin.",
-  unavailable: "Unavailable", menu: "HAL tree", refresh: "Refresh", value: "Value", type: "Type", direction: "Direction",
+  unavailable: "Unavailable", menu: "Navigation", refresh: "Refresh", value: "Value", type: "Type", direction: "Direction",
 } } as const;

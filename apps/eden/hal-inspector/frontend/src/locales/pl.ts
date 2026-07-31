@@ -7,5 +7,5 @@ export const pl = { inspector: {
   scope: "Oscyloskop", expand: "Rozwiń", collapse: "Zwiń", continuous: "Ciągły", single: "Pojedynczy",
   stop: "Stop", force: "Wymuś wyzwolenie", auto: "Auto", normal: "Normalny", rising: "Narastające", falling: "Opadające",
   thread: "Wątek", multiplier: "Mnożnik", noChannels: "Dodaj obsługiwany pin, parametr lub sygnał, aby rozpocząć.",
-  unavailable: "Niedostępny", menu: "Drzewo HAL", refresh: "Odśwież", value: "Wartość", type: "Typ", direction: "Kierunek",
+  unavailable: "Niedostępny", menu: "Nawigacja", refresh: "Odśwież", value: "Wartość", type: "Typ", direction: "Kierunek",
 } } as const;
