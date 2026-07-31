@@ -523,6 +523,54 @@ describe("parseGCode", () => {
       expect(result.extents.max[Z]).toBeCloseTo(10, PRECISION);
     });
 
+    it("should calculate extents including arc sweeps", async () => {
+      const result = await parseGCode(fixturePath("arc_extents.ngc"), {
+        iniPath,
+      });
+
+      expect(result.extents.min[X]).toBeCloseTo(-42, PRECISION);
+      expect(result.extents.max[X]).toBeCloseTo(42, PRECISION);
+      expect(result.extents.min[Y]).toBeCloseTo(-42, PRECISION);
+      expect(result.extents.max[Y]).toBeCloseTo(42, PRECISION);
+    });
+
+    it("should include cardinal extrema inside clockwise partial arcs", async () => {
+      const result = await parseGCode(
+        fixturePath("arc_extents_clockwise.ngc"),
+        { iniPath }
+      );
+
+      expect(result.extents.min[X]).toBeCloseTo(-Math.sqrt(200), PRECISION);
+      expect(result.extents.max[X]).toBeCloseTo(Math.sqrt(200), PRECISION);
+      expect(result.extents.min[Y]).toBeCloseTo(-Math.sqrt(200), PRECISION);
+      expect(result.extents.max[Y]).toBeCloseTo(10, PRECISION);
+    });
+
+    it("should calculate full-circle extents in the XZ and YZ planes", async () => {
+      const result = await parseGCode(fixturePath("arc_extents_planes.ngc"), {
+        iniPath,
+      });
+
+      expect(result.extents.min[X]).toBeCloseTo(-42, PRECISION);
+      expect(result.extents.max[X]).toBeCloseTo(42, PRECISION);
+      expect(result.extents.min[Y]).toBeCloseTo(-42, PRECISION);
+      expect(result.extents.max[Y]).toBeCloseTo(42, PRECISION);
+      expect(result.extents.min[Z]).toBeCloseTo(-42, PRECISION);
+      expect(result.extents.max[Z]).toBeCloseTo(42, PRECISION);
+    });
+
+    it("should calculate multi-turn arc extents after inch conversion", async () => {
+      const result = await parseGCode(
+        fixturePath("arc_extents_multiturn_inches.ngc"),
+        { iniPath }
+      );
+
+      expect(result.extents.min[X]).toBeCloseTo(-25.4, PRECISION);
+      expect(result.extents.max[X]).toBeCloseTo(25.4, PRECISION);
+      expect(result.extents.min[Y]).toBeCloseTo(-25.4, PRECISION);
+      expect(result.extents.max[Y]).toBeCloseTo(25.4, PRECISION);
+    });
+
     it("should calculate extents including arc endpoints", async () => {
       const result = await parseGCode(fixturePath("arcs.ngc"), { iniPath });
 

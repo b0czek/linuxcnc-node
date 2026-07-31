@@ -31,6 +31,133 @@ static thread_local GCodeParser::ParseContext *g_parseContext = nullptr;
 namespace GCodeParser
 {
 
+  namespace
+  {
+    constexpr double pi = 3.14159265358979323846;
+
+    double positiveAngle(double angle)
+    {
+      const double turn = 2.0 * pi;
+      angle = std::fmod(angle, turn);
+      return angle < 0.0 ? angle + turn : angle;
+    }
+
+    bool angleIsOnArc(double angle, double startAngle, double sweep, bool clockwise)
+    {
+      constexpr double epsilon = 1e-12;
+      const double distance = clockwise
+                                  ? positiveAngle(startAngle - angle)
+                                  : positiveAngle(angle - startAngle);
+      return distance <= sweep + epsilon;
+    }
+
+    void updateArcExtents(ParseContext &ctx, const Position &start, const ArcOp &op)
+    {
+      double startFirst;
+      double startSecond;
+      switch (op.plane)
+      {
+      case Plane::XY:
+        startFirst = start.x;
+        startSecond = start.y;
+        break;
+      case Plane::YZ:
+        startFirst = start.y;
+        startSecond = start.z;
+        break;
+      case Plane::XZ:
+        startFirst = start.z;
+        startSecond = start.x;
+        break;
+      default:
+        ctx.updateExtents(start);
+        ctx.updateExtents(op.pos);
+        return;
+      }
+
+      const double firstOffset = startFirst - op.arcData.centerFirst;
+      const double secondOffset = startSecond - op.arcData.centerSecond;
+      const double radius = std::hypot(firstOffset, secondOffset);
+      if (!std::isfinite(radius) || radius <= 0.0)
+      {
+        ctx.updateExtents(start);
+        ctx.updateExtents(op.pos);
+        return;
+      }
+
+      double endFirst;
+      double endSecond;
+      switch (op.plane)
+      {
+      case Plane::XY:
+        endFirst = op.pos.x;
+        endSecond = op.pos.y;
+        break;
+      case Plane::YZ:
+        endFirst = op.pos.y;
+        endSecond = op.pos.z;
+        break;
+      case Plane::XZ:
+        endFirst = op.pos.z;
+        endSecond = op.pos.x;
+        break;
+      default:
+        return;
+      }
+
+      const double startAngle = std::atan2(secondOffset, firstOffset);
+      const double endAngle = std::atan2(endSecond - op.arcData.centerSecond,
+                                         endFirst - op.arcData.centerFirst);
+      const bool clockwise = op.arcData.rotation < 0;
+      double sweep = clockwise
+                         ? positiveAngle(startAngle - endAngle)
+                         : positiveAngle(endAngle - startAngle);
+      const int turnCount = std::abs(op.arcData.rotation);
+      if (sweep == 0.0 && turnCount >= 1)
+        sweep = 2.0 * pi;
+      else if (turnCount >= 1)
+        sweep += (turnCount - 1) * 2.0 * pi;
+      else if (sweep == 0.0)
+        sweep = 2.0 * pi;
+
+      ctx.updateExtents(start);
+      ctx.updateExtents(op.pos);
+      constexpr double cardinalAngles[] = {
+          0.0,
+          pi / 2.0,
+          pi,
+          3.0 * pi / 2.0,
+      };
+      for (const double angle : cardinalAngles)
+      {
+        if (!angleIsOnArc(angle, startAngle, sweep, clockwise))
+          continue;
+
+        Position point = start;
+        const double first = op.arcData.centerFirst + radius * std::cos(angle);
+        const double second = op.arcData.centerSecond + radius * std::sin(angle);
+        switch (op.plane)
+        {
+        case Plane::XY:
+          point.x = first;
+          point.y = second;
+          break;
+        case Plane::YZ:
+          point.y = first;
+          point.z = second;
+          break;
+        case Plane::XZ:
+          point.z = first;
+          point.x = second;
+          break;
+        default:
+          break;
+        }
+        ctx.updateExtents(point);
+      }
+    }
+  } // namespace
+
   void ParseContext::addOperation(Operation &&op)
   {
     operations.push_back(std::move(op));
@@ -198,8 +325,8 @@ void ARC_FEED(int lineno,
   op.arcData.rotation = rotation;
   op.arcData.axisEndPoint = axis_end_point;
 
+  GCodeParser::updateArcExtents(*ctx, ctx->currentPosition, op);
   ctx->currentPosition = op.pos;
-  ctx->updateExtents(op.pos); // We only update extents with end pos for now, start is implicit
   ctx->addOperation(std::move(op));
 }
 
