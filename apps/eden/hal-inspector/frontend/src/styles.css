@@ -44,12 +44,12 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible { outline: 2
 .kind-chip { width: 42px; height: 36px; display: grid; place-items: center; border-radius: var(--eden-radius-sm); background: transparent; }
 .type-dot { width: 14px; height: 14px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12); }
 .row-main { min-width: 0; flex: 1; display: grid; gap: 3px; }
-.row-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--eden-font-family-mono); font-size: var(--eden-font-size-sm); }
-.row-main span { color: var(--eden-color-text-muted); font-size: var(--eden-font-size-xs); }
+.row-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--eden-font-family-mono); font-size: var(--eden-font-size-lg); }
+.row-main span { color: var(--eden-color-text-muted); font-size: var(--eden-font-size-base); }
 .value-cell { width: 208px; flex: 0 0 208px; display: flex; align-items: center; gap: 4px; }
 .value-edit-slot { width: 44px; flex: 0 0 44px; display: grid; place-items: center; }
 .value-edit-slot .eden-btn, .row-actions .eden-btn { width: 44px; min-height: 44px; }
-.value { width: 160px; overflow: hidden; text-overflow: ellipsis; color: var(--eden-color-accent-blue); text-align: left; }
+.value { width: 160px; overflow: hidden; text-overflow: ellipsis; color: var(--eden-color-accent-blue); font-size: var(--eden-font-size-lg); text-align: left; }
 .row-actions { width: 92px; flex: 0 0 92px; display: flex; justify-content: flex-start; gap: 4px; }
 .detail-pane { width: 270px; flex: 0 0 270px; padding: var(--eden-space-lg); border-left: 1px solid var(--eden-color-border-separator); overflow-y: auto; }
 .detail-pane h2 { margin: 0 0 var(--eden-space-lg); overflow-wrap: anywhere; font-family: var(--eden-font-family-mono); font-size: var(--eden-font-size-md); }

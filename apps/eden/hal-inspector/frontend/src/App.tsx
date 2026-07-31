@@ -107,6 +107,26 @@ const categoryLabels: Record<Category, () => string> = {
   threads: () => t("inspector.threads"),
 };
 const key = (ref: HalItemRef) => `${ref.kind}:${ref.name}`;
+const MAX_INLINE_VALUE_CHARS = 14;
+const formatInlineValue = (value: HalValue | undefined): string => {
+  if (value === undefined) return "—";
+  const plain = String(value);
+  if (typeof value !== "number" || plain.length <= MAX_INLINE_VALUE_CHARS)
+    return plain;
+  const magnitude = Math.abs(value);
+  if (magnitude >= 1e14 || (magnitude > 0 && magnitude < 1e-6))
+    return value
+      .toExponential(6)
+      .replace(/(\.\d*?[1-9])0+e/, "$1e")
+      .replace(/\.0+e/, "e");
+  const integerChars = Math.trunc(magnitude).toString().length +
+    (value < 0 ? 1 : 0);
+  const decimalPlaces = Math.max(
+    0,
+    MAX_INLINE_VALUE_CHARS - integerChars - 1
+  );
+  return value.toFixed(decimalPlaces).replace(/\.?0+$/, "");
+};
 const TYPE_COLORS: Record<string, string> = {
   bit: "#55d48a",
   float: "#f2b94b",
@@ -330,11 +350,18 @@ const App: Component = () => {
   const sourceRows = createMemo(() =>
     activeTab() === "watch" ? watchRows() : itemRows()
   );
-  const displayedRows = createMemo(() => {
+  const displayedRows = createMemo<TreeRow[]>(() => {
     const rows = sourceRows();
+    if (activeTab() === "watch")
+      return rows.map((row) => ({
+        ...row,
+        displayName: row.name,
+        depth: 0,
+        guideDepth: 0,
+      }));
     return buildTreeRows(
       rows,
-      `${activeTab()}:${category()}`,
+      `browse:${category()}`,
       expandedGroups(),
       filter().trim().length > 0
     );
@@ -853,7 +880,9 @@ const App: Component = () => {
                           <Show when={row()?.ref}>
                             <div class="value-cell">
                               <code class="value">
-                                {String(row()?.value ?? "—")}
+                                <span title={String(row()?.value ?? "—")}>
+                                  {formatInlineValue(row()?.value)}
+                                </span>
                               </code>
                               <span class="value-edit-slot">
                                 <Show when={row()?.writable}>
