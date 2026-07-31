@@ -92,7 +92,7 @@ Full API documentation: **[https://b0czek.github.io/linuxcnc-node/](https://b0cz
 
 - Linux
 - LinuxCNC installed and running
-- Node.js 18+
+- Node.js 24.15+
 
 ## License
 

@@ -4,6 +4,9 @@
   "description": "Node.js bindings for core LinuxCNC NML interface",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "engines": {
+    "node": ">=24.15.0"
+  },
   "scripts": {
     "build:ts": "tsc",
     "build:cpp": "node-gyp configure && node-gyp build",

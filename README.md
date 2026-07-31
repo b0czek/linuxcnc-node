@@ -84,7 +84,7 @@ flow.
      use the native packages.
    - LinuxCNC headers and libraries must be available when building native
      addons.
-2. **Node.js and pnpm**
+2. **Node.js 24.15 or later and pnpm**
 3. **Native build tools**
    - C++ compiler, Python, `make`, and the usual `node-gyp` prerequisites.
 
