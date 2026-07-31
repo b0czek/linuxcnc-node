@@ -16,7 +16,7 @@
     "@linuxcnc-node/types": "workspace:*"
   },
   "peerDependencies": {
-    "typescript": "*"
+    "typescript": "catalog:"
   },
   "files": [
     "*.d.ts",
