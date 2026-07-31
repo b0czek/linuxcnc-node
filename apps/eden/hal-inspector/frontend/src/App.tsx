@@ -6,6 +6,7 @@ import {
   FaSolidBolt,
   FaSolidChartLine,
   FaSolidChevronDown,
+  FaSolidChevronRight,
   FaSolidChevronUp,
   FaSolidCircleDot,
   FaSolidClock,
@@ -65,6 +66,13 @@ type Row = {
   writable?: boolean;
   subtitle?: string;
 };
+type TreeRow = Row & {
+  depth: number;
+  guideDepth: number;
+  displayName: string;
+  groupKey?: string;
+  groupCount?: number;
+};
 interface Preferences {
   version: 1;
   watches: HalItemRef[];
@@ -110,6 +118,96 @@ const TYPE_COLORS: Record<string, string> = {
   default: "#c2d0d6",
 };
 
+type NameNode = {
+  segment: string;
+  path: string;
+  children: Map<string, NameNode>;
+  rows: Row[];
+};
+
+function buildTreeRows(
+  rows: Row[],
+  namespace: string,
+  expanded: Set<string>,
+  forceExpanded: boolean
+): TreeRow[] {
+  const root: NameNode = {
+    segment: "",
+    path: "",
+    children: new Map(),
+    rows: [],
+  };
+  for (const row of rows) {
+    const parts = row.name.split(".").filter(Boolean);
+    if (parts.length === 0) {
+      root.rows.push(row);
+      continue;
+    }
+    let node = root;
+    for (const segment of parts) {
+      const path = node.path ? `${node.path}.${segment}` : segment;
+      let child = node.children.get(segment);
+      if (!child) {
+        child = { segment, path, children: new Map(), rows: [] };
+        node.children.set(segment, child);
+      }
+      node = child;
+    }
+    node.rows.push(row);
+  }
+
+  const countRows = (node: NameNode): number =>
+    node.rows.length +
+    [...node.children.values()].reduce(
+      (total, child) => total + countRows(child),
+      0
+    );
+  const result: TreeRow[] = [];
+  const append = (node: NameNode, depth: number) => {
+    const children = [...node.children.values()].sort((a, b) =>
+      a.segment.localeCompare(b.segment)
+    );
+    for (const child of children) {
+      if (child.children.size > 0) {
+        const groupKey = `${namespace}:${child.path}`;
+        result.push({
+          id: `group:${groupKey}`,
+          name: child.path,
+          displayName: child.segment,
+          kind: rows[0]?.kind ?? "pins",
+          depth,
+          guideDepth: depth,
+          groupKey,
+          groupCount: countRows(child),
+        });
+        if (forceExpanded || expanded.has(groupKey)) {
+          for (const row of child.rows)
+            result.push({
+              ...row,
+              displayName: child.segment,
+              depth: depth + 1,
+              guideDepth: depth + 1,
+            });
+          append(child, depth + 1);
+        }
+      } else {
+        for (const row of child.rows)
+          result.push({
+            ...row,
+            displayName: child.segment,
+            depth,
+            guideDepth: depth,
+          });
+      }
+    }
+  };
+
+  for (const row of root.rows)
+    result.push({ ...row, displayName: row.name, depth: 0, guideDepth: 0 });
+  append(root, 0);
+  return result;
+}
+
 const App: Component = () => {
   const api = window.getAppAPI() as PeerConnection<HalInspectorProtocol>;
   const [topology, setTopology] = createSignal<TopologySnapshot | null>(null);
@@ -120,6 +218,7 @@ const App: Component = () => {
   const [watches, setWatches] = createSignal<HalItemRef[]>([]);
   const [values, setValues] = createSignal(new Map<string, HalValue>());
   const [activeTab, setActiveTab] = createSignal("browse");
+  const [expandedGroups, setExpandedGroups] = createSignal(new Set<string>());
   const [treeOpen, setTreeOpen] = createSignal(false);
   const [drawerExpanded, setDrawerExpanded] = createSignal(false);
   const [scopeStatus, setScopeStatus] = createSignal<ScopeStatus | null>(null);
@@ -228,9 +327,18 @@ const App: Component = () => {
         .map((ref) => itemRowsForRef(ref))
         .filter(Boolean) as Row[]
   );
-  const displayedRows = createMemo(() =>
+  const sourceRows = createMemo(() =>
     activeTab() === "watch" ? watchRows() : itemRows()
   );
+  const displayedRows = createMemo(() => {
+    const rows = sourceRows();
+    return buildTreeRows(
+      rows,
+      `${activeTab()}:${category()}`,
+      expandedGroups(),
+      filter().trim().length > 0
+    );
+  });
   const availableWatches = createMemo(() => {
     const data = topology();
     if (!data) return [];
@@ -396,6 +504,14 @@ const App: Component = () => {
   }
   function isWatched(ref: HalItemRef) {
     return watches().some((x) => key(x) === key(ref));
+  }
+  function toggleGroup(groupKey: string) {
+    setExpandedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(groupKey)) next.delete(groupKey);
+      else next.add(groupKey);
+      return next;
+    });
   }
   async function refresh() {
     const result = await api.request("topology/refresh", {});
@@ -594,7 +710,7 @@ const App: Component = () => {
           <div>
             <h1>{categoryLabels[category()]()}</h1>
             <span class="eden-text-sm eden-text-secondary">
-              {displayedRows().length.toLocaleString()} items
+              {sourceRows().length.toLocaleString()} items
             </span>
           </div>
           <label class="search">
@@ -642,7 +758,7 @@ const App: Component = () => {
             <div
               ref={listElement}
               class="virtual-list eden-list"
-              role="list"
+              role="tree"
               aria-label={activeTab()}
             >
               <Show
@@ -658,33 +774,81 @@ const App: Component = () => {
                   <For each={virtualizer.getVirtualItems()}>
                     {(virtual) => {
                       const row = () => displayedRows()[virtual.index];
+                      const groupExpanded = () =>
+                        Boolean(
+                          row()?.groupKey &&
+                            (filter().trim() ||
+                              expandedGroups().has(row()!.groupKey!))
+                        );
                       return (
                         <article
-                          class={`hal-row ${
+                          class={`hal-row ${row()?.groupKey ? "group-row" : ""} ${
                             selected()?.id === row()?.id ? "selected" : ""
                           }`}
                           style={{
                             transform: `translateY(${virtual.start}px)`,
                           }}
-                          role="listitem"
-                          onClick={() => setSelected(row())}
+                          role="treeitem"
+                          aria-level={(row()?.depth ?? 0) + 1}
+                          aria-expanded={
+                            row()?.groupKey ? groupExpanded() : undefined
+                          }
+                          onClick={() => {
+                            if (row()?.groupKey) toggleGroup(row()!.groupKey!);
+                            else setSelected(row());
+                          }}
                         >
                           <div
-                            class="kind-chip"
-                            title={row()?.type ?? row()?.kind}
+                            class="tree-leading"
+                            style={{
+                              "padding-left": `${(row()?.depth ?? 0) * 20}px`,
+                              "--tree-guide-width": `${
+                                (row()?.guideDepth ?? 0) * 20
+                              }px`,
+                            }}
                           >
-                            <span
-                              class="type-dot"
-                              style={{
-                                "background-color":
-                                  TYPE_COLORS[row()?.type ?? ""] ??
-                                  TYPE_COLORS.default,
-                              }}
-                            />
+                            <Show
+                              when={row()?.groupKey}
+                              fallback={
+                                <div
+                                  class="kind-chip"
+                                  title={row()?.type ?? row()?.kind}
+                                >
+                                  <span
+                                    class="type-dot"
+                                    style={{
+                                      "background-color":
+                                        TYPE_COLORS[row()?.type ?? ""] ??
+                                        TYPE_COLORS.default,
+                                    }}
+                                  />
+                                </div>
+                              }
+                            >
+                              <button
+                                class="group-toggle"
+                                aria-label={row()?.displayName}
+                                tabindex={-1}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  toggleGroup(row()!.groupKey!);
+                                }}
+                              >
+                                {groupExpanded() ? (
+                                  <FaSolidChevronDown size={14} />
+                                ) : (
+                                  <FaSolidChevronRight size={14} />
+                                )}
+                              </button>
+                            </Show>
                           </div>
                           <div class="row-main">
-                            <strong>{row()?.name}</strong>
-                            <span>{row()?.subtitle}</span>
+                            <strong title={row()?.name}>{row()?.displayName}</strong>
+                            <span>
+                              {row()?.groupKey
+                                ? `${row()?.groupCount ?? 0} items`
+                                : row()?.subtitle}
+                            </span>
                           </div>
                           <Show when={row()?.ref}>
                             <div class="value-cell">

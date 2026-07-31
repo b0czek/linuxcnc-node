@@ -36,6 +36,11 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible { outline: 2
 .hal-row { position: absolute; left: var(--eden-space-sm); right: var(--eden-space-sm); height: 60px; display: flex; align-items: center; gap: var(--eden-space-sm); padding: 6px var(--eden-space-sm); border: 1px solid transparent; border-radius: var(--eden-radius-md); cursor: pointer; }
 .hal-row:hover { background: var(--eden-color-surface-hover); }
 .hal-row.selected { background: var(--eden-color-surface-active); border-color: var(--eden-color-border-medium); }
+.tree-leading { flex: none; position: relative; display: flex; align-items: center; }
+.tree-leading::before { content: ""; position: absolute; top: -14px; bottom: -14px; left: 0; width: var(--tree-guide-width, 0); background-image: repeating-linear-gradient(to right, transparent 0, transparent 18px, var(--eden-color-border-separator) 18px, var(--eden-color-border-separator) 19px, transparent 19px, transparent 20px); pointer-events: none; }
+.group-toggle { width: 42px; height: 36px; display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--eden-radius-sm); color: var(--eden-color-text-secondary); background: transparent; cursor: pointer; }
+.group-row { color: var(--eden-color-text-primary); }
+.group-row .row-main strong { font-weight: var(--eden-font-weight-semibold); }
 .kind-chip { width: 42px; height: 36px; display: grid; place-items: center; border-radius: var(--eden-radius-sm); background: transparent; }
 .type-dot { width: 14px; height: 14px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12); }
 .row-main { min-width: 0; flex: 1; display: grid; gap: 3px; }
