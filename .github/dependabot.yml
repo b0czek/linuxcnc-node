@@ -7,24 +7,8 @@ updates:
       day: "monday"
       time: "06:00"
       timezone: "Europe/Warsaw"
-    open-pull-requests-limit: 10
-
-  - package-ecosystem: "npm"
-    directory: "/apps/examples/halview"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "06:00"
-      timezone: "Europe/Warsaw"
-    open-pull-requests-limit: 10
-
-  - package-ecosystem: "npm"
-    directory: "/apps/examples/gcode-viewer"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "06:00"
-      timezone: "Europe/Warsaw"
+    exclude-paths:
+      - "apps/examples/**"
     open-pull-requests-limit: 10
 
   - package-ecosystem: "npm"
