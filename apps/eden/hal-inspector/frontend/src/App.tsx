@@ -231,6 +231,19 @@ const App: Component = () => {
   const displayedRows = createMemo(() =>
     activeTab() === "watch" ? watchRows() : itemRows()
   );
+  const availableWatches = createMemo(() => {
+    const data = topology();
+    if (!data) return [];
+    return watches().filter((ref) => {
+      const items =
+        ref.kind === "pin"
+          ? data.pins
+          : ref.kind === "param"
+          ? data.params
+          : data.signals;
+      return items.some((item) => item.name === ref.name);
+    });
+  });
   const virtualizer = createVirtualizer({
     get count() {
       return displayedRows().length;
@@ -290,7 +303,7 @@ const App: Component = () => {
         .flatMap((row) => (row.ref ? [row.ref] : []));
       return [
         ...new Map(
-          [...watches(), ...visible].map((ref) => [key(ref), ref])
+          [...availableWatches(), ...visible].map((ref) => [key(ref), ref])
         ).values(),
       ];
     },
@@ -605,15 +618,26 @@ const App: Component = () => {
           onChange={setActiveTab}
           class="content-tabs"
         >
-          <Tabs.List class="eden-tabs" aria-label="HAL view">
-            <Tabs.Trigger class="eden-tab" value="browse">
-              {t("inspector.browse")}
-            </Tabs.Trigger>
-            <Tabs.Trigger class="eden-tab" value="watch">
-              {t("inspector.watch")}{" "}
-              <span class="eden-badge eden-badge-sm">{watches().length}</span>
-            </Tabs.Trigger>
-          </Tabs.List>
+          <div class="tabs-bar">
+            <Tabs.List class="eden-tabs" aria-label="HAL view">
+              <Tabs.Trigger class="eden-tab" value="browse">
+                {t("inspector.browse")}
+              </Tabs.Trigger>
+              <Tabs.Trigger class="eden-tab" value="watch">
+                {t("inspector.watch")}{" "}
+                <span class="eden-badge eden-badge-sm">{watches().length}</span>
+              </Tabs.Trigger>
+            </Tabs.List>
+            <Show when={activeTab() === "watch" && watches().length > 0}>
+              <button
+                class="eden-btn eden-btn-ghost clear-watches"
+                onClick={() => setWatches([])}
+              >
+                <FaSolidXmark size={16} />
+                {t("inspector.clearWatches")}
+              </button>
+            </Show>
+          </div>
           <div class="list-detail">
             <div
               ref={listElement}
