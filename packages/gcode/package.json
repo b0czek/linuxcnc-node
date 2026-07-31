@@ -12,7 +12,7 @@
     "install": "node-gyp configure && node-gyp build",
     "prepublishOnly": "pnpm run build",
     "test": "jest --runInBand",
-    "test:integration": "jest --runInBand --testPathPattern=tests/integration",
+    "test:integration": "jest --runInBand --testPathPatterns=tests/integration",
     "test:coverage": "jest --coverage --runInBand"
   },
   "author": "Dariusz Majnert",

@@ -7,4 +7,5 @@
 "@linuxcnc-node/types": patch
 ---
 
-Centralize external dependency versions in the pnpm workspace catalog.
+Centralize external dependency versions in the pnpm workspace catalog and
+update the shared development and runtime dependency stack.
