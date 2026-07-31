@@ -1,5 +1,4 @@
 import * as Dialog from "@kobalte/core/dialog";
-import * as Tabs from "@kobalte/core/tabs";
 import { createVirtualizer } from "@tanstack/solid-virtual";
 import {
   FaSolidBars,
@@ -259,6 +258,13 @@ const App: Component = () => {
   const [error, setError] = createSignal("");
   const [preferencesLoaded, setPreferencesLoaded] = createSignal(false);
   let listElement!: HTMLDivElement;
+
+  const categoryCount = (item: Category) => {
+    const data = topology();
+    if (!data) return 0;
+    if (item === "params") return data.params.length;
+    return data[item].length;
+  };
 
   const itemRows = createMemo<Row[]>(() => {
     const data = topology();
@@ -661,41 +667,29 @@ const App: Component = () => {
         <strong>{t("inspector.appName")}</strong>
       </div>
       <nav aria-label={t("inspector.menu")}>
-        <For each={Object.keys(categoryLabels) as Category[]}>
-          {(item) => (
-            <button
-              class={`tree-root ${category() === item ? "active" : ""}`}
-              onClick={() => {
-                setCategory(item);
-                setActiveTab("browse");
-                setTreeOpen(false);
-              }}
-            >
-              <span aria-hidden="true" class="category-icon">
-                {item === "components" && <FaSolidCubes size={18} />}
-                {item === "pins" && <FaSolidThumbTack size={18} />}
-                {item === "params" && <FaSolidSliders size={18} />}
-                {item === "signals" && <FaSolidWaveSquare size={18} />}
-                {item === "functions" && <FaSolidCode size={18} />}
-                {item === "threads" && <FaSolidClock size={18} />}
-              </span>
-              <span>{categoryLabels[item]()}</span>
-              <span class="eden-badge eden-badge-sm">
-                {item === "pins"
-                  ? topology()?.pins.length
-                  : item === "params"
-                  ? topology()?.params.length
-                  : item === "signals"
-                  ? topology()?.signals.length
-                  : item === "components"
-                  ? topology()?.components.length
-                  : item === "functions"
-                  ? topology()?.functions.length
-                  : topology()?.threads.length}
-              </span>
-            </button>
-          )}
-        </For>
+        <button
+          class={`tree-root ${activeTab() === "browse" ? "active" : ""}`}
+          onClick={() => { setActiveTab("browse"); setTreeOpen(false); }}
+        >
+          <span aria-hidden="true" class="category-icon"><FaSolidCubes size={18} /></span>
+          <span>{t("inspector.browse")}</span>
+        </button>
+        <button
+          class={`tree-root ${activeTab() === "watch" ? "active" : ""}`}
+          onClick={() => { setActiveTab("watch"); setTreeOpen(false); }}
+        >
+          <span aria-hidden="true" class="category-icon"><FaSolidChartLine size={18} /></span>
+          <span>{t("inspector.watch")}</span>
+          <span class="eden-badge eden-badge-sm">{watches().length}</span>
+        </button>
+        <button
+          class={`tree-root ${activeTab() === "scope" ? "active" : ""}`}
+          onClick={() => { setActiveTab("scope"); setTreeOpen(false); }}
+        >
+          <span aria-hidden="true" class="category-icon"><FaSolidWaveSquare size={18} /></span>
+          <span>{t("inspector.scope")}</span>
+          <span class="eden-badge eden-badge-sm">{scopeStatus()?.state ?? "idle"}</span>
+        </button>
       </nav>
     </aside>
   );
@@ -726,11 +720,17 @@ const App: Component = () => {
         </Dialog.Portal>
       </Dialog.Root>
       <section class="workspace">
-        <Tabs.Root
-          value={activeTab()}
-          onChange={setActiveTab}
-          class="content-tabs"
-        >
+        <Show when={activeTab() !== "browse"}>
+          <button
+            class="eden-btn eden-btn-ghost menu-button standalone-menu-button"
+            onClick={() => setTreeOpen(true)}
+          >
+            <FaSolidBars size={18} />
+            <span class="btn-label">{t("inspector.menu")}</span>
+          </button>
+        </Show>
+        <div class="workspace-content">
+          <Show when={activeTab() === "browse"}>
           <div class="workspace-topbar">
           <header class="workspace-header">
           <button
@@ -742,21 +742,12 @@ const App: Component = () => {
           </button>
           <div>
             <h1>
-              {activeTab() === "scope"
-                ? t("inspector.scope")
-                : categoryLabels[category()]()}
+              {categoryLabels[category()]()}
             </h1>
             <span class="eden-text-sm eden-text-secondary">
-              {activeTab() === "scope"
-                ? `${scopeStatus()?.recordLength ?? 0} samples · ${
-                    scopeStatus()?.samplePeriodNs
-                      ? `${(1e9 / scopeStatus()!.samplePeriodNs).toFixed(0)} Hz`
-                      : "— Hz"
-                  }`
-                : `${sourceRows().length.toLocaleString()} items`}
+              {sourceRows().length.toLocaleString()} items
             </span>
           </div>
-          <Show when={activeTab() !== "scope"}>
           <label class="search">
             <span aria-hidden="true" class="search-icon">
               <FaSolidMagnifyingGlass size={18} />
@@ -776,59 +767,45 @@ const App: Component = () => {
           >
             <FaSolidRotateRight size={18} />
           </button>
-          </Show>
         </header>
           <div class="tabs-bar">
-            <Tabs.List
-              class="eden-tabs eden-tab-list eden-tab-list-pills"
-              aria-label="HAL view"
-            >
-              <Tabs.Trigger
-                class={`eden-tab eden-tab-pill ${
-                  activeTab() === "browse" ? "eden-tab-active" : ""
-                }`}
-                value="browse"
-              >
-                {t("inspector.browse")}
-              </Tabs.Trigger>
-              <Tabs.Trigger
-                class={`eden-tab eden-tab-pill ${
-                  activeTab() === "watch" ? "eden-tab-active" : ""
-                }`}
-                value="watch"
-              >
-                {t("inspector.watch")}{" "}
-                <span class="eden-badge eden-badge-sm">{watches().length}</span>
-              </Tabs.Trigger>
-              <Tabs.Trigger
-                class={`eden-tab eden-tab-pill ${
-                  activeTab() === "scope" ? "eden-tab-active" : ""
-                }`}
-                value="scope"
-              >
-                <FaSolidWaveSquare size={15} />
-                {t("inspector.scope")}
-                <span class="eden-badge eden-badge-sm">
-                  {scopeStatus()?.state ?? "idle"}
-                </span>
-              </Tabs.Trigger>
-            </Tabs.List>
+            <nav class="browse-categories" aria-label={t("inspector.browse")}>
+              <For each={Object.keys(categoryLabels) as Category[]}>
+                {(item) => (
+                  <button
+                    class={`browse-category ${category() === item ? "active" : ""}`}
+                    onClick={() => setCategory(item)}
+                  >
+                    {item === "components" && <FaSolidCubes size={15} />}
+                    {item === "pins" && <FaSolidThumbTack size={15} />}
+                    {item === "params" && <FaSolidSliders size={15} />}
+                    {item === "signals" && <FaSolidWaveSquare size={15} />}
+                    {item === "functions" && <FaSolidCode size={15} />}
+                    {item === "threads" && <FaSolidClock size={15} />}
+                    {categoryLabels[item]()}
+                    <span class="category-count">{categoryCount(item)}</span>
+                  </button>
+                )}
+              </For>
+            </nav>
+          </div>
+          </div>
+          </Show>
+          <Show when={activeTab() !== "scope"}>
+          <div class="list-detail">
             <Show when={activeTab() === "watch" && watches().length > 0}>
               <button
-                class="eden-btn eden-btn-ghost clear-watches"
+                class="eden-btn eden-btn-sm eden-btn-ghost clear-watches"
+                aria-label={t("inspector.clearWatches")}
+                title={t("inspector.clearWatches")}
                 onClick={() => setWatches([])}
               >
                 <FaSolidXmark size={16} />
-                {t("inspector.clearWatches")}
               </button>
             </Show>
-          </div>
-          </div>
-          <Show when={activeTab() !== "scope"}>
-          <div class="list-detail">
             <div
               ref={listElement}
-              class="virtual-list eden-list"
+              class={`virtual-list eden-list ${activeTab() === "watch" ? "watch-list" : ""}`}
               role="tree"
               aria-label={activeTab()}
             >
@@ -1217,7 +1194,7 @@ const App: Component = () => {
             </div>
           </section>
           </Show>
-        </Tabs.Root>
+        </div>
       </section>
       <Dialog.Root
         open={Boolean(editRef())}
