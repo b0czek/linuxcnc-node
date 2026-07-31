@@ -455,7 +455,11 @@ Napi::Value GetInfoFunctions(const Napi::CallbackInfo &info)
         item.Set("usesFp", funct->uses_fp != 0);
         item.Set("reentrant", funct->reentrant != 0);
         item.Set("users", funct->users);
-        if (funct->runtime) item.Set("runtime", *funct->runtime);
+        hal_type_t runtime_type = HAL_TYPE_UNSPECIFIED;
+        void *runtime = ResolveValueUnlocked(
+            "pin", std::string(funct->name) + ".time", &runtime_type);
+        if (runtime)
+            item.Set("runtime", HalDataContentToNapiValue(env, runtime_type, runtime));
         item.Set("maxRuntime", funct->maxtime);
         item.Set("maxRuntimeIncreased", funct->maxtime_increased != 0);
         result.Set(index++, item);
@@ -481,7 +485,11 @@ Napi::Value GetInfoThreads(const Napi::CallbackInfo &info)
         item.Set("priority", thread->priority);
         item.Set("usesFp", thread->uses_fp != 0);
         item.Set("running", hal_data->threads_running != 0);
-        if (thread->runtime) item.Set("runtime", *thread->runtime);
+        hal_type_t runtime_type = HAL_TYPE_UNSPECIFIED;
+        void *runtime = ResolveValueUnlocked(
+            "pin", std::string(thread->name) + ".time", &runtime_type);
+        if (runtime)
+            item.Set("runtime", HalDataContentToNapiValue(env, runtime_type, runtime));
         item.Set("maxRuntime", thread->maxtime);
         Napi::Array functions = Napi::Array::New(env);
         uint32_t functionIndex = 0;

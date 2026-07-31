@@ -1,6 +1,28 @@
 import * as Dialog from "@kobalte/core/dialog";
 import * as Tabs from "@kobalte/core/tabs";
 import { createVirtualizer } from "@tanstack/solid-virtual";
+import {
+  FaSolidBars,
+  FaSolidBolt,
+  FaSolidChartLine,
+  FaSolidChevronDown,
+  FaSolidChevronUp,
+  FaSolidCircleDot,
+  FaSolidClock,
+  FaSolidCode,
+  FaSolidCubes,
+  FaSolidMagnifyingGlass,
+  FaSolidMinus,
+  FaSolidPenToSquare,
+  FaSolidPlay,
+  FaSolidPlus,
+  FaSolidRotateRight,
+  FaSolidSliders,
+  FaSolidSquare,
+  FaSolidThumbTack,
+  FaSolidWaveSquare,
+  FaSolidXmark,
+} from "solid-icons/fa";
 import type { PeerConnection } from "@edenapp/types/ipc";
 import {
   createEffect,
@@ -77,6 +99,16 @@ const categoryLabels: Record<Category, () => string> = {
   threads: () => t("inspector.threads"),
 };
 const key = (ref: HalItemRef) => `${ref.kind}:${ref.name}`;
+const TYPE_COLORS: Record<string, string> = {
+  bit: "#55d48a",
+  float: "#f2b94b",
+  s32: "#61a9ff",
+  u32: "#51d4ef",
+  s64: "#9f7dff",
+  u64: "#e178ff",
+  port: "#9aa6ac",
+  default: "#c2d0d6",
+};
 
 const App: Component = () => {
   const api = window.getAppAPI() as PeerConnection<HalInspectorProtocol>;
@@ -251,16 +283,24 @@ const App: Component = () => {
     };
   }
 
-  const subscribedRefs = createMemo(() => {
-    const visible = itemRows()
-      .slice(0, 250)
-      .flatMap((row) => (row.ref ? [row.ref] : []));
-    return [
-      ...new Map(
-        [...watches(), ...visible].map((ref) => [key(ref), ref])
-      ).values(),
-    ];
-  });
+  const subscribedRefs = createMemo(
+    () => {
+      const visible = itemRows()
+        .slice(0, 250)
+        .flatMap((row) => (row.ref ? [row.ref] : []));
+      return [
+        ...new Map(
+          [...watches(), ...visible].map((ref) => [key(ref), ref])
+        ).values(),
+      ];
+    },
+    [],
+    {
+      equals: (previous, next) =>
+        previous.length === next.length &&
+        previous.every((ref, index) => key(ref) === key(next[index])),
+    }
+  );
   createEffect(
     () =>
       void api.request("subscriptions/set", {
@@ -484,8 +524,13 @@ const App: Component = () => {
                 setTreeOpen(false);
               }}
             >
-              <span aria-hidden="true">
-                {item === "threads" ? "◴" : item === "signals" ? "⌁" : "◇"}
+              <span aria-hidden="true" class="category-icon">
+                {item === "components" && <FaSolidCubes size={18} />}
+                {item === "pins" && <FaSolidThumbTack size={18} />}
+                {item === "params" && <FaSolidSliders size={18} />}
+                {item === "signals" && <FaSolidWaveSquare size={18} />}
+                {item === "functions" && <FaSolidCode size={18} />}
+                {item === "threads" && <FaSolidClock size={18} />}
               </span>
               <span>{categoryLabels[item]()}</span>
               <span class="eden-badge eden-badge-sm">
@@ -519,7 +564,7 @@ const App: Component = () => {
             <Dialog.Title class="sr-only">{t("inspector.menu")}</Dialog.Title>
             {sidebar()}
             <Dialog.CloseButton class="eden-btn eden-btn-ghost close-tree">
-              ×
+              <FaSolidXmark size={18} />
             </Dialog.CloseButton>
           </Dialog.Content>
         </Dialog.Portal>
@@ -530,7 +575,8 @@ const App: Component = () => {
             class="eden-btn eden-btn-ghost menu-button"
             onClick={() => setTreeOpen(true)}
           >
-            ☰ {t("inspector.menu")}
+            <FaSolidBars size={18} />
+            <span class="btn-label">{t("inspector.menu")}</span>
           </button>
           <div>
             <h1>{categoryLabels[category()]()}</h1>
@@ -539,7 +585,9 @@ const App: Component = () => {
             </span>
           </div>
           <label class="search">
-            <span aria-hidden="true">⌕</span>
+            <span aria-hidden="true" class="search-icon">
+              <FaSolidMagnifyingGlass size={18} />
+            </span>
             <input
               class="eden-input"
               value={filter()}
@@ -548,7 +596,8 @@ const App: Component = () => {
             />
           </label>
           <button class="eden-btn eden-btn-outline" onClick={refresh}>
-            ↻ {t("inspector.refresh")}
+            <FaSolidRotateRight size={18} />
+            <span class="btn-label">{t("inspector.refresh")}</span>
           </button>
         </header>
         <Tabs.Root
@@ -596,28 +645,68 @@ const App: Component = () => {
                           role="listitem"
                           onClick={() => setSelected(row())}
                         >
-                          <div class="kind-chip">
-                            {row()?.type ?? row()?.kind.slice(0, 3)}
+                          <div
+                            class="kind-chip"
+                            title={row()?.type ?? row()?.kind}
+                          >
+                            <span
+                              class="type-dot"
+                              style={{
+                                "background-color":
+                                  TYPE_COLORS[row()?.type ?? ""] ??
+                                  TYPE_COLORS.default,
+                              }}
+                            />
                           </div>
                           <div class="row-main">
                             <strong>{row()?.name}</strong>
                             <span>{row()?.subtitle}</span>
                           </div>
                           <Show when={row()?.ref}>
-                            <code class="value">
-                              {String(row()?.value ?? "—")}
-                            </code>
+                            <div class="value-cell">
+                              <code class="value">
+                                {String(row()?.value ?? "—")}
+                              </code>
+                              <span class="value-edit-slot">
+                                <Show when={row()?.writable}>
+                                  <button
+                                    class="eden-btn eden-btn-outline"
+                                    aria-label={t("inspector.edit")}
+                                    title={t("inspector.edit")}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setEditRef(row()!.ref!);
+                                      setEditValue(String(row()?.value ?? ""));
+                                    }}
+                                  >
+                                    <FaSolidPenToSquare size={16} />
+                                  </button>
+                                </Show>
+                              </span>
+                            </div>
                             <div class="row-actions">
                               <button
                                 class="eden-btn eden-btn-ghost"
+                                aria-label={
+                                  isWatched(row()!.ref!)
+                                    ? t("inspector.removeWatch")
+                                    : t("inspector.addWatch")
+                                }
+                                title={
+                                  isWatched(row()!.ref!)
+                                    ? t("inspector.removeWatch")
+                                    : t("inspector.addWatch")
+                                }
                                 onClick={(event) => {
                                   event.stopPropagation();
                                   toggleWatch(row()!.ref!);
                                 }}
                               >
-                                {isWatched(row()!.ref!)
-                                  ? `− ${t("inspector.removeWatch")}`
-                                  : `＋ ${t("inspector.addWatch")}`}
+                                {isWatched(row()!.ref!) ? (
+                                  <FaSolidMinus size={16} />
+                                ) : (
+                                  <FaSolidPlus size={16} />
+                                )}
                               </button>
                               <Show
                                 when={["bit", "float", "s32", "u32"].includes(
@@ -626,24 +715,14 @@ const App: Component = () => {
                               >
                                 <button
                                   class="eden-btn eden-btn-ghost"
+                                  aria-label={t("inspector.inspectScope")}
+                                  title={t("inspector.inspectScope")}
                                   onClick={(event) => {
                                     event.stopPropagation();
                                     void inspectOnScope(row()!.ref!);
                                   }}
                                 >
-                                  ⌁ {t("inspector.inspectScope")}
-                                </button>
-                              </Show>
-                              <Show when={row()?.writable}>
-                                <button
-                                  class="eden-btn eden-btn-outline"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    setEditRef(row()!.ref!);
-                                    setEditValue(String(row()?.value ?? ""));
-                                  }}
-                                >
-                                  ✎ {t("inspector.edit")}
+                                  <FaSolidChartLine size={16} />
                                 </button>
                               </Show>
                             </div>
@@ -676,7 +755,9 @@ const App: Component = () => {
               class="scope-title"
               onClick={() => setDrawerExpanded(!drawerExpanded())}
             >
-              <span class="scope-wave">⌁</span>
+              <span class="scope-wave">
+                <FaSolidWaveSquare size={22} />
+              </span>
               <strong>{t("inspector.scope")}</strong>
               <span
                 class={`eden-badge eden-badge-sm ${
@@ -698,9 +779,17 @@ const App: Component = () => {
               class="eden-btn eden-btn-ghost"
               onClick={() => setDrawerExpanded(!drawerExpanded())}
             >
-              {drawerExpanded()
-                ? `⌄ ${t("inspector.collapse")}`
-                : `⌃ ${t("inspector.expand")}`}
+              {drawerExpanded() ? (
+                <>
+                  <FaSolidChevronDown size={16} />
+                  <span class="btn-label">{t("inspector.collapse")}</span>
+                </>
+              ) : (
+                <>
+                  <FaSolidChevronUp size={16} />
+                  <span class="btn-label">{t("inspector.expand")}</span>
+                </>
+              )}
             </button>
           </header>
           <Show when={drawerExpanded()}>
@@ -710,25 +799,29 @@ const App: Component = () => {
                   class="eden-btn eden-btn-primary"
                   onClick={() => scopeAction("continuous")}
                 >
-                  ▶ {t("inspector.continuous")}
+                  <FaSolidPlay size={16} />
+                  <span class="btn-label">{t("inspector.continuous")}</span>
                 </button>
                 <button
                   class="eden-btn eden-btn-outline"
                   onClick={() => scopeAction("single")}
                 >
-                  ● {t("inspector.single")}
+                  <FaSolidCircleDot size={16} />
+                  <span class="btn-label">{t("inspector.single")}</span>
                 </button>
                 <button
                   class="eden-btn eden-btn-outline"
                   onClick={() => scopeAction("stop")}
                 >
-                  ■ {t("inspector.stop")}
+                  <FaSolidSquare size={16} />
+                  <span class="btn-label">{t("inspector.stop")}</span>
                 </button>
                 <button
                   class="eden-btn eden-btn-ghost"
                   onClick={() => scopeAction("force")}
                 >
-                  ⚡ {t("inspector.force")}
+                  <FaSolidBolt size={16} />
+                  <span class="btn-label">{t("inspector.force")}</span>
                 </button>
                 <label class="scope-field">
                   <span>{t("inspector.thread")}</span>
@@ -892,7 +985,7 @@ const App: Component = () => {
                         aria-label="Remove channel"
                         onClick={() => removeScopeChannel(index)}
                       >
-                        ×
+                        <FaSolidXmark size={14} />
                       </button>
                     </span>
                   )}
@@ -945,7 +1038,7 @@ const App: Component = () => {
         <div class="error-toast eden-card" role="alert">
           <span>{error()}</span>
           <button class="eden-btn eden-btn-ghost" onClick={() => setError("")}>
-            ×
+            <FaSolidXmark size={18} />
           </button>
         </div>
       </Show>
