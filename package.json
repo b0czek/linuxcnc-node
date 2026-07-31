@@ -4,6 +4,9 @@
   "private": true,
   "description": "LinuxCNC JavaScript and TypeScript monorepo",
   "packageManager": "pnpm@11.1.2",
+  "engines": {
+    "node": ">=24.15.0"
+  },
   "scripts": {
     "changeset": "changeset",
     "ci": "pnpm run typecheck && pnpm test",

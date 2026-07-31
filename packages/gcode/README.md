@@ -66,7 +66,7 @@ Returns `Promise<GCodeParseResult>`.
 
 - Linux
 - LinuxCNC installed (provides rs274ngc interpreter library)
-- Node.js 18+
+- Node.js 24.15+
 
 ## Building from Source
 
