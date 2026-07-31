@@ -661,13 +661,6 @@ const App: Component = () => {
     <aside class="hal-sidebar eden-sidebar">
       <div class="sidebar-title">
         <strong>{t("inspector.appName")}</strong>
-        <span
-          class={`eden-badge eden-badge-sm ${
-            connected() ? "eden-badge-success" : "eden-badge-danger"
-          }`}
-        >
-          {connected() ? t("inspector.connected") : t("inspector.disconnected")}
-        </span>
       </div>
       <nav aria-label={t("inspector.menu")}>
         <For each={Object.keys(categoryLabels) as Category[]}>
@@ -711,6 +704,15 @@ const App: Component = () => {
 
   return (
     <main class="inspector-frame">
+      <Show
+        when={connected()}
+        fallback={
+          <section class="disconnected-view">
+            <strong>{t("inspector.appName")}</strong>
+            <span>{t("inspector.disconnected")}</span>
+          </section>
+        }
+      >
       <div class="desktop-tree">{sidebar()}</div>
       <Dialog.Root open={treeOpen()} onOpenChange={setTreeOpen}>
         <Dialog.Portal>
@@ -726,7 +728,13 @@ const App: Component = () => {
         </Dialog.Portal>
       </Dialog.Root>
       <section class="workspace">
-        <header class="workspace-header">
+        <Tabs.Root
+          value={activeTab()}
+          onChange={setActiveTab}
+          class="content-tabs"
+        >
+          <div class="workspace-topbar">
+          <header class="workspace-header">
           <button
             class="eden-btn eden-btn-ghost menu-button"
             onClick={() => setTreeOpen(true)}
@@ -751,22 +759,34 @@ const App: Component = () => {
               placeholder={t("inspector.search")}
             />
           </label>
-          <button class="eden-btn eden-btn-outline" onClick={refresh}>
+          <button
+            class="eden-btn eden-btn-outline"
+            aria-label={t("inspector.refresh")}
+            title={t("inspector.refresh")}
+            onClick={refresh}
+          >
             <FaSolidRotateRight size={18} />
-            <span class="btn-label">{t("inspector.refresh")}</span>
           </button>
         </header>
-        <Tabs.Root
-          value={activeTab()}
-          onChange={setActiveTab}
-          class="content-tabs"
-        >
           <div class="tabs-bar">
-            <Tabs.List class="eden-tabs" aria-label="HAL view">
-              <Tabs.Trigger class="eden-tab" value="browse">
+            <Tabs.List
+              class="eden-tabs eden-tab-list eden-tab-list-pills"
+              aria-label="HAL view"
+            >
+              <Tabs.Trigger
+                class={`eden-tab eden-tab-pill ${
+                  activeTab() === "browse" ? "eden-tab-active" : ""
+                }`}
+                value="browse"
+              >
                 {t("inspector.browse")}
               </Tabs.Trigger>
-              <Tabs.Trigger class="eden-tab" value="watch">
+              <Tabs.Trigger
+                class={`eden-tab eden-tab-pill ${
+                  activeTab() === "watch" ? "eden-tab-active" : ""
+                }`}
+                value="watch"
+              >
                 {t("inspector.watch")}{" "}
                 <span class="eden-badge eden-badge-sm">{watches().length}</span>
               </Tabs.Trigger>
@@ -780,6 +800,7 @@ const App: Component = () => {
                 {t("inspector.clearWatches")}
               </button>
             </Show>
+          </div>
           </div>
           <div class="list-detail">
             <div
@@ -1258,6 +1279,7 @@ const App: Component = () => {
             <FaSolidXmark size={18} />
           </button>
         </div>
+      </Show>
       </Show>
     </main>
   );
