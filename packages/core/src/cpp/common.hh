@@ -16,6 +16,12 @@ namespace LinuxCNC
     Napi::Value GetNmlFilePath(const Napi::CallbackInfo &info);
     const char *GetNmlFileCStr();
 
+    // LinuxCNC exposes the tool mmap through process-global state. Repeated
+    // initialization from concurrent workers can temporarily clear that state
+    // and make tooldata_get() terminate the process.
+    bool EnsureToolMmap();
+    void ResetToolMmapState();
+
     // Helper to convert EmcPose to Napi::Float64Array (9 elements: x,y,z,a,b,c,u,v,w)
     Napi::Float64Array EmcPoseToNapiFloat64Array(Napi::Env env, const EmcPose &pose);
 

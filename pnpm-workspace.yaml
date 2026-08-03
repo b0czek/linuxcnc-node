@@ -4,7 +4,9 @@ packages:
   - apps/examples/*
 
 catalog:
+  '@edenapp/babel': ^0.11.1
   '@edenapp/genesis': ^0.11.1
+  '@edenapp/scripts': ^0.11.1
   '@edenapp/types': ^0.11.1
   '@types/dlv': ^1.1.5
   '@types/jest': ^30.0.0

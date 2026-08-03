@@ -1,0 +1,17 @@
+export const pl = { inspector: {
+  appName: "Inspektor HAL", connected: "Połączono", disconnected: "Rozłączono", search: "Filtruj HAL…",
+  browse: "Przeglądaj", watch: "Obserwowane", components: "Komponenty", pins: "Piny", parameters: "Parametry",
+  signals: "Sygnały", functions: "Funkcje", threads: "Wątki", empty: "Brak pasujących elementów HAL",
+  addWatch: "Obserwuj", removeWatch: "Usuń", clearWatches: "Wyczyść obserwowane", details: "Szczegóły", inspectScope: "Pokaż na oscyloskopie",
+  edit: "Edytuj wartość", write: "Zapisz wartość", cancel: "Anuluj", current: "Bieżąca wartość", proposed: "Nowa wartość",
+  scope: "Oscyloskop", expand: "Rozwiń", collapse: "Zwiń", run: "Run", roll: "Roll", single: "Pojedynczy",
+  stop: "Stop", force: "Wymuś wyzwolenie", auto: "Auto", normal: "Normalny", rising: "Narastające", falling: "Opadające",
+  thread: "Wątek", multiplier: "Mnożnik", noChannels: "Dodaj obsługiwany pin, parametr lub sygnał, aby rozpocząć.",
+  unavailable: "Niedostępny", menu: "Nawigacja", refresh: "Odśwież", value: "Wartość", type: "Typ", direction: "Kierunek",
+  channels: "Kanały", removeChannel: "Usuń kanał", logic: "Logiczny", scale: "Skala", offset: "Przesunięcie",
+  skipped: "Pominięte", idle: "Bezczynny", initializing: "Inicjalizacja", preTriggerState: "Przed wyzwoleniem", waitingTrigger: "Oczekiwanie na wyzwolenie",
+  postTriggerState: "Po wyzwoleniu", complete: "Gotowe", resetting: "Resetowanie", invalidState: "Błąd", span: "zakres", points: "pkt",
+  scopeWaveform: "Interaktywny przebieg oscyloskopu HAL",
+  triggerPosition: "Pozycja wyzwalania", zeroPosition: "pozycja zera", measurementCursor: "Kursor pomiarowy",
+  webglLost: "Kontekst WebGL został utracony.", webglUnavailable: "Oscyloskop WebGL2 jest niedostępny", retry: "Ponów",
+} } as const;

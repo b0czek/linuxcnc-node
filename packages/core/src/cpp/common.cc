@@ -1,10 +1,17 @@
 #include "common.hh"
+#include "tooldata.hh"
+#include <mutex>
 #include <vector>
 
 namespace LinuxCNC
 {
 
     std::string g_nmlFilePath = DEFAULT_EMC_NMLFILE;
+    namespace
+    {
+        std::mutex tool_mmap_mutex;
+        bool tool_mmap_initialized = false;
+    }
 
     void SetNmlFilePath(const Napi::CallbackInfo &info)
     {
@@ -26,6 +33,22 @@ namespace LinuxCNC
     const char *GetNmlFileCStr()
     {
         return g_nmlFilePath.c_str();
+    }
+
+    bool EnsureToolMmap()
+    {
+        std::lock_guard<std::mutex> lock(tool_mmap_mutex);
+        if (!tool_mmap_initialized)
+        {
+            tool_mmap_initialized = tool_mmap_user() == 0;
+        }
+        return tool_mmap_initialized;
+    }
+
+    void ResetToolMmapState()
+    {
+        std::lock_guard<std::mutex> lock(tool_mmap_mutex);
+        tool_mmap_initialized = false;
     }
 
     Napi::Float64Array EmcPoseToNapiFloat64Array(Napi::Env env, const EmcPose &pose)

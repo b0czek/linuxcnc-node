@@ -13,7 +13,9 @@ This module provides Node.js bindings for the LinuxCNC Hardware Abstraction Laye
   - Create new signals.
   - Connect pins to signals and disconnect them.
   - Get and set values of arbitrary pins, parameters, or signals.
-  - Retrieve information about all pins, signals, or parameters in the system.
+  - Retrieve complete component, pin, parameter, signal, function, and thread topology.
+  - Batch-read typed values under one HAL mutex.
+  - Attach to and control LinuxCNC's existing realtime oscilloscope sampler.
 
 ## Installation
 
@@ -86,6 +88,12 @@ console.log(`Value of 'my-js-signal': ${hal.getValue("my-js-signal")}`);
 
 // --- Information Functions ---
 console.log("All Pins:", JSON.stringify(hal.getInfoPins(), null, 2));
+console.log("All Threads:", JSON.stringify(hal.getInfoThreads(), null, 2));
+
+const values = hal.getValues([
+  { kind: "pin", name: "my-js-comp.output.float" },
+  { kind: "signal", name: "my-js-signal" },
+]);
 
 // --- Message Levels ---
 hal.setMsgLevel("all");
@@ -151,8 +159,38 @@ For a comprehensive example of how to use this module in a real-world applicatio
 - `connect()`, `disconnect()` - Pin/signal connections
 - `newSignal()` - Create signals
 - `getValue()`, `setPinParamValue()`, `setSignalValue()` - Value operations
-- `getInfoPins()`, `getInfoSignals()`, `getInfoParams()` - Information queries
+- `getInfoPins()`, `getInfoSignals()`, `getInfoParams()` - Value-bearing item queries
+- `getInfoComponents()`, `getInfoFunctions()`, `getInfoThreads()` - HAL topology queries
+- `getValues(refs)` - Batch read stable `{ kind, name }` references under one mutex
 - `pinHasWriter()` - Check pin writer status
+
+### Realtime scope controller
+
+`ScopeController` is a synchronous, exclusive userspace controller for the unmodified
+LinuxCNC `scope_rt` component. The ABI in `src/cpp/scope_shm_abi.h` is pinned to the
+LinuxCNC 2.10 source vendored by this repository and derived from LinuxCNC's
+GPL-2.0-only `scope_shm.h`.
+
+The controller supports up to 16 bit, float, s32, or u32 pin/parameter/signal
+sources. LinuxCNC's sampler does not support s64, u64, or port sources. It keeps
+the upstream 16-cell sample width, validates multiplier bounds against the selected
+thread, preserves wrapped record order, and returns copied `Float64Array` channel
+captures. Only one controller may be active; construction fails while original
+`halscope` or another `hal-inspector-scope` controller owns the resource.
+
+Loading or unloading `scope_rt` is intentionally outside this package. Create the
+controller only after `scope.sample` and its shared memory exist. `dispose()` resets
+acquisition and detaches the userspace mapping without unloading the realtime module
+or removing an adopted thread link.
+
+`ScopeController.snapshot()` copies the currently valid samples in chronological
+order without stopping realtime acquisition. `consume()` remains reserved for
+completed triggered records.
+
+`ScopeController.snapshotDelta()` keeps an acquisition-local cursor and copies
+only samples written since its previous call. Its first result, and any result
+after reconfiguration or an ambiguous wrap, is marked `reset` so consumers can
+replace their circular-buffer contents safely.
 
 ### Current Limitations
 

@@ -80,6 +80,7 @@ namespace LinuxCNC
         if (tool_mmap_initialized_)
         {
             tool_mmap_initialized_ = false;
+            ResetToolMmapState();
         }
     }
 
@@ -93,7 +94,7 @@ namespace LinuxCNC
         // Initialize tool mmap if not done yet
         if (!tool_mmap_initialized_)
         {
-            if (tool_mmap_user() == 0)
+            if (EnsureToolMmap())
             {
                 tool_mmap_initialized_ = true;
             }
@@ -565,7 +566,7 @@ namespace LinuxCNC
     {
         if (!tool_mmap_initialized_)
         {
-            if (tool_mmap_user() != 0)
+            if (!EnsureToolMmap())
             {
                 // Failed to init, skip
                 return;

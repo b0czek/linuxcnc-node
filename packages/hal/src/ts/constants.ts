@@ -7,6 +7,18 @@ export type {
   HalPinInfo,
   HalSignalInfo,
   HalParamInfo,
+  HalItemKind,
+  HalItemRef,
+  HalComponentKind,
+  HalComponentInfo,
+  HalFunctionInfo,
+  HalThreadInfo,
+  ScopeRuntimeState,
+  ScopeChannelConfig,
+  ScopeAcquisitionConfig,
+  ScopeStatus,
+  ScopeCapture,
+  ScopeCaptureDelta,
 } from "@linuxcnc-node/types";
 
 import type {
@@ -20,9 +32,12 @@ import type {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function loadAddon(): any {
   const paths = [
+    process.env.EDEN_INSTALL_PATH &&
+      `${process.env.EDEN_INSTALL_PATH}/build/Release/hal_addon.node`,
+    `${process.cwd()}/build/Release/hal_addon.node`,
     "../build/Release/hal_addon.node",
     "../../build/Release/hal_addon.node",
-  ];
+  ].filter((path): path is string => Boolean(path));
 
   for (const path of paths) {
     try {
