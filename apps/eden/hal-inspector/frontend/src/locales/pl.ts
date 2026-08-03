@@ -8,4 +8,10 @@ export const pl = { inspector: {
   stop: "Stop", force: "Wymuś wyzwolenie", auto: "Auto", normal: "Normalny", rising: "Narastające", falling: "Opadające",
   thread: "Wątek", multiplier: "Mnożnik", noChannels: "Dodaj obsługiwany pin, parametr lub sygnał, aby rozpocząć.",
   unavailable: "Niedostępny", menu: "Nawigacja", refresh: "Odśwież", value: "Wartość", type: "Typ", direction: "Kierunek",
+  channels: "Kanały", removeChannel: "Usuń kanał", logic: "Logiczny", scale: "Skala", offset: "Przesunięcie",
+  skipped: "Pominięte", idle: "Bezczynny", initializing: "Inicjalizacja", preTriggerState: "Przed wyzwoleniem", waitingTrigger: "Oczekiwanie na wyzwolenie",
+  postTriggerState: "Po wyzwoleniu", complete: "Gotowe", resetting: "Resetowanie", invalidState: "Błąd", span: "zakres", points: "pkt",
+  scopeWaveform: "Interaktywny przebieg oscyloskopu HAL",
+  triggerPosition: "Pozycja wyzwalania", zeroPosition: "pozycja zera", measurementCursor: "Kursor pomiarowy",
+  webglLost: "Kontekst WebGL został utracony.", webglUnavailable: "Oscyloskop WebGL2 jest niedostępny", retry: "Ponów",
 } } as const;

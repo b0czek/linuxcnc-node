@@ -41,10 +41,12 @@ import { BrowseHeader } from "./BrowseHeader";
 import { InspectorSidebar } from "./InspectorSidebar";
 import {
   DEFAULT_PREFERENCES as DEFAULTS,
+  defaultScopeDisplays,
   type ActiveTab,
   type Category,
   type Preferences,
   type Row,
+  type ScopeChannelDisplay,
   type TreeRow,
 } from "./models";
 import { ScopePlot } from "./ScopePlot";
@@ -78,10 +80,17 @@ export const HalInspector: Component = () => {
   const [triggerLevel, setTriggerLevel] = createSignal(0);
   const [preTriggerRatio, setPreTriggerRatio] = createSignal(0.5);
   const [activeTriggerChannel, setActiveTriggerChannel] = createSignal(0);
+  const [scopeDisplays, setScopeDisplays] = createSignal(
+    defaultScopeDisplays()
+  );
+  const [activeScopeChannel, setActiveScopeChannel] = createSignal(0);
+  const [skippedCaptures, setSkippedCaptures] = createSignal(0);
   const [editRef, setEditRef] = createSignal<HalItemRef | null>(null);
   const [editValue, setEditValue] = createSignal("");
   const [error, setError] = createSignal("");
   const [preferencesLoaded, setPreferencesLoaded] = createSignal(false);
+  let preferenceSaveTimer: ReturnType<typeof setTimeout> | undefined;
+  let disposed = false;
   let listElement!: HTMLDivElement;
 
   const categoryCount = (item: Category) => {
@@ -294,22 +303,58 @@ export const HalInspector: Component = () => {
 
   async function loadPreferences() {
     try {
-      const result = await window.edenAPI.shellCommand("db/get", {
-        key: "hal-inspector.preferences.v1",
+      const current = await window.edenAPI.shellCommand("db/get", {
+        key: "hal-inspector.preferences.v2",
       });
-      if (result.value) {
-        const p = JSON.parse(result.value) as Preferences;
-        if (p.version === 1) {
+      const legacy = current.value
+        ? null
+        : await window.edenAPI.shellCommand("db/get", {
+            key: "hal-inspector.preferences.v1",
+          });
+      const stored = current.value ?? legacy?.value;
+      if (stored) {
+        const p = JSON.parse(stored) as Omit<Partial<Preferences>, "version"> & {
+          version?: number;
+        };
+        if (p.version === 1 || p.version === 2) {
           setWatches(p.watches ?? []);
           setIntervalMs(p.intervalMs ?? 100);
           if (p.drawerExpanded) setActiveTab("scope");
-          setChannels((p.channels ?? Array(16).fill(null)).slice(0, 16));
+          const storedChannels = p.channels ?? [];
+          setChannels(
+            Array.from({ length: 16 }, (_, index) =>
+              storedChannels[index] ?? null
+            )
+          );
           setScopeThread(p.threadName ?? "");
           setScopeMultiplier(Math.max(1, p.multiplier ?? 1));
           setTriggerMode(p.triggerMode ?? "auto");
+          setActiveTriggerChannel(
+            Math.max(0, Math.min(15, p.triggerChannel ?? 0))
+          );
           setTriggerEdge(p.triggerEdge ?? "rising");
           setTriggerLevel(p.triggerLevel ?? 0);
           setPreTriggerRatio(p.preTriggerRatio ?? 0.5);
+          const storedDisplays = p.scopeDisplays ?? [];
+          setScopeDisplays(
+            Array.from({ length: 16 }, (_, index) => {
+              const display = storedDisplays[index];
+              return {
+                unitsPerDivision:
+                  display?.unitsPerDivision &&
+                  Number.isFinite(display.unitsPerDivision) &&
+                  display.unitsPerDivision > 0
+                    ? display.unitsPerDivision
+                    : 1,
+                offset: Number.isFinite(display?.offset)
+                  ? Number(display?.offset)
+                  : 0,
+              };
+            })
+          );
+          setActiveScopeChannel(
+            Math.max(0, Math.min(15, p.activeScopeChannel ?? 0))
+          );
         }
       }
     } catch {
@@ -328,12 +373,15 @@ export const HalInspector: Component = () => {
       threadName: scopeThread(),
       multiplier: scopeMultiplier(),
       triggerMode: triggerMode(),
+      triggerChannel: activeTriggerChannel(),
       triggerEdge: triggerEdge(),
       triggerLevel: triggerLevel(),
       preTriggerRatio: preTriggerRatio(),
+      scopeDisplays: scopeDisplays(),
+      activeScopeChannel: activeScopeChannel(),
     };
     await window.edenAPI.shellCommand("db/set", {
-      key: "hal-inspector.preferences.v1",
+      key: "hal-inspector.preferences.v2",
       value: JSON.stringify(value),
     });
   }
@@ -345,10 +393,19 @@ export const HalInspector: Component = () => {
     scopeThread();
     scopeMultiplier();
     triggerMode();
+    activeTriggerChannel();
     triggerEdge();
     triggerLevel();
     preTriggerRatio();
-    if (preferencesLoaded()) void savePreferences();
+    scopeDisplays().forEach((display) => {
+      display.unitsPerDivision;
+      display.offset;
+    });
+    activeScopeChannel();
+    if (preferencesLoaded()) {
+      clearTimeout(preferenceSaveTimer);
+      preferenceSaveTimer = setTimeout(() => void savePreferences(), 180);
+    }
   });
 
   function toggleWatch(ref: HalItemRef) {
@@ -385,7 +442,8 @@ export const HalInspector: Component = () => {
       setChannels((current) =>
         current.map((value, index) => (index === free ? ref : value))
       );
-    }
+      setActiveScopeChannel(free);
+    } else setActiveScopeChannel(existing);
     setActiveTab("scope");
     await configureScope();
   }
@@ -424,12 +482,22 @@ export const HalInspector: Component = () => {
     } else setError(result.error.message);
   }
   function removeScopeChannel(index: number) {
-    setChannels((current) =>
+    const next = channels().map((value, currentIndex) =>
+      currentIndex === index ? null : value
+    );
+    setChannels(next);
+    if (activeScopeChannel() === index)
+      setActiveScopeChannel(Math.max(0, next.findIndex(Boolean)));
+    if (activeTriggerChannel() === index)
+      setActiveTriggerChannel(Math.max(0, next.findIndex(Boolean)));
+    queueMicrotask(() => void configureScope());
+  }
+  function updateScopeDisplay(index: number, display: ScopeChannelDisplay) {
+    setScopeDisplays((current) =>
       current.map((value, currentIndex) =>
-        currentIndex === index ? null : value
+        currentIndex === index ? display : value
       )
     );
-    queueMicrotask(() => void configureScope());
   }
   async function scopeAction(
     action: "single" | "continuous" | "stop" | "force"
@@ -451,39 +519,70 @@ export const HalInspector: Component = () => {
     setEditRef(null);
   }
 
-  onMount(async () => {
-    await initLocale();
-    await loadPreferences();
-    api.on("connection/state", ({ connected }) => setConnected(connected));
-    api.on("topology/changed", setTopology);
-    api.on("values/delta", ({ values: deltas }) =>
-      setValues((current) => {
-        const next = new Map(current);
-        deltas.forEach(({ ref, value }) => next.set(key(ref), value));
-        return next;
-      })
-    );
-    api.on("scope/status", setScopeStatus);
-    api.on("scope/capture", ({ id, capture: next }) => {
-      setCapture(next);
-      requestAnimationFrame(() => api.send("scope/capture-ack", { id }));
+  const handleConnectionState = ({ connected }: { connected: boolean }) =>
+    setConnected(connected);
+  const handleTopologyChanged = (next: TopologySnapshot) => setTopology(next);
+  const handleValuesDelta = ({
+    values: deltas,
+  }: HalInspectorProtocol["hostMessages"]["values/delta"]) =>
+    setValues((current) => {
+      const next = new Map(current);
+      deltas.forEach(({ ref, value }) => next.set(key(ref), value));
+      return next;
     });
-    api.on("error", ({ message }) => setError(message));
-    const result = await api.request("bootstrap/get", {});
-    if (result.ok) {
-      setConnected(result.value.connected);
-      setTopology(result.value.topology);
-      setScopeStatus(result.value.scope);
-    }
-    const visibility = () =>
-      api.send("ui/state", {
-        visible: document.visibilityState === "visible",
-        scopeExpanded: activeTab() === "scope",
-      });
-    document.addEventListener("visibilitychange", visibility);
-    onCleanup(() =>
-      document.removeEventListener("visibilitychange", visibility)
-    );
+  const handleScopeStatus = (next: ScopeStatus) => setScopeStatus(next);
+  const handleScopeCapture = ({
+    id,
+    capture: next,
+    skipped,
+  }: HalInspectorProtocol["hostMessages"]["scope/capture"]) => {
+    setCapture(next);
+    setSkippedCaptures(skipped);
+    requestAnimationFrame(() => api.send("scope/capture-ack", { id }));
+  };
+  const handleApiError = ({ message }: { message: string }) =>
+    setError(message);
+  const handleVisibilityChange = () =>
+    api.send("ui/state", {
+      visible: document.visibilityState === "visible",
+      scopeExpanded: activeTab() === "scope",
+    });
+
+  onMount(() => {
+    disposed = false;
+    api.on("connection/state", handleConnectionState);
+    api.on("topology/changed", handleTopologyChanged);
+    api.on("values/delta", handleValuesDelta);
+    api.on("scope/status", handleScopeStatus);
+    api.on("scope/capture", handleScopeCapture);
+    api.on("error", handleApiError);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    void (async () => {
+      await initLocale();
+      if (disposed) return;
+      await loadPreferences();
+      if (disposed) return;
+      const result = await api.request("bootstrap/get", {});
+      if (disposed) return;
+      if (result.ok) {
+        setConnected(result.value.connected);
+        setTopology(result.value.topology);
+        setScopeStatus(result.value.scope);
+      }
+    })();
+  });
+
+  onCleanup(() => {
+    disposed = true;
+    api.off("connection/state", handleConnectionState);
+    api.off("topology/changed", handleTopologyChanged);
+    api.off("values/delta", handleValuesDelta);
+    api.off("scope/status", handleScopeStatus);
+    api.off("scope/capture", handleScopeCapture);
+    api.off("error", handleApiError);
+    document.removeEventListener("visibilitychange", handleVisibilityChange);
+    clearTimeout(preferenceSaveTimer);
   });
 
   const sidebar = () => (
@@ -924,32 +1023,38 @@ export const HalInspector: Component = () => {
                 <ScopePlot
                   capture={capture()}
                   names={channels().map((ref) => ref?.name ?? null)}
-                  types={channels().map((ref) =>
-                    ref ? itemRowsForRef(ref)?.type ?? null : null
-                  )}
+                  types={channels().map((ref) => {
+                    const data = topology();
+                    if (!ref || !data) return null;
+                    const items =
+                      ref.kind === "pin"
+                        ? data.pins
+                        : ref.kind === "param"
+                        ? data.params
+                        : data.signals;
+                    return items.find((item) => item.name === ref.name)?.type ?? null;
+                  })}
+                  displays={scopeDisplays()}
+                  activeChannel={activeScopeChannel()}
+                  triggerChannel={
+                    channels()[activeTriggerChannel()]
+                      ? activeTriggerChannel()
+                      : Math.max(0, channels().findIndex(Boolean))
+                  }
+                  triggerLevel={triggerLevel()}
+                  status={scopeStatus()}
+                  skippedCaptures={skippedCaptures()}
+                  onActiveChannelChange={setActiveScopeChannel}
+                  onDisplayChange={updateScopeDisplay}
+                  onTriggerLevelCommit={(value) => {
+                    setTriggerLevel(value);
+                    queueMicrotask(() => void configureScope());
+                  }}
+                  onRemoveChannel={removeScopeChannel}
                 />
                 <Show when={!channels().some(Boolean)}>
                   <div class="plot-empty">{t("inspector.noChannels")}</div>
                 </Show>
-              </div>
-              <div class="channel-strip">
-                <For
-                  each={channels()
-                    .map((ref, index) => ({ ref, index }))
-                    .filter(({ ref }) => ref)}
-                >
-                  {({ ref, index }) => (
-                    <span class="eden-tag">
-                      CH {index + 1} · {ref!.name}
-                      <button
-                        aria-label="Remove channel"
-                        onClick={() => removeScopeChannel(index)}
-                      >
-                        <FaSolidXmark size={14} />
-                      </button>
-                    </span>
-                  )}
-                </For>
               </div>
             </div>
           </section>

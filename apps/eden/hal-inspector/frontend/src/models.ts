@@ -29,8 +29,13 @@ export type TreeRow = Row & {
   groupCount?: number;
 };
 
+export interface ScopeChannelDisplay {
+  unitsPerDivision: number;
+  offset: number;
+}
+
 export interface Preferences {
-  version: 1;
+  version: 2;
   watches: HalItemRef[];
   intervalMs: number;
   drawerExpanded: boolean;
@@ -38,20 +43,29 @@ export interface Preferences {
   threadName?: string;
   multiplier: number;
   triggerMode: "auto" | "normal";
+  triggerChannel: number;
   triggerEdge: "rising" | "falling";
   triggerLevel: number;
   preTriggerRatio: number;
+  scopeDisplays: ScopeChannelDisplay[];
+  activeScopeChannel: number;
 }
 
+export const defaultScopeDisplays = (): ScopeChannelDisplay[] =>
+  Array.from({ length: 16 }, () => ({ unitsPerDivision: 1, offset: 0 }));
+
 export const DEFAULT_PREFERENCES: Preferences = {
-  version: 1,
+  version: 2,
   watches: [],
   intervalMs: 100,
   drawerExpanded: false,
   channels: Array(16).fill(null),
   multiplier: 1,
   triggerMode: "auto",
+  triggerChannel: 0,
   triggerEdge: "rising",
   triggerLevel: 0,
   preTriggerRatio: 0.5,
+  scopeDisplays: defaultScopeDisplays(),
+  activeScopeChannel: 0,
 };

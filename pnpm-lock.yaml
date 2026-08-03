@@ -141,9 +141,9 @@ importers:
       solid-js:
         specifier: ^1.9.10
         version: 1.9.14
-      uplot:
-        specifier: ^1.6.32
-        version: 1.6.32
+      webgl-plot:
+        specifier: ^1.1.2
+        version: 1.1.2
     devDependencies:
       '@edenapp/genesis':
         specifier: 'catalog:'
@@ -4701,9 +4701,6 @@ packages:
     peerDependencies:
       browserslist: '>= 4.21.0'
 
-  uplot@1.6.32:
-    resolution: {integrity: sha512-KIMVnG68zvu5XXUbC4LQEPnhwOxBuLyW1AHtpm6IKTXImkbLgkMy+jabjLgSLMasNuGGzQm/ep3tOkyTxpiQIw==}
-
   uri-js@4.4.1:
     resolution: {integrity: sha512-7rKUyy33Q1yc98pQ1DAmLtwX109F7TIfWlW1Ydo8Wl1ii1SeHieeh0HHfPeL2fMXK6z0s8ecKs9frCuLJvndBg==}
 
@@ -4879,6 +4876,9 @@ packages:
 
   walker@1.0.8:
     resolution: {integrity: sha512-ts/8E8l5b7kY0vlWLewOkDXMmPdLcVV4GmOQLyxuSswIJsweeFZtAsMF7k1Nszz+TYBQrlYRmzOnr398y1JemQ==}
+
+  webgl-plot@1.1.2:
+    resolution: {integrity: sha512-W6PF7vBZAG5ACVAmV7cuBE22JXU17lC9kybLIoBDVY1YRIhOnJyOpvLNBYdso/ZJ3+6guahNrPckXgO0F3RY6A==}
 
   when-exit@2.1.5:
     resolution: {integrity: sha512-VGkKJ564kzt6Ms1dbgPP/yuIoQCrsFAnRbptpC5wOEsDaNsbCB2bnfnaA8i/vRs5tjUSEOtIuvl9/MyVsvQZCg==}
@@ -9886,8 +9886,6 @@ snapshots:
       escalade: 3.2.0
       picocolors: 1.1.1
 
-  uplot@1.6.32: {}
-
   uri-js@4.4.1:
     dependencies:
       punycode: 2.3.1
@@ -9979,6 +9977,8 @@ snapshots:
   walker@1.0.8:
     dependencies:
       makeerror: 1.0.12
+
+  webgl-plot@1.1.2: {}
 
   when-exit@2.1.5: {}
 
