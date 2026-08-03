@@ -1,5 +1,10 @@
 import { CommandChannel, CommandTransport, StatChannel } from "../../src/ts";
-import { PositionIndex, RcsStatus, TaskMode } from "@linuxcnc-node/types";
+import {
+  PositionIndex,
+  RcsStatus,
+  TaskMode,
+  TrajMode,
+} from "@linuxcnc-node/types";
 import { startLinuxCNC, stopLinuxCNC, setupLinuxCNC } from "./setupLinuxCNC";
 
 describe("Integration: CommandTransport", () => {
@@ -47,6 +52,26 @@ describe("Integration: CommandTransport", () => {
         status.task.mode === TaskMode.MDI &&
         Math.abs(status.motion.traj.position[PositionIndex.X] - 1) < 0.001,
       "MDI mode with final X position at 1"
+    );
+  });
+
+  it("switches from teleop to free trajectory mode", async () => {
+    await expect(setupCommandChannel.teleopEnable(true)).resolves.toBe(
+      RcsStatus.DONE
+    );
+    await waitForStatus(
+      statChannel,
+      (status) => status.motion.traj.mode === TrajMode.TELEOP,
+      "teleop trajectory mode"
+    );
+
+    await expect(setupCommandChannel.teleopEnable(false)).resolves.toBe(
+      RcsStatus.DONE
+    );
+    await waitForStatus(
+      statChannel,
+      (status) => status.motion.traj.mode === TrajMode.FREE,
+      "free trajectory mode"
     );
   });
 });

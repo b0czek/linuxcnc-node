@@ -47,7 +47,7 @@ namespace LinuxCNC
         const std::string &getToolTableFilename() const { return tool_table_filename_; }
 
         // Helper for sending commands asynchronously
-        Napi::Value sendCommandAsync(const Napi::CallbackInfo &info, std::unique_ptr<RCS_CMD_MSG> cmd_msg, double timeout = 5.0);
+        Napi::Value sendCommandAsync(const Napi::CallbackInfo &info, RCS_CMD_MSG &cmd_msg, double timeout = 5.0);
         double getCommandTimeout(CommandWaitMode wait_mode);
 
         // Helper methods for command completion waiting

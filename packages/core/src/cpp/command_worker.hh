@@ -25,7 +25,7 @@ namespace LinuxCNC
     public:
         CommandWorker(Napi::Function &callback,
                       NapiCommandChannel *channel,
-                      std::unique_ptr<RCS_CMD_MSG> cmd_msg,
+                      int command_serial,
                       double timeout);
 
     protected:
@@ -35,7 +35,6 @@ namespace LinuxCNC
 
     private:
         NapiCommandChannel *channel_;
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg_;
         double timeout_;
         int command_serial_;
         RCS_STATUS result_status_;

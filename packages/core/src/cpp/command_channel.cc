@@ -272,7 +272,7 @@ namespace LinuxCNC
         Unref();
     }
 
-    Napi::Value NapiCommandChannel::sendCommandAsync(const Napi::CallbackInfo &info, std::unique_ptr<RCS_CMD_MSG> cmd_msg, double timeout)
+    Napi::Value NapiCommandChannel::sendCommandAsync(const Napi::CallbackInfo &info, RCS_CMD_MSG &cmd_msg, double timeout)
     {
         Napi::Env env = info.Env();
         double command_timeout = timeout;
@@ -288,14 +288,14 @@ namespace LinuxCNC
         }
 
         // Write command to channel
-        if (c_channel_->write(cmd_msg.get()))
+        if (c_channel_->write(&cmd_msg))
         {
             Napi::Error::New(env, "Failed to write command to NML channel.").ThrowAsJavaScriptException();
             return env.Null();
         }
 
         // Store the serial number for tracking
-        last_serial_ = cmd_msg->serial_number;
+        last_serial_ = cmd_msg.serial_number;
 
         // Sent mode is coordinated in TypeScript. No per-command worker owns
         // the shared status channel in this mode.
@@ -324,7 +324,7 @@ namespace LinuxCNC
             return env.Undefined(); });
 
         // Create and queue the async worker
-        CommandWorker *worker = new CommandWorker(resolver, this, std::move(cmd_msg), command_timeout);
+        CommandWorker *worker = new CommandWorker(resolver, this, last_serial_, command_timeout);
         worker->Queue();
 
         return deferred.Promise();
@@ -361,9 +361,7 @@ namespace LinuxCNC
             return env.Null();
         }
 
-        // Cast to base class pointer for sendCommandAsync
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
 
     Napi::Value NapiCommandChannel::SetState(const Napi::CallbackInfo &info)
@@ -389,23 +387,19 @@ namespace LinuxCNC
             Napi::Error::New(env, "Invalid state value").ThrowAsJavaScriptException();
             return env.Null();
         }
-
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
 
     Napi::Value NapiCommandChannel::TaskPlanSynch(const Napi::CallbackInfo &info)
     {
         auto msg = std::make_unique<EMC_TASK_PLAN_SYNCH>();
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
 
     Napi::Value NapiCommandChannel::ResetInterpreter(const Napi::CallbackInfo &info)
     {
         auto msg = std::make_unique<EMC_TASK_PLAN_INIT>();
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
 
     Napi::Value NapiCommandChannel::ProgramOpen(const Napi::CallbackInfo &info)
@@ -435,8 +429,7 @@ namespace LinuxCNC
     Napi::Value NapiCommandChannel::ProgramClose(const Napi::CallbackInfo &info)
     {
         auto msg = std::make_unique<EMC_TASK_PLAN_CLOSE>();
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
 
     Napi::Value NapiCommandChannel::RunProgram(const Napi::CallbackInfo &info)
@@ -447,56 +440,48 @@ namespace LinuxCNC
         {
             msg->line = info[0].As<Napi::Number>().Int32Value();
         }
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
 
     Napi::Value NapiCommandChannel::PauseProgram(const Napi::CallbackInfo &info)
     {
         auto msg = std::make_unique<EMC_TASK_PLAN_PAUSE>();
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
 
     Napi::Value NapiCommandChannel::ResumeProgram(const Napi::CallbackInfo &info)
     {
         auto msg = std::make_unique<EMC_TASK_PLAN_RESUME>();
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
     Napi::Value NapiCommandChannel::StepProgram(const Napi::CallbackInfo &info)
     {
         auto msg = std::make_unique<EMC_TASK_PLAN_STEP>();
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
 
     Napi::Value NapiCommandChannel::ReverseProgram(const Napi::CallbackInfo &info)
     {
         auto msg = std::make_unique<EMC_TASK_PLAN_REVERSE>();
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
 
     Napi::Value NapiCommandChannel::ForwardProgram(const Napi::CallbackInfo &info)
     {
         auto msg = std::make_unique<EMC_TASK_PLAN_FORWARD>();
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
 
     Napi::Value NapiCommandChannel::AbortTask(const Napi::CallbackInfo &info)
     {
         auto msg = std::make_unique<EMC_TASK_ABORT>();
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
 
     Napi::Value NapiCommandChannel::Stop(const Napi::CallbackInfo &info)
     {
         auto msg = std::make_unique<EMC_TASK_STOP>();
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
     Napi::Value NapiCommandChannel::SetOptionalStop(const Napi::CallbackInfo &info)
     {
@@ -508,8 +493,7 @@ namespace LinuxCNC
         }
         auto msg = std::make_unique<EMC_TASK_PLAN_SET_OPTIONAL_STOP>();
         msg->state = info[0].As<Napi::Boolean>().Value();
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
     Napi::Value NapiCommandChannel::SetBlockDelete(const Napi::CallbackInfo &info)
     {
@@ -521,8 +505,7 @@ namespace LinuxCNC
         }
         auto msg = std::make_unique<EMC_TASK_PLAN_SET_BLOCK_DELETE>();
         msg->state = info[0].As<Napi::Boolean>().Value();
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
 
     Napi::Value NapiCommandChannel::Mdi(const Napi::CallbackInfo &info)
@@ -543,9 +526,7 @@ namespace LinuxCNC
         auto msg = std::make_unique<EMC_TASK_PLAN_EXECUTE>();
         strncpy(msg->command, cmd_str.c_str(), sizeof(msg->command) - 1);
         msg->command[sizeof(msg->command) - 1] = '\0';
-
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
 
     // Trajectory Commands
@@ -559,8 +540,7 @@ namespace LinuxCNC
         }
         auto msg = std::make_unique<EMC_TRAJ_SET_MODE>();
         msg->mode = static_cast<EMC_TRAJ_MODE>(info[0].As<Napi::Number>().Int32Value());
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
     Napi::Value NapiCommandChannel::SetMaxVelocity(const Napi::CallbackInfo &info)
     {
@@ -572,8 +552,7 @@ namespace LinuxCNC
         }
         auto msg = std::make_unique<EMC_TRAJ_SET_MAX_VELOCITY>();
         msg->velocity = info[0].As<Napi::Number>().DoubleValue();
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
 
     Napi::Value NapiCommandChannel::SetFeedRate(const Napi::CallbackInfo &info)
@@ -588,8 +567,7 @@ namespace LinuxCNC
         msg->scale = info[0].As<Napi::Number>().DoubleValue();
         if (msg->scale < 0)
             msg->scale = 0; // Or throw error for invalid scale
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
     Napi::Value NapiCommandChannel::SetRapidRate(const Napi::CallbackInfo &info)
     {
@@ -603,8 +581,7 @@ namespace LinuxCNC
         msg->scale = info[0].As<Napi::Number>().DoubleValue();
         if (msg->scale < 0)
             msg->scale = 0;
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
     Napi::Value NapiCommandChannel::SetSpindleOverride(const Napi::CallbackInfo &info)
     {
@@ -623,15 +600,13 @@ namespace LinuxCNC
         {
             msg->spindle = info[1].As<Napi::Number>().Int32Value();
         }
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
     Napi::Value NapiCommandChannel::OverrideLimits(const Napi::CallbackInfo &info)
     {
         auto msg = std::make_unique<EMC_JOINT_OVERRIDE_LIMITS>(); // This is a JOINT command, not TRAJ
         msg->joint = 0;                                           // Affects all joints (as per python binding)
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
     Napi::Value NapiCommandChannel::TeleopEnable(const Napi::CallbackInfo &info)
     {
@@ -643,8 +618,7 @@ namespace LinuxCNC
         }
         auto msg = std::make_unique<EMC_TRAJ_SET_TELEOP_ENABLE>();
         msg->enable = info[0].As<Napi::Boolean>().Value() ? 1 : 0;
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
 
     Napi::Value NapiCommandChannel::SetFeedOverrideEnable(const Napi::CallbackInfo &info)
@@ -657,8 +631,7 @@ namespace LinuxCNC
         }
         auto msg = std::make_unique<EMC_TRAJ_SET_FO_ENABLE>();
         msg->mode = info[0].As<Napi::Boolean>().Value() ? 1 : 0; // 1 for enable in struct
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
     Napi::Value NapiCommandChannel::SetSpindleOverrideEnable(const Napi::CallbackInfo &info)
     {
@@ -675,8 +648,7 @@ namespace LinuxCNC
         {
             msg->spindle = info[1].As<Napi::Number>().Int32Value();
         }
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
     Napi::Value NapiCommandChannel::SetFeedHoldEnable(const Napi::CallbackInfo &info)
     {
@@ -688,8 +660,7 @@ namespace LinuxCNC
         }
         auto msg = std::make_unique<EMC_TRAJ_SET_FH_ENABLE>();
         msg->mode = info[0].As<Napi::Boolean>().Value() ? 1 : 0;
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
     Napi::Value NapiCommandChannel::SetAdaptiveFeedEnable(const Napi::CallbackInfo &info)
     {
@@ -701,8 +672,7 @@ namespace LinuxCNC
         }
         auto msg = std::make_unique<EMC_MOTION_ADAPTIVE>(); // This is a MOTION command
         msg->status = info[0].As<Napi::Boolean>().Value() ? 1 : 0;
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
 
     // Joint Commands
@@ -716,8 +686,7 @@ namespace LinuxCNC
         }
         auto msg = std::make_unique<EMC_JOINT_HOME>();
         msg->joint = info[0].As<Napi::Number>().Int32Value();
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
     Napi::Value NapiCommandChannel::UnhomeJoint(const Napi::CallbackInfo &info)
     {
@@ -729,8 +698,7 @@ namespace LinuxCNC
         }
         auto msg = std::make_unique<EMC_JOINT_UNHOME>();
         msg->joint = info[0].As<Napi::Number>().Int32Value();
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
     Napi::Value NapiCommandChannel::JogStop(const Napi::CallbackInfo &info)
     {
@@ -743,8 +711,7 @@ namespace LinuxCNC
         auto msg = std::make_unique<EMC_JOG_STOP>();
         msg->joint_or_axis = info[0].As<Napi::Number>().Int32Value();
         msg->jjogmode = info[1].As<Napi::Boolean>().Value() ? 1 : 0;
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
     Napi::Value NapiCommandChannel::JogContinuous(const Napi::CallbackInfo &info)
     {
@@ -758,8 +725,7 @@ namespace LinuxCNC
         msg->joint_or_axis = info[0].As<Napi::Number>().Int32Value();
         msg->jjogmode = info[1].As<Napi::Boolean>().Value() ? 1 : 0;
         msg->vel = info[2].As<Napi::Number>().DoubleValue();
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
     Napi::Value NapiCommandChannel::JogIncrement(const Napi::CallbackInfo &info)
     {
@@ -774,8 +740,7 @@ namespace LinuxCNC
         msg->jjogmode = info[1].As<Napi::Boolean>().Value() ? 1 : 0;
         msg->vel = info[2].As<Napi::Number>().DoubleValue();
         msg->incr = info[3].As<Napi::Number>().DoubleValue();
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
     Napi::Value NapiCommandChannel::SetMinPositionLimit(const Napi::CallbackInfo &info)
     {
@@ -788,8 +753,7 @@ namespace LinuxCNC
         auto msg = std::make_unique<EMC_JOINT_SET_MIN_POSITION_LIMIT>();
         msg->joint = info[0].As<Napi::Number>().Int32Value();
         msg->limit = info[1].As<Napi::Number>().DoubleValue();
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
     Napi::Value NapiCommandChannel::SetMaxPositionLimit(const Napi::CallbackInfo &info)
     {
@@ -802,8 +766,7 @@ namespace LinuxCNC
         auto msg = std::make_unique<EMC_JOINT_SET_MAX_POSITION_LIMIT>();
         msg->joint = info[0].As<Napi::Number>().Int32Value();
         msg->limit = info[1].As<Napi::Number>().DoubleValue();
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
 
     // Spindle commands
@@ -832,8 +795,7 @@ namespace LinuxCNC
         msg->factor = 0;
         msg->xoffset = 0;
         msg->wait_for_spindle_at_speed = wait_for_speed ? 1 : 0;
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
 
     Napi::Value NapiCommandChannel::SpindleIncrease(const Napi::CallbackInfo &info)
@@ -844,8 +806,7 @@ namespace LinuxCNC
         {
             msg->spindle = info[0].As<Napi::Number>().Int32Value();
         }
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
     Napi::Value NapiCommandChannel::SpindleDecrease(const Napi::CallbackInfo &info)
     {
@@ -855,8 +816,7 @@ namespace LinuxCNC
         {
             msg->spindle = info[0].As<Napi::Number>().Int32Value();
         }
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
 
     Napi::Value NapiCommandChannel::SpindleOff(const Napi::CallbackInfo &info)
@@ -867,8 +827,7 @@ namespace LinuxCNC
         {
             msg->spindle = info[0].As<Napi::Number>().Int32Value();
         }
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
     Napi::Value NapiCommandChannel::SpindleBrake(const Napi::CallbackInfo &info)
     {
@@ -889,15 +848,13 @@ namespace LinuxCNC
         {
             auto msg = std::make_unique<EMC_SPINDLE_BRAKE_ENGAGE>();
             msg->spindle = spindle_idx;
-            std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-            return sendCommandAsync(info, std::move(cmd_msg));
+            return sendCommandAsync(info, *msg);
         }
         else
         {
             auto msg = std::make_unique<EMC_SPINDLE_BRAKE_RELEASE>();
             msg->spindle = spindle_idx;
-            std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-            return sendCommandAsync(info, std::move(cmd_msg));
+            return sendCommandAsync(info, *msg);
         }
     }
 
@@ -914,14 +871,12 @@ namespace LinuxCNC
         if (on)
         {
             auto msg = std::make_unique<EMC_COOLANT_MIST_ON>();
-            std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-            return sendCommandAsync(info, std::move(cmd_msg));
+            return sendCommandAsync(info, *msg);
         }
         else
         {
             auto msg = std::make_unique<EMC_COOLANT_MIST_OFF>();
-            std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-            return sendCommandAsync(info, std::move(cmd_msg));
+            return sendCommandAsync(info, *msg);
         }
     }
     Napi::Value NapiCommandChannel::SetFlood(const Napi::CallbackInfo &info)
@@ -936,14 +891,12 @@ namespace LinuxCNC
         if (on)
         {
             auto msg = std::make_unique<EMC_COOLANT_FLOOD_ON>();
-            std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-            return sendCommandAsync(info, std::move(cmd_msg));
+            return sendCommandAsync(info, *msg);
         }
         else
         {
             auto msg = std::make_unique<EMC_COOLANT_FLOOD_OFF>();
-            std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-            return sendCommandAsync(info, std::move(cmd_msg));
+            return sendCommandAsync(info, *msg);
         }
     }
 
@@ -954,8 +907,7 @@ namespace LinuxCNC
         msg->file[0] = '\0'; // Use INI default
         // Optionally, allow overriding filename:
         // if (info.Length() > 0 && info[0].IsString()) { ... }
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
 
     Napi::Value NapiCommandChannel::SetTool(const Napi::CallbackInfo &info)
@@ -1056,8 +1008,7 @@ namespace LinuxCNC
         msg->start = info[1].As<Napi::Boolean>().Value() ? 1 : 0;
         msg->end = msg->start; // Immediate change
         msg->now = 1;          // Immediate
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
     Napi::Value NapiCommandChannel::SetAnalogOutput(const Napi::CallbackInfo &info)
     {
@@ -1072,8 +1023,7 @@ namespace LinuxCNC
         msg->start = info[1].As<Napi::Number>().DoubleValue();
         msg->end = msg->start; // Immediate change
         msg->now = 1;          // Immediate
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
 
     // Debug & Message Commands
@@ -1087,8 +1037,7 @@ namespace LinuxCNC
         }
         auto msg = std::make_unique<EMC_SET_DEBUG>();
         msg->debug = info[0].As<Napi::Number>().Uint32Value();
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
 
     Napi::Value NapiCommandChannel::SendOperatorError(const Napi::CallbackInfo &info)
@@ -1103,8 +1052,7 @@ namespace LinuxCNC
         auto msg = std::make_unique<EMC_OPERATOR_ERROR>();
         strncpy(msg->error, str_msg.c_str(), LINELEN - 1);
         msg->error[LINELEN - 1] = 0;
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
     Napi::Value NapiCommandChannel::SendOperatorText(const Napi::CallbackInfo &info)
     {
@@ -1118,8 +1066,7 @@ namespace LinuxCNC
         auto msg = std::make_unique<EMC_OPERATOR_TEXT>();
         strncpy(msg->text, str_msg.c_str(), LINELEN - 1);
         msg->text[LINELEN - 1] = 0;
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
     Napi::Value NapiCommandChannel::SendOperatorDisplay(const Napi::CallbackInfo &info)
     {
@@ -1133,8 +1080,7 @@ namespace LinuxCNC
         auto msg = std::make_unique<EMC_OPERATOR_DISPLAY>();
         strncpy(msg->display, str_msg.c_str(), LINELEN - 1);
         msg->display[LINELEN - 1] = 0;
-        std::unique_ptr<RCS_CMD_MSG> cmd_msg(static_cast<RCS_CMD_MSG *>(msg.release()));
-        return sendCommandAsync(info, std::move(cmd_msg));
+        return sendCommandAsync(info, *msg);
     }
 
     Napi::Value NapiCommandChannel::GetSerial(const Napi::CallbackInfo &info)

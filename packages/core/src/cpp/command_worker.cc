@@ -16,16 +16,14 @@ namespace LinuxCNC
 
     CommandWorker::CommandWorker(Napi::Function &callback,
                                  NapiCommandChannel *channel,
-                                 std::unique_ptr<RCS_CMD_MSG> cmd_msg,
+                                 int command_serial,
                                  double timeout)
         : Napi::AsyncWorker(callback),
           channel_(channel),
-          cmd_msg_(std::move(cmd_msg)),
           timeout_(timeout),
-          command_serial_(0),
+          command_serial_(command_serial),
           result_status_(RCS_STATUS::UNINITIALIZED)
     {
-        command_serial_ = cmd_msg_->serial_number;
     }
 
     void CommandWorker::Execute()
