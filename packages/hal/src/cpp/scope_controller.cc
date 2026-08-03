@@ -81,6 +81,7 @@ Napi::Object ScopeControllerWrapper::Init(Napi::Env env, Napi::Object exports) {
         InstanceMethod("forceTrigger", &ScopeControllerWrapper::ForceTrigger),
         InstanceMethod("heartbeat", &ScopeControllerWrapper::Heartbeat),
         InstanceMethod("snapshot", &ScopeControllerWrapper::Snapshot),
+        InstanceMethod("snapshotDelta", &ScopeControllerWrapper::SnapshotDelta),
         InstanceMethod("consume", &ScopeControllerWrapper::Consume),
         InstanceMethod("dispose", &ScopeControllerWrapper::Dispose),
     });
@@ -194,6 +195,8 @@ Napi::Value ScopeControllerWrapper::Configure(const Napi::CallbackInfo &info) {
     if (info.Length() < 1 || !info[0].IsObject()) {
         Napi::TypeError::New(env, "Scope configuration object expected").ThrowAsJavaScriptException(); return env.Null();
     }
+    delta_initialized_ = false;
+    delta_sequence_ = 0;
     Napi::Object config = info[0].As<Napi::Object>();
     std::string threadName = config.Get("threadName").ToString().Utf8Value();
     int multiplier = config.Get("multiplier").ToNumber().Int32Value();
@@ -360,6 +363,85 @@ Napi::Value ScopeControllerWrapper::CopyCapture(Napi::Env env, bool require_done
 Napi::Value ScopeControllerWrapper::Snapshot(const Napi::CallbackInfo &info) {
     Napi::Env env = info.Env(); EnsureAttached(env); if (env.IsExceptionPending()) return env.Null();
     return CopyCapture(env, false, true);
+}
+
+Napi::Value ScopeControllerWrapper::SnapshotDelta(const Napi::CallbackInfo &info) {
+    Napi::Env env = info.Env(); EnsureAttached(env); if (env.IsExceptionPending()) return env.Null();
+    const int samples = control_->samples;
+    const int start = control_->start;
+    const int sample_len = control_->sample_len;
+    const int capacity = control_->rec_len;
+    const int buffer_len = control_->buf_len;
+    if (samples <= 0) return env.Null();
+    if (sample_len != SCOPE_CHANNELS || capacity <= 0 || samples > capacity ||
+        start < 0 || start >= buffer_len) {
+        ThrowHalError(env, "Invalid scope delta bounds"); return env.Null();
+    }
+
+    long period = 0;
+    rtapi_mutex_get(&(hal_data->mutex));
+    hal_thread_t *thread = control_->thread_name[0] ? halpr_find_thread_by_name(control_->thread_name) : nullptr;
+    if (thread) period = thread->period * control_->mult;
+    rtapi_mutex_give(&(hal_data->mutex));
+    const auto now = std::chrono::steady_clock::now();
+    const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        now - delta_snapshot_at_).count();
+    const bool ambiguous_wrap = delta_initialized_ && period > 0 &&
+        elapsed >= static_cast<long long>(capacity) * period;
+
+    bool reset = !delta_initialized_ || sample_len != delta_sample_len_ ||
+        samples < delta_samples_ || ambiguous_wrap;
+    int count = reset ? samples : 0;
+    if (!reset && samples > delta_samples_) {
+        count = samples - delta_samples_;
+    } else if (!reset && start != delta_start_) {
+        const int cells = (start - delta_start_ + buffer_len) % buffer_len;
+        if (cells % sample_len != 0) reset = true;
+        else count = cells / sample_len;
+    }
+    if (reset) count = samples;
+    if (count > samples || count >= capacity) {
+        reset = true;
+        count = samples;
+    }
+
+    delta_initialized_ = true;
+    delta_start_ = start;
+    delta_samples_ = samples;
+    delta_sample_len_ = sample_len;
+    delta_snapshot_at_ = now;
+    if (count == 0) return env.Null();
+    delta_sequence_ = reset ? samples : delta_sequence_ + count;
+
+    Napi::Object delta = Napi::Object::New(env);
+    Napi::Array channels = Napi::Array::New(env, SCOPE_CHANNELS);
+    const int first = samples - count;
+    int packed_channel = 0;
+    for (int channel = 0; channel < SCOPE_CHANNELS; ++channel) {
+        if (!control_->data_len[channel]) { channels.Set(channel, env.Null()); continue; }
+        Napi::Float64Array values = Napi::Float64Array::New(env, count);
+        for (int sample = 0; sample < count; ++sample) {
+            int cell = start + (first + sample) * sample_len + packed_channel;
+            cell %= buffer_len;
+            const scope_data_t &value = buffer_[cell];
+            switch (control_->data_type[channel]) {
+                case HAL_BIT: values[sample] = value.d_u8 ? 1 : 0; break;
+                case HAL_FLOAT: values[sample] = value.d_real; break;
+                case HAL_S32: values[sample] = value.d_s32; break;
+                case HAL_U32: values[sample] = value.d_u32; break;
+                default: values[sample] = 0; break;
+            }
+        }
+        channels.Set(channel, values);
+        packed_channel++;
+    }
+    delta.Set("channels", channels);
+    delta.Set("samples", count);
+    delta.Set("capacity", capacity);
+    delta.Set("sequence", Napi::Number::New(env, delta_sequence_));
+    delta.Set("samplePeriodNs", Napi::Number::New(env, period));
+    delta.Set("reset", reset);
+    return delta;
 }
 
 Napi::Value ScopeControllerWrapper::Consume(const Napi::CallbackInfo &info) {

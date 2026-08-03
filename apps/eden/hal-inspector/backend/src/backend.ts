@@ -20,6 +20,7 @@ import type {
   HalValue,
   ScopeAcquisitionConfig,
   ScopeCapture,
+  ScopeCaptureDelta,
 } from "@linuxcnc-node/types";
 import type {
   Bootstrap,
@@ -57,7 +58,9 @@ let operationQueue: Promise<unknown> = Promise.resolve();
 let captureId = 0;
 let inFlightCapture: number | null = null;
 let pendingCapture: ScopeCapture | null = null;
+let pendingRoll: ScopeCaptureDelta | null = null;
 let skippedCaptures = 0;
+let rollGeneration = 0;
 
 const ok = <T>(value: T): RpcResult<T> => ({ ok: true, value });
 const fail = <T>(code: InspectorErrorCode, error: unknown): RpcResult<T> => ({
@@ -68,7 +71,7 @@ const fail = <T>(code: InspectorErrorCode, error: unknown): RpcResult<T> => ({
   },
 });
 const refKey = (ref: HalItemRef) => `${ref.kind}:${ref.name}`;
-const ROLL_REFRESH_MS = 100;
+const ROLL_REFRESH_MS = 20;
 
 function setRunMode(mode: ScopeRunMode): void {
   if (runMode === mode) return;
@@ -265,6 +268,55 @@ function deliverCapture(capture: ScopeCapture): void {
   skippedCaptures = 0;
 }
 
+function mergeRollBatches(
+  previous: ScopeCaptureDelta | null,
+  next: ScopeCaptureDelta
+): ScopeCaptureDelta {
+  if (
+    !previous ||
+    next.reset ||
+    previous.capacity !== next.capacity ||
+    previous.samplePeriodNs !== next.samplePeriodNs ||
+    next.sequence !== previous.sequence + next.samples
+  )
+    return next;
+  const total = previous.samples + next.samples;
+  const kept = Math.min(next.capacity, total);
+  const trim = total - kept;
+  return {
+    ...next,
+    samples: kept,
+    reset: previous.reset || trim > 0,
+    channels: next.channels.map((channel, index) => {
+      const before = previous.channels[index];
+      if (!channel || !before) return channel;
+      const merged = new Float64Array(kept);
+      const beforeStart = Math.min(before.length, trim);
+      const beforeKept = before.length - beforeStart;
+      merged.set(before.subarray(beforeStart), 0);
+      merged.set(channel.subarray(Math.max(0, channel.length - (kept - beforeKept))), beforeKept);
+      return merged;
+    }),
+  };
+}
+
+function deliverRoll(batch: ScopeCaptureDelta): void {
+  if (!visible || !scopeExpanded || inFlightCapture !== null) {
+    if (pendingRoll) skippedCaptures++;
+    pendingRoll = mergeRollBatches(pendingRoll, batch);
+    return;
+  }
+  const id = ++captureId;
+  inFlightCapture = id;
+  api.send("scope/roll-batch", {
+    id,
+    generation: rollGeneration,
+    batch,
+    skipped: skippedCaptures,
+  });
+  skippedCaptures = 0;
+}
+
 function pollScope(): void {
   if (!scope) return;
   try {
@@ -277,8 +329,8 @@ function pollScope(): void {
         Date.now() - lastRollCaptureAt >= ROLL_REFRESH_MS
       ) {
         lastRollCaptureAt = Date.now();
-        const capture = scope.snapshot();
-        if (capture) deliverCapture(capture);
+        const batch = scope.snapshotDelta();
+        if (batch) deliverRoll(batch);
       }
       if (status.state === "done" && scopeConfig) {
         scope.configure(rollConfig(scopeConfig, status.recordLength));
@@ -385,7 +437,9 @@ api.handle("scope/configure", (config: ScopeAcquisitionConfig) =>
       const status = controller.configure(config);
       if (wasRolling) {
         pendingCapture = null;
+        pendingRoll = null;
         skippedCaptures = 0;
+        rollGeneration++;
         const configured = controller.configure(
           rollConfig(scopeConfig, status.recordLength)
         );
@@ -416,8 +470,10 @@ api.handle("scope/run", ({ mode }) =>
       if (mode === "roll")
         controller.configure(rollConfig(scopeConfig, status.recordLength));
       pendingCapture = null;
+      pendingRoll = null;
       skippedCaptures = 0;
       lastRollCaptureAt = 0;
+      if (mode === "roll") rollGeneration++;
       controller.start();
       setRunMode(mode);
       return ok(controller.status());
@@ -432,6 +488,7 @@ api.handle("scope/stop", () =>
     try {
       if (!scope) return fail("SCOPE_UNAVAILABLE", "Scope is not attached");
       setRunMode("stop");
+      pendingRoll = null;
       scope.stop();
       return ok(scope.status());
     } catch (error) {
@@ -465,11 +522,20 @@ api.on("ui/state", (state) => {
     pendingCapture = null;
     deliverCapture(capture);
   }
+  if (visible && scopeExpanded && pendingRoll && inFlightCapture === null) {
+    const batch = pendingRoll;
+    pendingRoll = null;
+    deliverRoll(batch);
+  }
 });
 api.on("scope/capture-ack", ({ id }) => {
   if (inFlightCapture !== id) return;
   inFlightCapture = null;
-  if (visible && scopeExpanded && pendingCapture) {
+  if (visible && scopeExpanded && pendingRoll) {
+    const batch = pendingRoll;
+    pendingRoll = null;
+    deliverRoll(batch);
+  } else if (visible && scopeExpanded && pendingCapture) {
     const capture = pendingCapture;
     pendingCapture = null;
     deliverCapture(capture);

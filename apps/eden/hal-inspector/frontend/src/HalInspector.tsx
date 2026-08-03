@@ -35,6 +35,7 @@ import type {
 } from "@linuxcnc-node/types";
 import type {
   HalInspectorProtocol,
+  ScopeRollFrame,
   ScopeRunMode,
   TopologySnapshot,
 } from "../../shared/protocol";
@@ -73,6 +74,7 @@ export const HalInspector: Component = () => {
   const [scopeRunMode, setScopeRunMode] = createSignal<ScopeRunMode>("stop");
   const [scopeConfigured, setScopeConfigured] = createSignal(false);
   const [capture, setCapture] = createSignal<ScopeCapture | null>(null);
+  const [rollFrame, setRollFrame] = createSignal<ScopeRollFrame | null>(null);
   const [channels, setChannels] = createSignal<Array<HalItemRef | null>>(
     Array(16).fill(null)
   );
@@ -576,9 +578,20 @@ export const HalInspector: Component = () => {
   const handleScopeRunMode = ({ mode }: { mode: ScopeRunMode }) => {
     if ((scopeRunMode() === "roll") !== (mode === "roll")) {
       setCapture(null);
+      setRollFrame(null);
       setSkippedCaptures(0);
     }
     setScopeRunMode(mode);
+  };
+  const handleScopeRollBatch = ({
+    id,
+    generation,
+    batch,
+    skipped,
+  }: HalInspectorProtocol["hostMessages"]["scope/roll-batch"]) => {
+    setRollFrame({ generation, batch });
+    setSkippedCaptures(skipped);
+    requestAnimationFrame(() => api.send("scope/capture-ack", { id }));
   };
   const handleScopeCapture = ({
     id,
@@ -605,6 +618,7 @@ export const HalInspector: Component = () => {
     api.on("scope/status", handleScopeStatus);
     api.on("scope/run-mode", handleScopeRunMode);
     api.on("scope/capture", handleScopeCapture);
+    api.on("scope/roll-batch", handleScopeRollBatch);
     api.on("error", handleApiError);
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
@@ -633,6 +647,7 @@ export const HalInspector: Component = () => {
     api.off("scope/status", handleScopeStatus);
     api.off("scope/run-mode", handleScopeRunMode);
     api.off("scope/capture", handleScopeCapture);
+    api.off("scope/roll-batch", handleScopeRollBatch);
     api.off("error", handleApiError);
     document.removeEventListener("visibilitychange", handleVisibilityChange);
     listElement = null;
@@ -1105,6 +1120,7 @@ export const HalInspector: Component = () => {
               <div class="plot-area">
                 <ScopePlot
                   capture={capture()}
+                  rollFrame={rollFrame()}
                   runMode={scopeRunMode()}
                   names={channels().map((ref) => ref?.name ?? null)}
                   types={channels().map((ref) => {

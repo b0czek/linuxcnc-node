@@ -96,6 +96,16 @@ export interface ScopeCapture {
   samplePeriodNs: number;
 }
 
+/** Incremental samples copied from a running scope_rt circular buffer. */
+export interface ScopeCaptureDelta {
+  channels: Array<Float64Array | null>;
+  samples: number;
+  capacity: number;
+  sequence: number;
+  samplePeriodNs: number;
+  reset: boolean;
+}
+
 export interface HalPinInfo {
   name: string;
   value: any;

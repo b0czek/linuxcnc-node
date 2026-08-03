@@ -19,6 +19,7 @@ export type {
   ScopeAcquisitionConfig,
   ScopeStatus,
   ScopeCapture,
+  ScopeCaptureDelta,
 } from "@linuxcnc-node/types";
 
 // --- Exported classes ---

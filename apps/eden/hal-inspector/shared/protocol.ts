@@ -10,6 +10,7 @@ import type {
   HalValue,
   ScopeAcquisitionConfig,
   ScopeCapture,
+  ScopeCaptureDelta,
   ScopeStatus,
 } from "@linuxcnc-node/types";
 
@@ -49,6 +50,11 @@ export interface ValueDelta {
 
 export type ScopeRunMode = "stop" | "run" | "single" | "roll";
 
+export interface ScopeRollFrame {
+  generation: number;
+  batch: ScopeCaptureDelta;
+}
+
 export interface Bootstrap {
   connected: boolean;
   topology: TopologySnapshot | null;
@@ -65,6 +71,10 @@ export interface HalInspectorProtocol extends ChannelProtocol {
     "scope/status": ScopeStatus;
     "scope/run-mode": { mode: ScopeRunMode };
     "scope/capture": { id: number; capture: ScopeCapture; skipped: number };
+    "scope/roll-batch": ScopeRollFrame & {
+      id: number;
+      skipped: number;
+    };
     error: { code: InspectorErrorCode; message: string };
   };
   peerMessages: {

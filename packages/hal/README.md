@@ -187,6 +187,11 @@ or removing an adopted thread link.
 order without stopping realtime acquisition. `consume()` remains reserved for
 completed triggered records.
 
+`ScopeController.snapshotDelta()` keeps an acquisition-local cursor and copies
+only samples written since its previous call. Its first result, and any result
+after reconfiguration or an ambiguous wrap, is marked `reset` so consumers can
+replace their circular-buffer contents safely.
+
 ### Current Limitations
 
 - **64-bit Integers (`s64`, `u64`):**

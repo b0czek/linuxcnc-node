@@ -19,7 +19,12 @@ import {
 } from "webgl-plot";
 import { t } from "./i18n";
 import type { ScopeChannelDisplay } from "./models";
-import type { ScopeRunMode } from "../../shared/protocol";
+import type { ScopeRollFrame, ScopeRunMode } from "../../shared/protocol";
+import {
+  ScopeRollBuffer,
+  ScopeRollRenderer,
+  type RollLineTransform,
+} from "./scope-roll";
 
 const CHANNEL_COLORS = [
   "#62a8ff",
@@ -52,6 +57,7 @@ type DragState =
 
 export interface ScopePlotProps {
   capture: ScopeCapture | null;
+  rollFrame: ScopeRollFrame | null;
   runMode: ScopeRunMode;
   names: Array<string | null>;
   types: Array<string | null>;
@@ -144,6 +150,14 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
   let observer: ResizeObserver | undefined;
   let gl: WebGL2RenderingContext | undefined;
   let plotter: UnifiedLinePlot | undefined;
+  let rollRenderer: ScopeRollRenderer | undefined;
+  const rollBuffer = new ScopeRollBuffer();
+  let rollTopology = "";
+  let rollChannelSignature = props.names
+    .map((name, index) => `${name ?? ""}:${props.types[index] ?? ""}`)
+    .join("|");
+  let lastRollBatchAt = 0;
+  let stoppedRollPhase = 0;
   let renderedChannels: Array<{ index: number; type: string | null }> = [];
   let frame = 0;
   let initializedViewport = false;
@@ -186,6 +200,13 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
   });
 
   const captureBounds = () => {
+    if (rollBuffer.capacity && (!props.capture || props.runMode === "roll")) {
+      return {
+        start:
+          -((rollBuffer.capacity - 1) * rollBuffer.samplePeriodNs) / 1e9,
+        end: 0,
+      };
+    }
     const capture = props.capture;
     if (!capture || capture.samples < 1) return { start: 0, end: 1 };
     return {
@@ -197,13 +218,77 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
     };
   };
 
+  const rollPhase = (now = performance.now()) => {
+    if (props.runMode !== "roll") return stoppedRollPhase;
+    if (!lastRollBatchAt || !rollBuffer.samplePeriodNs) return 0;
+    return Math.min(
+      ((now - lastRollBatchAt) * 1e6) / rollBuffer.samplePeriodNs,
+      Math.max(1, 40e6 / rollBuffer.samplePeriodNs)
+    );
+  };
+
+  const shouldDrawRoll = () =>
+    rollBuffer.length > 0 && (props.runMode === "roll" || !props.capture);
+
+  const rollTransforms = () => {
+    const transforms = new Map<number, RollLineTransform>();
+    const digital = digitalChannels();
+    const share = digitalShare();
+    for (const channel of activeChannels()) {
+      if (channel.type === "bit") {
+        const lane = digital.findIndex((item) => item.index === channel.index);
+        const laneHeight = (2 * share) / Math.max(1, digital.length);
+        const center = 1 - 2 * (1 - share) - (lane + 0.5) * laneHeight;
+        const scale = laneHeight * 0.55;
+        transforms.set(channel.index, {
+          scale,
+          offset: center - scale / 2,
+          color: CHANNEL_RGBA[channel.index % CHANNEL_RGBA.length],
+        });
+      } else {
+        const display = props.displays[channel.index] ?? {
+          unitsPerDivision: 1,
+          offset: 0,
+        };
+        const scale =
+          (1 - share) / (4 * Math.max(1e-12, display.unitsPerDivision));
+        transforms.set(channel.index, {
+          scale,
+          offset: share - display.offset * scale,
+          color: CHANNEL_RGBA[channel.index % CHANNEL_RGBA.length],
+        });
+      }
+    }
+    return transforms;
+  };
+
+  const drawFrame = (now: number) => {
+    frame = 0;
+    if (!gl || !plotter || gl.isContextLost()) return;
+    clearCanvas(gl, [0, 0, 0, 0]);
+    if (shouldDrawRoll() && rollRenderer) {
+      const bounds = captureBounds();
+      const fullSpan = bounds.end - bounds.start || 1;
+      const startFraction = (viewStart() - bounds.start) / fullSpan;
+      const endFraction = (viewEnd() - bounds.start) / fullSpan;
+      const fractionSpan = Math.max(1e-12, endFraction - startFraction);
+      rollRenderer.draw(
+        rollBuffer.head,
+        rollBuffer.length,
+        rollPhase(now),
+        rollTransforms(),
+        [
+          1 / fractionSpan,
+          (1 - startFraction - endFraction) / fractionSpan,
+        ]
+      );
+    } else plotter.draw();
+    if (props.runMode === "roll") frame = requestAnimationFrame(drawFrame);
+  };
+
   const scheduleDraw = () => {
     cancelAnimationFrame(frame);
-    frame = requestAnimationFrame(() => {
-      if (!gl || !plotter || gl.isContextLost()) return;
-      clearCanvas(gl, [0, 0, 0, 0]);
-      plotter.draw();
-    });
+    frame = requestAnimationFrame(drawFrame);
   };
 
   const applyViewportTransform = () => {
@@ -251,9 +336,28 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
     scheduleDraw();
   };
 
+  const configureRollRenderer = () => {
+    if (!rollRenderer || !rollBuffer.capacity) return false;
+    const topology = `${rollBuffer.capacity}:${activeChannels()
+      .map((channel) => `${channel.index}:${channel.type}`)
+      .join("|")}`;
+    if (topology === rollTopology) return false;
+    rollTopology = topology;
+    rollRenderer.configure(
+      rollBuffer.capacity,
+      activeChannels().map((channel) => ({
+        channel: channel.index,
+        type: channel.type,
+      }))
+    );
+    rollRenderer.sync(rollBuffer);
+    return true;
+  };
+
   const initializeWebgl = () => {
     try {
       plotter?.cleanup();
+      rollRenderer?.cleanup();
       gl = createWebGL2Context(canvas, {
         transparent: true,
         antialias: true,
@@ -261,8 +365,11 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
         powerPerformance: "high-performance",
       });
       plotter = new UnifiedLinePlot(gl, 16);
+      rollRenderer = new ScopeRollRenderer(gl);
+      rollTopology = "";
       setWebglError("");
       resize();
+      configureRollRenderer();
       queueMicrotask(uploadCapture);
     } catch (error) {
       plotter = undefined;
@@ -320,6 +427,24 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
     }
     plotter.initLines(configs);
     applyViewportTransform();
+  };
+
+  const uploadRollFrame = () => {
+    const frame = props.rollFrame;
+    if (!frame || !rollRenderer) return;
+    const result = rollBuffer.apply(frame);
+    if (!configureRollRenderer()) rollRenderer.append(result);
+    lastRollBatchAt = performance.now();
+    stoppedRollPhase = 0;
+    if (!initializedViewport || result.reset) {
+      initializedViewport = true;
+      const bounds = captureBounds();
+      setViewStart(bounds.start);
+      setViewEnd(bounds.end);
+      setCursorA(bounds.start + (bounds.end - bounds.start) * 0.35);
+      setCursorB(bounds.start + (bounds.end - bounds.start) * 0.65);
+    }
+    scheduleDraw();
   };
 
   const applyLineTransforms = () => {
@@ -491,6 +616,8 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
   };
 
   const sampleValue = (time: number) => {
+    if (shouldDrawRoll())
+      return rollBuffer.valueAt(props.activeChannel, time, rollPhase());
     const capture = props.capture;
     const values = capture?.channels[props.activeChannel];
     if (!capture || !values?.length) return null;
@@ -523,9 +650,25 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
   createEffect(() => {
     const mode = props.runMode;
     if (mode === previousRunMode) return;
+    if (previousRunMode === "roll" && mode !== "roll")
+      stoppedRollPhase =
+        lastRollBatchAt && rollBuffer.samplePeriodNs
+          ? Math.min(
+              ((performance.now() - lastRollBatchAt) * 1e6) /
+                rollBuffer.samplePeriodNs,
+              Math.max(1, 40e6 / rollBuffer.samplePeriodNs)
+            )
+          : 0;
+    if (previousRunMode !== "roll" && mode === "roll") {
+      rollBuffer.clear();
+      rollTopology = "";
+      lastRollBatchAt = 0;
+      stoppedRollPhase = 0;
+    }
     previousRunMode = mode;
     initializedViewport = false;
     rollSampleCount = 0;
+    scheduleDraw();
   });
 
   createEffect(() => {
@@ -553,6 +696,27 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
   });
 
   createEffect(() => {
+    props.rollFrame;
+    untrack(uploadRollFrame);
+  });
+
+  createEffect(() => {
+    const signature = props.names
+      .map((name, index) => `${name ?? ""}:${props.types[index] ?? ""}`)
+      .join("|");
+    if (signature !== rollChannelSignature) {
+      rollChannelSignature = signature;
+      rollBuffer.clear();
+      rollTopology = "";
+      initializedViewport = false;
+    }
+    untrack(() => {
+      configureRollRenderer();
+      scheduleDraw();
+    });
+  });
+
+  createEffect(() => {
     props.displays.forEach((display) => {
       display.unitsPerDivision;
       display.offset;
@@ -572,6 +736,7 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
     canvas.removeEventListener("webglcontextlost", handleContextLost);
     canvas.removeEventListener("webglcontextrestored", handleContextRestored);
     plotter?.cleanup();
+    rollRenderer?.cleanup();
   });
 
   const analogHeightPercent = () => (1 - digitalShare()) * 100;

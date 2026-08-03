@@ -1,6 +1,7 @@
 import type {
   ScopeAcquisitionConfig,
   ScopeCapture,
+  ScopeCaptureDelta,
   ScopeStatus,
 } from "@linuxcnc-node/types";
 import { halNative } from "./constants";
@@ -13,6 +14,7 @@ interface NativeScopeController {
   forceTrigger(): void;
   heartbeat(): number;
   snapshot(): ScopeCapture | null;
+  snapshotDelta(): ScopeCaptureDelta | null;
   consume(): ScopeCapture | null;
   dispose(): void;
 }
@@ -33,6 +35,8 @@ export class ScopeController {
   heartbeat(): number { return this.#native.heartbeat(); }
   /** Copies the currently valid realtime circular buffer without stopping acquisition. */
   snapshot(): ScopeCapture | null { return this.#native.snapshot(); }
+  /** Copies only samples added since the previous delta snapshot. */
+  snapshotDelta(): ScopeCaptureDelta | null { return this.#native.snapshotDelta(); }
   consume(): ScopeCapture | null { return this.#native.consume(); }
   dispose(): void { this.#native.dispose(); }
 }
