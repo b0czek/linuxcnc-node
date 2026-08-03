@@ -343,7 +343,16 @@ api.handle("scope/run", ({ mode }) =>
   queued(async () => {
     try {
       const controller = await ensureScope();
+      const status = controller.status();
       runMode = mode;
+      if (
+        status.state === "init" ||
+        status.state === "pre-trigger" ||
+        status.state === "trigger-wait" ||
+        status.state === "post-trigger"
+      ) {
+        return ok(status);
+      }
       controller.start();
       return ok(controller.status());
     } catch (error) {

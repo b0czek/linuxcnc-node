@@ -183,6 +183,7 @@ Napi::Value ScopeControllerWrapper::Configure(const Napi::CallbackInfo &info) {
 
     struct Source { bool enabled = false; hal_type_t type = HAL_TYPE_UNSPECIFIED; int offset = 0; char length = 0; } sources[SCOPE_CHANNELS];
     long period = 0;
+    std::string attachedThread;
     rtapi_mutex_get(&(hal_data->mutex));
     hal_thread_t *thread = halpr_find_thread_by_name(threadName.c_str());
     if (thread) period = thread->period;
@@ -204,6 +205,7 @@ Napi::Value ScopeControllerWrapper::Configure(const Napi::CallbackInfo &info) {
         sources[i].offset = static_cast<int>(SHMOFF(data));
         sources[i].length = type == HAL_BIT ? 1 : (type == HAL_FLOAT ? sizeof(hal_float_t) : 4);
     }
+    attachedThread = FindScopeThreadUnlocked();
     rtapi_mutex_give(&(hal_data->mutex));
     if (!thread || period <= 0) { ThrowHalError(env, "Invalid thread or scope source"); return env.Null(); }
     int maxMultiplier = static_cast<int>(std::min(1000L, 1000000000L / period));
@@ -212,9 +214,23 @@ Napi::Value ScopeControllerWrapper::Configure(const Napi::CallbackInfo &info) {
     if (control_->state != SCOPE_IDLE) {
         control_->state = SCOPE_RESET;
         for (int i = 0; i < 250 && control_->state != SCOPE_IDLE; ++i) usleep(1000);
-        if (control_->state != SCOPE_IDLE) { ThrowHalError(env, "scope_rt did not acknowledge reset"); return env.Null(); }
+        if (control_->state != SCOPE_IDLE) {
+            // RESET is normally acknowledged by scope.sample in the realtime
+            // thread. Recover when that recorded link is stale or its thread
+            // is no longer executing, otherwise the controller can never be
+            // configured again.
+            if (!attachedThread.empty()) {
+                hal_del_funct_from_thread("scope.sample", attachedThread.c_str());
+                attachedThread.clear();
+            }
+            control_->curr = 0;
+            control_->start = 0;
+            control_->samples = 0;
+            control_->force_trig = 0;
+            control_->state = SCOPE_IDLE;
+        }
     }
-    std::string oldThread = control_->thread_name;
+    std::string oldThread = attachedThread;
     if (oldThread != threadName) {
         if (!oldThread.empty()) hal_del_funct_from_thread("scope.sample", oldThread.c_str());
         if (hal_add_funct_to_thread("scope.sample", threadName.c_str(), -1) != 0) {
