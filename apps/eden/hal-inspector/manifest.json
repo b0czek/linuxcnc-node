@@ -1,7 +1,7 @@
 {
   "id": "com.linuxcnc-node.hal-inspector",
   "name": "HAL Inspector",
-  "version": "0.1.0",
+  "version": "3.2.1",
   "description": "Explore, watch, safely edit, and scope LinuxCNC HAL values",
   "author": "Dariusz Majnert",
   "icon": "icon.svg",

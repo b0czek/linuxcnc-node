@@ -2,7 +2,7 @@
   "$schema": "https://unpkg.com/@changesets/config@3.0.0/schema.json",
   "changelog": "@changesets/cli/changelog",
   "commit": false,
-  "fixed": [["@linuxcnc-node/core", "@linuxcnc-node/gcode", "@linuxcnc-node/hal", "@linuxcnc-node/types", "@linuxcnc-node/eden-bridge", "@linuxcnc-node/eden-protocol"]],
+  "fixed": [["@linuxcnc-node/core", "@linuxcnc-node/gcode", "@linuxcnc-node/hal", "@linuxcnc-node/types", "@linuxcnc-node/eden-bridge", "@linuxcnc-node/eden-protocol", "@linuxcnc-node/hal-inspector"]],
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
