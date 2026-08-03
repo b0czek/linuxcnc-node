@@ -1,6 +1,6 @@
 {
   "name": "@linuxcnc-node/gcode",
-  "version": "3.2.1",
+  "version": "4.0.0",
   "description": "Node.js G-code parser using LinuxCNC rs274ngc interpreter",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

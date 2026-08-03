@@ -1,6 +1,6 @@
 {
   "name": "@linuxcnc-node/core",
-  "version": "3.2.1",
+  "version": "4.0.0",
   "description": "Node.js bindings for core LinuxCNC NML interface",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

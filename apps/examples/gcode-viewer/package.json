@@ -1,7 +1,7 @@
 {
   "name": "gcode-viewer",
   "private": true,
-  "version": "1.0.2",
+  "version": "1.0.3",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",

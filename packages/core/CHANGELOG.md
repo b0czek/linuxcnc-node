@@ -1,5 +1,27 @@
 # @linuxcnc-node/core
 
+## 4.0.0
+
+### Major Changes
+
+- 38b92e5: Require Node.js 24.15 or newer across the published packages and update the
+  native build toolchain for the new runtime baseline.
+
+### Patch Changes
+
+- bfedf93: Add `CommandChannel.deleteTool()` to remove tools from the live and persisted tool tables.
+- 5a45d8c: Release concrete NML command messages after their synchronous write and track
+  asynchronous completion by serial number, preventing invalid deallocation in
+  commands such as `teleopEnable(false)`.
+- 9d80fbe: Centralize external dependency versions in the pnpm workspace catalog and
+  update the shared development and runtime dependency stack.
+- Updated dependencies [f6f47c7]
+- Updated dependencies [bfedf93]
+- Updated dependencies [0f1065a]
+- Updated dependencies [38b92e5]
+- Updated dependencies [9d80fbe]
+  - @linuxcnc-node/types@4.0.0
+
 ## 3.2.1
 
 ### Patch Changes

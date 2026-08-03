@@ -1,6 +1,6 @@
 {
   "name": "@linuxcnc-node/hal-inspector",
-  "version": "3.2.1",
+  "version": "4.0.0",
   "type": "module",
   "main": "backend/dist/backend.cjs",
   "scripts": {

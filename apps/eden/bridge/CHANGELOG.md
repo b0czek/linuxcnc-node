@@ -1,5 +1,31 @@
 # @linuxcnc-node/eden-bridge
 
+## 4.0.0
+
+### Major Changes
+
+- 38b92e5: Require Node.js 24.15 or newer across the published packages and update the
+  native build toolchain for the new runtime baseline.
+
+### Patch Changes
+
+- 9d80fbe: Centralize external dependency versions in the pnpm workspace catalog and
+  update the shared development and runtime dependency stack.
+- a41896a: Update @edenapp dependencies to resolve through catalog at ^0.11.1.
+- Updated dependencies [f6f47c7]
+- Updated dependencies [bfedf93]
+- Updated dependencies [9f306ce]
+- Updated dependencies [5a45d8c]
+- Updated dependencies [0f1065a]
+- Updated dependencies [38b92e5]
+- Updated dependencies [9d80fbe]
+- Updated dependencies [a41896a]
+  - @linuxcnc-node/types@4.0.0
+  - @linuxcnc-node/core@4.0.0
+  - @linuxcnc-node/gcode@4.0.0
+  - @linuxcnc-node/hal@4.0.0
+  - @linuxcnc-node/eden-protocol@4.0.0
+
 ## 3.2.1
 
 ### Patch Changes
