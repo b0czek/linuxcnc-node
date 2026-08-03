@@ -121,12 +121,6 @@ outFloatPin.off("change", myCallback);
 comp.dispose(); // Stops all monitoring and cleans up resources
 ```
 
-## Example Application
-
-For a comprehensive example of how to use this module in a real-world application, see the **HAL View** example:
-
-- **[HAL View Example](../../apps/examples/halview/README.md)**: A modern Electron-based HAL viewer application that demonstrates advanced usage of the `@linuxcnc-node/hal` module.
-
 ## Quick Reference
 
 ### Main Entry Point

@@ -1,7 +1,6 @@
 packages:
   - packages/*
   - apps/eden/*
-  - apps/examples/*
 
 catalog:
   '@edenapp/babel': ^0.12.1

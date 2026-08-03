@@ -3,8 +3,7 @@
 LinuxCNC Node is an open-source JavaScript and TypeScript monorepo for building
 applications on top of LinuxCNC. It includes native Node.js bindings, shared
 TypeScript types, G-code tooling, [Eden](https://github.com/b0czek/eden) AppBus
-integration, example applications, and the LinuxCNC patch set used by the
-maintained packages.
+integration, and the LinuxCNC patch set used by the maintained packages.
 
 > **Compatibility:** Starting with v3, these packages are purpose-built for
 > **LinuxCNC 2.10** at the pinned
@@ -29,8 +28,6 @@ maintained packages.
   LinuxCNC Node services.
 - **`apps/eden/bridge`**: Eden backend app that exposes the
   LinuxCNC Node packages as IPC services.
-- **`apps/examples`**: Example applications using the packages in this
-  workspace.
 - **`linuxcnc-patches`**: Maintained LinuxCNC patch series and pinned upstream
   baseline.
 
@@ -68,13 +65,6 @@ documented in [`linuxcnc-patches`](./linuxcnc-patches/README.md). Build
 LinuxCNC from the pinned revision with that complete series before building or
 running the native packages. CI performs the same checkout, patch, and build
 flow.
-
-## Examples
-
-- **`apps/examples/halview`**: Electron HAL viewer built with
-  `@linuxcnc-node/hal`. [README](./apps/examples/halview/README.md)
-- **`apps/examples/gcode-viewer`**: 3D G-code visualizer built with
-  `@linuxcnc-node/gcode`. [README](./apps/examples/gcode-viewer/README.md)
 
 ## Prerequisites
 
