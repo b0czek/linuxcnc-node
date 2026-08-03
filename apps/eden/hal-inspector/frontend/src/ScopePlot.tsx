@@ -19,6 +19,7 @@ import {
 } from "webgl-plot";
 import { t } from "./i18n";
 import type { ScopeChannelDisplay } from "./models";
+import type { ScopeRunMode } from "../../shared/protocol";
 
 const CHANNEL_COLORS = [
   "#62a8ff",
@@ -51,6 +52,7 @@ type DragState =
 
 export interface ScopePlotProps {
   capture: ScopeCapture | null;
+  runMode: ScopeRunMode;
   names: Array<string | null>;
   types: Array<string | null>;
   displays: ScopeChannelDisplay[];
@@ -145,6 +147,8 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
   let renderedChannels: Array<{ index: number; type: string | null }> = [];
   let frame = 0;
   let initializedViewport = false;
+  let previousRunMode = props.runMode;
+  let rollSampleCount = 0;
   let drag: DragState = null;
   const pointers = new Map<number, { x: number; y: number }>();
   let pinch:
@@ -517,6 +521,14 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
   createEffect(() => setDraftTriggerLevel(props.triggerLevel));
 
   createEffect(() => {
+    const mode = props.runMode;
+    if (mode === previousRunMode) return;
+    previousRunMode = mode;
+    initializedViewport = false;
+    rollSampleCount = 0;
+  });
+
+  createEffect(() => {
     const capture = props.capture;
     if (!capture) return;
     const bounds = captureBounds();
@@ -526,7 +538,10 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
       setViewEnd(bounds.end);
       setCursorA(bounds.start + (bounds.end - bounds.start) * 0.35);
       setCursorB(bounds.start + (bounds.end - bounds.start) * 0.65);
+    } else if (props.runMode === "roll" && capture.samples > rollSampleCount) {
+      setViewport(bounds.start, bounds.end);
     } else setViewport(viewStart(), viewEnd());
+    if (props.runMode === "roll") rollSampleCount = capture.samples;
   });
 
   createEffect(() => {
@@ -561,6 +576,7 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
 
   const analogHeightPercent = () => (1 - digitalShare()) * 100;
   const triggerVisible = () =>
+    props.runMode !== "roll" &&
     props.types[props.triggerChannel] !== "bit" &&
     Boolean(props.names[props.triggerChannel]);
   const cursorDelta = () => Math.abs(cursorB() - cursorA());
@@ -571,6 +587,7 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
     return a == null || b == null ? null : Math.abs(b - a);
   };
   const statusLabel = () => {
+    if (props.runMode === "roll") return t("inspector.roll");
     switch (props.status?.state) {
       case "init":
         return t("inspector.initializing");
@@ -768,7 +785,13 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
         />
 
         <div class="scope-status-strip">
-          <strong data-state={props.status?.state ?? "idle"}>
+          <strong
+            data-state={
+              props.runMode === "roll"
+                ? "roll"
+                : props.status?.state ?? "idle"
+            }
+          >
             {statusLabel().toUpperCase()}
           </strong>
           <span>
@@ -808,7 +831,13 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
           </For>
         </div>
 
-        <Show when={timePercent(0) >= 0 && timePercent(0) <= 100}>
+        <Show
+          when={
+            props.runMode !== "roll" &&
+            timePercent(0) >= 0 &&
+            timePercent(0) <= 100
+          }
+        >
           <div
             class="scope-trigger-time"
             style={{ left: `${timePercent(0)}%` }}

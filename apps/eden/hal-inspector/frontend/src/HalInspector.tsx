@@ -12,6 +12,7 @@ import {
   FaSolidPlay,
   FaSolidPlus,
   FaSolidSquare,
+  FaSolidWaveSquare,
   FaSolidXmark,
 } from "solid-icons/fa";
 import type { PeerConnection } from "@edenapp/types/ipc";
@@ -34,6 +35,7 @@ import type {
 } from "@linuxcnc-node/types";
 import type {
   HalInspectorProtocol,
+  ScopeRunMode,
   TopologySnapshot,
 } from "../../shared/protocol";
 import { initLocale, t } from "./i18n";
@@ -52,6 +54,8 @@ import {
 import { ScopePlot } from "./ScopePlot";
 import { buildTreeRows, formatInlineValue, TYPE_COLORS } from "./tree";
 const key = (ref: HalItemRef) => `${ref.kind}:${ref.name}`;
+const LIST_ROW_PITCH = 64;
+const LIST_OVERSCAN = 8;
 
 export const HalInspector: Component = () => {
   const api = window.getAppAPI() as PeerConnection<HalInspectorProtocol>;
@@ -66,6 +70,8 @@ export const HalInspector: Component = () => {
   const [expandedGroups, setExpandedGroups] = createSignal(new Set<string>());
   const [treeOpen, setTreeOpen] = createSignal(false);
   const [scopeStatus, setScopeStatus] = createSignal<ScopeStatus | null>(null);
+  const [scopeRunMode, setScopeRunMode] = createSignal<ScopeRunMode>("stop");
+  const [scopeConfigured, setScopeConfigured] = createSignal(false);
   const [capture, setCapture] = createSignal<ScopeCapture | null>(null);
   const [channels, setChannels] = createSignal<Array<HalItemRef | null>>(
     Array(16).fill(null)
@@ -91,7 +97,7 @@ export const HalInspector: Component = () => {
   const [preferencesLoaded, setPreferencesLoaded] = createSignal(false);
   let preferenceSaveTimer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
-  let listElement!: HTMLDivElement;
+  let listElement: HTMLDivElement | null = null;
 
   const categoryCount = (item: Category) => {
     const data = topology();
@@ -217,13 +223,32 @@ export const HalInspector: Component = () => {
       return items.some((item) => item.name === ref.name);
     });
   });
-  const virtualizer = createVirtualizer({
+  const virtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
     get count() {
       return displayedRows().length;
     },
     getScrollElement: () => listElement,
-    estimateSize: () => 64,
-    overscan: 8,
+    estimateSize: () => LIST_ROW_PITCH,
+    overscan: LIST_OVERSCAN,
+  });
+  const attachListElement = (element: HTMLDivElement) => {
+    listElement = element;
+    // The list is mounted only after the backend connects, which can happen
+    // after the Solid virtualizer's onMount hook has already run. Waiting for
+    // the next frame also lets Solid move template nodes into the live document
+    // before TanStack captures ownerDocument.defaultView for its observers.
+    requestAnimationFrame(() => {
+      if (!disposed && listElement === element) virtualizer._willUpdate();
+    });
+  };
+
+  createEffect(() => {
+    category();
+    filter();
+    activeTab();
+    const element = listElement;
+    if (!element || activeTab() === "scope") return;
+    element.scrollTop = 0;
   });
 
   function itemRowsForRef(ref: HalItemRef): Row | null {
@@ -447,7 +472,12 @@ export const HalInspector: Component = () => {
     setActiveTab("scope");
     await configureScope();
   }
-  async function configureScope() {
+  async function configureScope(): Promise<boolean> {
+    setScopeConfigured(false);
+    if (scopeRunMode() === "roll") {
+      setCapture(null);
+      setSkippedCaptures(0);
+    }
     const thread =
       topology()?.threads.find((x) => x.name === scopeThread() && x.running) ??
       topology()?.threads.find((x) => x.name === "servo-thread") ??
@@ -456,7 +486,7 @@ export const HalInspector: Component = () => {
         .sort((a, b) => b.periodNs - a.periodNs)[0];
     if (!thread) {
       setError("No running realtime thread is available.");
-      return;
+      return false;
     }
     const config: ScopeAcquisitionConfig = {
       threadName: thread.name,
@@ -479,7 +509,12 @@ export const HalInspector: Component = () => {
     if (result.ok) {
       setScopeThread(thread.name);
       setScopeStatus(result.value);
-    } else setError(result.error.message);
+      setScopeConfigured(true);
+      return true;
+    }
+    setScopeConfigured(false);
+    setError(result.error.message);
+    return false;
   }
   function removeScopeChannel(index: number) {
     const next = channels().map((value, currentIndex) =>
@@ -500,8 +535,15 @@ export const HalInspector: Component = () => {
     );
   }
   async function scopeAction(
-    action: "single" | "continuous" | "stop" | "force"
+    action: "run" | "roll" | "single" | "stop" | "force"
   ) {
+    if (
+      action !== "stop" &&
+      action !== "force" &&
+      !scopeConfigured() &&
+      !(await configureScope())
+    )
+      return;
     const result =
       action === "stop"
         ? await api.request("scope/stop", {})
@@ -531,6 +573,13 @@ export const HalInspector: Component = () => {
       return next;
     });
   const handleScopeStatus = (next: ScopeStatus) => setScopeStatus(next);
+  const handleScopeRunMode = ({ mode }: { mode: ScopeRunMode }) => {
+    if ((scopeRunMode() === "roll") !== (mode === "roll")) {
+      setCapture(null);
+      setSkippedCaptures(0);
+    }
+    setScopeRunMode(mode);
+  };
   const handleScopeCapture = ({
     id,
     capture: next,
@@ -554,6 +603,7 @@ export const HalInspector: Component = () => {
     api.on("topology/changed", handleTopologyChanged);
     api.on("values/delta", handleValuesDelta);
     api.on("scope/status", handleScopeStatus);
+    api.on("scope/run-mode", handleScopeRunMode);
     api.on("scope/capture", handleScopeCapture);
     api.on("error", handleApiError);
     document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -569,6 +619,8 @@ export const HalInspector: Component = () => {
         setConnected(result.value.connected);
         setTopology(result.value.topology);
         setScopeStatus(result.value.scope);
+        setScopeRunMode(result.value.scopeRunMode);
+        if (channels().some(Boolean)) await configureScope();
       }
     })();
   });
@@ -579,9 +631,11 @@ export const HalInspector: Component = () => {
     api.off("topology/changed", handleTopologyChanged);
     api.off("values/delta", handleValuesDelta);
     api.off("scope/status", handleScopeStatus);
+    api.off("scope/run-mode", handleScopeRunMode);
     api.off("scope/capture", handleScopeCapture);
     api.off("error", handleApiError);
     document.removeEventListener("visibilitychange", handleVisibilityChange);
+    listElement = null;
     clearTimeout(preferenceSaveTimer);
   });
 
@@ -663,7 +717,7 @@ export const HalInspector: Component = () => {
               </button>
             </Show>
             <div
-              ref={listElement}
+              ref={attachListElement}
               class={`virtual-list eden-list ${activeTab() === "watch" ? "watch-list" : ""}`}
               role="tree"
               aria-label={activeTab()}
@@ -679,8 +733,8 @@ export const HalInspector: Component = () => {
                   }}
                 >
                   <For each={virtualizer.getVirtualItems()}>
-                    {(virtual) => {
-                      const row = () => displayedRows()[virtual.index];
+                    {(virtualRow) => {
+                      const row = () => displayedRows()[virtualRow.index];
                       const groupExpanded = () =>
                         Boolean(
                           row()?.groupKey &&
@@ -693,7 +747,7 @@ export const HalInspector: Component = () => {
                             selected()?.id === row()?.id ? "selected" : ""
                           }`}
                           style={{
-                            transform: `translateY(${virtual.start}px)`,
+                            transform: `translateY(${virtualRow.start}px)`,
                           }}
                           role="treeitem"
                           aria-level={(row()?.depth ?? 0) + 1}
@@ -852,14 +906,36 @@ export const HalInspector: Component = () => {
               <div class="scope-toolbar">
                 <div class="scope-actions">
                 <button
-                  class="eden-btn eden-btn-sm eden-btn-primary"
-                  onClick={() => scopeAction("continuous")}
+                  class={`eden-btn eden-btn-sm ${
+                    scopeRunMode() === "run"
+                      ? "eden-btn-primary"
+                      : "eden-btn-outline"
+                  }`}
+                  disabled={!channels().some(Boolean)}
+                  onClick={() => scopeAction("run")}
                 >
                   <FaSolidPlay size={16} />
-                  <span class="btn-label">{t("inspector.continuous")}</span>
+                  <span class="btn-label">{t("inspector.run")}</span>
                 </button>
                 <button
-                  class="eden-btn eden-btn-sm eden-btn-outline"
+                  class={`eden-btn eden-btn-sm ${
+                    scopeRunMode() === "roll"
+                      ? "eden-btn-primary"
+                      : "eden-btn-outline"
+                  }`}
+                  disabled={!channels().some(Boolean)}
+                  onClick={() => scopeAction("roll")}
+                >
+                  <FaSolidWaveSquare size={16} />
+                  <span class="btn-label">{t("inspector.roll")}</span>
+                </button>
+                <button
+                  class={`eden-btn eden-btn-sm ${
+                    scopeRunMode() === "single"
+                      ? "eden-btn-primary"
+                      : "eden-btn-outline"
+                  }`}
+                  disabled={!channels().some(Boolean)}
                   onClick={() => scopeAction("single")}
                 >
                   <FaSolidCircleDot size={16} />
@@ -867,6 +943,7 @@ export const HalInspector: Component = () => {
                 </button>
                 <button
                   class="eden-btn eden-btn-sm eden-btn-outline"
+                  disabled={scopeRunMode() === "stop"}
                   onClick={() => scopeAction("stop")}
                 >
                   <FaSolidSquare size={16} />
@@ -874,6 +951,7 @@ export const HalInspector: Component = () => {
                 </button>
                 <button
                   class="eden-btn eden-btn-sm eden-btn-ghost"
+                  disabled={scopeRunMode() === "roll"}
                   onClick={() => scopeAction("force")}
                 >
                   <FaSolidBolt size={16} />
@@ -926,7 +1004,12 @@ export const HalInspector: Component = () => {
                 </label>
                 </div>
               </div>
-              <div class="trigger-toolbar" aria-label="Trigger controls">
+              <fieldset
+                class="trigger-toolbar"
+                classList={{ "roll-disabled": scopeRunMode() === "roll" }}
+                aria-label="Trigger controls"
+                disabled={scopeRunMode() === "roll"}
+              >
                 <div class="eden-btn-group">
                   <button
                     class={`eden-btn eden-btn-sm ${
@@ -1018,10 +1101,11 @@ export const HalInspector: Component = () => {
                     }}
                   />
                 </label>
-              </div>
+              </fieldset>
               <div class="plot-area">
                 <ScopePlot
                   capture={capture()}
+                  runMode={scopeRunMode()}
                   names={channels().map((ref) => ref?.name ?? null)}
                   types={channels().map((ref) => {
                     const data = topology();

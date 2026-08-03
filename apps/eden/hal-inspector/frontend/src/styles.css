@@ -75,7 +75,8 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible { outline: 2
 .scope-field { display: grid; gap: 2px; color: var(--eden-color-text-secondary); font-size: var(--eden-font-size-xs); }
 .scope-field select, .scope-field input { min-height: 38px; min-width: 140px; padding-block: 0; }
 .scope-field.compact input { width: 76px; min-width: 76px; }
-.trigger-toolbar { display: flex; align-items: flex-end; gap: var(--eden-space-xs); overflow-x: auto; padding: 0 var(--eden-space-md) var(--eden-space-sm); border-bottom: 1px solid var(--eden-color-border-separator); }
+.trigger-toolbar { min-width: 0; margin: 0; display: flex; align-items: flex-end; gap: var(--eden-space-xs); overflow-x: auto; padding: 0 var(--eden-space-md) var(--eden-space-sm); border: 0; border-bottom: 1px solid var(--eden-color-border-separator); transition: opacity var(--eden-transition-fast); }
+.trigger-toolbar.roll-disabled { opacity: .45; }
 .trigger-toolbar .eden-btn, .trigger-toolbar .eden-input { min-height: 38px; }
 .trigger-channel { width: min(220px, 22vw); }
 .trigger-edge { width: 112px; }
@@ -115,6 +116,7 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible { outline: 2
 .scope-status-strip { position: absolute; z-index: 8; top: 7px; left: 8px; right: 8px; min-height: 24px; display: flex; align-items: center; gap: 12px; padding: 3px 7px; border: 1px solid rgba(108,132,151,.18); background: rgba(5,9,14,.83); color: #8190a2; font-size: 10px; pointer-events: none; }
 .scope-status-strip strong { color: #8c9aac; font-size: 10px; font-weight: var(--eden-font-weight-semibold); letter-spacing: .04em; }
 .scope-status-strip strong[data-state="done"] { color: #66d19e; text-shadow: 0 0 8px rgba(102,209,158,.45); }
+.scope-status-strip strong[data-state="roll"] { color: #62a8ff; text-shadow: 0 0 8px rgba(98,168,255,.45); }
 .scope-status-strip strong[data-state="pre-trigger"], .scope-status-strip strong[data-state="trigger-wait"], .scope-status-strip strong[data-state="post-trigger"] { color: #ffbe55; }
 .scope-status-strip .scope-dropped { margin-left: auto; color: #ffbe55; }
 .scope-axis-labels { position: absolute; z-index: 7; left: 0; right: 0; bottom: 3px; height: 16px; color: #6f7e90; font: 9px var(--eden-font-family-mono); pointer-events: none; }

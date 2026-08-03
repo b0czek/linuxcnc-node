@@ -183,6 +183,10 @@ controller only after `scope.sample` and its shared memory exist. `dispose()` re
 acquisition and detaches the userspace mapping without unloading the realtime module
 or removing an adopted thread link.
 
+`ScopeController.snapshot()` copies the currently valid samples in chronological
+order without stopping realtime acquisition. `consume()` remains reserved for
+completed triggered records.
+
 ### Current Limitations
 
 - **64-bit Integers (`s64`, `u64`):**

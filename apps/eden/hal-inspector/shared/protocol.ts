@@ -47,11 +47,14 @@ export interface ValueDelta {
   values: Array<{ ref: HalItemRef; value: HalValue }>;
 }
 
+export type ScopeRunMode = "stop" | "run" | "single" | "roll";
+
 export interface Bootstrap {
   connected: boolean;
   topology: TopologySnapshot | null;
   cursor: number;
   scope: ScopeStatus | null;
+  scopeRunMode: ScopeRunMode;
 }
 
 export interface HalInspectorProtocol extends ChannelProtocol {
@@ -60,6 +63,7 @@ export interface HalInspectorProtocol extends ChannelProtocol {
     "topology/changed": TopologySnapshot;
     "values/delta": ValueDelta;
     "scope/status": ScopeStatus;
+    "scope/run-mode": { mode: ScopeRunMode };
     "scope/capture": { id: number; capture: ScopeCapture; skipped: number };
     error: { code: InspectorErrorCode; message: string };
   };
@@ -93,7 +97,7 @@ export interface HalInspectorProtocol extends ChannelProtocol {
       result: RpcResult<ScopeStatus>;
     };
     "scope/run": {
-      args: { mode: "single" | "continuous" };
+      args: { mode: Exclude<ScopeRunMode, "stop"> };
       result: RpcResult<ScopeStatus>;
     };
     "scope/stop": {

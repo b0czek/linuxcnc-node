@@ -20,12 +20,14 @@ private:
 
     void EnsureAttached(Napi::Env env);
     void DisposeNative();
+    Napi::Value CopyCapture(Napi::Env env, bool require_done, bool live);
     Napi::Value Status(const Napi::CallbackInfo &info);
     Napi::Value Configure(const Napi::CallbackInfo &info);
     Napi::Value Start(const Napi::CallbackInfo &info);
     Napi::Value Stop(const Napi::CallbackInfo &info);
     Napi::Value ForceTrigger(const Napi::CallbackInfo &info);
     Napi::Value Heartbeat(const Napi::CallbackInfo &info);
+    Napi::Value Snapshot(const Napi::CallbackInfo &info);
     Napi::Value Consume(const Napi::CallbackInfo &info);
     Napi::Value Dispose(const Napi::CallbackInfo &info);
 };

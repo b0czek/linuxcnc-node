@@ -26,6 +26,7 @@ import type {
   HalInspectorProtocol,
   InspectorErrorCode,
   RpcResult,
+  ScopeRunMode,
   TopologySnapshot,
 } from "../../shared/protocol";
 
@@ -49,7 +50,9 @@ let scopeExpanded = false;
 let scope: ScopeController | null = null;
 let scopeTimer: NodeJS.Timeout | undefined;
 let heartbeatTimer: NodeJS.Timeout | undefined;
-let runMode: "single" | "continuous" | null = null;
+let runMode: ScopeRunMode = "stop";
+let scopeConfig: ScopeAcquisitionConfig | null = null;
+let lastRollCaptureAt = 0;
 let operationQueue: Promise<unknown> = Promise.resolve();
 let captureId = 0;
 let inFlightCapture: number | null = null;
@@ -65,6 +68,34 @@ const fail = <T>(code: InspectorErrorCode, error: unknown): RpcResult<T> => ({
   },
 });
 const refKey = (ref: HalItemRef) => `${ref.kind}:${ref.name}`;
+const ROLL_REFRESH_MS = 100;
+
+function setRunMode(mode: ScopeRunMode): void {
+  if (runMode === mode) return;
+  runMode = mode;
+  api.send("scope/run-mode", { mode });
+}
+
+function copyScopeConfig(config: ScopeAcquisitionConfig): ScopeAcquisitionConfig {
+  return {
+    ...config,
+    channels: config.channels.map((channel) =>
+      channel ? { ...channel } : null
+    ),
+  };
+}
+
+function rollConfig(
+  config: ScopeAcquisitionConfig,
+  recordLength: number
+): ScopeAcquisitionConfig {
+  return {
+    ...copyScopeConfig(config),
+    preTrigger: Math.max(0, recordLength - 1),
+    triggerChannel: 0,
+    automatic: false,
+  };
+}
 
 function classifyScopeError(error: unknown): InspectorErrorCode {
   const message = error instanceof Error ? error.message : String(error);
@@ -239,17 +270,33 @@ function pollScope(): void {
   try {
     const status = scope.status();
     api.send("scope/status", status);
+    if (runMode === "roll") {
+      if (
+        visible &&
+        scopeExpanded &&
+        Date.now() - lastRollCaptureAt >= ROLL_REFRESH_MS
+      ) {
+        lastRollCaptureAt = Date.now();
+        const capture = scope.snapshot();
+        if (capture) deliverCapture(capture);
+      }
+      if (status.state === "done" && scopeConfig) {
+        scope.configure(rollConfig(scopeConfig, status.recordLength));
+        scope.start();
+      }
+      return;
+    }
     if (status.state !== "done") return;
     const capture = scope.consume();
     if (capture) deliverCapture(capture);
-    if (runMode === "continuous") scope.start();
-    else runMode = null;
+    if (runMode === "run") scope.start();
+    else setRunMode("stop");
   } catch (error) {
     api.send("error", {
       code: classifyScopeError(error),
       message: String(error),
     });
-    runMode = null;
+    setRunMode("stop");
   }
 }
 
@@ -272,6 +319,7 @@ api.handle("bootstrap/get", () => {
       topology: refreshTopology(),
       cursor: valueCursor,
       scope: scope?.status() ?? null,
+      scopeRunMode: runMode,
     };
     return ok(value);
   } catch (error) {
@@ -330,11 +378,26 @@ api.handle("scope/configure", (config: ScopeAcquisitionConfig) =>
   queued(async () => {
     try {
       const controller = await ensureScope();
-      const wasContinuous = runMode === "continuous";
+      scopeConfig = copyScopeConfig(config);
+      const wasRunning = runMode === "run";
+      const wasRolling = runMode === "roll";
+      const wasSingle = runMode === "single";
       const status = controller.configure(config);
-      if (wasContinuous) controller.start();
-      return ok(wasContinuous ? controller.status() : status);
+      if (wasRolling) {
+        pendingCapture = null;
+        skippedCaptures = 0;
+        const configured = controller.configure(
+          rollConfig(scopeConfig, status.recordLength)
+        );
+        controller.start();
+        lastRollCaptureAt = 0;
+        return ok({ ...configured, state: "init" });
+      }
+      if (wasRunning) controller.start();
+      if (wasSingle) setRunMode("stop");
+      return ok(wasRunning ? controller.status() : status);
     } catch (error) {
+      setRunMode("stop");
       return fail(classifyScopeError(error), error);
     }
   })
@@ -343,19 +406,23 @@ api.handle("scope/run", ({ mode }) =>
   queued(async () => {
     try {
       const controller = await ensureScope();
-      const status = controller.status();
-      runMode = mode;
-      if (
-        status.state === "init" ||
-        status.state === "pre-trigger" ||
-        status.state === "trigger-wait" ||
-        status.state === "post-trigger"
-      ) {
-        return ok(status);
+      if (!scopeConfig) {
+        return fail(
+          "SCOPE_INVALID_SOURCE",
+          "Configure scope channels before starting acquisition"
+        );
       }
+      const status = controller.configure(scopeConfig);
+      if (mode === "roll")
+        controller.configure(rollConfig(scopeConfig, status.recordLength));
+      pendingCapture = null;
+      skippedCaptures = 0;
+      lastRollCaptureAt = 0;
       controller.start();
+      setRunMode(mode);
       return ok(controller.status());
     } catch (error) {
+      setRunMode("stop");
       return fail(classifyScopeError(error), error);
     }
   })
@@ -364,7 +431,7 @@ api.handle("scope/stop", () =>
   queued(() => {
     try {
       if (!scope) return fail("SCOPE_UNAVAILABLE", "Scope is not attached");
-      runMode = null;
+      setRunMode("stop");
       scope.stop();
       return ok(scope.status());
     } catch (error) {
@@ -376,6 +443,8 @@ api.handle("scope/force-trigger", () =>
   queued(() => {
     try {
       if (!scope) return fail("SCOPE_UNAVAILABLE", "Scope is not attached");
+      if (runMode === "roll")
+        return fail("INVALID_VALUE", "Force trigger is unavailable in Roll mode");
       scope.forceTrigger();
       return ok(scope.status());
     } catch (error) {

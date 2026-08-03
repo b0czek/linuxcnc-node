@@ -1,6 +1,8 @@
 #include "scope_controller.h"
 
 #include <algorithm>
+#include <cerrno>
+#include <csignal>
 #include <cmath>
 #include <cstring>
 #include <string>
@@ -50,6 +52,26 @@ static std::string FindScopeThreadUnlocked() {
     return {};
 }
 
+static bool HasLiveInspectorScopeOwner() {
+    if (!hal_data) return false;
+    bool found = false;
+    rtapi_mutex_get(&(hal_data->mutex));
+    SHMFIELD(hal_comp_t) next = hal_data->comp_list_ptr;
+    while (next) {
+        hal_comp_t *component = next.get();
+        if (std::strncmp(component->name, "hal-inspector-scope", 19) == 0 && component->pid > 0) {
+            errno = 0;
+            if (kill(component->pid, 0) == 0 || errno == EPERM) {
+                found = true;
+                break;
+            }
+        }
+        next = component->next_ptr;
+    }
+    rtapi_mutex_give(&(hal_data->mutex));
+    return found;
+}
+
 Napi::Object ScopeControllerWrapper::Init(Napi::Env env, Napi::Object exports) {
     Napi::Function function = DefineClass(env, "ScopeController", {
         InstanceMethod("status", &ScopeControllerWrapper::Status),
@@ -58,6 +80,7 @@ Napi::Object ScopeControllerWrapper::Init(Napi::Env env, Napi::Object exports) {
         InstanceMethod("stop", &ScopeControllerWrapper::Stop),
         InstanceMethod("forceTrigger", &ScopeControllerWrapper::ForceTrigger),
         InstanceMethod("heartbeat", &ScopeControllerWrapper::Heartbeat),
+        InstanceMethod("snapshot", &ScopeControllerWrapper::Snapshot),
         InstanceMethod("consume", &ScopeControllerWrapper::Consume),
         InstanceMethod("dispose", &ScopeControllerWrapper::Dispose),
     });
@@ -74,7 +97,12 @@ ScopeControllerWrapper::ScopeControllerWrapper(const Napi::CallbackInfo &info)
         ThrowHalError(env, "Original halscope is already active; scope control is exclusive");
         return;
     }
-    component_id_ = hal_init("hal-inspector-scope");
+    if (HasLiveInspectorScopeOwner()) {
+        ThrowHalError(env, "Another HAL Inspector scope controller is already active");
+        return;
+    }
+    const std::string componentName = "hal-inspector-scope-" + std::to_string(getpid());
+    component_id_ = hal_init(componentName.c_str());
     if (component_id_ <= 0) {
         ThrowHalError(env, "Scope controller already active or HAL unavailable", component_id_);
         component_id_ = 0;
@@ -202,7 +230,7 @@ Napi::Value ScopeControllerWrapper::Configure(const Napi::CallbackInfo &info) {
         }
         sources[i].enabled = true;
         sources[i].type = type;
-        sources[i].offset = static_cast<int>(SHMOFF(data));
+        sources[i].offset = hal_shmoff(data);
         sources[i].length = type == HAL_BIT ? 1 : (type == HAL_FLOAT ? sizeof(hal_float_t) : 4);
     }
     attachedThread = FindScopeThreadUnlocked();
@@ -285,20 +313,23 @@ Napi::Value ScopeControllerWrapper::Heartbeat(const Napi::CallbackInfo &info) {
     control_->watchdog = std::min(control_->watchdog + 1, 10); return Napi::Number::New(env, control_->watchdog);
 }
 
-Napi::Value ScopeControllerWrapper::Consume(const Napi::CallbackInfo &info) {
-    Napi::Env env = info.Env(); EnsureAttached(env); if (env.IsExceptionPending()) return env.Null();
-    if (control_->state != SCOPE_DONE) return env.Null();
-    if (control_->sample_len != SCOPE_CHANNELS || control_->samples < 0 || control_->samples > control_->rec_len ||
-        control_->start < 0 || control_->start >= control_->buf_len) {
+Napi::Value ScopeControllerWrapper::CopyCapture(Napi::Env env, bool require_done, bool live) {
+    if (require_done && control_->state != SCOPE_DONE) return env.Null();
+    const int samples = control_->samples;
+    const int start = control_->start;
+    if (samples == 0) return env.Null();
+    if (control_->sample_len != SCOPE_CHANNELS || samples < 0 || samples > control_->rec_len ||
+        start < 0 || start >= control_->buf_len) {
         ThrowHalError(env, "Invalid scope capture bounds"); return env.Null();
     }
     Napi::Object capture = Napi::Object::New(env);
     Napi::Array channels = Napi::Array::New(env, SCOPE_CHANNELS);
+    int packed_channel = 0;
     for (int channel = 0; channel < SCOPE_CHANNELS; ++channel) {
         if (!control_->data_len[channel]) { channels.Set(channel, env.Null()); continue; }
-        Napi::Float64Array values = Napi::Float64Array::New(env, control_->samples);
-        for (int sample = 0; sample < control_->samples; ++sample) {
-            int cell = control_->start + sample * control_->sample_len + channel;
+        Napi::Float64Array values = Napi::Float64Array::New(env, samples);
+        for (int sample = 0; sample < samples; ++sample) {
+            int cell = start + sample * control_->sample_len + packed_channel;
             cell %= control_->buf_len;
             const scope_data_t &value = buffer_[cell];
             double converted = 0;
@@ -312,10 +343,11 @@ Napi::Value ScopeControllerWrapper::Consume(const Napi::CallbackInfo &info) {
             values[sample] = converted;
         }
         channels.Set(channel, values);
+        packed_channel++;
     }
     capture.Set("channels", channels);
-    capture.Set("samples", control_->samples);
-    capture.Set("triggerIndex", control_->pre_trig);
+    capture.Set("samples", samples);
+    capture.Set("triggerIndex", live ? samples - 1 : control_->pre_trig);
     long period = 0;
     rtapi_mutex_get(&(hal_data->mutex));
     hal_thread_t *thread = control_->thread_name[0] ? halpr_find_thread_by_name(control_->thread_name) : nullptr;
@@ -323,6 +355,16 @@ Napi::Value ScopeControllerWrapper::Consume(const Napi::CallbackInfo &info) {
     rtapi_mutex_give(&(hal_data->mutex));
     capture.Set("samplePeriodNs", Napi::Number::New(env, period * control_->mult));
     return capture;
+}
+
+Napi::Value ScopeControllerWrapper::Snapshot(const Napi::CallbackInfo &info) {
+    Napi::Env env = info.Env(); EnsureAttached(env); if (env.IsExceptionPending()) return env.Null();
+    return CopyCapture(env, false, true);
+}
+
+Napi::Value ScopeControllerWrapper::Consume(const Napi::CallbackInfo &info) {
+    Napi::Env env = info.Env(); EnsureAttached(env); if (env.IsExceptionPending()) return env.Null();
+    return CopyCapture(env, true, false);
 }
 
 Napi::Value ScopeControllerWrapper::Dispose(const Napi::CallbackInfo &info) { DisposeNative(); return info.Env().Undefined(); }

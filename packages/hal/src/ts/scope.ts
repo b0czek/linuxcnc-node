@@ -12,6 +12,7 @@ interface NativeScopeController {
   stop(): void;
   forceTrigger(): void;
   heartbeat(): number;
+  snapshot(): ScopeCapture | null;
   consume(): ScopeCapture | null;
   dispose(): void;
 }
@@ -30,6 +31,8 @@ export class ScopeController {
   stop(): void { this.#native.stop(); }
   forceTrigger(): void { this.#native.forceTrigger(); }
   heartbeat(): number { return this.#native.heartbeat(); }
+  /** Copies the currently valid realtime circular buffer without stopping acquisition. */
+  snapshot(): ScopeCapture | null { return this.#native.snapshot(); }
   consume(): ScopeCapture | null { return this.#native.consume(); }
   dispose(): void { this.#native.dispose(); }
 }
