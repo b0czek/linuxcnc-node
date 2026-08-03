@@ -366,7 +366,7 @@ namespace LinuxCNC
         try
         {
             // Initialize tool mmap if not already done
-            if (tool_mmap_user() != 0)
+            if (!EnsureToolMmap())
             {
                 SetError("Failed to initialize tool memory map");
                 return;
@@ -544,7 +544,7 @@ namespace LinuxCNC
     {
         try
         {
-            if (tool_mmap_user() != 0)
+            if (!EnsureToolMmap())
             {
                 SetError("Failed to initialize tool memory map");
                 return;

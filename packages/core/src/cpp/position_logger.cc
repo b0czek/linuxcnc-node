@@ -469,7 +469,7 @@ namespace LinuxCNC
     }
 
     // for some reason, tool_mmap_user() must be called before using the stat channel
-    if (tool_mmap_user() != 0)
+    if (!EnsureToolMmap())
     {
       delete stat_channel_;
       stat_channel_ = nullptr;
