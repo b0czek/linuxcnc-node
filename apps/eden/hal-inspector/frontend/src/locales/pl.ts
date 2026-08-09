@@ -4,6 +4,7 @@ export const pl = { inspector: {
   signals: "Sygnały", functions: "Funkcje", threads: "Wątki", empty: "Brak pasujących elementów HAL",
   addWatch: "Obserwuj", removeWatch: "Usuń", clearWatches: "Wyczyść obserwowane", details: "Szczegóły", inspectScope: "Pokaż na oscyloskopie",
   edit: "Edytuj wartość", write: "Zapisz wartość", cancel: "Anuluj", current: "Bieżąca wartość", proposed: "Nowa wartość",
+  set: "Ustaw", clear: "Wyczyść", toggle: "Przełącz", on: "Ustawiony", off: "Wyczyszczony",
   scope: "Oscyloskop", expand: "Rozwiń", collapse: "Zwiń", run: "Run", roll: "Roll", single: "Pojedynczy",
   stop: "Stop", force: "Wymuś wyzwolenie", auto: "Auto", normal: "Normalny", rising: "Narastające", falling: "Opadające",
   thread: "Wątek", multiplier: "Mnożnik", noChannels: "Dodaj obsługiwany pin, parametr lub sygnał, aby rozpocząć.",

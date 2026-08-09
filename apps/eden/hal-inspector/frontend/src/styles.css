@@ -41,6 +41,7 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible { outline: 2
 .browse-category.active .category-count { background: var(--eden-color-bg-glass-strong); color: currentColor; }
 .clear-watches { position: absolute; top: var(--eden-space-sm); right: var(--eden-space-sm); z-index: var(--eden-z-sticky); }
 .list-detail { flex: 1; min-height: 0; position: relative; display: flex; border: 1px solid var(--eden-color-border-separator); border-radius: var(--eden-radius-lg); background: var(--eden-color-bg-primary); overflow: hidden; }
+.list-detail.list-detail-inactive { display: none; }
 .virtual-list { flex: 1; min-width: 0; min-height: 0; overflow: auto; position: relative; padding: 6px var(--eden-space-sm); background: var(--eden-color-bg-primary); }
 .virtual-list.watch-list { padding-top: 52px; }
 .hal-row { position: absolute; left: var(--eden-space-sm); right: var(--eden-space-sm); height: 60px; display: flex; align-items: center; gap: var(--eden-space-sm); padding: 6px var(--eden-space-sm); border: 1px solid transparent; border-radius: var(--eden-radius-md); cursor: pointer; }
@@ -60,6 +61,14 @@ button:focus-visible, input:focus-visible, [tabindex]:focus-visible { outline: 2
 .value-edit-slot { width: 44px; flex: 0 0 44px; display: grid; place-items: center; }
 .value-edit-slot .eden-btn, .row-actions .eden-btn { width: 44px; min-height: 44px; }
 .value { width: 160px; overflow: hidden; text-overflow: ellipsis; color: var(--eden-color-accent-blue); font-size: var(--eden-font-size-lg); text-align: left; }
+.bit-value-cell { gap: var(--eden-space-sm); }
+.bit-led { width: 24px; height: 24px; flex: 0 0 24px; display: inline-grid; place-items: center; border: 1px solid var(--eden-color-border-medium); border-radius: var(--eden-radius-round); background: var(--eden-color-surface-secondary); box-shadow: inset 0 1px 3px rgba(0,0,0,.32); }
+.bit-led::before { content: ""; width: 10px; height: 10px; border-radius: var(--eden-radius-round); background: var(--eden-color-border-medium); box-shadow: inset 0 1px 1px rgba(255,255,255,.08); }
+.bit-led.on::before { background: var(--eden-color-success); box-shadow: inset 0 1px rgba(255,255,255,.24), 0 0 5px color-mix(in srgb, var(--eden-color-success) 38%, transparent); }
+.bit-controls { min-width: 0; display: flex; align-items: center; gap: 4px; }
+.bit-controls .eden-btn { width: 44px; min-height: 44px; padding: 0; }
+.bit-action-icon { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.bit-action-icon circle { fill: currentColor; stroke: none; }
 .row-actions { width: 92px; flex: 0 0 92px; display: flex; justify-content: flex-start; gap: 4px; }
 .detail-pane { width: 270px; flex: 0 0 270px; padding: var(--eden-space-lg); border-left: 1px solid var(--eden-color-border-separator); overflow-y: auto; background: var(--eden-color-bg-primary); }
 .detail-pane h2 { margin: 0 0 var(--eden-space-lg); overflow-wrap: anywhere; font-family: var(--eden-font-family-mono); font-size: var(--eden-font-size-md); }
