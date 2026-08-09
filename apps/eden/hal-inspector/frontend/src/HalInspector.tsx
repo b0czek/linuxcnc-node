@@ -559,8 +559,27 @@ export const HalInspector: Component = () => {
     const ref = editRef();
     if (!ref) return;
     const result = await api.request("item/write", { ref, value: editValue() });
-    if (!result.ok) setError(result.error.message);
+    if (!result.ok) {
+      setError(result.error.message);
+      return;
+    }
+    applyValueUpdates([{ ref, value: result.value.value }]);
     setEditRef(null);
+  }
+
+  function applyValueUpdates(
+    updates: Array<{ ref: HalItemRef; value: HalValue }>
+  ) {
+    setValues((current) => {
+      const next = new Map(current);
+      updates.forEach(({ ref, value }) => next.set(key(ref), value));
+      return next;
+    });
+    setSelected((current) => {
+      if (!current?.ref) return current;
+      const update = updates.find(({ ref }) => key(ref) === key(current.ref!));
+      return update ? { ...current, value: update.value } : current;
+    });
   }
 
   const handleConnectionState = ({ connected }: { connected: boolean }) =>
@@ -569,11 +588,7 @@ export const HalInspector: Component = () => {
   const handleValuesDelta = ({
     values: deltas,
   }: HalInspectorProtocol["hostMessages"]["values/delta"]) =>
-    setValues((current) => {
-      const next = new Map(current);
-      deltas.forEach(({ ref, value }) => next.set(key(ref), value));
-      return next;
-    });
+    applyValueUpdates(deltas);
   const handleScopeStatus = (next: ScopeStatus) => setScopeStatus(next);
   const handleScopeRunMode = ({ mode }: { mode: ScopeRunMode }) => {
     if ((scopeRunMode() === "roll") !== (mode === "roll")) {
