@@ -98,6 +98,9 @@ export interface ToolEntry {
   /** Position offset for the tool relative to the machine coordinate system. */
   offset: Position;
 
+  /** Nine-axis wear correction stored independently from tool geometry. */
+  wearOffset: Position;
+
   /** Tool diameter in machine units. Used for cutter compensation calculations. */
   diameter: number;
 

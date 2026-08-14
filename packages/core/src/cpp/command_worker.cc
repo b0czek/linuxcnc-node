@@ -359,6 +359,20 @@ namespace LinuxCNC
                 }
             }
         }
+
+        if (toolEntry.Has("wearOffset") && toolEntry.Get("wearOffset").IsObject())
+        {
+            Napi::Object wearOffsetObj = toolEntry.Get("wearOffset").As<Napi::Object>();
+            for (int i = 0; i < 9; ++i)
+            {
+                CoordType coordType = static_cast<CoordType>(i);
+                Napi::Value coordValue = wearOffsetObj.Get(static_cast<uint32_t>(i));
+                if (coordValue.IsNumber())
+                {
+                    wearOffsetCoords_[coordType] = coordValue.As<Napi::Number>().DoubleValue();
+                }
+            }
+        }
     }
 
     void SetToolWorker::Execute()
@@ -380,10 +394,13 @@ namespace LinuxCNC
             {
                 // Tool not found, look for an empty slot to insert new tool
                 int idxmax = tooldata_last_index_get() + 1;
+                const int firstPocketIndex = tool_mmap_is_random_toolchanger() ? 0 : 1;
 
                 idx = -1; // Reset to indicate not found
 
-                for (int i = 0; i < idxmax; ++i)
+                // Index zero is the spindle slot on a non-random toolchanger and
+                // is intentionally omitted when the tool table is persisted.
+                for (int i = firstPocketIndex; i < idxmax; ++i)
                 {
                     CANON_TOOL_TABLE temp_data;
                     if (tooldata_get(&temp_data, i) == IDX_OK)
@@ -456,7 +473,16 @@ namespace LinuxCNC
             // Apply offset coordinates that were provided
             for (const auto &[coordType, value] : offsetCoords_)
             {
-                double *coordField = getCoordField(existingData, coordType);
+                double *coordField = getCoordField(existingData.offset, coordType);
+                if (coordField)
+                {
+                    *coordField = value;
+                }
+            }
+
+            for (const auto &[coordType, value] : wearOffsetCoords_)
+            {
+                double *coordField = getCoordField(existingData.wear_offset, coordType);
                 if (coordField)
                 {
                     *coordField = value;
@@ -508,28 +534,28 @@ namespace LinuxCNC
     }
 
     // Helper method to get pointer to coordinate field in CANON_TOOL_TABLE
-    double *SetToolWorker::getCoordField(CANON_TOOL_TABLE &toolData, CoordType type)
+    double *SetToolWorker::getCoordField(EmcPose &pose, CoordType type)
     {
         switch (type)
         {
         case CoordType::X:
-            return &toolData.offset.tran.x;
+            return &pose.tran.x;
         case CoordType::Y:
-            return &toolData.offset.tran.y;
+            return &pose.tran.y;
         case CoordType::Z:
-            return &toolData.offset.tran.z;
+            return &pose.tran.z;
         case CoordType::A:
-            return &toolData.offset.a;
+            return &pose.a;
         case CoordType::B:
-            return &toolData.offset.b;
+            return &pose.b;
         case CoordType::C:
-            return &toolData.offset.c;
+            return &pose.c;
         case CoordType::U:
-            return &toolData.offset.u;
+            return &pose.u;
         case CoordType::V:
-            return &toolData.offset.v;
+            return &pose.v;
         case CoordType::W:
-            return &toolData.offset.w;
+            return &pose.w;
         default:
             return nullptr;
         }

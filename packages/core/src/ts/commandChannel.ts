@@ -857,7 +857,9 @@ export class CommandChannel {
 
   /**
    * Sets tool data for a specific tool number
-   * Updates tool geometry and parameters in the tool table
+   * Updates tool geometry, wear, and parameters in the tool table.
+   * Offset and wear coordinates are partial: supplied coordinates replace
+   * stored values, including zero, while omitted coordinates are preserved.
    *
    * @param toolEntry - Tool entry containing tool number and optional geometry data
    * @returns Promise resolving to RcsStatus indicating command completion
@@ -875,7 +877,8 @@ export class CommandChannel {
    *   toolNo: 1,
    *   pocketNo: 1,
    *   diameter: 6.35,
-   *   offset: Float64Array.from([0, 0, 25.4, 0, 0, 0, 0, 0, 0])
+   *   offset: Float64Array.from([0, 0, 25.4, 0, 0, 0, 0, 0, 0]),
+   *   wearOffset: Float64Array.from([0, 0, -0.01, 0, 0, 0, 0, 0, 0])
    * });
    * ```
    */

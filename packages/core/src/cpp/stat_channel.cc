@@ -546,6 +546,7 @@ namespace LinuxCNC
             DictAdd(env, toolObj, "backAngle", tdata.backangle);
             DictAdd(env, toolObj, "orientation", tdata.orientation);
             toolObj.Set("offset", EmcPoseToNapiFloat64Array(env, tdata.offset));
+            toolObj.Set("wearOffset", EmcPoseToNapiFloat64Array(env, tdata.wear_offset));
             DictAddString(env, toolObj, "comment", tdata.comment);
 
             toolList.Set(js_idx++, toolObj);
@@ -594,33 +595,37 @@ namespace LinuxCNC
             }
 
             CANON_TOOL_TABLE &oldData = prev_tool_table_[i];
+            const bool entryChanged = force || tdata.toolno != oldData.toolno;
 
             // Helper macros for tool table fields
             #define TOOL_PATH(idx, name) (snprintf(path, sizeof(path), "toolTable.%d.%s", idx, name), path)
 
             // Compare fields
-            if (force || tdata.toolno != oldData.toolno) 
+            if (entryChanged)
                 addDelta(env, deltas, TOOL_PATH(i, "toolNo"), tdata.toolno);
                 
-            if (force || tdata.pocketno != oldData.pocketno) 
+            if (entryChanged || tdata.pocketno != oldData.pocketno)
                 addDelta(env, deltas, TOOL_PATH(i, "pocketNo"), tdata.pocketno);
                 
-            if (force || tdata.diameter != oldData.diameter) 
+            if (entryChanged || tdata.diameter != oldData.diameter)
                 addDelta(env, deltas, TOOL_PATH(i, "diameter"), tdata.diameter);
                 
-            if (force || tdata.frontangle != oldData.frontangle) 
+            if (entryChanged || tdata.frontangle != oldData.frontangle)
                 addDelta(env, deltas, TOOL_PATH(i, "frontAngle"), tdata.frontangle);
                 
-            if (force || tdata.backangle != oldData.backangle) 
+            if (entryChanged || tdata.backangle != oldData.backangle)
                 addDelta(env, deltas, TOOL_PATH(i, "backAngle"), tdata.backangle);
                 
-            if (force || tdata.orientation != oldData.orientation) 
+            if (entryChanged || tdata.orientation != oldData.orientation)
                 addDelta(env, deltas, TOOL_PATH(i, "orientation"), tdata.orientation);
                 
-            if (force || memcmp(&tdata.offset, &oldData.offset, sizeof(EmcPose)) != 0) 
+            if (entryChanged || memcmp(&tdata.offset, &oldData.offset, sizeof(EmcPose)) != 0)
                 addDelta(env, deltas, TOOL_PATH(i, "offset"), tdata.offset);
+
+            if (entryChanged || memcmp(&tdata.wear_offset, &oldData.wear_offset, sizeof(EmcPose)) != 0)
+                addDelta(env, deltas, TOOL_PATH(i, "wearOffset"), tdata.wear_offset);
                 
-            if (force || strcmp(tdata.comment, oldData.comment) != 0) 
+            if (entryChanged || strcmp(tdata.comment, oldData.comment) != 0)
                 addDelta(env, deltas, TOOL_PATH(i, "comment"), tdata.comment);
 
             #undef TOOL_PATH

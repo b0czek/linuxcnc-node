@@ -114,9 +114,10 @@ namespace LinuxCNC
         std::optional<int> orientation_;
         std::optional<std::string> comment_;
         std::map<CoordType, double> offsetCoords_;
+        std::map<CoordType, double> wearOffsetCoords_;
 
         // Helper methods
-        static double *getCoordField(CANON_TOOL_TABLE &toolData, CoordType type);
+        static double *getCoordField(EmcPose &pose, CoordType type);
     };
 
     // AsyncWorker for DeleteTool command

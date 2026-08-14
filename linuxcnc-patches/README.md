@@ -150,3 +150,16 @@ The shared resolver is used by `halcmd`, `halrmt`, userspace `rtapi_app`, shell
 completion, and the setuid module helper. `linuxcnc` and `halrun` continue to
 export `HAL_RTMOD_DIR` and only supply the standard `HAL_RTMOD_PATH` default
 when the caller did not set one. No Node.js ABI or binding changes are needed.
+
+### 0007 — Native automatic tool wear offsets
+
+Adds a separate nine-axis `wear_offset` to every tool record and extends tool
+tables with `WX/WY/WZ/WA/WB/WC/WU/WV/WW`. `G10 L3` edits stored wear with
+partial-axis semantics, while `G43` applies geometry plus wear. Built-in M6
+and M61 activate the resulting combined offset automatically; G49 still
+cancels compensation and same-block explicit G-codes take precedence.
+
+Stored wear is available in interpreter parameters `#5430–#5438`, Python tool
+status, and the interpreter Python tool object. The tool database protocol is
+v2.2 and the tool-entry line limit is 512 bytes. The matching Node API exposes
+`ToolEntry.wearOffset`, including status deltas and partial `setTool` updates.

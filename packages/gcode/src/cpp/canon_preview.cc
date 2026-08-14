@@ -761,7 +761,7 @@ void CHANGE_TOOL()
 
 void CHANGE_TOOL_NUMBER(int /*pocket*/) {}
 void RELOAD_TOOLDATA(void) {}
-void SET_TOOL_TABLE_ENTRY(int, int, const EmcPose &, double, double, double, int) {}
+void SET_TOOL_TABLE_ENTRY(int, int, const EmcPose &, const EmcPose &, double, double, double, int) {}
 
 // ============================================================================
 // Comment Function
@@ -958,7 +958,9 @@ CANON_UNITS GET_EXTERNAL_LENGTH_UNIT_TYPE() { return CANON_UNITS_INCHES; }
 
 CANON_TOOL_TABLE GET_EXTERNAL_TOOL_TABLE(int pocket)
 {
-  CANON_TOOL_TABLE tdata = {-1, -1, {{0, 0, 0}, 0, 0, 0, 0, 0, 0}, 0, 0, 0, 0, {}};
+  CANON_TOOL_TABLE tdata{};
+  tdata.toolno = -1;
+  tdata.pocketno = -1;
   // Try to get real tool data if tool table is available
   // For now return default
   tdata.toolno = pocket;

@@ -52,6 +52,58 @@ describe("Integration: SetTool", () => {
     expect(tool.offset[PositionIndex.Z]).toBe(3.3);
   });
 
+  it("persists full and partial wear offsets without changing omitted axes", async () => {
+    const wearOffset = Float64Array.from([
+      0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9,
+    ]);
+
+    await expect(
+      commandChannel.setTool({ toolNo: 6, wearOffset })
+    ).resolves.toBe(RcsStatus.DONE);
+    await expect(
+      commandChannel.setTool({
+        toolNo: 6,
+        wearOffset: { [PositionIndex.X]: 0, [PositionIndex.Z]: -0.03 },
+      })
+    ).resolves.toBe(RcsStatus.DONE);
+
+    const tool = await waitForTool(
+      statChannel,
+      6,
+      (entry) =>
+        entry.wearOffset[PositionIndex.X] === 0 &&
+        entry.wearOffset[PositionIndex.Z] === -0.03
+    );
+    expect(Array.from(tool.wearOffset)).toEqual([
+      0, 0.2, -0.03, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9,
+    ]);
+
+    const persisted = await readFile(toolTablePath, "utf8");
+    expect(persisted).toMatch(/^T\s*6.*WY\+0\.200000.*WZ-0\.030000/m);
+
+    await expect(commandChannel.loadToolTable()).resolves.toBe(RcsStatus.DONE);
+    const reloaded = await waitForTool(
+      statChannel,
+      6,
+      (entry) => entry.wearOffset[PositionIndex.Y] === 0.2
+    );
+    expect(reloaded.wearOffset[PositionIndex.X]).toBe(0);
+
+    const toolIndex = statChannel.toolTable?.findIndex(
+      (entry) => entry.toolNo === 6
+    );
+    expect(toolIndex).toBeDefined();
+    expect(toolIndex).toBeGreaterThanOrEqual(0);
+    await expect(commandChannel.deleteTool(6)).resolves.toBe(RcsStatus.DONE);
+    const deleted = await waitForToolIndex(
+      statChannel,
+      toolIndex as number,
+      (entry) => entry.toolNo === -1
+    );
+    expect(Array.from(deleted.wearOffset)).toEqual(new Array(9).fill(0));
+    expect(await readFile(toolTablePath, "utf8")).not.toMatch(/^T\s*6(?:\s|$)/m);
+  });
+
   it("deletes a tool from memory and the configured tool table", async () => {
     await expect(
       commandChannel.setTool({ toolNo: 7, pocketNo: 7, diameter: 7.5 })
@@ -61,6 +113,8 @@ describe("Integration: SetTool", () => {
       7,
       (entry) => entry.pocketNo === 7 && entry.diameter === 7.5
     );
+    const created = statChannel.toolTable?.find((entry) => entry.toolNo === 7);
+    expect(Array.from(created?.wearOffset ?? [])).toEqual(new Array(9).fill(0));
 
     const persistedBeforeDelete = await readFile(toolTablePath, "utf8");
     expect(persistedBeforeDelete).toMatch(/^T\s*7(?:\s|$)/m);
