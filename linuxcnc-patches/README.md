@@ -163,3 +163,20 @@ Stored wear is available in interpreter parameters `#5430–#5438`, Python tool
 status, and the interpreter Python tool object. The tool database protocol is
 v2.2 and the tool-entry line limit is 512 bytes. The matching Node API exposes
 `ToolEntry.wearOffset`, including status deltas and partial `setTool` updates.
+
+### 0008 — Tapered G76 threading drive lines
+
+Extends the RS274 G76 threading cycle with an optional X endpoint. X is the
+normal final coordinate of the thread drive line and uses the interpreter's
+existing G90/G91, coordinate-transform, and G7/G8 endpoint handling. Omitting X
+retains the existing cylindrical cycle unchanged.
+
+For an XZ drive line, every cutting and spring pass follows the programmed
+taper. The synchronized path lead is increased geometrically so the axial Z
+advance per spindle revolution remains the programmed P pitch. Compound infeed
+offsets and E/L entry and exit tapers are constructed along the tapered drive
+line, including their independently corrected synchronized leads. Interpreter
+regressions cover external and internal threads, both taper directions,
+absolute and incremental endpoints, radius and diameter modes, entry/exit
+tapers in both Z directions, compound infeed, spring passes, and rejection of
+Y endpoints. No NML or Node.js API changes are required.
