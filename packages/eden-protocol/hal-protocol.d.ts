@@ -12,6 +12,7 @@ import type {
   HalPinDir,
   HalParamDir,
   RtapiMsgLevel,
+  HalValue,
   HalPinInfo,
   HalParamInfo,
   HalSignalInfo,
@@ -26,12 +27,11 @@ export type {
   HalPinDir,
   HalParamDir,
   RtapiMsgLevel,
+  HalValue,
   HalPinInfo,
   HalParamInfo,
   HalSignalInfo,
 };
-
-export type HalValue = boolean | number;
 
 /** Delta update structure for HAL items */
 export interface HalDelta {

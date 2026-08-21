@@ -9,6 +9,9 @@
   },
   "scripts": {
     "build": "tsc",
+    "check:generated": "node scripts/check-generated.mjs",
+    "generate": "node scripts/generate.mjs",
+    "test:conformance": "pnpm run build && node test/domain-conformance.mjs",
     "prepublishOnly": "pnpm run build"
   },
   "author": "Dariusz Majnert",

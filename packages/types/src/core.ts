@@ -14,40 +14,11 @@ import {
   OrientState,
   EmcDebug,
 } from "./constants";
+export { POSITION_STRIDE, PositionLoggerIndex, PositionIndex } from "./generated/enums";
 
 /** Stride for position data in Float64Array: x, y, z, a, b, c, u, v, w, motionType */
-export const POSITION_STRIDE = 10;
-
 /** Axis names supported by the LinuxCNC coordinate system. */
 export type AxisName = "X" | "Y" | "Z" | "A" | "B" | "C" | "U" | "V" | "W";
-
-/** Index constants for position logger data in Float64Array (10 elements with MotionType) */
-export enum PositionLoggerIndex {
-  X = 0,
-  Y = 1,
-  Z = 2,
-  A = 3,
-  B = 4,
-  C = 5,
-  U = 6,
-  V = 7,
-  W = 8,
-  /** Motion type (used in position logging) */
-  MotionType = 9,
-}
-
-/** Position array indices for readable access (9 elements) */
-export enum PositionIndex {
-  X = 0,
-  Y = 1,
-  Z = 2,
-  A = 3,
-  B = 4,
-  C = 5,
-  U = 6,
-  V = 7,
-  W = 8,
-}
 
 /**
  * Position and orientation in the LinuxCNC coordinate system.
@@ -803,6 +774,9 @@ export interface LinuxCNCError {
 
   /** Human-readable error message text. */
   message: string;
+
+  /** Monotonic daemon error sequence when received over MachineService. */
+  sequence?: number;
 }
 
 export type DebugFlags = EmcDebug;
@@ -845,7 +819,9 @@ export type RecursivePartial<T> = {
       : T[P];
 };
 
-// Callback types
+// Callback types. These remain as source-compatibility aliases while legacy
+// consumers migrate; gRPC clients expose typed delta messages instead.
+/** @deprecated Eden transport callback; use a typed WatchStatus delta. */
 export type StatPropertyWatchCallback<P extends LinuxCNCStatPaths> = (
   newValue: GetPropertyType<LinuxCNCStat, P>,
   oldValue: GetPropertyType<LinuxCNCStat, P> | null,
@@ -858,6 +834,7 @@ export type ErrorCallback = (error: LinuxCNCError) => void;
  * A single stat change entry with the path and its correctly typed value.
  * This is a discriminated union that maps each path to its proper value type.
  */
+/** @deprecated Eden transport envelope; use LinuxCNCStatDelta from grpc-client. */
 export type StatChange = {
   [P in LinuxCNCStatPaths]: {
     /** Dot-separated path to the changed property */

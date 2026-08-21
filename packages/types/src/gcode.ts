@@ -5,49 +5,10 @@
  * LinuxCNC rs274ngc interpreter.
  */
 
-import { ProgramUnits } from "./constants";
+import { OperationType, Plane, ProgramUnits } from "./constants";
 import { Position, Position3 } from "./core";
 
-// ============================================================================
-// Enums
-// ============================================================================
-
-/**
- * Types of operations that can be parsed from G-code.
- */
-export enum OperationType {
-  // Motion operations
-  TRAVERSE = 1,
-  FEED = 2,
-  ARC = 3,
-  PROBE = 4,
-  RIGID_TAP = 5,
-  DWELL = 6,
-  NURBS_G5 = 7,
-  NURBS_G6 = 8,
-
-  // State change operations
-  UNITS_CHANGE = 10,
-  PLANE_CHANGE = 11,
-  G5X_OFFSET = 12,
-  G92_OFFSET = 13,
-  XY_ROTATION = 14,
-  TOOL_OFFSET = 15,
-  TOOL_CHANGE = 16,
-  FEED_RATE_CHANGE = 17,
-}
-
-/**
- * Plane selection for arc and NURBS operations.
- */
-export enum Plane {
-  XY = 1,
-  YZ = 2,
-  XZ = 3,
-  UV = 4,
-  VW = 5,
-  UW = 6,
-}
+export { OperationType, Plane } from "./constants";
 
 // ============================================================================
 // Motion Operations
@@ -323,6 +284,7 @@ export interface GCodeParseResult {
 /**
  * Progress information reported during parsing.
  */
+/** @deprecated Progress callback payload from the removed native parser API. */
 export interface ParseProgress {
   /** Number of bytes read from the file */
   bytesRead: number;
@@ -337,6 +299,7 @@ export interface ParseProgress {
 /**
  * Options for parsing a G-code file.
  */
+/** @deprecated Native parser options; ProgramService streams ParseProgramEvent. */
 export interface ParseOptions {
   /** Path to LinuxCNC INI file (required) */
   iniPath: string;

@@ -1,0 +1,927 @@
+syntax = "proto3";
+
+package linuxcnc.v1;
+
+import "google/protobuf/empty.proto";
+
+// Versioned transport contract for one LinuxCNC instance.  Field numbers are
+// intentionally assigned here (rather than inferred from TypeScript types).
+// Removed fields must remain reserved in this file.
+
+enum TaskMode {
+  TASK_MODE_UNSPECIFIED = 0;
+  TASK_MODE_MANUAL = 1;
+  TASK_MODE_AUTO = 2;
+  TASK_MODE_MDI = 3;
+}
+
+enum TaskState {
+  TASK_STATE_UNSPECIFIED = 0;
+  TASK_STATE_ESTOP = 1;
+  TASK_STATE_ESTOP_RESET = 2;
+  TASK_STATE_OFF = 3;
+  TASK_STATE_ON = 4;
+}
+
+enum RcsStatus {
+  RCS_STATUS_UNSPECIFIED = 0;
+  RCS_STATUS_UNINITIALIZED = -1;
+  RCS_STATUS_DONE = 1;
+  RCS_STATUS_EXEC = 2;
+  RCS_STATUS_ERROR = 3;
+}
+
+enum EmcDebug {
+  EMC_DEBUG_UNSPECIFIED = 0;
+  EMC_DEBUG_CONFIG = 2;
+  EMC_DEBUG_VERSIONS = 8;
+  EMC_DEBUG_TASK_ISSUE = 16;
+  EMC_DEBUG_NML = 64;
+  EMC_DEBUG_MOTION_TIME = 128;
+  EMC_DEBUG_INTERP = 256;
+  EMC_DEBUG_RCS = 512;
+  EMC_DEBUG_INTERP_LIST = 2048;
+  EMC_DEBUG_IOCONTROL = 4096;
+  EMC_DEBUG_OWORD = 8192;
+  EMC_DEBUG_REMAP = 16384;
+  EMC_DEBUG_PYTHON = 32768;
+  EMC_DEBUG_NAMEDPARAM = 65536;
+  EMC_DEBUG_GDBONSIGNAL = 131072;
+  EMC_DEBUG_STATE_TAGS = 524288;
+}
+
+enum ExecState {
+  EXEC_STATE_UNSPECIFIED = 0;
+  EXEC_STATE_ERROR = 1;
+  EXEC_STATE_DONE = 2;
+  EXEC_STATE_WAITING_FOR_MOTION = 3;
+  EXEC_STATE_WAITING_FOR_MOTION_QUEUE = 4;
+  EXEC_STATE_WAITING_FOR_IO = 5;
+  EXEC_STATE_WAITING_FOR_MOTION_AND_IO = 7;
+  EXEC_STATE_WAITING_FOR_DELAY = 8;
+  EXEC_STATE_WAITING_FOR_SYSTEM_CMD = 9;
+  EXEC_STATE_WAITING_FOR_SPINDLE_ORIENTED = 10;
+}
+
+enum InterpState {
+  INTERP_STATE_UNSPECIFIED = 0;
+  INTERP_STATE_IDLE = 1;
+  INTERP_STATE_READING = 2;
+  INTERP_STATE_PAUSED = 3;
+  INTERP_STATE_WAITING = 4;
+}
+
+enum StopState {
+  STOP_STATE_IDLE = 0;
+  STOP_STATE_STOPPING = 1;
+  STOP_STATE_STOPPED = 2;
+  STOP_STATE_STARTING = 3;
+}
+
+enum TrajMode {
+  TRAJ_MODE_UNSPECIFIED = 0;
+  TRAJ_MODE_FREE = 1;
+  TRAJ_MODE_COORD = 2;
+  TRAJ_MODE_TELEOP = 3;
+}
+
+enum MotionType {
+  MOTION_TYPE_NONE = 0;
+  MOTION_TYPE_TRAVERSE = 1;
+  MOTION_TYPE_FEED = 2;
+  MOTION_TYPE_ARC = 3;
+  MOTION_TYPE_TOOLCHANGE = 4;
+  MOTION_TYPE_PROBING = 5;
+  MOTION_TYPE_INDEXROTARY = 6;
+}
+
+enum KinematicsType {
+  KINEMATICS_TYPE_UNSPECIFIED = 0;
+  KINEMATICS_TYPE_IDENTITY = 1;
+  KINEMATICS_TYPE_FORWARD_ONLY = 2;
+  KINEMATICS_TYPE_INVERSE_ONLY = 3;
+  KINEMATICS_TYPE_BOTH = 4;
+}
+
+enum ProgramUnits {
+  PROGRAM_UNITS_UNSPECIFIED = 0;
+  PROGRAM_UNITS_INCH = 1;
+  PROGRAM_UNITS_MM = 2;
+  PROGRAM_UNITS_CM = 3;
+}
+
+enum NmlMessageType {
+  NML_MESSAGE_TYPE_UNSPECIFIED = 0;
+  NML_MESSAGE_TYPE_NML_ERROR = 1;
+  NML_MESSAGE_TYPE_NML_TEXT = 2;
+  NML_MESSAGE_TYPE_NML_DISPLAY = 3;
+  NML_MESSAGE_TYPE_EMC_OPERATOR_ERROR = 11;
+  NML_MESSAGE_TYPE_EMC_OPERATOR_TEXT = 12;
+  NML_MESSAGE_TYPE_EMC_OPERATOR_DISPLAY = 13;
+}
+
+enum JointType {
+  JOINT_TYPE_UNSPECIFIED = 0;
+  JOINT_TYPE_LINEAR = 1;
+  JOINT_TYPE_ANGULAR = 2;
+}
+
+enum OrientState {
+  ORIENT_STATE_NONE = 0;
+  ORIENT_STATE_COMPLETE = 1;
+  ORIENT_STATE_IN_PROGRESS = 2;
+  ORIENT_STATE_FAULTED = 3;
+}
+
+enum OperationType {
+  OPERATION_TYPE_UNSPECIFIED = 0;
+  OPERATION_TYPE_TRAVERSE = 1;
+  OPERATION_TYPE_FEED = 2;
+  OPERATION_TYPE_ARC = 3;
+  OPERATION_TYPE_PROBE = 4;
+  OPERATION_TYPE_RIGID_TAP = 5;
+  OPERATION_TYPE_DWELL = 6;
+  OPERATION_TYPE_NURBS_G5 = 7;
+  OPERATION_TYPE_NURBS_G6 = 8;
+  OPERATION_TYPE_UNITS_CHANGE = 10;
+  OPERATION_TYPE_PLANE_CHANGE = 11;
+  OPERATION_TYPE_G5X_OFFSET = 12;
+  OPERATION_TYPE_G92_OFFSET = 13;
+  OPERATION_TYPE_XY_ROTATION = 14;
+  OPERATION_TYPE_TOOL_OFFSET = 15;
+  OPERATION_TYPE_TOOL_CHANGE = 16;
+  OPERATION_TYPE_FEED_RATE_CHANGE = 17;
+}
+
+enum Plane {
+  PLANE_UNSPECIFIED = 0;
+  PLANE_XY = 1;
+  PLANE_YZ = 2;
+  PLANE_XZ = 3;
+  PLANE_UV = 4;
+  PLANE_VW = 5;
+  PLANE_UW = 6;
+}
+
+enum AxisName {
+  AXIS_NAME_UNSPECIFIED = 0;
+  AXIS_NAME_X = 1;
+  AXIS_NAME_Y = 2;
+  AXIS_NAME_Z = 3;
+  AXIS_NAME_A = 4;
+  AXIS_NAME_B = 5;
+  AXIS_NAME_C = 6;
+  AXIS_NAME_U = 7;
+  AXIS_NAME_V = 8;
+  AXIS_NAME_W = 9;
+}
+
+enum HalType {
+  HAL_TYPE_UNSPECIFIED = 0;
+  HAL_TYPE_BIT = 1;
+  HAL_TYPE_FLOAT = 2;
+  HAL_TYPE_S32 = 3;
+  HAL_TYPE_U32 = 4;
+  HAL_TYPE_S64 = 5;
+  HAL_TYPE_U64 = 6;
+}
+
+enum HalPinDirection {
+  HAL_PIN_DIRECTION_UNSPECIFIED = 0;
+  HAL_PIN_DIRECTION_IN = 1;
+  HAL_PIN_DIRECTION_OUT = 2;
+  HAL_PIN_DIRECTION_IO = 3;
+}
+
+enum HalParamDirection {
+  HAL_PARAM_DIRECTION_UNSPECIFIED = 0;
+  HAL_PARAM_DIRECTION_RO = 1;
+  HAL_PARAM_DIRECTION_RW = 2;
+}
+
+enum HalItemKind {
+  HAL_ITEM_KIND_UNSPECIFIED = 0;
+  HAL_ITEM_KIND_PIN = 1;
+  HAL_ITEM_KIND_PARAM = 2;
+  HAL_ITEM_KIND_SIGNAL = 3;
+}
+
+enum HalComponentKind {
+  HAL_COMPONENT_KIND_UNSPECIFIED = 0;
+  HAL_COMPONENT_KIND_USER = 1;
+  HAL_COMPONENT_KIND_REALTIME = 2;
+  HAL_COMPONENT_KIND_OTHER = 3;
+  HAL_COMPONENT_KIND_UNKNOWN = 4;
+}
+
+enum RtapiMessageLevel {
+  RTAPI_MESSAGE_LEVEL_UNSPECIFIED = 0;
+  RTAPI_MESSAGE_LEVEL_NONE = 1;
+  RTAPI_MESSAGE_LEVEL_ERR = 2;
+  RTAPI_MESSAGE_LEVEL_WARN = 3;
+  RTAPI_MESSAGE_LEVEL_INFO = 4;
+  RTAPI_MESSAGE_LEVEL_DBG = 5;
+  RTAPI_MESSAGE_LEVEL_ALL = 6;
+}
+
+enum ScopeRuntimeState {
+  SCOPE_RUNTIME_STATE_UNSPECIFIED = 0;
+  SCOPE_RUNTIME_STATE_IDLE = 1;
+  SCOPE_RUNTIME_STATE_INIT = 2;
+  SCOPE_RUNTIME_STATE_PRE_TRIGGER = 3;
+  SCOPE_RUNTIME_STATE_TRIGGER_WAIT = 4;
+  SCOPE_RUNTIME_STATE_POST_TRIGGER = 5;
+  SCOPE_RUNTIME_STATE_DONE = 6;
+  SCOPE_RUNTIME_STATE_RESET = 7;
+  SCOPE_RUNTIME_STATE_INVALID = 8;
+}
+
+enum WaitPolicy {
+  WAIT_POLICY_UNSPECIFIED = 0;
+  WAIT_POLICY_ACCEPTED = 1;
+  WAIT_POLICY_COMPLETED = 2;
+}
+
+enum PositionBatchKind {
+  POSITION_BATCH_KIND_UNSPECIFIED = 0;
+  POSITION_BATCH_KIND_REPLACEMENT = 1;
+  POSITION_BATCH_KIND_DELTA = 2;
+}
+
+message Position {
+  repeated double values = 1 [packed = true];
+}
+
+message ToolEntry {
+  int32 tool_no = 1;
+  int32 pocket_no = 2;
+  Position offset = 3;
+  Position wear_offset = 4;
+  double diameter = 5;
+  double front_angle = 6;
+  double back_angle = 7;
+  int32 orientation = 8;
+  string comment = 9;
+}
+
+message ActiveGCodes {
+  int32 g_mode0 = 1;
+  int32 motion_mode = 2;
+  int32 plane = 3;
+  int32 distance_mode = 4;
+  int32 ijk_distance_mode = 5;
+  int32 feed_rate_mode = 6;
+  int32 units = 7;
+  int32 cutter_comp = 8;
+  int32 tool_length_offset = 9;
+  int32 retract_mode = 10;
+  int32 origin = 11;
+  int32 path_control = 12;
+  int32 spindle_speed_mode = 13;
+  int32 lathe_diameter_mode = 14;
+  int32 g92_applied = 15;
+}
+
+message ActiveMCodes {
+  int32 stopping = 1;
+  int32 tool_change = 2;
+  int32 spindle_control = 3;
+  int32 mist_coolant = 4;
+  int32 flood_coolant = 5;
+  int32 override_control = 6;
+  int32 adaptive_feed_control = 7;
+  int32 feed_hold_control = 8;
+}
+
+message ActiveSettings {
+  double feed_rate = 1;
+  double speed = 2;
+  double blend_tolerance = 3;
+  double naive_cam_tolerance = 4;
+}
+
+message TaskStat {
+  TaskMode mode = 1;
+  TaskState state = 2;
+  ExecState exec_state = 3;
+  InterpState interp_state = 4;
+  StopState stop_state = 5;
+  int32 call_level = 6;
+  int32 motion_line = 7;
+  int32 current_line = 8;
+  int32 read_line = 9;
+  bool optional_stop_state = 10;
+  bool block_delete_state = 11;
+  bool input_timeout = 12;
+  string file = 13;
+  string command = 14;
+  string ini_filename = 15;
+  Position g5x_offset = 16;
+  int32 g5x_index = 17;
+  repeated Position g5x_offsets = 18;
+  repeated double g5x_rotations = 19 [packed = true];
+  Position g92_offset = 20;
+  Position g28_position = 21;
+  Position g30_position = 22;
+  double rotation_xy = 23;
+  Position tool_offset = 24;
+  ActiveGCodes active_g_codes = 25;
+  ActiveMCodes active_m_codes = 26;
+  ActiveSettings active_settings = 27;
+  ProgramUnits program_units = 28;
+  int32 interpreter_error_code = 29;
+  bool task_paused = 30;
+  double delay_left = 31;
+  int32 queued_mdi_commands = 32;
+}
+
+message JointStat {
+  JointType joint_type = 1;
+  double units = 2;
+  double backlash = 3;
+  double min_position_limit = 4;
+  double max_position_limit = 5;
+  double min_ferror = 6;
+  double max_ferror = 7;
+  double ferror_current = 8;
+  double ferror_high_mark = 9;
+  double output = 10;
+  double input = 11;
+  double velocity = 12;
+  bool in_position = 13;
+  bool homing = 14;
+  bool homed = 15;
+  bool fault = 16;
+  bool enabled = 17;
+  bool min_soft_limit = 18;
+  bool max_soft_limit = 19;
+  bool min_hard_limit = 20;
+  bool max_hard_limit = 21;
+  bool override_limits = 22;
+}
+
+message AxisStat {
+  double min_position_limit = 1;
+  double max_position_limit = 2;
+  double velocity = 3;
+}
+
+message SpindleStat {
+  double speed = 1;
+  double feedback = 2;
+  double override = 3;
+  double css_maximum = 4;
+  double css_factor = 5;
+  sint32 direction = 6;
+  bool brake = 7;
+  sint32 increasing = 8;
+  bool enabled = 9;
+  OrientState orient_state = 10;
+  int32 orient_fault = 11;
+  bool spindle_override_enabled = 12;
+  bool homed = 13;
+}
+
+message TrajectoryStat {
+  double linear_units = 1;
+  double angular_units = 2;
+  double cycle_time = 3;
+  int32 joints = 4;
+  int32 spindles = 5;
+  repeated AxisName available_axes = 6;
+  TrajMode mode = 7;
+  bool enabled = 8;
+  bool in_position = 9;
+  int32 queue = 10;
+  int32 active_queue = 11;
+  bool queue_full = 12;
+  int32 id = 13;
+  bool paused = 14;
+  bool single_stepping = 15;
+  double feed_rate_override = 16;
+  double rapid_rate_override = 17;
+  Position position = 18;
+  Position actual_position = 19;
+  double acceleration = 20;
+  double max_velocity = 21;
+  double max_acceleration = 22;
+  Position probed_position = 23;
+  bool probe_tripped = 24;
+  bool probing = 25;
+  double probe_val = 26;
+  KinematicsType kinematics_type = 27;
+  MotionType motion_type = 28;
+  double distance_to_go = 29;
+  Position dtg = 30;
+  double current_velocity = 31;
+  bool feed_override_enabled = 32;
+  bool adaptive_feed_enabled = 33;
+  bool feed_hold_enabled = 34;
+}
+
+message MotionStat {
+  TrajectoryStat traj = 1;
+  repeated JointStat joint = 2;
+  repeated AxisStat axis = 3;
+  repeated SpindleStat spindle = 4;
+  repeated int32 digital_input = 5 [packed = true];
+  repeated int32 digital_output = 6 [packed = true];
+  repeated double analog_input = 7 [packed = true];
+  repeated double analog_output = 8 [packed = true];
+}
+
+message ToolIoStat {
+  int32 pocket_prepped = 1;
+  int32 tool_in_spindle = 2;
+  int32 tool_from_pocket = 3;
+}
+
+message CoolantIoStat {
+  bool mist = 1;
+  bool flood = 2;
+}
+
+message IoStat {
+  ToolIoStat tool = 1;
+  CoolantIoStat coolant = 2;
+  bool estop = 3;
+}
+
+message LinuxCNCStat {
+  int64 echo_serial_number = 1;
+  RcsStatus state = 2;
+  TaskStat task = 3;
+  MotionStat motion = 4;
+  IoStat io = 5;
+  int32 debug = 6;
+  repeated ToolEntry tool_table = 7;
+}
+
+message LinuxCNCError {
+  NmlMessageType type = 1;
+  string message = 2;
+  int64 sequence = 3;
+}
+
+// Status deltas are typed and indexed.  There is deliberately no property
+// path, JSON, Any, or generic map in this contract.
+message IndexedJointDelta {
+  uint32 index = 1;
+  JointStat value = 2;
+}
+
+message IndexedAxisDelta {
+  uint32 index = 1;
+  AxisStat value = 2;
+}
+
+message IndexedSpindleDelta {
+  uint32 index = 1;
+  SpindleStat value = 2;
+}
+
+message TaskStatDelta {
+  optional TaskMode mode = 1;
+  optional TaskState state = 2;
+  optional ExecState exec_state = 3;
+  optional InterpState interp_state = 4;
+  optional StopState stop_state = 5;
+  optional int32 call_level = 6;
+  optional int32 motion_line = 7;
+  optional int32 current_line = 8;
+  optional int32 read_line = 9;
+  optional bool optional_stop_state = 10;
+  optional bool block_delete_state = 11;
+  optional bool input_timeout = 12;
+  optional string file = 13;
+  optional string command = 14;
+  optional string ini_filename = 15;
+  Position g5x_offset = 16;
+  optional int32 g5x_index = 17;
+  repeated Position g5x_offsets = 18;
+  bool replace_g5x_offsets = 33;
+  repeated double g5x_rotations = 19 [packed = true];
+  bool replace_g5x_rotations = 34;
+  Position g92_offset = 20;
+  Position g28_position = 21;
+  Position g30_position = 22;
+  optional double rotation_xy = 23;
+  Position tool_offset = 24;
+  ActiveGCodes active_g_codes = 25;
+  ActiveMCodes active_m_codes = 26;
+  ActiveSettings active_settings = 27;
+  optional ProgramUnits program_units = 28;
+  optional int32 interpreter_error_code = 29;
+  optional bool task_paused = 30;
+  optional double delay_left = 31;
+  optional int32 queued_mdi_commands = 32;
+}
+
+message MotionStatDelta {
+  TrajectoryStat traj = 1;
+  repeated IndexedJointDelta joint = 2;
+  repeated IndexedAxisDelta axis = 3;
+  repeated IndexedSpindleDelta spindle = 4;
+  repeated int32 digital_input = 5 [packed = true];
+  bool replace_digital_input = 9;
+  repeated int32 digital_output = 6 [packed = true];
+  bool replace_digital_output = 10;
+  repeated double analog_input = 7 [packed = true];
+  bool replace_analog_input = 11;
+  repeated double analog_output = 8 [packed = true];
+  bool replace_analog_output = 12;
+}
+
+message IoStatDelta {
+  ToolIoStat tool = 1;
+  CoolantIoStat coolant = 2;
+  optional bool estop = 3;
+}
+
+message ToolTableDelta {
+  repeated ToolEntry replaced = 1;
+  repeated int32 removed_tool_numbers = 2 [packed = true];
+  bool replace_all = 3;
+}
+
+message LinuxCNCStatDelta {
+  int64 sequence = 1;
+  // One source observation produces one atomic delta. Scalar presence is
+  // explicit so valid zero-valued changes are distinguishable from absence.
+  optional int64 echo_serial_number = 2;
+  optional RcsStatus state = 3;
+  TaskStatDelta task = 4;
+  MotionStatDelta motion = 5;
+  IoStatDelta io = 6;
+  ToolTableDelta tool_table = 7;
+  optional int32 debug = 8;
+  reserved 9, 10;
+  reserved "path", "json_value";
+}
+
+message GetStatusRequest {}
+
+message GetStatusResponse {
+  uint64 sequence = 1;
+  LinuxCNCStat status = 2;
+}
+
+message WatchStatusRequest {
+  uint64 after_sequence = 1;
+}
+
+message StatusReplay {
+  uint64 from_sequence = 1;
+  uint64 to_sequence = 2;
+  LinuxCNCStat snapshot = 3;
+  repeated LinuxCNCStatDelta deltas = 4;
+}
+
+message WatchStatusEvent {
+  uint64 sequence = 1;
+  oneof event {
+    LinuxCNCStat snapshot = 2;
+    StatusReplay replay = 3;
+    LinuxCNCStatDelta delta = 4;
+  }
+}
+
+message ExecuteCommandRequest {
+  WaitPolicy wait_policy = 1;
+  oneof command {
+    SetTaskMode set_task_mode = 2;
+    SetTaskState set_state = 3;
+    EmptyCommand task_plan_synch = 4;
+    EmptyCommand reset_interpreter = 5;
+    ProgramOpen program_open = 6;
+    EmptyCommand program_close = 7;
+    RunProgram run_program = 8;
+    EmptyCommand pause_program = 9;
+    EmptyCommand resume_program = 10;
+    EmptyCommand step_program = 11;
+    EmptyCommand reverse_program = 12;
+    EmptyCommand forward_program = 13;
+    EmptyCommand stop = 14;
+    EmptyCommand abort_task = 15;
+    SetBool set_optional_stop = 16;
+    SetBool set_block_delete = 17;
+    Mdi mdi = 18;
+    SetTrajMode set_traj_mode = 19;
+    SetDouble set_max_velocity = 20;
+    SetDouble set_feed_rate = 21;
+    SetSpindleOverride set_spindle_override = 22;
+    EmptyCommand override_limits = 23;
+    SetBool teleop_enable = 24;
+    SetBool set_feed_override_enable = 25;
+    SetSpindleOverrideEnable set_spindle_override_enable = 26;
+    SetBool set_feed_hold_enable = 27;
+    SetBool set_adaptive_feed_enable = 28;
+    JointIndex home_joint = 29;
+    JointIndex unhome_joint = 30;
+    JogStop jog_stop = 31;
+    JogContinuous jog_continuous = 32;
+    JogIncrement jog_increment = 33;
+    JointLimit set_min_position_limit = 34;
+    JointLimit set_max_position_limit = 35;
+    SpindleOn spindle_on = 36;
+    SpindleIndex spindle_increase = 37;
+    SpindleIndex spindle_decrease = 38;
+    SpindleIndex spindle_off = 39;
+    SpindleBrake spindle_brake = 40;
+    SetBool set_mist = 41;
+    SetBool set_flood = 42;
+    EmptyCommand load_tool_table = 43;
+    SetTool set_tool = 44;
+    ToolNumber delete_tool = 45;
+    DigitalOutput set_digital_output = 46;
+    AnalogOutput set_analog_output = 47;
+    SetDebugLevel set_debug_level = 48;
+    MessageCommand send_operator_error = 49;
+    MessageCommand send_operator_text = 50;
+    MessageCommand send_operator_display = 51;
+    SetDouble set_rapid_rate = 52;
+  }
+}
+
+message ExecuteCommandResponse {
+  uint64 command_sequence = 1;
+  RcsStatus status = 2;
+  LinuxCNCError error = 3;
+}
+
+message EmptyCommand {}
+message SetTaskMode { TaskMode mode = 1; }
+message SetTaskState { TaskState state = 1; }
+message ProgramOpen { ProgramHandle entry = 1; }
+message RunProgram { int32 start_line = 1; }
+message SetBool { bool enable = 1; }
+message Mdi { string command = 1; }
+message SetTrajMode { TrajMode mode = 1; }
+message SetDouble { double value = 1; }
+message SetSpindleOverride { double scale = 1; int32 spindle_index = 2; bool has_spindle_index = 3; }
+message SetSpindleOverrideEnable { bool enable = 1; int32 spindle_index = 2; bool has_spindle_index = 3; }
+message JointIndex { int32 joint_index = 1; }
+message JogStop { int32 axis_or_joint_index = 1; bool is_joint_jog = 2; }
+message JogContinuous { int32 axis_or_joint_index = 1; bool is_joint_jog = 2; double speed = 3; }
+message JogIncrement { int32 axis_or_joint_index = 1; bool is_joint_jog = 2; double speed = 3; double increment = 4; }
+message JointLimit { int32 joint_index = 1; double limit = 2; }
+message SpindleOn { double speed = 1; int32 spindle_index = 2; bool wait_for_speed = 3; bool has_spindle_index = 4; }
+message SpindleIndex { int32 spindle_index = 1; }
+message SpindleBrake { bool engage = 1; int32 spindle_index = 2; bool has_spindle_index = 3; }
+message SetTool { ToolEntry tool = 1; }
+message ToolNumber { int32 tool_no = 1; }
+message DigitalOutput { int32 index = 1; bool value = 2; }
+message AnalogOutput { int32 index = 1; double value = 2; }
+message SetDebugLevel { int32 level = 1; }
+message MessageCommand { string message = 1; }
+
+message PositionHistoryConfig {
+  bool enabled = 1;
+  uint32 capacity = 2;
+  uint32 sample_period_ms = 3;
+}
+
+message PositionHistorySnapshot {
+  uint64 first_sequence = 1;
+  uint64 next_sequence = 2;
+  // IEEE-754 binary64 values in little-endian order.  Keeping this as bytes
+  // makes the Float64Array boundary explicit and independent of protobuf's
+  // scalar representation.
+  bytes values_le_f64 = 3;
+  uint32 value_count = 4;
+  uint32 stride = 5;
+  uint64 generation = 6;
+}
+
+message PositionHistoryBatch {
+  PositionBatchKind kind = 1;
+  uint64 first_sequence = 2;
+  uint64 next_sequence = 3;
+  bytes values_le_f64 = 4;
+  uint32 value_count = 5;
+  uint32 stride = 6;
+  uint64 generation = 7;
+  uint64 skipped_batches = 8;
+}
+
+message PositionHistoryRequest {
+  oneof request {
+    PositionHistoryConfig configure = 1;
+    EmptyCommand clear = 2;
+    PositionHistoryCursor cursor = 3;
+  }
+}
+
+message PositionHistoryCursor {
+  uint64 after_sequence = 1;
+  uint64 after_generation = 2;
+}
+
+message PositionHistoryEvent {
+  oneof event {
+    PositionHistorySnapshot snapshot = 1;
+    PositionHistoryBatch batch = 2;
+  }
+}
+
+message CreateWorkspaceRequest { uint64 ttl_seconds = 1; }
+message CreateWorkspaceResponse { string workspace_id = 1; uint64 expires_at_unix_ms = 2; }
+message UploadWorkspaceRequest {
+  string workspace_id = 1;
+  oneof content {
+    FileChunk file = 2;
+    bool finish = 3;
+  }
+}
+message FileChunk {
+  string relative_path = 1;
+  bytes data = 2;
+  bool eof = 3;
+}
+message UploadWorkspaceResponse { uint64 bytes_written = 1; repeated string files = 2; }
+message DeleteWorkspaceRequest { string workspace_id = 1; }
+message ProgramHandle { string workspace_id = 1; string relative_path = 2; }
+message ParseProgramRequest { ProgramHandle entry = 1; }
+message ParseProgress { uint64 bytes_read = 1; uint64 total_bytes = 2; uint32 percent = 3; uint64 operation_count = 4; }
+message Extents { Position min = 1; Position max = 2; }
+message GCodeOperation {
+  OperationType type = 1;
+  int32 line_number = 2;
+  Position pos = 3;
+  oneof data {
+    ArcData arc = 4;
+    ProbeData probe = 5;
+    RigidTapData rigid_tap = 6;
+    DwellData dwell = 7;
+    NurbsG5Data nurbs_g5 = 8;
+    NurbsG6Data nurbs_g6 = 9;
+    UnitsChangeData units_change = 10;
+    PlaneChangeData plane_change = 11;
+    G5xOffsetData g5x_offset = 12;
+    OffsetData g92_offset = 13;
+    RotationData xy_rotation = 14;
+    OffsetData tool_offset = 15;
+    ToolChangeData tool_change = 16;
+    FeedRateData feed_rate_change = 17;
+  }
+}
+message ArcData { Plane plane = 1; double center_first = 2; double center_second = 3; double rotation = 4; double axis_end_point = 5; }
+message ProbeData {}
+message RigidTapData { Position pos = 1; double scale = 2; }
+message DwellData { double duration = 1; Plane plane = 2; }
+message NurbsG5Data { Plane plane = 1; int32 order = 2; repeated ControlPointG5 control_points = 3; }
+message ControlPointG5 { double x = 1; double y = 2; double weight = 3; }
+message NurbsG6Data { Plane plane = 1; int32 order = 2; repeated ControlPointG6 control_points = 3; }
+message ControlPointG6 { double x = 1; double y = 2; double r = 3; double k = 4; }
+message UnitsChangeData { ProgramUnits units = 1; }
+message PlaneChangeData { Plane plane = 1; }
+message G5xOffsetData { int32 origin = 1; Position offset = 2; }
+message OffsetData { Position offset = 1; }
+message RotationData { double rotation = 1; }
+message ToolChangeData { int32 tool_number = 1; ToolEntry tool = 2; }
+message FeedRateData { double feed_rate = 1; }
+message ParseBatch { repeated GCodeOperation operations = 1; }
+message ParseSummary { Extents extents = 1; uint64 operation_count = 2; }
+message ParseProgramEvent {
+  oneof event {
+    ParseProgress progress = 1;
+    ParseBatch batch = 2;
+    ParseSummary summary = 3;
+    LinuxCNCError error = 4;
+  }
+}
+
+message HalItemRef { HalItemKind kind = 1; string name = 2; }
+message HalScalar {
+  HalType type = 1;
+  oneof value {
+    bool bit = 2;
+    double float_value = 3;
+    sint32 s32 = 4;
+    uint32 u32 = 5;
+    sint64 s64 = 6;
+    uint64 u64 = 7;
+  }
+}
+message HalComponentInfo { int32 id = 1; string name = 2; HalComponentKind kind = 3; bool ready = 4; int32 pid = 5; }
+message HalFunctionInfo { string name = 1; int32 owner_id = 2; string owner_name = 3; bool uses_fp = 4; bool reentrant = 5; int32 users = 6; double runtime = 7; double max_runtime = 8; bool max_runtime_increased = 9; }
+message HalThreadInfo { string name = 1; uint64 period_ns = 2; int32 priority = 3; bool uses_fp = 4; bool running = 5; double runtime = 6; double max_runtime = 7; repeated string functions = 8; }
+message HalPinInfo { string name = 1; HalScalar value = 2; HalType type = 3; HalPinDirection direction = 4; int32 owner_id = 5; string signal_name = 6; }
+message HalParamInfo { string name = 1; HalScalar value = 2; HalType type = 3; HalParamDirection direction = 4; int32 owner_id = 5; }
+message HalSignalInfo { string name = 1; HalScalar value = 2; HalType type = 3; string driver = 4; uint32 readers = 5; uint32 writers = 6; uint32 bidirs = 7; }
+message HalTopology {
+  repeated HalComponentInfo components = 1;
+  repeated HalFunctionInfo functions = 2;
+  repeated HalThreadInfo threads = 3;
+  repeated HalPinInfo pins = 4;
+  repeated HalParamInfo params = 5;
+  repeated HalSignalInfo signals = 6;
+}
+message GetHalTopologyRequest {}
+message GetHalTopologyResponse { uint64 sequence = 1; HalTopology topology = 2; }
+message WatchHalTopologyRequest { uint64 after_sequence = 1; }
+message WatchHalTopologyEvent { uint64 sequence = 1; HalTopology topology = 2; }
+message HalReadRequest { repeated HalItemRef items = 1; }
+message HalReadValue { HalItemRef item = 1; HalScalar value = 2; }
+message HalReadResponse { repeated HalReadValue values = 1; }
+message HalWrite { repeated HalWriteValue writes = 1; }
+message HalWriteValue { HalItemRef item = 1; HalScalar value = 2; }
+message HalWriteResponse { repeated HalReadValue values = 1; }
+message CreateHalSignalRequest { string name = 1; HalType type = 2; }
+message CreateHalSignalResponse { HalSignalInfo signal = 1; }
+message SetHalMessageLevelRequest { RtapiMessageLevel level = 1; }
+message HalWriterMetadata { string writer_id = 1; bool ready = 2; }
+message GetHalWriterMetadataRequest {}
+message GetHalWriterMetadataResponse { HalWriterMetadata metadata = 1; }
+message SetHalWriterReadyRequest { bool ready = 1; }
+message ComponentOpen { string name = 1; string prefix = 2; }
+message ComponentPin { string name = 1; HalType type = 2; HalPinDirection direction = 3; string prefix = 4; }
+message ComponentParameter { string name = 1; HalType type = 2; HalParamDirection direction = 3; string prefix = 4; }
+message ComponentReady { bool ready = 1; }
+message ComponentValue { HalItemRef item = 1; HalScalar value = 2; }
+message ComponentDelta { repeated ComponentValue values = 1; uint64 sequence = 2; }
+message ComponentClose {}
+message ComponentSessionMessage {
+  oneof message {
+    ComponentOpen open = 1;
+    ComponentPin pin = 2;
+    ComponentParameter parameter = 3;
+    ComponentReady ready = 4;
+    ComponentValue value = 5;
+    ComponentDelta delta = 6;
+    ComponentClose close = 7;
+    HalWriterMetadata metadata = 8;
+  }
+}
+
+message ScopeChannelConfig { uint32 index = 1; HalItemRef item = 2; bool enabled = 3; }
+message ScopeAcquisitionConfig { string thread_name = 1; uint32 multiplier = 2; uint32 pre_trigger = 3; uint32 trigger_channel = 4; double trigger_level = 5; bool rising = 6; bool automatic = 7; repeated ScopeChannelConfig channels = 8; }
+enum ScopeRunMode {
+  SCOPE_RUN_MODE_UNSPECIFIED = 0;
+  SCOPE_RUN_MODE_RUN = 1;
+  SCOPE_RUN_MODE_SINGLE = 2;
+  SCOPE_RUN_MODE_ROLL = 3;
+}
+message ScopeStatus { ScopeRuntimeState state = 1; uint32 buffer_length = 2; uint32 record_length = 3; uint32 sample_length = 4; uint32 samples = 5; uint32 start = 6; uint32 multiplier = 7; uint32 watchdog = 8; string thread_name = 9; uint64 sample_period_ns = 10; uint64 generation = 11; uint64 skipped_frames = 12; }
+message ScopeCapture { repeated PackedChannel channels = 1; uint32 samples = 2; uint32 trigger_index = 3; uint64 sample_period_ns = 4; uint64 generation = 5; uint64 skipped_frames = 6; }
+message PackedChannel {
+  // Original field 1 remains the sample payload for wire compatibility.
+  repeated double values = 1 [packed = true];
+  // Stable slot identity preserves null/disabled channel positions.
+  uint32 index = 2;
+  bool enabled = 3;
+}
+message ScopeCaptureDelta { repeated PackedChannel channels = 1; uint32 samples = 2; uint32 capacity = 3; uint64 sequence = 4; uint64 sample_period_ns = 5; bool reset = 6; uint64 generation = 7; uint64 skipped_frames = 8; }
+message ScopeAcquire {}
+message ScopeConfigure { ScopeAcquisitionConfig config = 1; }
+message ScopeRun { ScopeRunMode mode = 1; }
+message ScopeStop {}
+message ScopeTrigger {}
+message ScopeFrameAck { uint64 generation = 1; }
+message ScopeSessionMessage {
+  oneof message {
+    ScopeAcquire acquire = 1;
+    ScopeConfigure configure = 2;
+    ScopeRun run = 3;
+    ScopeStop stop = 4;
+    ScopeTrigger trigger = 5;
+    ScopeFrameAck ack = 6;
+    ScopeStatus status = 7;
+    ScopeCapture capture = 8;
+    ScopeCaptureDelta roll = 9;
+  }
+}
+
+service MachineService {
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+  rpc WatchStatus(WatchStatusRequest) returns (stream WatchStatusEvent);
+  rpc ExecuteCommand(ExecuteCommandRequest) returns (ExecuteCommandResponse);
+  rpc WatchErrors(google.protobuf.Empty) returns (stream LinuxCNCError);
+  rpc ConfigurePositionHistory(PositionHistoryConfig) returns (google.protobuf.Empty);
+  rpc ClearPositionHistory(google.protobuf.Empty) returns (google.protobuf.Empty);
+  rpc GetPositionHistory(PositionHistoryRequest) returns (PositionHistorySnapshot);
+  rpc WatchPositionHistory(PositionHistoryRequest) returns (stream PositionHistoryEvent);
+}
+
+service ProgramService {
+  rpc CreateWorkspace(CreateWorkspaceRequest) returns (CreateWorkspaceResponse);
+  rpc UploadWorkspace(stream UploadWorkspaceRequest) returns (UploadWorkspaceResponse);
+  rpc DeleteWorkspace(DeleteWorkspaceRequest) returns (google.protobuf.Empty);
+  rpc ParseProgram(ParseProgramRequest) returns (stream ParseProgramEvent);
+}
+
+service HalService {
+  rpc GetTopology(GetHalTopologyRequest) returns (GetHalTopologyResponse);
+  rpc WatchTopology(WatchHalTopologyRequest) returns (stream WatchHalTopologyEvent);
+  rpc Read(HalReadRequest) returns (HalReadResponse);
+  rpc Write(HalWrite) returns (HalWriteResponse);
+  rpc CreateSignal(CreateHalSignalRequest) returns (CreateHalSignalResponse);
+  rpc SetMessageLevel(SetHalMessageLevelRequest) returns (google.protobuf.Empty);
+  rpc GetWriterMetadata(GetHalWriterMetadataRequest) returns (GetHalWriterMetadataResponse);
+  rpc SetWriterReady(SetHalWriterReadyRequest) returns (google.protobuf.Empty);
+  rpc ComponentSession(stream ComponentSessionMessage) returns (stream ComponentSessionMessage);
+}
+
+service ScopeService {
+  rpc Session(stream ScopeSessionMessage) returns (stream ScopeSessionMessage);
+}
