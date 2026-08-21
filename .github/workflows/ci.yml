@@ -12,6 +12,35 @@ env:
   LINUXCNC_CACHE_VERSION: v3
 
 jobs:
+  native-contract:
+    name: Native gRPC contract
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install C++ gRPC toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            libgrpc++-dev \
+            libgrpc-dev \
+            libprotobuf-dev \
+            protobuf-compiler \
+            protobuf-compiler-grpc
+
+      - name: Configure
+        run: cmake -S . -B build/native-grpc -DLINUXCNC_GRPC_BUILD_WIRE=ON -DLINUXCNC_GRPC_ENABLE_NML=OFF -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build build/native-grpc --parallel 2
+
+      - name: Test
+        run: ctest --test-dir build/native-grpc --output-on-failure
+
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
@@ -49,6 +78,21 @@ jobs:
         run: |
           revision="$(< linuxcnc-patches/base-revision)"
           echo "revision=${revision}" >> "${GITHUB_OUTPUT}"
+
+      - name: Install native daemon build dependencies
+        run: |
+          set -euo pipefail
+
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            libgrpc++-dev \
+            libgrpc-dev \
+            libprotobuf-dev \
+            protobuf-compiler \
+            protobuf-compiler-grpc \
+            python3-dev
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -152,6 +196,37 @@ jobs:
 
           cd "${LINUXCNC_DIR}/src"
           sudo make setuid
+
+      - name: Configure native LinuxCNC daemon
+        shell: bash
+        env:
+          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ steps.linuxcnc-baseline.outputs.revision }}/linuxcnc
+        run: |
+          set -euo pipefail
+
+          cmake -S . -B build/native-grpc-linuxcnc \
+            -DLINUXCNC_ROOT="${LINUXCNC_DIR}" \
+            -DLINUXCNC_GRPC_BUILD_WIRE=ON \
+            -DLINUXCNC_GRPC_BUILD_TESTS=ON \
+            -DLINUXCNC_GRPC_ENABLE_NML=ON \
+            -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build native LinuxCNC daemon
+        run: cmake --build build/native-grpc-linuxcnc --parallel 2
+
+      - name: Test native LinuxCNC daemon
+        shell: bash
+        env:
+          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ steps.linuxcnc-baseline.outputs.revision }}/linuxcnc
+        run: |
+          set -euo pipefail
+
+          set +u
+          source "${LINUXCNC_DIR}/scripts/rip-environment"
+          set -u
+          export LINUXCNC_INCLUDE="${LINUXCNC_DIR}/include"
+          export LINUXCNC_LIB="${LINUXCNC_DIR}/lib"
+          ctest --test-dir build/native-grpc-linuxcnc --output-on-failure
 
       - name: Save LinuxCNC build
         if: steps.linuxcnc-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'

@@ -7,3 +7,5 @@ packages/core/docs
 *.edenite
 *.expanded
 *.tgz
+/.worktrees/
+/linuxcnc

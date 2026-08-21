@@ -503,8 +503,8 @@ export const HalInspector: Component = () => {
       triggerLevel: triggerLevel(),
       rising: triggerEdge() === "rising",
       automatic: triggerMode() === "auto",
-      channels: channels().map((ref) =>
-        ref ? { ...ref, enabled: true } : null
+      channels: channels().map((ref, index) =>
+        ref ? { ...ref, index, enabled: true } : null
       ),
     };
     const result = await api.request("scope/configure", config);
