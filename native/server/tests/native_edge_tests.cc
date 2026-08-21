@@ -1,0 +1,421 @@
+#include "linuxcnc_grpc/command_coordinator.hpp"
+#include "linuxcnc_grpc/position_history.hpp"
+#include "linuxcnc_grpc/program_workspace.hpp"
+#include "linuxcnc_grpc/scope_manager.hpp"
+#include "linuxcnc_grpc/status_hub.hpp"
+
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <cassert>
+#include <chrono>
+#include <condition_variable>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <mutex>
+#include <stdexcept>
+#include <string>
+#include <thread>
+#include <vector>
+
+#include <unistd.h>
+
+namespace fs = std::filesystem;
+using namespace linuxcnc::server;
+
+namespace {
+
+class Gate {
+ public:
+  void arrive() {
+    {
+      std::lock_guard lock(mutex_);
+      arrived_ = true;
+    }
+    condition_.notify_all();
+  }
+
+  void wait_for_arrival() {
+    std::unique_lock lock(mutex_);
+    condition_.wait(lock, [this] { return arrived_; });
+  }
+
+  void open() {
+    {
+      std::lock_guard lock(mutex_);
+      open_ = true;
+    }
+    condition_.notify_all();
+  }
+
+  void wait_until_open() {
+    std::unique_lock lock(mutex_);
+    condition_.wait(lock, [this] { return open_; });
+  }
+
+ private:
+  std::mutex mutex_;
+  std::condition_variable condition_;
+  bool arrived_ = false;
+  bool open_ = false;
+};
+
+void command_queue_bounds_and_wait_test() {
+  CommandCoordinator coordinator(2);
+  Gate first_action;
+  auto first = coordinator.submit([&] {
+    first_action.arrive();
+    first_action.wait_until_open();
+  });
+  first_action.wait_for_arrival();
+
+  // The first item is in flight, so exactly two more items fit in the queue.
+  const auto second = coordinator.submit([] {});
+  const auto third = coordinator.submit([] {});
+  assert(coordinator.queued() == 2);
+  bool full = false;
+  try {
+    (void)coordinator.submit([] {});
+  } catch (const std::runtime_error& error) {
+    full = std::string(error.what()) == "command queue is full";
+  }
+  assert(full);
+  assert(first.sequence() == 1);
+  assert(second.sequence() == 2);
+  assert(third.sequence() == 3);
+
+  CommandResult result;
+  assert(!first.wait_for(CommandWaitPolicy::Accepted, std::chrono::milliseconds(1),
+                         &result));
+  assert(result.state == CommandState::Queued);
+  first_action.open();
+  assert(first.wait_for(CommandWaitPolicy::Accepted, std::chrono::seconds(1), &result));
+  assert(result.state == CommandState::Accepted || result.state == CommandState::Completed);
+  assert(first.wait_for(std::chrono::seconds(1), &result));
+  assert(result.state == CommandState::Completed);
+  assert(second.wait_for(std::chrono::seconds(1), &result));
+  assert(result.state == CommandState::Completed);
+  assert(third.wait_for(std::chrono::seconds(1), &result));
+  assert(result.state == CommandState::Completed);
+  assert(coordinator.queued() == 0);
+  coordinator.shutdown();
+
+  bool stopped = false;
+  try {
+    (void)coordinator.submit([] {});
+  } catch (const std::runtime_error& error) {
+    stopped = std::string(error.what()) == "command coordinator is stopped";
+  }
+  assert(stopped);
+}
+
+void command_cancellation_and_acceptance_test() {
+  CommandCoordinator coordinator(1);
+  Gate action;
+  std::atomic<bool> cancellation_seen{false};
+  auto ticket = coordinator.submit_with_context(
+      [&](CommandContext& context) {
+        cancellation_seen = context.cancelled && context.cancelled();
+        action.arrive();
+        context.mark_accepted();
+        action.wait_until_open();
+      },
+      [] { return true; });
+  action.wait_for_arrival();
+
+  CommandResult result;
+  assert(ticket.wait_for(CommandWaitPolicy::Accepted, std::chrono::seconds(1), &result));
+  assert(result.state == CommandState::Accepted);
+  assert(cancellation_seen.load());
+  assert(!ticket.wait_for(CommandWaitPolicy::Completed, std::chrono::milliseconds(1),
+                          &result));
+  assert(result.state == CommandState::Accepted);
+
+  // Cancellation belongs to the waiting RPC; it must not remove queued work.
+  action.open();
+  assert(ticket.wait_for(std::chrono::seconds(1), &result));
+  assert(result.state == CommandState::Completed);
+  coordinator.shutdown();
+}
+
+void command_cancellation_before_worker_start_test() {
+  CommandCoordinator coordinator(2);
+  Gate blocker;
+  auto first = coordinator.submit([&] {
+    blocker.arrive();
+    blocker.wait_until_open();
+  });
+  blocker.wait_for_arrival();
+  std::atomic<bool> cancelled{true};
+  std::atomic<bool> observed{false};
+  auto queued = coordinator.submit_with_context(
+      [&](CommandContext& context) {
+        observed = context.cancelled && context.cancelled();
+        context.mark_accepted();
+      },
+      [&] { return cancelled.load(); });
+  blocker.open();
+  CommandResult result;
+  assert(first.wait_for(std::chrono::seconds(1), &result));
+  assert(queued.wait_for(std::chrono::seconds(1), &result));
+  assert(observed.load());
+  assert(result.state == CommandState::Completed);
+  coordinator.shutdown();
+}
+
+void command_failure_wait_test() {
+  CommandCoordinator coordinator(1);
+  const auto ticket = coordinator.submit([] { throw std::runtime_error("synthetic failure"); });
+  CommandResult result;
+  assert(ticket.wait_for(std::chrono::seconds(1), &result));
+  assert(result.state == CommandState::Failed);
+  assert(result.error == "synthetic failure");
+  assert(ticket.wait().state == CommandState::Failed);
+  coordinator.shutdown();
+}
+
+void status_replay_rollover_test() {
+  StatusHub hub(2);
+  assert(hub.publish({StatusField{1, std::int32_t{10}}, StatusField{2, std::string("cold")}}) == 1);
+  assert(hub.publish({StatusField{1, std::int32_t{11}}}) == 2);
+  assert(hub.publish({StatusField{3, true}}) == 3);
+
+  const auto replay_from_one = hub.replay_after(1);
+  assert(!replay_from_one.snapshot_required);
+  assert(replay_from_one.deltas.size() == 2);
+  assert(replay_from_one.deltas[0].sequence == 2);
+  assert(replay_from_one.deltas[1].sequence == 3);
+  assert(std::get<std::int32_t>(replay_from_one.deltas[0].fields[0].value) == 11);
+
+  const auto replay_from_two = hub.replay_after(2);
+  assert(!replay_from_two.snapshot_required);
+  assert(replay_from_two.deltas.size() == 1);
+  assert(replay_from_two.deltas.front().sequence == 3);
+  assert(std::get<bool>(replay_from_two.deltas.front().fields.front().value));
+  assert(hub.replay_after(3).deltas.empty());
+
+  // Sequence zero has fallen out of the two-delta replay window.
+  const auto rolled = hub.replay_after(0);
+  assert(rolled.snapshot_required);
+  assert(rolled.snapshot.sequence == 3);
+  assert(rolled.snapshot.fields.size() == 3);
+  assert(std::get<std::int32_t>(rolled.snapshot.fields[0].value) == 11);
+
+  hub.replace_snapshot({StatusField{9, std::string("replacement")}});
+  const auto replacement = hub.replay_after(3);
+  assert(replacement.snapshot_required);
+  assert(replacement.snapshot.sequence == 4);
+  assert(replacement.snapshot.fields.size() == 1);
+  assert(replacement.deltas.empty());
+}
+
+PositionSample position(double x, std::int32_t motion = 0) {
+  PositionSample sample;
+  sample.coordinates[0] = x;
+  sample.motion_type = motion;
+  return sample;
+}
+
+void position_cursor_generation_and_replacement_test() {
+  PositionHistory history(2, 0.1);
+  assert(history.next_sequence() == 0);
+  assert(history.append(position(1.0)));
+  auto near_duplicate = position(1.05);
+  assert(!history.append(near_duplicate));
+  near_duplicate.motion_type = 7;
+  assert(history.append(near_duplicate));
+  assert(history.append(position(3.0)));
+  assert(history.size() == 2);
+
+  const auto initial = history.snapshot();
+  assert(initial.reset);
+  assert(initial.generation == 1);
+  assert(initial.oldest_sequence == 1);
+  assert(initial.next_sequence == 3);
+  assert(initial.packed.size() == 2 * kPositionStride);
+  assert(initial.packed[0] == 1.05);
+  assert(initial.packed[kPositionStride] == 3.0);
+
+  const auto rolled = history.since(0);
+  assert(rolled.reset);
+  assert(rolled.packed.size() == 2 * kPositionStride);
+  const auto bounded = history.since(1, 1);
+  assert(!bounded.reset);
+  assert(bounded.packed.size() == kPositionStride);
+  assert(bounded.packed[0] == 1.05);
+  assert(history.since(history.next_sequence()).packed.empty());
+
+  const auto old_generation = initial.generation;
+  history.configure(1);
+  const auto configured = history.snapshot();
+  assert(configured.generation != old_generation);
+  assert(configured.oldest_sequence == 2);
+  assert(configured.packed.size() == kPositionStride);
+  assert(history.since(configured.oldest_sequence, 0, old_generation).reset);
+
+  history.clear();
+  const auto cleared = history.snapshot();
+  assert(cleared.reset);
+  assert(cleared.generation != configured.generation);
+  assert(cleared.oldest_sequence == cleared.next_sequence);
+  assert(cleared.packed.empty());
+  assert(history.since(history.next_sequence(), 0, cleared.generation).packed.empty());
+}
+
+std::vector<std::uint8_t> bytes(std::string value) {
+  return {value.begin(), value.end()};
+}
+
+std::string read_file(const fs::path& path) {
+  std::ifstream input(path, std::ios::binary);
+  return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+}
+
+void workspace_traversal_quota_ttl_and_materialization_test() {
+  const auto base = fs::temp_directory_path() /
+                    ("linuxcnc-grpc-native-edge-tests-" + std::to_string(::getpid()));
+  std::error_code error;
+  fs::remove_all(base, error);
+
+  {
+    ProgramWorkspaceStore store(base / "quota-workspaces", base / "quota-active",
+                                WorkspaceLimits{8, 10, std::chrono::hours(24)});
+    const auto first = store.create();
+    assert(store.write_file(first, "one.ngc", bytes("1234")));
+    assert(store.write_file(first, "one.ngc", bytes("5678")));
+    assert(!store.write_file(first, "two.ngc", bytes("12345")));
+    const auto second = store.create();
+    assert(store.write_file(second, "two.ngc", bytes("xy")));
+    assert(!store.write_file(second, "three.ngc", bytes("12345")));
+    assert(store.remove_file(first, "one.ngc"));
+    assert(store.write_file(second, "three.ngc", bytes("12345")));
+    assert(!store.remove_file(second, "missing.ngc"));
+    assert(!store.write_file(first, "../escape.ngc", bytes("x")));
+    assert(!store.write_file(first, "/absolute.ngc", bytes("x")));
+    fs::path rejected;
+    assert(!store.resolve_entry(first, "../escape.ngc", &rejected));
+    assert(!store.resolve_entry(first, "/absolute.ngc", &rejected));
+    assert(!store.resolve_entry(first, "./one.ngc", &rejected));
+    assert(store.erase(first));
+    assert(store.erase(second));
+  }
+
+  {
+    ProgramWorkspaceStore store(base / "workspace", base / "active",
+                                WorkspaceLimits{1024, 2048, std::chrono::hours(24)});
+    const auto id = store.create();
+    assert(store.write_file(id, "program/main.ngc", bytes("G0 X1\n")));
+    assert(store.write_file(id, "program/main.tbl", bytes("tool companion\n")));
+    assert(store.write_file(id, "subdir/notes.txt", bytes("notes")));
+    fs::create_directories(store.active_directory() / "stale", error);
+    {
+      std::ofstream stale(store.active_directory() / "stale" / "old.ngc");
+      stale << "stale";
+    }
+    fs::path resolved;
+    assert(store.resolve_entry(id, "program/main.ngc", &resolved));
+    assert(resolved == store.root() / id / "program/main.ngc");
+    assert(read_file(resolved) == "G0 X1\n");
+    fs::path materialized;
+    assert(store.materialize(id, "program/main.ngc", &materialized));
+    assert(materialized == store.active_directory() / "program/main.ngc");
+    assert(read_file(materialized) == "G0 X1\n");
+    assert(read_file(store.active_directory() / "program/main.tbl") == "tool companion\n");
+    assert(read_file(store.active_directory() / "subdir/notes.txt") == "notes");
+    assert(!fs::exists(store.active_directory() / "stale"));
+
+    const auto outside = base / "outside.txt";
+    const auto outside_directory = base / "outside-directory";
+    {
+      std::ofstream output(outside);
+      output << "outside";
+    }
+    fs::create_directories(outside_directory, error);
+    fs::create_symlink(outside, store.root() / id / "linked.txt", error);
+    assert(!error);
+    fs::create_symlink(outside_directory, store.root() / id / "linked", error);
+    assert(!error);
+    assert(!store.resolve_entry(id, "linked.txt", &resolved));
+    assert(!store.write_file(id, "linked/evil.ngc", bytes("evil")));
+    assert(!store.materialize(id, "linked.txt"));
+    assert(read_file(store.active_directory() / "program/main.ngc") == "G0 X1\n");
+    assert(store.write_file(id, "unsafe.sh", bytes("#!/bin/sh\n")));
+    fs::permissions(store.root() / id / "unsafe.sh", fs::perms::owner_exec,
+                    fs::perm_options::add, error);
+    assert(!error);
+    assert(!store.materialize(id, "program/main.ngc"));
+    assert(read_file(store.active_directory() / "program/main.ngc") == "G0 X1\n");
+    assert(store.erase(id));
+  }
+
+  {
+    ProgramWorkspaceStore store(base / "ttl-workspaces", base / "ttl-active",
+                                WorkspaceLimits{1024, 2048, std::chrono::hours(24)});
+    const auto expired = store.create(std::chrono::seconds(-1));
+    assert(store.prune_expired() == 1);
+    assert(!store.erase(expired));
+    const auto pinned = store.create(std::chrono::seconds(-1));
+    assert(store.pin(pinned));
+    assert(store.prune_expired() == 0);
+    assert(store.unpin(pinned));
+    assert(store.prune_expired() == 1);
+  }
+
+  fs::remove_all(base, error);
+  assert(!error);
+}
+
+void scope_coalescing_and_conflict_accounting_test() {
+  ScopeManager manager;
+  assert(!manager.acquire(""));
+  assert(manager.acquire("controller-a"));
+  assert(manager.acquire("controller-a"));
+  assert(!manager.acquire("controller-b"));
+
+  const auto first = manager.publish({1, 2});
+  assert(first && first->generation == 1);
+  assert(first->payload == std::vector<std::uint8_t>({1, 2}));
+  assert(!manager.publish({3}));
+  assert(!manager.publish({4}));
+  assert(manager.skipped_frames() == 0);
+  assert(!manager.acknowledge("controller-b", first->generation));
+  assert(!manager.acknowledge("controller-a", first->generation + 1));
+
+  const auto second = manager.acknowledge("controller-a", first->generation);
+  assert(second && second->generation == 3);
+  assert(second->payload == std::vector<std::uint8_t>({4}));
+  assert(second->skipped_frames == 1);
+  assert(manager.skipped_frames() == 1);
+  assert(!manager.acknowledge("controller-a", first->generation));
+  assert(!manager.acknowledge("controller-a", second->generation));
+  assert(manager.skipped_frames() == 1);
+
+  const auto third = manager.publish({5});
+  assert(third && third->generation == 4);
+  manager.release("controller-b");
+  assert(manager.acquired());
+  manager.release("controller-a");
+  assert(!manager.acquired());
+  assert(manager.skipped_frames() == 0);
+  assert(!manager.acknowledge("controller-a", third->generation));
+  assert(!manager.publish({6}));
+  assert(manager.acquire("controller-b"));
+  const auto after_reacquire = manager.publish({7});
+  assert(after_reacquire && after_reacquire->generation == 5);
+  manager.release("controller-b");
+}
+
+}  // namespace
+
+int main() {
+  command_queue_bounds_and_wait_test();
+  command_cancellation_and_acceptance_test();
+  command_cancellation_before_worker_start_test();
+  command_failure_wait_test();
+  status_replay_rollover_test();
+  position_cursor_generation_and_replacement_test();
+  workspace_traversal_quota_ttl_and_materialization_test();
+  scope_coalescing_and_conflict_accounting_test();
+  return 0;
+}

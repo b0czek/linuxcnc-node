@@ -1,0 +1,12 @@
+; Generic LinuxCNC parser smoke program.
+G21 ; millimetres
+G17 ; XY plane
+G90 ; absolute mode
+G0 X0 Y0 Z5
+G1 Z0 F100
+G1 X50 Y0 F200
+G1 X50 Y50
+G1 X0 Y50
+G1 X0 Y0
+G0 Z10
+M2
