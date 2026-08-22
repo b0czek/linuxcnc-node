@@ -1,5 +1,4 @@
 ---
-"@linuxcnc-node/core": minor
 "@linuxcnc-node/types": minor
 ---
 

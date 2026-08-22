@@ -1,7 +1,7 @@
 {
   "name": "@linuxcnc-node/types",
   "version": "4.0.0",
-  "description": "TypeScript type definitions for LinuxCNC Node.js bindings",
+  "description": "Transport-independent TypeScript domain types for LinuxCNC",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "engines": {

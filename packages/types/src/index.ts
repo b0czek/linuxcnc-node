@@ -1,4 +1,4 @@
-// LinuxCNC Node.js bindings type definitions
+// Transport-independent LinuxCNC domain types
 
 export * from "./constants";
 export * from "./core";

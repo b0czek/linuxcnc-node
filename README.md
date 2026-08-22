@@ -1,16 +1,12 @@
 # LinuxCNC Node
 
 LinuxCNC Node is an open-source C++ and TypeScript monorepo for building
-applications on top of LinuxCNC. Its native architecture is one standalone
+applications on top of LinuxCNC. Its architecture is one standalone
 `linuxcnc-grpc-server` beside one patched LinuxCNC instance, a versioned raw
-gRPC client, and transport-independent TypeScript domain types. The repository
-also contains the LinuxCNC patch set used by the maintained packages.
-
-The gRPC cutover is being developed behind an atomic parity gate. The previous
-Node native addons and Eden bridge remain in the tree only until HAL Inspector
-and the external Seraph consumers pass end-to-end against gRPC; they are not a
-second supported long-term runtime. See the [native gRPC architecture and
-cutover contract](./docs/grpc-cutover.md).
+gRPC client, transport-independent TypeScript domain types, and a direct binary
+WebSocket stream for high-frequency position telemetry. The legacy Node native
+addons and Eden bridge were retired after the atomic gRPC cutover. See the
+[native architecture](./docs/grpc-cutover.md).
 
 > **Compatibility:** Starting with v3, these packages are purpose-built for
 > **LinuxCNC 2.10** at the pinned
@@ -25,22 +21,10 @@ cutover contract](./docs/grpc-cutover.md).
 - **`native/server`**: C++17 domain library and `linuxcnc-grpc-server` daemon.
 - **`packages/grpc-client`**: Raw generated Node gRPC clients and protobuf
   message types, without convenience wrappers. [README](./packages/grpc-client/README.md)
-- **`packages/core`**: NML access for status monitoring, machine commands,
-  error/operator messages, and high-frequency position logging (legacy during
-  parity development).
-  [README](./packages/core/README.md)
-- **`packages/hal`**: Bindings for the LinuxCNC Hardware Abstraction Layer
-  (HAL), including components, pins, params, signals, and global HAL access.
-  [README](./packages/hal/README.md)
-- **`packages/gcode`**: G-code parsing through LinuxCNC's rs274ngc
-  interpreter for toolpath visualization and program inspection.
-  [README](./packages/gcode/README.md)
 - **`packages/types`**: Transport-independent constants and domain models used
   by consumers. [README](./packages/types/README.md)
-- **`packages/eden-protocol`**: Eden AppBus protocol declarations for
-  LinuxCNC Node services.
-- **`apps/eden/bridge`**: Eden backend app that exposes the
-  LinuxCNC Node packages as IPC services.
+- **`apps/eden/hal-inspector`**: Eden HAL and scope inspector using the raw
+  gRPC client.
 - **`linuxcnc-patches`**: Maintained LinuxCNC patch series and pinned upstream
   baseline.
 
@@ -75,8 +59,7 @@ cmake --build build/native-grpc --parallel
 ctest --test-dir build/native-grpc --output-on-failure
 ```
 
-Run tests with the LinuxCNC runtime environment sourced and the required
-`LINUXCNC_INCLUDE` and `LINUXCNC_LIB` variables set:
+Run the TypeScript contract and consumer tests:
 
 ```sh
 pnpm test
@@ -87,28 +70,24 @@ pnpm test
 The maintained patches, their order, and the reason each divergence exists are
 documented in [`linuxcnc-patches`](./linuxcnc-patches/README.md). Build
 LinuxCNC from the pinned revision with that complete series before building or
-running the native packages. CI performs the same checkout, patch, and build
+running the native daemon. CI performs the same checkout, patch, and build
 flow.
 
 ## Prerequisites
 
 1. **LinuxCNC Environment**
    - A working LinuxCNC development environment.
-   - Source the LinuxCNC runtime environment before running applications that
-     use the native packages.
-   - LinuxCNC headers and libraries must be available when building native
-     addons.
+   - Source the LinuxCNC runtime environment before running the native daemon.
+   - LinuxCNC headers and libraries must be available when building it.
 2. **Node.js 24.15 or later and pnpm**
 3. **Native build tools**
    - A C++17 compiler, CMake, Python development headers, protobuf, and gRPC.
    - On Debian-family systems the contract build uses `libgrpc++-dev`,
      `libgrpc-dev`, `libprotobuf-dev`, `protobuf-compiler`, and
      `protobuf-compiler-grpc`.
-   - The legacy parity packages still require `make` and `node-gyp` until the
-     atomic removal gate is met.
 
 ## License
 
-Most runtime packages and apps are licensed under **GPL-2.0-only**. The
-`@linuxcnc-node/types`, `@linuxcnc-node/grpc-client`, and
-`@linuxcnc-node/eden-protocol` packages are licensed under **MIT**.
+The native runtime and apps are licensed under **GPL-2.0-only**.
+`@linuxcnc-node/types` and `@linuxcnc-node/grpc-client` are licensed under
+**MIT**.

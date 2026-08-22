@@ -26,9 +26,12 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential \
             cmake \
+            libboost-dev \
             libgrpc++-dev \
             libgrpc-dev \
+            libssl-dev \
             libprotobuf-dev \
+            openssl \
             protobuf-compiler \
             protobuf-compiler-grpc
 
@@ -87,9 +90,12 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential \
             cmake \
+            libboost-dev \
             libgrpc++-dev \
             libgrpc-dev \
+            libssl-dev \
             libprotobuf-dev \
+            openssl \
             protobuf-compiler \
             protobuf-compiler-grpc \
             python3-dev
@@ -236,29 +242,7 @@ jobs:
           key: linuxcnc-${{ runner.os }}-${{ runner.arch }}-${{ steps.linuxcnc-baseline.outputs.revision }}-${{ env.LINUXCNC_CACHE_VERSION }}-${{ hashFiles('linuxcnc-patches/*.patch') }}
 
       - name: Install dependencies
-        shell: bash
-        env:
-          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ steps.linuxcnc-baseline.outputs.revision }}/linuxcnc
-        run: |
-          set -euo pipefail
-
-          set +u
-          source "${LINUXCNC_DIR}/scripts/rip-environment"
-          set -u
-          export LINUXCNC_INCLUDE="${LINUXCNC_DIR}/include"
-          export LINUXCNC_LIB="${LINUXCNC_DIR}/lib"
-          pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Test
-        shell: bash
-        env:
-          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ steps.linuxcnc-baseline.outputs.revision }}/linuxcnc
-        run: |
-          set -euo pipefail
-
-          set +u
-          source "${LINUXCNC_DIR}/scripts/rip-environment"
-          set -u
-          export LINUXCNC_INCLUDE="${LINUXCNC_DIR}/include"
-          export LINUXCNC_LIB="${LINUXCNC_DIR}/lib"
-          pnpm test
+        run: pnpm test

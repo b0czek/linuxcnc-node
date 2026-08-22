@@ -32,9 +32,11 @@ values; clients must not coerce them through an unsafe JavaScript `number`.
 
 `MachineService` provides complete status, replayable typed sparse status
 deltas, a complete command oneof, operator/error events, and position-history
-configuration, clearing, snapshots, and streams. A single serialized NML queue
-orders every command. Cancelling an RPC only cancels the wait; it cannot undo a
-command LinuxCNC already accepted.
+configuration and clearing. Position snapshots and deltas use the daemon's
+one-way binary WebSocket stream so renderer consumers do not require a gRPC or
+IPC intermediary. A single serialized NML queue orders every command.
+Cancelling an RPC only cancels the wait; it cannot undo a command LinuxCNC
+already accepted.
 
 `ProgramService` owns opaque workspaces. Upload paths must be relative and
 cannot traverse, contain symlinks, or identify executables. Defaults are a
@@ -61,13 +63,14 @@ Network work never runs from realtime code.
 
 ## Endpoint and security
 
-The default endpoint is `127.0.0.1:50051`, but both address and port are
-configuration. The standard gRPC health service is always available and
-reflection is disabled unless explicitly enabled. TLS and mutual TLS are
-supported. A plaintext non-loopback bind is rejected unless the operator also
-sets the explicit unsafe-bind option. The daemon intentionally has no machine
-lease or application authorization layer; Noah owns writer policy and
-concurrency.
+The default gRPC endpoint is `127.0.0.1:50051`. Position telemetry defaults to
+the WebSocket endpoint `ws://127.0.0.1:50052/v1/position-history`. Addresses
+and ports are configurable. The standard gRPC health service is always
+available and reflection is disabled unless explicitly enabled. TLS and mutual
+TLS are supported. A plaintext non-loopback bind is rejected unless the
+operator also sets the explicit unsafe-bind option. The daemon intentionally
+has no machine lease or application authorization layer; Noah owns writer
+policy and concurrency.
 
 ## Operational bounds
 
@@ -87,15 +90,9 @@ Every subscriber queue is bounded. After synchronization, status watchers
 receive sparse typed deltas rather than repeated full snapshots. G-code
 operation batches are bounded and scope frames are coalesced for slow clients.
 
-## Cutover gate
+## Cutover status
 
-The legacy addons and Eden bridge may coexist only while parity is being
-developed. They must not be published as a supported dual runtime. Deletion is
-one cutover change after HAL Inspector and the external Seraph consumers pass
-against gRPC. That gate includes Noah status reconstruction and command
-mapping, workspace-backed preview/execution, packed position decoding, and the
-operator panel's Noah AppBus routes.
-
-Seraph and Noah are not stored in this repository. Their migration and the
-final legacy-package deletion therefore require a coordinated consumer change;
-the legacy packages remain present here until that external gate is proven.
+The atomic cutover is complete. The legacy Node native addons, their TypeScript
+wrappers, the temporary Eden protocol declarations, and the Eden bridge have
+been removed. gRPC remains the control plane; high-frequency position telemetry
+flows directly from the machine daemon to preview renderers over WebSocket.

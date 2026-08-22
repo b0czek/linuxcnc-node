@@ -1,12 +1,12 @@
 ---
 name: patch-linuxcnc
-description: Use when adding, modifying, or rebasing LinuxCNC patches in linuxcnc-patches/. Covers EMC_STAT/NML changes, parameter mapping, Node.js binding exposure, and verification for the pinned LinuxCNC baseline.
+description: Use when adding, modifying, or rebasing LinuxCNC patches in linuxcnc-patches/. Covers EMC_STAT/NML changes, parameter mapping, native daemon exposure, and verification for the pinned LinuxCNC baseline.
 ---
 
 # Patching LinuxCNC for linuxcnc-node
 
 This project maintains a patch series in `linuxcnc-patches/` against a pinned
-LinuxCNC baseline (`linuxcnc-patches/base-revision`). The Node.js bindings are
+LinuxCNC baseline (`linuxcnc-patches/base-revision`). The native daemon is
 ABI-locked to LinuxCNC built with this series applied.
 
 ## Baseline
@@ -49,15 +49,11 @@ ABI-locked to LinuxCNC built with this series applied.
    - G28 home: `#5161–#5169`.
    - G30 home: `#5181–#5189`.
 
-4. **Update the Node.js bindings** in `core/src/cpp/`:
-   - Add delta comparisons in `stat_channel.cc` using the existing macros or a
-     new macro if the type pattern is new.
-   - `EmcPose` fields need `memcmp` (use `COMPARE_POSE` or
-     `COMPARE_ARRAY_MEMCMP`).
-   - Scalar arrays can use `COMPARE_SCALAR_ARRAY`.
+4. **Update the native daemon mapping** in `native/server/src/` and the
+   protobuf contract when the new data crosses the transport boundary.
 
 5. **Update TypeScript types** in `types/src/core.ts` to match the new status
-   paths emitted by the addon.
+   paths emitted by the daemon.
 
 6. **Generate the patch** from a clean LinuxCNC checkout that has all previous
    patches applied. If the local `linuxcnc/` checkout already contains earlier
@@ -91,18 +87,20 @@ if a patch does not apply cleanly.
 2. Apply the same series to the system LinuxCNC source used for builds
    (`/home/dariusz/Desktop/linuxcnc` in this workspace).
 3. Rebuild LinuxCNC so the shared libraries match the new `EMC_STAT` layout.
-4. Build the Node.js bindings:
+4. Build the TypeScript contract and native daemon:
    ```sh
    pnpm --filter @linuxcnc-node/types build
-   pnpm --filter @linuxcnc-node/core build
+   cmake -S . -B build/native-grpc-linuxcnc \
+     -DLINUXCNC_ROOT=/path/to/linuxcnc \
+     -DLINUXCNC_GRPC_BUILD_WIRE=ON \
+     -DLINUXCNC_GRPC_BUILD_TESTS=ON \
+     -DLINUXCNC_GRPC_ENABLE_NML=ON
+   cmake --build build/native-grpc-linuxcnc --parallel
    ```
-5. Run unit tests:
+5. Run the native contract and integration tests with the LinuxCNC runtime
+   environment sourced:
    ```sh
-   pnpm --filter @linuxcnc-node/core test:unit
-   ```
-6. Run integration tests only when a LinuxCNC runtime is available:
-   ```sh
-   pnpm --filter @linuxcnc-node/core test:integration
+   ctest --test-dir build/native-grpc-linuxcnc --output-on-failure
    ```
 
 ## Rebuilding the series after a baseline bump
