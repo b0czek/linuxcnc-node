@@ -3,6 +3,20 @@ node_modules
 build
 dist
 coverage
+
+# CMake in-source build artifacts
+**/CMakeCache.txt
+**/CMakeFiles/
+**/CTestTestfile.cmake
+**/DartConfiguration.tcl
+**/Testing/
+**/cmake_install.cmake
+**/install_manifest.txt
+/native/server/src/Makefile
+/native/server/src/generated/
+/native/server/src/*.a
+/native/server/src/linuxcnc-grpc-*
+
 *.edenite
 *.expanded
 *.tgz
