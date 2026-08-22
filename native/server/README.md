@@ -26,10 +26,10 @@ and NML resources it created.
 Position-history configuration and clearing remain on `MachineService` through
 `ConfigurePositionHistory` and `ClearPositionHistory`. Telemetry is published
 directly to renderers at `ws://127.0.0.1:50052/v1/position-history` by default;
-set `--position-telemetry-endpoint=HOST:PORT` to change the listener. `--tls`
-changes both listeners to TLS and reuses the configured certificate and key.
-With `--mtls`, the WebSocket listener also requires a client certificate signed
-by `--tls-client-ca`.
+set `--position-telemetry-endpoint=HOST:PORT` to change the listener. This
+read-only telemetry listener is always a plaintext `ws://` endpoint; `--tls`
+and `--mtls` secure only the gRPC control plane. A non-loopback telemetry bind
+requires `--unsafe-non-loopback`.
 
 The application protocol is server-to-client only. Client data messages close
 the connection with WebSocket policy error 1008. Each connection begins with a

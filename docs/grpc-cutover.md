@@ -67,10 +67,11 @@ The default gRPC endpoint is `127.0.0.1:50051`. Position telemetry defaults to
 the WebSocket endpoint `ws://127.0.0.1:50052/v1/position-history`. Addresses
 and ports are configurable. The standard gRPC health service is always
 available and reflection is disabled unless explicitly enabled. TLS and mutual
-TLS are supported. A plaintext non-loopback bind is rejected unless the
-operator also sets the explicit unsafe-bind option. The daemon intentionally
-has no machine lease or application authorization layer; Noah owns writer
-policy and concurrency.
+TLS are supported for the gRPC control plane. The read-only position telemetry
+listener is always plaintext WebSocket and does not inherit gRPC TLS settings.
+A non-loopback plaintext bind is rejected unless the operator also sets the
+explicit unsafe-bind option. The daemon intentionally has no machine lease or
+application authorization layer; Noah owns writer policy and concurrency.
 
 ## Operational bounds
 

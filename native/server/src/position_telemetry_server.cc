@@ -6,11 +6,8 @@
 
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/post.hpp>
-#include <boost/asio/ssl/context.hpp>
-#include <boost/asio/ssl/stream.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
-#include <boost/beast/ssl.hpp>
 #include <boost/beast/websocket.hpp>
 
 #include <atomic>
@@ -19,7 +16,6 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
-#include <type_traits>
 #include <utility>
 
 namespace linuxcnc::server {
@@ -31,7 +27,6 @@ namespace http = beast::http;
 namespace websocket = beast::websocket;
 using tcp = asio::ip::tcp;
 using PlainStream = beast::tcp_stream;
-using TlsStream = beast::ssl_stream<beast::tcp_stream>;
 
 std::pair<std::string, std::string> split_endpoint(const std::string& endpoint) {
   const auto separator = endpoint.rfind(':');
@@ -45,31 +40,16 @@ std::pair<std::string, std::string> split_endpoint(const std::string& endpoint) 
   return {host, endpoint.substr(separator + 1)};
 }
 
-template <typename Stream>
-class Session final : public std::enable_shared_from_this<Session<Stream>> {
+class Session final : public std::enable_shared_from_this<Session> {
  public:
-  Session(Stream stream, std::shared_ptr<PositionTelemetry> telemetry,
+  Session(PlainStream stream, std::shared_ptr<PositionTelemetry> telemetry,
           std::function<void()> release)
       : websocket_(std::move(stream)), telemetry_(std::move(telemetry)),
         release_(std::move(release)) {}
 
-  void run() {
-    if constexpr (std::is_same_v<Stream, TlsStream>) {
-      websocket_.next_layer().async_handshake(
-          asio::ssl::stream_base::server,
-          beast::bind_front_handler(&Session::on_tls_handshake,
-                                    this->shared_from_this()));
-    } else {
-      read_upgrade();
-    }
-  }
+  void run() { read_upgrade(); }
 
  private:
-  void on_tls_handshake(beast::error_code error) {
-    if (error) return fail();
-    read_upgrade();
-  }
-
   void read_upgrade() {
     http::async_read(websocket_.next_layer(), read_buffer_, request_,
                      beast::bind_front_handler(&Session::on_upgrade_request,
@@ -178,7 +158,7 @@ class Session final : public std::enable_shared_from_this<Session<Stream>> {
     beast::get_lowest_layer(websocket_).socket().close(ignored);
   }
 
-  websocket::stream<Stream> websocket_;
+  websocket::stream<PlainStream> websocket_;
   std::shared_ptr<PositionTelemetry> telemetry_;
   PositionTelemetry::Subscription subscription_;
   std::function<void()> release_;
@@ -202,22 +182,7 @@ class PositionTelemetryServer::Impl {
   Impl(const DaemonConfig& config,
        std::shared_ptr<PositionTelemetry> telemetry)
       : telemetry_(std::move(telemetry)),
-        tls_(config.tls),
-        ssl_(asio::ssl::context::tls_server),
         acceptor_(io_) {
-    if (tls_) {
-      ssl_.set_options(asio::ssl::context::default_workarounds |
-                       asio::ssl::context::no_sslv2 |
-                       asio::ssl::context::no_sslv3);
-      ssl_.use_certificate_chain_file(config.tls_certificate.string());
-      ssl_.use_private_key_file(config.tls_private_key.string(),
-                                asio::ssl::context::pem);
-      if (config.mtls) {
-        ssl_.load_verify_file(config.tls_client_ca.string());
-        ssl_.set_verify_mode(asio::ssl::verify_peer |
-                             asio::ssl::verify_fail_if_no_peer_cert);
-      }
-    }
     const auto [host, port] = split_endpoint(config.position_telemetry_endpoint);
     tcp::resolver resolver(io_);
     const auto resolved = resolver.resolve(host, port);
@@ -252,14 +217,9 @@ class PositionTelemetryServer::Impl {
               active_sessions_.fetch_sub(1);
               beast::error_code ignored;
               socket.close(ignored);
-            } else if (tls_) {
-              auto release = [this] { active_sessions_.fetch_sub(1); };
-              std::make_shared<Session<TlsStream>>(
-                  TlsStream(std::move(socket), ssl_), telemetry_,
-                  std::move(release))->run();
             } else {
               auto release = [this] { active_sessions_.fetch_sub(1); };
-              std::make_shared<Session<PlainStream>>(
+              std::make_shared<Session>(
                   PlainStream(std::move(socket)), telemetry_,
                   std::move(release))->run();
             }
@@ -270,8 +230,6 @@ class PositionTelemetryServer::Impl {
 
   asio::io_context io_{1};
   std::shared_ptr<PositionTelemetry> telemetry_;
-  bool tls_ = false;
-  asio::ssl::context ssl_;
   tcp::acceptor acceptor_;
   std::atomic<bool> stopped_{false};
   std::atomic<std::size_t> active_sessions_{0};

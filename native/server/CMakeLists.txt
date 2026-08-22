@@ -177,7 +177,6 @@ target_compile_options(linuxcnc-grpc-server PRIVATE -Wall -Wextra -Wpedantic)
 # checked in. Pass LINUXCNC_GRPC_BUILD_WIRE=OFF for a domain-only build.
 if(LINUXCNC_GRPC_BUILD_WIRE)
     find_package(Boost REQUIRED)
-    find_package(OpenSSL REQUIRED)
     find_package(Protobuf REQUIRED)
     find_package(gRPC REQUIRED)
     find_program(LINUXCNC_GRPC_PROTOC protoc REQUIRED)
@@ -224,21 +223,12 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
     target_compile_definitions(linuxcnc-grpc-server PRIVATE LINUXCNC_GRPC_BUILD_WIRE=1)
     target_compile_definitions(linuxcnc-grpc-server PRIVATE BOOST_ERROR_CODE_HEADER_ONLY=1)
     target_include_directories(linuxcnc-grpc-server PRIVATE ${Boost_INCLUDE_DIRS})
-    target_link_libraries(linuxcnc-grpc-server PRIVATE linuxcnc-grpc-wire OpenSSL::SSL)
+    target_link_libraries(linuxcnc-grpc-server PRIVATE linuxcnc-grpc-wire)
     add_executable(linuxcnc-grpc-smoke tests/grpc_smoke.cc)
     target_compile_features(linuxcnc-grpc-smoke PRIVATE cxx_std_17)
     target_compile_definitions(linuxcnc-grpc-smoke PRIVATE BOOST_ERROR_CODE_HEADER_ONLY=1)
     target_include_directories(linuxcnc-grpc-smoke PRIVATE ${Boost_INCLUDE_DIRS})
     target_link_libraries(linuxcnc-grpc-smoke PRIVATE linuxcnc-grpc-wire)
-    add_executable(linuxcnc-position-telemetry-tls-smoke
-        tests/position_telemetry_tls_smoke.cc)
-    target_compile_features(linuxcnc-position-telemetry-tls-smoke PRIVATE cxx_std_17)
-    target_compile_definitions(linuxcnc-position-telemetry-tls-smoke PRIVATE
-        BOOST_ERROR_CODE_HEADER_ONLY=1)
-    target_include_directories(linuxcnc-position-telemetry-tls-smoke PRIVATE
-        ${Boost_INCLUDE_DIRS})
-    target_link_libraries(linuxcnc-position-telemetry-tls-smoke PRIVATE
-        OpenSSL::SSL Threads::Threads)
     if(LINUXCNC_GRPC_HAS_NML AND LINUXCNC_GRPC_HAS_HAL)
         add_executable(linuxcnc-grpc-live-smoke tests/grpc_live_smoke.cc)
         target_compile_features(linuxcnc-grpc-live-smoke PRIVATE cxx_std_17)
@@ -276,10 +266,6 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
             -Wall -Wextra -Wpedantic)
         add_test(NAME linuxcnc-grpc-mapping-edge-tests
                  COMMAND linuxcnc-grpc-mapping-edge-tests)
-        add_test(NAME linuxcnc-position-telemetry-tls-smoke
-            COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_position_telemetry_tls_smoke.sh"
-                    "$<TARGET_FILE:linuxcnc-grpc-server>"
-                    "$<TARGET_FILE:linuxcnc-position-telemetry-tls-smoke>")
     endif()
 endif()
 

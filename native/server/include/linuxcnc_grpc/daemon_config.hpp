@@ -38,8 +38,9 @@ struct DaemonConfig {
 };
 
 // Parses the daemon's intentionally small process-level configuration. gRPC
-// credentials are loaded by the transport adapter; this object only validates
-// the endpoint policy before a socket can be bound.
+// credentials are loaded by the control-plane adapter; position telemetry is
+// always plaintext WebSocket. This object validates both endpoint policies
+// before either socket can be bound.
 bool validate_config(const DaemonConfig& config, std::string* error = nullptr);
 bool validate_program_prefix(const std::filesystem::path& ini_file,
                              const std::filesystem::path& active_directory,

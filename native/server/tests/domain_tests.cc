@@ -268,6 +268,10 @@ void daemon_config_test() {
     config.tls_certificate = base / "server.crt";
     config.tls_private_key = base / "server.key";
     assert(validate_config(config, &error));
+    config.position_telemetry_endpoint = "0.0.0.0:50052";
+    assert(!validate_config(config, &error));
+    config.unsafe_non_loopback = true;
+    assert(validate_config(config, &error));
   }
   fs::remove_all(base, filesystem_error);
 }

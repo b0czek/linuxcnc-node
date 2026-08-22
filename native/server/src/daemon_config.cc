@@ -57,14 +57,14 @@ bool validate_config(const DaemonConfig& config, std::string* error) {
     return false;
   };
   const auto valid_endpoint = [&](const std::string& endpoint,
-                                  const char* name) {
+                                  const char* name, bool tls_protected) {
     const auto separator = endpoint.rfind(':');
     if (separator == std::string::npos || separator == 0 ||
         separator + 1 == endpoint.size()) {
       if (error) *error = std::string(name) + " must be HOST:PORT";
       return false;
     }
-    if (!config.tls && !config.unsafe_non_loopback &&
+    if (!tls_protected && !config.unsafe_non_loopback &&
         !loopback_host(endpoint_host(endpoint))) {
       if (error) *error = std::string(name) +
           " on a non-loopback host requires --unsafe-non-loopback";
@@ -72,9 +72,9 @@ bool validate_config(const DaemonConfig& config, std::string* error) {
     }
     return true;
   };
-  if (!valid_endpoint(config.endpoint, "endpoint") ||
+  if (!valid_endpoint(config.endpoint, "endpoint", config.tls) ||
       !valid_endpoint(config.position_telemetry_endpoint,
-                      "position telemetry endpoint")) return false;
+                      "position telemetry endpoint", false)) return false;
   if (config.endpoint == config.position_telemetry_endpoint) {
     return fail("gRPC and position telemetry endpoints must differ");
   }
@@ -272,8 +272,8 @@ std::string config_help() {
          "  --workspace-root=PATH --active-program-directory=PATH\n"
          "  --workspace-quota=BYTES --total-quota=BYTES --workspace-ttl-seconds=N\n"
          "  --command-queue-capacity=N\n"
-         "  --tls --tls-certificate=PATH --tls-private-key=PATH\n"
-         "  --mtls --tls-client-ca=PATH --reflection\n"
+         "  --tls --tls-certificate=PATH --tls-private-key=PATH (gRPC only)\n"
+         "  --mtls --tls-client-ca=PATH --reflection (gRPC only)\n"
          "  --status-period-ms=50 --error-period-ms=100 --position-period-ms=10\n"
          "  --topology-period-ms=2000 --scope-samples=32000\n"
          "  --scope-period-ms=20 --scope-heartbeat-ms=100\n"

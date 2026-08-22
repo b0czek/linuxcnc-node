@@ -3237,7 +3237,7 @@ int run_grpc_server(const DaemonConfig& config) {
     return 2;
   }
   std::cout << "linuxcnc-grpc-server listening on " << config.endpoint
-            << " and position telemetry on "
+            << " and position telemetry on ws://"
             << config.position_telemetry_endpoint << std::endl;
   std::atomic<bool> shutdown_requested{false};
   std::thread control([&] {

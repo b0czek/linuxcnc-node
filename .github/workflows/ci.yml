@@ -29,9 +29,7 @@ jobs:
             libboost-dev \
             libgrpc++-dev \
             libgrpc-dev \
-            libssl-dev \
             libprotobuf-dev \
-            openssl \
             protobuf-compiler \
             protobuf-compiler-grpc
 
@@ -93,9 +91,7 @@ jobs:
             libboost-dev \
             libgrpc++-dev \
             libgrpc-dev \
-            libssl-dev \
             libprotobuf-dev \
-            openssl \
             protobuf-compiler \
             protobuf-compiler-grpc \
             python3-dev
