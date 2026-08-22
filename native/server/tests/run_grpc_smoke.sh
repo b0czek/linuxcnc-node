@@ -3,7 +3,8 @@ set -euo pipefail
 
 server="$1"
 smoke="$2"
-port="${LINUXCNC_GRPC_SMOKE_PORT:-50052}"
+port="${LINUXCNC_GRPC_SMOKE_PORT:-$((52000 + ($$ % 1000)))}"
+telemetry_port="${LINUXCNC_POSITION_TELEMETRY_SMOKE_PORT:-$((53000 + ($$ % 1000)))}"
 root="$(mktemp -d "${TMPDIR:-/tmp}/linuxcnc-grpc-smoke.XXXXXX")"
 cleanup() {
   if [[ -n "${server_pid:-}" ]]; then
@@ -33,6 +34,7 @@ EOF
 
 "$server" \
   "--endpoint=127.0.0.1:${port}" \
+  "--position-telemetry-endpoint=127.0.0.1:${telemetry_port}" \
   "--ini=$root/linuxcnc.ini" \
   "--nml=$root/nml.conf" \
   "--workspace-root=$root/workspaces" \
@@ -55,7 +57,7 @@ if ! grep -q "listening on 127.0.0.1:${port}" "$root/server.log"; then
   cat "$root/server.log"
   exit 1
 fi
-"$smoke" "127.0.0.1:${port}"
+"$smoke" "127.0.0.1:${port}" "127.0.0.1:${telemetry_port}"
 
 # Keep a callback stream active while SIGTERM drives the ordered shutdown.
 "$smoke" "127.0.0.1:${port}" --hold-stream &

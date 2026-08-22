@@ -20,7 +20,7 @@ struct PositionHistoryBatch {
   // A replacement is always emitted by snapshot(). Delta consumers compare
   // this generation with the generation they last acknowledged.
   std::uint64_t generation = 0;
-  std::uint64_t oldest_sequence = 0;
+  std::uint64_t first_sequence = 0;
   std::uint64_t next_sequence = 0;
   std::vector<double> packed;
 };

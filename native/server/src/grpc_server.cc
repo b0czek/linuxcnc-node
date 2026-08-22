@@ -6,7 +6,8 @@
 #include "linuxcnc_grpc/grpc_hal_mapping.hpp"
 #include "linuxcnc_grpc/hal_repository.hpp"
 #include "linuxcnc_grpc/nml_adapter.hpp"
-#include "linuxcnc_grpc/position_history.hpp"
+#include "linuxcnc_grpc/position_telemetry.hpp"
+#include "linuxcnc_grpc/position_telemetry_server.hpp"
 #include "linuxcnc_grpc/program_workspace.hpp"
 #ifndef LINUXCNC_GRPC_HAS_SCOPE
 #include "linuxcnc_grpc/scope_manager.hpp"
@@ -105,48 +106,10 @@ grpc::Status Unimplemented(const std::string& message) {
 }
 #endif
 
-std::string pack_f64_le(const std::vector<double>& values) {
-  std::string bytes(values.size() * sizeof(double), '\0');
-  for (std::size_t index = 0; index < values.size(); ++index) {
-    std::uint64_t bits = 0;
-    static_assert(sizeof(bits) == sizeof(values[index]));
-    std::memcpy(&bits, &values[index], sizeof(bits));
-    for (unsigned byte = 0; byte < sizeof(bits); ++byte) {
-      bytes[index * sizeof(bits) + byte] =
-          static_cast<char>((bits >> (byte * 8U)) & 0xffU);
-    }
-  }
-  return bytes;
-}
-
 std::string read_file(const std::filesystem::path& path) {
   std::ifstream input(path, std::ios::binary);
   if (!input) return {};
   return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
-}
-
-void fill_position_snapshot(const PositionHistoryBatch& batch,
-                            PositionHistorySnapshot* response) {
-  response->set_first_sequence(batch.oldest_sequence);
-  response->set_next_sequence(batch.next_sequence);
-  response->set_values_le_f64(pack_f64_le(batch.packed));
-  response->set_value_count(static_cast<std::uint32_t>(
-      std::min<std::size_t>(batch.packed.size(), std::numeric_limits<std::uint32_t>::max())));
-  response->set_stride(static_cast<std::uint32_t>(kPositionStride));
-  response->set_generation(batch.generation);
-}
-
-void fill_position_batch(const PositionHistoryBatch& batch,
-                         PositionBatchKind kind,
-                         linuxcnc::v1::PositionHistoryBatch* response) {
-  response->set_kind(kind);
-  response->set_first_sequence(batch.oldest_sequence);
-  response->set_next_sequence(batch.next_sequence);
-  response->set_values_le_f64(pack_f64_le(batch.packed));
-  response->set_value_count(static_cast<std::uint32_t>(
-      std::min<std::size_t>(batch.packed.size(), std::numeric_limits<std::uint32_t>::max())));
-  response->set_stride(static_cast<std::uint32_t>(kPositionStride));
-  response->set_generation(batch.generation);
 }
 
 void fill_status(const NmlStatusSnapshot& source, LinuxCNCStat* target) {
@@ -522,9 +485,7 @@ using MachineCallbackBase = MachineService::WithCallbackMethod_GetStatus<
             MachineService::WithCallbackMethod_WatchStatus<
                 MachineService::WithCallbackMethod_ConfigurePositionHistory<
                     MachineService::WithCallbackMethod_ClearPositionHistory<
-                        MachineService::WithCallbackMethod_GetPositionHistory<
-                            MachineService::WithCallbackMethod_WatchPositionHistory<
-                                MachineService::Service>>>>>>>>;
+                        MachineService::Service>>>>>>;
 
 class MachineServiceImpl final : public MachineCallbackBase {
   struct PendingWorkspaceLease {
@@ -550,6 +511,7 @@ class MachineServiceImpl final : public MachineCallbackBase {
  public:
   explicit MachineServiceImpl(const DaemonConfig& config,
                               std::shared_ptr<ProgramWorkspaceStore> workspaces,
+                              std::shared_ptr<PositionTelemetry> positions,
                               BoundedExecutor& blocking,
                               AdmissionCounter& stream_admission)
       : nml_(config.nml_file, config.command_queue_capacity),
@@ -557,7 +519,7 @@ class MachineServiceImpl final : public MachineCallbackBase {
         stream_admission_(stream_admission),
         workspaces_(std::move(workspaces)),
         workspace_activation_(std::make_shared<WorkspaceActivation>(workspaces_)),
-        positions_(10000),
+        positions_(std::move(positions)),
         status_period_(config.status_period),
         error_period_(config.error_period),
         position_period_(config.position_period),
@@ -573,7 +535,6 @@ class MachineServiceImpl final : public MachineCallbackBase {
     if (stopping_.exchange(true, std::memory_order_relaxed)) return;
     status_wakes_.close();
     error_wakes_.close();
-    position_wakes_.close();
     callbacks_.shutdown();
     position_condition_.notify_all();
     if (position_poller_.joinable()) position_poller_.join();
@@ -910,7 +871,7 @@ class MachineServiceImpl final : public MachineCallbackBase {
               "position history capacity exceeds 100000 samples"};
     }
     if (request.capacity() > 0) {
-      positions_.configure(request.capacity());
+      positions_->configure(request.capacity());
     }
     {
       std::lock_guard lock(position_mutex_);
@@ -919,8 +880,7 @@ class MachineServiceImpl final : public MachineCallbackBase {
         position_period_ = std::chrono::milliseconds(request.sample_period_ms());
       }
     }
-    if (!request.enabled()) positions_.clear();
-    position_wakes_.publish(positions_.next_sequence());
+    if (!request.enabled()) positions_->clear();
     return grpc::Status::OK;
   }
 
@@ -933,197 +893,12 @@ class MachineServiceImpl final : public MachineCallbackBase {
           if (cancelled.cancelled()) {
             return grpc::Status(grpc::StatusCode::CANCELLED, "RPC cancelled");
           }
-          positions_.clear();
-          position_wakes_.publish(positions_.next_sequence());
+          positions_->clear();
           return grpc::Status::OK;
         });
   }
 
-  grpc::ServerUnaryReactor* GetPositionHistory(
-      grpc::CallbackServerContext*, const PositionHistoryRequest* request,
-      PositionHistorySnapshot* response) override {
-    auto owned_request = std::make_shared<PositionHistoryRequest>(*request);
-    return new UnaryTaskReactor<PositionHistorySnapshot>(
-        blocking_, callbacks_, response, [this, owned_request = std::move(owned_request)](
-            const CancellationToken& cancelled, PositionHistorySnapshot* task_response) {
-          if (cancelled.cancelled()) {
-            return grpc::Status(grpc::StatusCode::CANCELLED, "RPC cancelled");
-          }
-          return get_position_history(*owned_request, task_response);
-        });
-  }
-
-  grpc::Status get_position_history(const PositionHistoryRequest& request,
-                                    PositionHistorySnapshot* response) {
-    if (request.request_case() == PositionHistoryRequest::kConfigure) {
-      auto status = configure_position(request.configure());
-      if (!status.ok()) return status;
-    } else if (request.request_case() == PositionHistoryRequest::kClear) {
-      positions_.clear();
-      position_wakes_.publish(positions_.next_sequence());
-    }
-    if (request.request_case() == PositionHistoryRequest::kCursor) {
-      const auto& cursor = request.cursor();
-      fill_position_snapshot(positions_.since(cursor.after_sequence(), 0,
-                                              cursor.after_generation()), response);
-    } else {
-      fill_position_snapshot(positions_.snapshot(), response);
-    }
-    return grpc::Status::OK;
-  }
-
-  grpc::ServerWriteReactor<PositionHistoryEvent>* WatchPositionHistory(
-      grpc::CallbackServerContext*, const PositionHistoryRequest* request) override {
-    return new PositionReactor(*this, *request);
-  }
-
  private:
-  class PositionReactor final
-      : public grpc::ServerWriteReactor<PositionHistoryEvent> {
-   public:
-    PositionReactor(MachineServiceImpl& service, PositionHistoryRequest request)
-        : service_(service), request_(std::move(request)),
-          admitted_(service_.stream_admission_.acquire()),
-          gate_(std::make_shared<LifetimeGate<PositionReactor>>(this)) {
-      const std::weak_ptr<LifetimeGate<PositionReactor>> weak_gate = gate_;
-      registration_ = service_.callbacks_.register_callback([weak_gate] {
-        if (auto gate = weak_gate.lock()) gate->invoke([](PositionReactor& reactor) {
-          reactor.shutdown();
-        });
-      });
-      if (!registration_) { shutdown(); return; }
-      if (!admitted_) {
-        finish({grpc::StatusCode::RESOURCE_EXHAUSTED,
-                "stream admission limit reached"});
-        return;
-      }
-      subscription_ = service_.position_wakes_.subscribe(
-          [weak_gate](const std::uint64_t&) {
-            auto gate = weak_gate.lock();
-            if (gate) gate->invoke([](PositionReactor& reactor) {
-              ++reactor.pending_wakes_;
-              reactor.schedule_wake();
-            });
-          });
-      schedule_wake();
-    }
-
-    void OnWriteDone(bool ok) override {
-      gate_->invoke([ok](PositionReactor& reactor) { reactor.write_done(ok); });
-    }
-    void OnCancel() override {
-      gate_->invoke([](PositionReactor& reactor) {
-        reactor.finish({grpc::StatusCode::CANCELLED,
-                        "position stream cancelled"});
-      });
-    }
-    void OnDone() override {
-      subscription_.reset();
-      gate_->detach();
-      registration_.reset();
-      if (admitted_) service_.stream_admission_.release();
-      delete this;
-    }
-
-    void shutdown() {
-      subscription_.reset();
-      finish({grpc::StatusCode::UNAVAILABLE, "server shutting down"});
-    }
-
-   private:
-    void schedule_wake() {
-      if (gate_->state() != LifetimeGate<PositionReactor>::State::Open ||
-          wake_scheduled_.exchange(true)) return;
-      const std::weak_ptr<LifetimeGate<PositionReactor>> weak_gate = gate_;
-      if (!service_.blocking_.submit([weak_gate] {
-            auto gate = weak_gate.lock();
-            if (gate) gate->invoke([](PositionReactor& reactor) {
-              reactor.wake_scheduled_.store(false);
-              reactor.wake();
-            });
-          })) {
-        wake_scheduled_.store(false);
-        finish({grpc::StatusCode::RESOURCE_EXHAUSTED,
-                "wire encoding queue is full"});
-      }
-    }
-
-    void wake() {
-      if (writing_ || gate_->state() != LifetimeGate<PositionReactor>::State::Open) return;
-      if (!initialized_) {
-        if (request_.request_case() == PositionHistoryRequest::kConfigure) {
-          const auto status = service_.configure_position(request_.configure());
-          if (!status.ok()) { finish(status); return; }
-        } else if (request_.request_case() == PositionHistoryRequest::kClear) {
-          service_.positions_.clear();
-          service_.position_wakes_.publish(service_.positions_.next_sequence());
-        }
-        initialized_ = true;
-      }
-      PositionHistoryBatch batch;
-      if (!initial_written_) {
-        if (request_.request_case() == PositionHistoryRequest::kCursor) {
-          const auto& cursor = request_.cursor();
-          batch = service_.positions_.since(cursor.after_sequence(), 0,
-                                            cursor.after_generation());
-        } else {
-          batch = service_.positions_.snapshot();
-        }
-      } else {
-        batch = service_.positions_.since(cursor_, 0, generation_);
-        if (!batch.reset && batch.packed.empty()) return;
-      }
-      message_.Clear();
-      if (batch.reset || (!initial_written_ &&
-                          request_.request_case() != PositionHistoryRequest::kCursor)) {
-        fill_position_snapshot(batch, message_.mutable_snapshot());
-      } else {
-        fill_position_batch(batch, PositionBatchKind::POSITION_BATCH_KIND_DELTA,
-                            message_.mutable_batch());
-        if (pending_wakes_ > 1) {
-          message_.mutable_batch()->set_skipped_batches(pending_wakes_ - 1);
-        }
-      }
-      pending_wakes_ = 0;
-      writing_cursor_ = batch.next_sequence;
-      writing_generation_ = batch.generation;
-      writing_ = true;
-      StartWrite(&message_);
-    }
-
-    void write_done(bool ok) {
-      writing_ = false;
-      if (!ok) { finish(grpc::Status::OK); return; }
-      cursor_ = writing_cursor_;
-      generation_ = writing_generation_;
-      initial_written_ = true;
-      schedule_wake();
-    }
-    void finish(grpc::Status status) {
-      gate_->finish([&](PositionReactor& reactor) {
-        reactor.subscription_.reset();
-        reactor.Finish(status);
-      });
-    }
-
-    MachineServiceImpl& service_;
-    PositionHistoryRequest request_;
-    bool admitted_ = false;
-    bool initialized_ = false;
-    bool initial_written_ = false;
-    bool writing_ = false;
-    std::uint64_t cursor_ = 0;
-    std::uint64_t generation_ = 0;
-    std::uint64_t writing_cursor_ = 0;
-    std::uint64_t writing_generation_ = 0;
-    std::uint64_t pending_wakes_ = 0;
-    PositionHistoryEvent message_;
-    std::atomic<bool> wake_scheduled_{false};
-    SubscriptionHub<std::uint64_t>::Subscription subscription_;
-    std::shared_ptr<LifetimeGate<PositionReactor>> gate_;
-    ActiveCallbackRegistry::Registration registration_;
-  };
-
   class StatusReactor final : public grpc::ServerWriteReactor<WatchStatusEvent> {
    public:
     StatusReactor(MachineServiceImpl& service, std::uint64_t after)
@@ -1414,7 +1189,7 @@ class MachineServiceImpl final : public MachineCallbackBase {
             sample.coordinates[index] = snapshot.actual_position[index];
           }
           sample.motion_type = snapshot.motion_type;
-          if (positions_.append(sample)) position_wakes_.publish(positions_.next_sequence());
+          positions_->append(sample);
         }
       }
       const auto now = std::chrono::steady_clock::now();
@@ -1469,7 +1244,7 @@ class MachineServiceImpl final : public MachineCallbackBase {
   AdmissionCounter& stream_admission_;
   std::shared_ptr<ProgramWorkspaceStore> workspaces_;
   std::shared_ptr<WorkspaceActivation> workspace_activation_;
-  PositionHistory positions_;
+  std::shared_ptr<PositionTelemetry> positions_;
   const std::chrono::milliseconds status_period_;
   const std::chrono::milliseconds error_period_;
   std::chrono::milliseconds position_period_;
@@ -1482,7 +1257,6 @@ class MachineServiceImpl final : public MachineCallbackBase {
   SequencedRing<NmlErrorEvent> errors_{256};
   SubscriptionHub<std::uint64_t> error_wakes_;
   SubscriptionHub<std::uint64_t> status_wakes_;
-  SubscriptionHub<std::uint64_t> position_wakes_;
   ActiveCallbackRegistry callbacks_;
   std::mutex position_mutex_;
   std::condition_variable position_condition_;
@@ -3417,8 +3191,9 @@ int run_grpc_server(const DaemonConfig& config) {
   AdmissionCounter upload_admission(4);
   AdmissionCounter component_admission(16);
   AdmissionCounter scope_admission(1);
+  auto position_telemetry = std::make_shared<PositionTelemetry>(10000);
   auto machine = std::make_unique<MachineServiceImpl>(
-      config, workspaces, blocking, stream_admission);
+      config, workspaces, position_telemetry, blocking, stream_admission);
   auto program = std::make_unique<ProgramServiceImpl>(
       config, workspaces, blocking, parser_worker, upload_admission,
       stream_admission);
@@ -3426,6 +3201,8 @@ int run_grpc_server(const DaemonConfig& config) {
       config, hal_worker, component_admission, stream_admission);
   auto scope = std::make_unique<ScopeServiceImpl>(
       config, scope_worker, scope_admission, stream_admission);
+  auto position_websocket = std::make_unique<PositionTelemetryServer>(
+      config, position_telemetry);
   grpc::ServerBuilder builder;
   grpc::ResourceQuota resource_quota;
   resource_quota.Resize(256U * 1024U * 1024U);
@@ -3459,7 +3236,9 @@ int run_grpc_server(const DaemonConfig& config) {
     std::cerr << "linuxcnc-grpc-server: failed to bind " << config.endpoint << '\n';
     return 2;
   }
-  std::cout << "linuxcnc-grpc-server listening on " << config.endpoint << std::endl;
+  std::cout << "linuxcnc-grpc-server listening on " << config.endpoint
+            << " and position telemetry on "
+            << config.position_telemetry_endpoint << std::endl;
   std::atomic<bool> shutdown_requested{false};
   std::thread control([&] {
     int signal = 0;
@@ -3474,6 +3253,8 @@ int run_grpc_server(const DaemonConfig& config) {
     parser_worker.stop_admission();
     hal_worker.stop_admission();
     scope_worker.stop_admission();
+    position_websocket->stop();
+    position_telemetry->close();
     machine->begin_shutdown();
     program->begin_shutdown();
     hal->begin_shutdown();
@@ -3489,6 +3270,8 @@ int run_grpc_server(const DaemonConfig& config) {
   parser_worker.stop_admission();
   hal_worker.stop_admission();
   scope_worker.stop_admission();
+  position_websocket->stop();
+  position_telemetry->close();
   machine->begin_shutdown();
   program->begin_shutdown();
   hal->begin_shutdown();
@@ -3501,6 +3284,8 @@ int run_grpc_server(const DaemonConfig& config) {
   hal.reset();
   program.reset();
   machine.reset();
+  position_websocket.reset();
+  position_telemetry.reset();
   parser_worker.shutdown();
   hal_worker.shutdown();
   scope_worker.shutdown();

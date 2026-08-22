@@ -362,8 +362,7 @@ int main(int argc, char** argv) {
   watch_context.TryCancel();
   (void)watch->Finish();
 
-  // Position history remains the packed ten-float64 domain layout and keeps
-  // streaming deltas after the initial cursor synchronization.
+  // Position history configuration remains on the gRPC control plane.
   linuxcnc::v1::PositionHistoryConfig position_config;
   position_config.set_enabled(true);
   position_config.set_capacity(64);
@@ -373,20 +372,6 @@ int main(int argc, char** argv) {
   const auto configure_position_status = machine->ConfigurePositionHistory(
       &configure_position_context, position_config, &empty);
   assert(configure_position_status.ok());
-  std::this_thread::sleep_for(std::chrono::milliseconds(60));
-
-  linuxcnc::v1::PositionHistoryRequest position_request;
-  position_request.mutable_cursor()->set_after_sequence(0);
-  linuxcnc::v1::PositionHistorySnapshot position_snapshot;
-  grpc::ClientContext position_context;
-  const auto position_status = machine->GetPositionHistory(
-      &position_context, position_request, &position_snapshot);
-  assert(position_status.ok());
-  assert(position_snapshot.stride() == 10);
-  assert(position_snapshot.value_count() >= position_snapshot.stride());
-  assert(position_snapshot.value_count() % position_snapshot.stride() == 0);
-  assert(position_snapshot.values_le_f64().size() ==
-         static_cast<std::size_t>(position_snapshot.value_count()) * sizeof(double));
 
   ExecuteCommandRequest reset_estop;
   reset_estop.mutable_set_state()->set_state(linuxcnc::v1::TASK_STATE_ESTOP_RESET);
@@ -435,44 +420,10 @@ int main(int argc, char** argv) {
   expect_command_error(machine.get(), ExecuteCommandRequest{},
                        grpc::StatusCode::INVALID_ARGUMENT);
 
-  linuxcnc::v1::PositionHistoryRequest position_watch_request;
-  auto* cursor = position_watch_request.mutable_cursor();
-  cursor->set_after_sequence(position_snapshot.next_sequence());
-  cursor->set_after_generation(position_snapshot.generation());
-  grpc::ClientContext position_watch_context;
-  position_watch_context.set_deadline(
-      std::chrono::system_clock::now() + std::chrono::seconds(3));
-  auto position_watch = machine->WatchPositionHistory(
-      &position_watch_context, position_watch_request);
-  bool saw_position_delta = false;
-  linuxcnc::v1::PositionHistoryEvent position_event;
-  while (position_watch->Read(&position_event)) {
-    if (position_event.has_batch() && position_event.batch().value_count() > 0) {
-      assert(position_event.batch().kind() ==
-             linuxcnc::v1::POSITION_BATCH_KIND_DELTA);
-      assert(position_event.batch().stride() == 10);
-      saw_position_delta = true;
-      break;
-    }
-  }
-  position_watch_context.TryCancel();
-  (void)position_watch->Finish();
-  assert(saw_position_delta);
-
-  const auto previous_generation = position_snapshot.generation();
   grpc::ClientContext clear_position_context;
   const auto clear_position_status = machine->ClearPositionHistory(
       &clear_position_context, empty, &empty);
   assert(clear_position_status.ok());
-  linuxcnc::v1::PositionHistorySnapshot cleared_position;
-  grpc::ClientContext cleared_position_context;
-  const auto cleared_position_status = machine->GetPositionHistory(
-      &cleared_position_context, position_request, &cleared_position);
-  assert(cleared_position_status.ok());
-  assert(cleared_position.generation() != previous_generation);
-  // The fixed 10 ms poller may append one fresh sample between Clear and this
-  // snapshot. The old generation must be gone and no older backlog may remain.
-  assert(cleared_position.value_count() <= cleared_position.stride());
 
   // Upload and parse a repo-owned native fixture through the real workspace
   // store and the serialized rs274 interpreter.

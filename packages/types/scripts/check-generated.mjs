@@ -114,7 +114,9 @@ for (const required of ["path", "json_value"]) {
 if (!/message HalScalar\s*\{[\s\S]*?sint64 s64\s*=\s*6;[\s\S]*?uint64 u64\s*=\s*7;/.test(proto)) {
   throw new Error("HalScalar must preserve exact signed and unsigned 64-bit values");
 }
-if (!/bytes values_le_f64/.test(proto)) throw new Error("position history must use explicit packed bytes");
+if (/rpc\s+(Get|Watch)PositionHistory\b/.test(proto)) {
+  throw new Error("position history telemetry must not be exposed through gRPC");
+}
 
 const statDeltaBody = proto.match(/message LinuxCNCStatDelta\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
 if (/\boneof\s+change\b/.test(statDeltaBody)) {

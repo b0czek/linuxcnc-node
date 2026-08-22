@@ -242,12 +242,6 @@ enum WaitPolicy {
   WAIT_POLICY_COMPLETED = 2;
 }
 
-enum PositionBatchKind {
-  POSITION_BATCH_KIND_UNSPECIFIED = 0;
-  POSITION_BATCH_KIND_REPLACEMENT = 1;
-  POSITION_BATCH_KIND_DELTA = 2;
-}
-
 message Position {
   repeated double values = 1 [packed = true];
 }
@@ -681,49 +675,6 @@ message PositionHistoryConfig {
   uint32 sample_period_ms = 3;
 }
 
-message PositionHistorySnapshot {
-  uint64 first_sequence = 1;
-  uint64 next_sequence = 2;
-  // IEEE-754 binary64 values in little-endian order.  Keeping this as bytes
-  // makes the Float64Array boundary explicit and independent of protobuf's
-  // scalar representation.
-  bytes values_le_f64 = 3;
-  uint32 value_count = 4;
-  uint32 stride = 5;
-  uint64 generation = 6;
-}
-
-message PositionHistoryBatch {
-  PositionBatchKind kind = 1;
-  uint64 first_sequence = 2;
-  uint64 next_sequence = 3;
-  bytes values_le_f64 = 4;
-  uint32 value_count = 5;
-  uint32 stride = 6;
-  uint64 generation = 7;
-  uint64 skipped_batches = 8;
-}
-
-message PositionHistoryRequest {
-  oneof request {
-    PositionHistoryConfig configure = 1;
-    EmptyCommand clear = 2;
-    PositionHistoryCursor cursor = 3;
-  }
-}
-
-message PositionHistoryCursor {
-  uint64 after_sequence = 1;
-  uint64 after_generation = 2;
-}
-
-message PositionHistoryEvent {
-  oneof event {
-    PositionHistorySnapshot snapshot = 1;
-    PositionHistoryBatch batch = 2;
-  }
-}
-
 message CreateWorkspaceRequest { uint64 ttl_seconds = 1; }
 message CreateWorkspaceResponse { string workspace_id = 1; uint64 expires_at_unix_ms = 2; }
 message UploadWorkspaceRequest {
@@ -899,8 +850,6 @@ service MachineService {
   rpc WatchErrors(google.protobuf.Empty) returns (stream LinuxCNCError);
   rpc ConfigurePositionHistory(PositionHistoryConfig) returns (google.protobuf.Empty);
   rpc ClearPositionHistory(google.protobuf.Empty) returns (google.protobuf.Empty);
-  rpc GetPositionHistory(PositionHistoryRequest) returns (PositionHistorySnapshot);
-  rpc WatchPositionHistory(PositionHistoryRequest) returns (stream PositionHistoryEvent);
 }
 
 service ProgramService {

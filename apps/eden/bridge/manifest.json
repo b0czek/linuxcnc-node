@@ -19,10 +19,6 @@
     {
       "name": "hal",
       "description": "HAL component management and I/O access"
-    },
-    {
-      "name": "position-logger",
-      "description": "Machine position logging and history streaming"
     }
   ],
   "include": [

@@ -1,5 +1,6 @@
 #include "linuxcnc_grpc/command_coordinator.hpp"
 #include "linuxcnc_grpc/position_history.hpp"
+#include "linuxcnc_grpc/position_telemetry_wire.hpp"
 #include "linuxcnc_grpc/program_workspace.hpp"
 #include "linuxcnc_grpc/scope_manager.hpp"
 #include "linuxcnc_grpc/status_hub.hpp"
@@ -231,7 +232,7 @@ void position_cursor_generation_and_replacement_test() {
   const auto initial = history.snapshot();
   assert(initial.reset);
   assert(initial.generation == 1);
-  assert(initial.oldest_sequence == 1);
+  assert(initial.first_sequence == 1);
   assert(initial.next_sequence == 3);
   assert(initial.packed.size() == 2 * kPositionStride);
   assert(initial.packed[0] == 1.05);
@@ -250,17 +251,39 @@ void position_cursor_generation_and_replacement_test() {
   history.configure(1);
   const auto configured = history.snapshot();
   assert(configured.generation != old_generation);
-  assert(configured.oldest_sequence == 2);
+  assert(configured.first_sequence == 2);
   assert(configured.packed.size() == kPositionStride);
-  assert(history.since(configured.oldest_sequence, 0, old_generation).reset);
+  assert(history.since(configured.first_sequence, 0, old_generation).reset);
 
   history.clear();
   const auto cleared = history.snapshot();
   assert(cleared.reset);
   assert(cleared.generation != configured.generation);
-  assert(cleared.oldest_sequence == cleared.next_sequence);
+  assert(cleared.first_sequence == cleared.next_sequence);
   assert(cleared.packed.empty());
   assert(history.since(history.next_sequence(), 0, cleared.generation).packed.empty());
+}
+
+void position_telemetry_wire_test() {
+  PositionHistoryBatch batch;
+  batch.reset = true;
+  batch.generation = 3;
+  batch.first_sequence = 12;
+  batch.next_sequence = 14;
+  batch.packed = {1.25, -2.5};
+  const auto frame = encode_position_telemetry_frame(
+      batch, PositionTelemetryFrameKind::Replacement);
+  assert(frame.size() == kPositionTelemetryHeaderSize + 2 * sizeof(double));
+  assert(frame[0] == 'L' && frame[1] == 'C' && frame[2] == 'P' && frame[3] == 'H');
+  assert(frame[4] == 1);
+  assert(frame[5] == 1);
+  assert(frame[6] == 10 && frame[7] == 0);
+  assert(frame[8] == 3);
+  assert(frame[16] == 12);
+  assert(frame[24] == 14);
+  assert(frame[32] == 2);
+  assert(frame[40] == 0x00 && frame[46] == 0xf4 && frame[47] == 0x3f);
+  assert(frame[48] == 0x00 && frame[54] == 0x04 && frame[55] == 0xc0);
 }
 
 std::vector<std::uint8_t> bytes(std::string value) {
@@ -415,6 +438,7 @@ int main() {
   command_failure_wait_test();
   status_replay_rollover_test();
   position_cursor_generation_and_replacement_test();
+  position_telemetry_wire_test();
   workspace_traversal_quota_ttl_and_materialization_test();
   scope_coalescing_and_conflict_accounting_test();
   return 0;

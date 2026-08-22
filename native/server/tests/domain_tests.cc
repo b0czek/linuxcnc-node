@@ -225,6 +225,13 @@ void daemon_config_test() {
   assert(parse_config(3, arguments, &config, nullptr, &error));
   assert(config.status_period == std::chrono::milliseconds(25));
   assert(config.workspace_quota_bytes == 64);
+  char telemetry[] = "--position-telemetry-endpoint=127.0.0.1:51000";
+  char* telemetry_arguments[] = {program, telemetry};
+  assert(parse_config(2, telemetry_arguments, &config, nullptr, &error));
+  assert(config.position_telemetry_endpoint == "127.0.0.1:51000");
+  config.position_telemetry_endpoint = config.endpoint;
+  assert(!validate_config(config, &error));
+  config.position_telemetry_endpoint = "127.0.0.1:51000";
   char ttl[] = "--workspace-ttl-seconds=90";
   char* ttl_arguments[] = {program, ttl};
   assert(parse_config(2, ttl_arguments, &config, nullptr, &error));

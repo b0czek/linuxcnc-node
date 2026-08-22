@@ -87,12 +87,7 @@ import type { ParseProgress as _linuxcnc_v1_ParseProgress, ParseProgress__Output
 import type { ParseSummary as _linuxcnc_v1_ParseSummary, ParseSummary__Output as _linuxcnc_v1_ParseSummary__Output } from './linuxcnc/v1/ParseSummary';
 import type { PlaneChangeData as _linuxcnc_v1_PlaneChangeData, PlaneChangeData__Output as _linuxcnc_v1_PlaneChangeData__Output } from './linuxcnc/v1/PlaneChangeData';
 import type { Position as _linuxcnc_v1_Position, Position__Output as _linuxcnc_v1_Position__Output } from './linuxcnc/v1/Position';
-import type { PositionHistoryBatch as _linuxcnc_v1_PositionHistoryBatch, PositionHistoryBatch__Output as _linuxcnc_v1_PositionHistoryBatch__Output } from './linuxcnc/v1/PositionHistoryBatch';
 import type { PositionHistoryConfig as _linuxcnc_v1_PositionHistoryConfig, PositionHistoryConfig__Output as _linuxcnc_v1_PositionHistoryConfig__Output } from './linuxcnc/v1/PositionHistoryConfig';
-import type { PositionHistoryCursor as _linuxcnc_v1_PositionHistoryCursor, PositionHistoryCursor__Output as _linuxcnc_v1_PositionHistoryCursor__Output } from './linuxcnc/v1/PositionHistoryCursor';
-import type { PositionHistoryEvent as _linuxcnc_v1_PositionHistoryEvent, PositionHistoryEvent__Output as _linuxcnc_v1_PositionHistoryEvent__Output } from './linuxcnc/v1/PositionHistoryEvent';
-import type { PositionHistoryRequest as _linuxcnc_v1_PositionHistoryRequest, PositionHistoryRequest__Output as _linuxcnc_v1_PositionHistoryRequest__Output } from './linuxcnc/v1/PositionHistoryRequest';
-import type { PositionHistorySnapshot as _linuxcnc_v1_PositionHistorySnapshot, PositionHistorySnapshot__Output as _linuxcnc_v1_PositionHistorySnapshot__Output } from './linuxcnc/v1/PositionHistorySnapshot';
 import type { ProbeData as _linuxcnc_v1_ProbeData, ProbeData__Output as _linuxcnc_v1_ProbeData__Output } from './linuxcnc/v1/ProbeData';
 import type { ProgramHandle as _linuxcnc_v1_ProgramHandle, ProgramHandle__Output as _linuxcnc_v1_ProgramHandle__Output } from './linuxcnc/v1/ProgramHandle';
 import type { ProgramOpen as _linuxcnc_v1_ProgramOpen, ProgramOpen__Output as _linuxcnc_v1_ProgramOpen__Output } from './linuxcnc/v1/ProgramOpen';
@@ -258,13 +253,7 @@ export interface ProtoGrpcType {
       Plane: EnumTypeDefinition
       PlaneChangeData: MessageTypeDefinition<_linuxcnc_v1_PlaneChangeData, _linuxcnc_v1_PlaneChangeData__Output>
       Position: MessageTypeDefinition<_linuxcnc_v1_Position, _linuxcnc_v1_Position__Output>
-      PositionBatchKind: EnumTypeDefinition
-      PositionHistoryBatch: MessageTypeDefinition<_linuxcnc_v1_PositionHistoryBatch, _linuxcnc_v1_PositionHistoryBatch__Output>
       PositionHistoryConfig: MessageTypeDefinition<_linuxcnc_v1_PositionHistoryConfig, _linuxcnc_v1_PositionHistoryConfig__Output>
-      PositionHistoryCursor: MessageTypeDefinition<_linuxcnc_v1_PositionHistoryCursor, _linuxcnc_v1_PositionHistoryCursor__Output>
-      PositionHistoryEvent: MessageTypeDefinition<_linuxcnc_v1_PositionHistoryEvent, _linuxcnc_v1_PositionHistoryEvent__Output>
-      PositionHistoryRequest: MessageTypeDefinition<_linuxcnc_v1_PositionHistoryRequest, _linuxcnc_v1_PositionHistoryRequest__Output>
-      PositionHistorySnapshot: MessageTypeDefinition<_linuxcnc_v1_PositionHistorySnapshot, _linuxcnc_v1_PositionHistorySnapshot__Output>
       ProbeData: MessageTypeDefinition<_linuxcnc_v1_ProbeData, _linuxcnc_v1_ProbeData__Output>
       ProgramHandle: MessageTypeDefinition<_linuxcnc_v1_ProgramHandle, _linuxcnc_v1_ProgramHandle__Output>
       ProgramOpen: MessageTypeDefinition<_linuxcnc_v1_ProgramOpen, _linuxcnc_v1_ProgramOpen__Output>

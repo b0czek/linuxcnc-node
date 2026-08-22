@@ -12,6 +12,7 @@ linuxcnc_root="$3"
 fixture_dir="$(cd "$(dirname "$0")/fixtures" && pwd)"
 root="$(mktemp -d "${TMPDIR:-/tmp}/linuxcnc-grpc-live.XXXXXX")"
 grpc_port=$((55000 + ($$ % 1000)))
+telemetry_port=$((57000 + ($$ % 1000)))
 nml_port=$((56000 + ($$ % 1000)))
 nml_base=$((20000 + ($$ % 10000)))
 server_pid=""
@@ -145,6 +146,7 @@ start_server() {
   local log_file="$1"
   "$server" \
     "--endpoint=127.0.0.1:${grpc_port}" \
+    "--position-telemetry-endpoint=127.0.0.1:${telemetry_port}" \
     "--ini=$root/live.ini" \
     "--nml=$root/live.nml" \
     "--workspace-root=$root/workspaces" \

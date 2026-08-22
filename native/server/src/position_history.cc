@@ -40,7 +40,7 @@ PositionHistoryBatch PositionHistory::snapshot() const {
   PositionHistoryBatch result;
   result.reset = true;
   result.generation = generation_;
-  result.oldest_sequence = entries_.empty() ? next_sequence_ : entries_.front().sequence;
+  result.first_sequence = entries_.empty() ? next_sequence_ : entries_.front().sequence;
   result.next_sequence = next_sequence_;
   result.packed.reserve(entries_.size() * kPositionStride);
   for (const auto& entry : entries_) append_packed(entry.sample, &result.packed);
@@ -54,16 +54,19 @@ PositionHistoryBatch PositionHistory::since(std::uint64_t sequence,
   PositionHistoryBatch result;
   result.generation = generation_;
   result.next_sequence = next_sequence_;
-  result.oldest_sequence = entries_.empty() ? next_sequence_ : entries_.front().sequence;
+  const auto oldest_sequence = entries_.empty() ? next_sequence_ : entries_.front().sequence;
+  result.first_sequence = oldest_sequence;
   if (entries_.empty()) {
     result.reset = (after_generation != 0 && after_generation != generation_) ||
                    sequence != next_sequence_;
     return result;
   }
 
-  const bool rolled = sequence < result.oldest_sequence;
-  result.reset = (after_generation != 0 && after_generation != generation_) || rolled;
-  const auto first = rolled ? entries_.begin() :
+  const bool generation_changed =
+      after_generation != 0 && after_generation != generation_;
+  const bool rolled = sequence < oldest_sequence;
+  result.reset = generation_changed || rolled;
+  const auto first = (generation_changed || rolled) ? entries_.begin() :
                              std::lower_bound(entries_.begin(), entries_.end(), sequence,
                                [](const Entry& entry, std::uint64_t value) {
                                  return entry.sequence < value;
@@ -71,6 +74,7 @@ PositionHistoryBatch PositionHistory::since(std::uint64_t sequence,
   const auto count = max_samples == 0
       ? static_cast<std::size_t>(entries_.end() - first)
       : std::min(max_samples, static_cast<std::size_t>(entries_.end() - first));
+  result.first_sequence = first == entries_.end() ? next_sequence_ : first->sequence;
   result.packed.reserve(count * kPositionStride);
   for (auto it = first; it != first + static_cast<std::ptrdiff_t>(count); ++it) {
     append_packed(it->sample, &result.packed);

@@ -56,13 +56,27 @@ bool validate_config(const DaemonConfig& config, std::string* error) {
     if (error) *error = message;
     return false;
   };
-  const auto separator = config.endpoint.rfind(':');
-  if (separator == std::string::npos || separator == 0 || separator + 1 == config.endpoint.size()) {
-    return fail("endpoint must be HOST:PORT");
-  }
-  if (!config.tls && !config.unsafe_non_loopback &&
-      !loopback_host(endpoint_host(config.endpoint))) {
-    return fail("non-loopback endpoint requires --unsafe-non-loopback");
+  const auto valid_endpoint = [&](const std::string& endpoint,
+                                  const char* name) {
+    const auto separator = endpoint.rfind(':');
+    if (separator == std::string::npos || separator == 0 ||
+        separator + 1 == endpoint.size()) {
+      if (error) *error = std::string(name) + " must be HOST:PORT";
+      return false;
+    }
+    if (!config.tls && !config.unsafe_non_loopback &&
+        !loopback_host(endpoint_host(endpoint))) {
+      if (error) *error = std::string(name) +
+          " on a non-loopback host requires --unsafe-non-loopback";
+      return false;
+    }
+    return true;
+  };
+  if (!valid_endpoint(config.endpoint, "endpoint") ||
+      !valid_endpoint(config.position_telemetry_endpoint,
+                      "position telemetry endpoint")) return false;
+  if (config.endpoint == config.position_telemetry_endpoint) {
+    return fail("gRPC and position telemetry endpoints must differ");
   }
   if (config.mtls && !config.tls) return fail("mTLS requires TLS");
   if (config.tls && (config.tls_certificate.empty() || config.tls_private_key.empty())) {
@@ -165,6 +179,9 @@ bool parse_config(int argc, char* argv[], DaemonConfig* config, bool* show_help,
 
     std::string value;
     if (option_value(argument, "--endpoint", &value)) config->endpoint = value;
+    else if (option_value(argument, "--position-telemetry-endpoint", &value)) {
+      config->position_telemetry_endpoint = value;
+    }
     else if (option_value(argument, "--ini", &value)) config->ini_file = value;
     else if (option_value(argument, "--nml", &value)) config->nml_file = value;
     else if (option_value(argument, "--workspace-root", &value)) config->workspace_root = value;
@@ -250,6 +267,7 @@ bool parse_config(int argc, char* argv[], DaemonConfig* config, bool* show_help,
 std::string config_help() {
   return "linuxcnc-grpc-server [options]\n"
          "  --endpoint=HOST:PORT                 (default 127.0.0.1:50051)\n"
+         "  --position-telemetry-endpoint=HOST:PORT (default 127.0.0.1:50052)\n"
          "  --ini=PATH --nml=PATH\n"
          "  --workspace-root=PATH --active-program-directory=PATH\n"
          "  --workspace-quota=BYTES --total-quota=BYTES --workspace-ttl-seconds=N\n"

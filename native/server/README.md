@@ -21,6 +21,43 @@ client-component cleanup, and exclusive scope ownership. The harness refuses
 to start when another LinuxCNC/HAL runtime exists and reclaims only the runtime
 and NML resources it created.
 
+## Position telemetry WebSocket
+
+Position-history configuration and clearing remain on `MachineService` through
+`ConfigurePositionHistory` and `ClearPositionHistory`. Telemetry is published
+directly to renderers at `ws://127.0.0.1:50052/v1/position-history` by default;
+set `--position-telemetry-endpoint=HOST:PORT` to change the listener. `--tls`
+changes both listeners to TLS and reuses the configured certificate and key.
+With `--mtls`, the WebSocket listener also requires a client certificate signed
+by `--tls-client-ca`.
+
+The application protocol is server-to-client only. Client data messages close
+the connection with WebSocket policy error 1008. Each connection begins with a
+replacement frame, followed by deltas. A clear, reconfiguration, generation
+change, or retention rollover produces another replacement.
+
+Every message is one binary frame. Multi-byte fields and payload doubles are
+little-endian:
+
+| Offset | Size | Value |
+| ---: | ---: | --- |
+| 0 | 4 | ASCII `LCPH` |
+| 4 | 1 | version, currently `1` |
+| 5 | 1 | kind: `1` replacement, `2` delta |
+| 6 | 2 | point stride, currently `10` |
+| 8 | 8 | generation (`uint64`) |
+| 16 | 8 | first sequence (`uint64`) |
+| 24 | 8 | next sequence (`uint64`) |
+| 32 | 4 | payload value count (`uint32`) |
+| 36 | 4 | reserved, zero |
+| 40 | `value_count * 8` | packed Float64 position values |
+
+In a browser, set `socket.binaryType = "arraybuffer"`, validate the magic,
+version, stride, and exact frame length with `DataView`, then create a
+`Float64Array(buffer, 40, valueCount)` on little-endian hosts. Kind 1 replaces
+the preview's accumulated history; kind 2 appends to it. Sequence and generation
+are 64-bit values and should be read with `DataView.getBigUint64(..., true)`.
+
 The HAL service uses the pinned LinuxCNC HAL repository for topology, exact
 scalar reads/writes, signals, and session-owned components. The scope service
 loads `scope_rt` on first use when needed, attaches its sampling function to

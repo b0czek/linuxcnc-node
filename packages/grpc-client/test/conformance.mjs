@@ -18,8 +18,6 @@ assert.match(command, /'setRapidRate'/);
 const scalarDeclaration = readFileSync(join(generated, "linuxcnc/v1/HalScalar.d.ts"), "utf8");
 assert.match(scalarDeclaration, /'s64'\?: \(number \| string/);
 assert.match(scalarDeclaration, /'u64'\?: \(number \| string/);
-const history = readFileSync(join(generated, "linuxcnc/v1/PositionHistoryBatch.d.ts"), "utf8");
-assert.match(history, /'valuesLeF64'\?: \(Buffer/);
 const packedDeclaration = readFileSync(join(generated, "linuxcnc/v1/PackedChannel.d.ts"), "utf8");
 assert.match(packedDeclaration, /'index'\?: \(number\)/);
 assert.match(packedDeclaration, /'enabled'\?: \(boolean\)/);
@@ -99,34 +97,4 @@ assert.deepEqual(packed.values, [1.25, -2.5]);
 assert.equal(packed.index, 7);
 assert.equal(packed.enabled, true);
 
-// Position history is the explicit Float64Array boundary: bytes are always
-// little-endian, independent of the host's native typed-array byte order.
-const encodeLeF64 = (values) => {
-  const bytes = Buffer.alloc(values.length * Float64Array.BYTES_PER_ELEMENT);
-  values.forEach((value, index) => bytes.writeDoubleLE(value, index * Float64Array.BYTES_PER_ELEMENT));
-  return bytes;
-};
-const decodeLeF64 = (bytes) => {
-  assert.equal(bytes.length % Float64Array.BYTES_PER_ELEMENT, 0);
-  const values = new Float64Array(bytes.length / Float64Array.BYTES_PER_ELEMENT);
-  for (let index = 0; index < values.length; index += 1) values[index] = bytes.readDoubleLE(index * Float64Array.BYTES_PER_ELEMENT);
-  return values;
-};
-const historyMessage = loaded.linuxcnc.v1.PositionHistorySnapshot;
-const historyGolden = Buffer.from("080c100f1a10000000000000f43f00000000000004c02002280a3003", "hex");
-const historyValues = new Float64Array([1.25, -2.5]);
-assert.equal(encodeLeF64(historyValues).toString("hex"), "000000000000f43f00000000000004c0");
-assert.equal(historyMessage.serialize({
-  firstSequence: "12",
-  nextSequence: "15",
-  valuesLeF64: encodeLeF64(historyValues),
-  valueCount: historyValues.length,
-  stride: 10,
-  generation: "3",
-}).toString("hex"), historyGolden.toString("hex"));
-const historyDecoded = historyMessage.deserialize(Buffer.concat([historyGolden, Buffer.from("a00601", "hex")]));
-assert.deepEqual(Array.from(decodeLeF64(historyDecoded.valuesLeF64)), Array.from(historyValues));
-assert.equal(historyDecoded.valueCount, 2);
-assert.equal(historyDecoded.stride, 10);
-assert.equal(historyMessage.serialize(historyDecoded).toString("hex"), historyGolden.toString("hex"));
-console.log("generated grpc service, command/oneof, reserved-field, 64-bit, unknown-field, packed-position, and binary golden conformance passed");
+console.log("generated grpc service, command/oneof, reserved-field, 64-bit, unknown-field, and packed-channel conformance passed");

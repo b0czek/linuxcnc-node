@@ -2,6 +2,10 @@
 
 #include <grpcpp/grpcpp.h>
 #include <google/protobuf/empty.pb.h>
+#include <boost/asio/connect.hpp>
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/beast/core.hpp>
+#include <boost/beast/websocket.hpp>
 
 #include <cassert>
 #include <memory>
@@ -9,6 +13,38 @@
 #include <chrono>
 #include <thread>
 #include <vector>
+
+namespace asio = boost::asio;
+namespace beast = boost::beast;
+namespace websocket = beast::websocket;
+using tcp = asio::ip::tcp;
+
+std::uint64_t read_u64_le(const std::vector<std::uint8_t>& bytes,
+                          std::size_t offset) {
+  std::uint64_t value = 0;
+  for (unsigned index = 0; index < 8; ++index) {
+    value |= static_cast<std::uint64_t>(bytes[offset + index]) << (index * 8U);
+  }
+  return value;
+}
+
+std::pair<std::string, std::string> split_endpoint(const std::string& endpoint) {
+  const auto separator = endpoint.rfind(':');
+  return {endpoint.substr(0, separator), endpoint.substr(separator + 1)};
+}
+
+std::vector<std::uint8_t> read_telemetry_frame(
+    websocket::stream<beast::tcp_stream>& socket) {
+  beast::flat_buffer buffer;
+  socket.read(buffer);
+  std::vector<std::uint8_t> bytes(buffer.size());
+  asio::buffer_copy(asio::buffer(bytes), buffer.data());
+  assert(bytes.size() >= 40);
+  assert(bytes[0] == 'L' && bytes[1] == 'C' && bytes[2] == 'P' && bytes[3] == 'H');
+  assert(bytes[4] == 1 && bytes[5] == 1);
+  assert(bytes[6] == 10 && bytes[7] == 0);
+  return bytes;
+}
 
 int main(int argc, char** argv) {
   const std::string endpoint = argc > 1 ? argv[1] : "127.0.0.1:50051";
@@ -37,14 +73,6 @@ int main(int argc, char** argv) {
           std::chrono::system_clock::now() + std::chrono::seconds(10));
       auto stream = machine->WatchStatus(&context, {});
       linuxcnc::v1::WatchStatusEvent message;
-      while (stream->Read(&message)) {}
-      terminal_ok(stream->Finish());
-    });
-    holders.emplace_back([&] {
-      grpc::ClientContext context; context.set_deadline(
-          std::chrono::system_clock::now() + std::chrono::seconds(10));
-      auto stream = machine->WatchPositionHistory(&context, {});
-      linuxcnc::v1::PositionHistoryEvent message;
       while (stream->Read(&message)) {}
       terminal_ok(stream->Finish());
     });
@@ -94,6 +122,16 @@ int main(int argc, char** argv) {
     for (auto& holder : holders) holder.join();
     return 0;
   }
+  const std::string telemetry_endpoint = argc > 2 ? argv[2] : "127.0.0.1:50052";
+  const auto [telemetry_host, telemetry_port] = split_endpoint(telemetry_endpoint);
+  asio::io_context io;
+  tcp::resolver resolver(io);
+  websocket::stream<beast::tcp_stream> telemetry(io);
+  beast::get_lowest_layer(telemetry).connect(
+      resolver.resolve(telemetry_host, telemetry_port));
+  telemetry.handshake(telemetry_host, "/v1/position-history");
+  const auto initial_frame = read_telemetry_frame(telemetry);
+  const auto initial_generation = read_u64_le(initial_frame, 8);
   grpc::ClientContext context;
   linuxcnc::v1::GetStatusResponse status;
   const auto status_result = machine->GetStatus(&context, {}, &status);
@@ -107,19 +145,25 @@ int main(int argc, char** argv) {
   config.set_capacity(32);
   google::protobuf::Empty empty;
   assert(machine->ConfigurePositionHistory(&context2, config, &empty).ok());
+  const auto configured_frame = read_telemetry_frame(telemetry);
+  assert(read_u64_le(configured_frame, 8) != initial_generation);
   grpc::ClientContext oversized_context;
   config.set_capacity(100001);
   const auto oversized = machine->ConfigurePositionHistory(
       &oversized_context, config, &empty);
   assert(oversized.error_code() == grpc::StatusCode::RESOURCE_EXHAUSTED);
 
-  grpc::ClientContext context3;
-  linuxcnc::v1::PositionHistoryRequest request;
-  auto* cursor = request.mutable_cursor();
-  cursor->set_after_sequence(0);
-  linuxcnc::v1::PositionHistorySnapshot snapshot;
-  assert(machine->GetPositionHistory(&context3, request, &snapshot).ok());
-  assert(snapshot.stride() == 10);
+  grpc::ClientContext clear_context;
+  assert(machine->ClearPositionHistory(&clear_context, empty, &empty).ok());
+  const auto cleared_frame = read_telemetry_frame(telemetry);
+  assert(read_u64_le(cleared_frame, 8) != read_u64_le(configured_frame, 8));
+  telemetry.text(true);
+  telemetry.write(asio::buffer("forbidden", 9));
+  beast::flat_buffer rejected;
+  beast::error_code websocket_error;
+  telemetry.read(rejected, websocket_error);
+  assert(websocket_error == websocket::error::closed);
+  assert(telemetry.reason().code == websocket::close_code::policy_error);
 
   auto program = linuxcnc::v1::ProgramService::NewStub(channel);
   grpc::ClientContext context4;
