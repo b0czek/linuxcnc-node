@@ -1,0 +1,76 @@
+name: LinuxCNC patch tests
+
+on:
+  push:
+    paths:
+      - "linuxcnc-patches/**"
+      - ".github/workflows/linuxcnc-patches.yml"
+  pull_request:
+    paths:
+      - "linuxcnc-patches/**"
+      - ".github/workflows/linuxcnc-patches.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linuxcnc-patches-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  linuxcnc-tests:
+    name: Patched LinuxCNC regression suite
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Test patch stack tooling
+        run: ./linuxcnc-patches/test-stack.sh
+
+      - name: Check out pinned LinuxCNC revision
+        shell: bash
+        env:
+          LINUXCNC_DIR: ${{ runner.temp }}/linuxcnc
+        run: |
+          set -euo pipefail
+
+          revision="$(< linuxcnc-patches/base-revision)"
+          git init "${LINUXCNC_DIR}"
+          git -C "${LINUXCNC_DIR}" remote add origin https://github.com/LinuxCNC/linuxcnc.git
+          git -C "${LINUXCNC_DIR}" fetch --depth=1 origin "${revision}"
+          git -C "${LINUXCNC_DIR}" checkout --detach FETCH_HEAD
+
+      - name: Apply LinuxCNC patch series
+        shell: bash
+        env:
+          LINUXCNC_DIR: ${{ runner.temp }}/linuxcnc
+        run: |
+          set -euo pipefail
+
+          revision="$(< linuxcnc-patches/base-revision)"
+          ./linuxcnc-patches/apply.sh --detach "${LINUXCNC_DIR}"
+
+          patch_count="$(find linuxcnc-patches -maxdepth 1 -name '*.patch' | wc -l)"
+          commit_count="$(git -C "${LINUXCNC_DIR}" rev-list --count "${revision}..HEAD")"
+          test "${commit_count}" -eq "${patch_count}"
+          test -z "$(git -C "${LINUXCNC_DIR}" status --porcelain --untracked-files=all)"
+
+      - name: Install LinuxCNC build and test dependencies
+        working-directory: ${{ runner.temp }}/linuxcnc
+        run: .github/scripts/install-deps.sh
+
+      - name: Build patched LinuxCNC
+        working-directory: ${{ runner.temp }}/linuxcnc
+        run: |
+          mkdir -p "${RUNNER_TEMP}/rtlib-a" "${RUNNER_TEMP}/rtlib-b"
+          .github/scripts/build-rip.sh \
+            --with-realtime=uspace \
+            --with-extra-rtlib-dirs="${RUNNER_TEMP}/rtlib-a:${RUNNER_TEMP}/rtlib-b"
+
+      - name: Run LinuxCNC regression suite
+        working-directory: ${{ runner.temp }}/linuxcnc
+        run: scripts/rip-environment runtests -p

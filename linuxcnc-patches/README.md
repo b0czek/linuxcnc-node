@@ -17,6 +17,15 @@ they are materialized into LinuxCNC as a linear Git history with exactly one
 commit per patch. Changing the baseline requires rebasing and validating the
 complete series.
 
+## Continuous integration
+
+Changes under `linuxcnc-patches/` trigger the
+[`LinuxCNC patch tests`](../.github/workflows/linuxcnc-patches.yml) workflow on
+pushes and pull requests. The workflow materializes the complete series on the
+pinned revision, builds LinuxCNC in run-in-place mode with its upstream CI
+tooling, and runs the full LinuxCNC regression suite with failure output
+enabled.
+
 ## Applying the series
 
 From a clean checkout of the baseline revision:
