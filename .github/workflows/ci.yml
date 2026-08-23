@@ -9,9 +9,20 @@ on:
 
 env:
   LINUXCNC_REPOSITORY: LinuxCNC/linuxcnc
-  LINUXCNC_CACHE_VERSION: v3
+  LINUXCNC_CACHE_VERSION: v4
 
 jobs:
+  patch-stack:
+    name: LinuxCNC patch stack tooling
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Test patch stack tooling
+        run: ./linuxcnc-patches/test-stack.sh
+
   native-contract:
     name: Native gRPC contract
     runs-on: ubuntu-latest
@@ -130,10 +141,16 @@ jobs:
         shell: bash
         env:
           LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ steps.linuxcnc-baseline.outputs.revision }}/linuxcnc
+          LINUXCNC_REF: ${{ steps.linuxcnc-baseline.outputs.revision }}
         run: |
           set -euo pipefail
 
-          "${GITHUB_WORKSPACE}/linuxcnc-patches/apply.sh" "${LINUXCNC_DIR}"
+          "${GITHUB_WORKSPACE}/linuxcnc-patches/apply.sh" --detach "${LINUXCNC_DIR}"
+
+          patch_count="$(find "${GITHUB_WORKSPACE}/linuxcnc-patches" -maxdepth 1 -name '*.patch' | wc -l)"
+          commit_count="$(git -C "${LINUXCNC_DIR}" rev-list --count "${LINUXCNC_REF}..HEAD")"
+          test "${commit_count}" -eq "${patch_count}"
+          test -z "$(git -C "${LINUXCNC_DIR}" status --porcelain --untracked-files=all)"
 
       - name: Install LinuxCNC build dependencies
         if: steps.linuxcnc-cache.outputs.cache-hit != 'true'

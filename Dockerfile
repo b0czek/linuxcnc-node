@@ -25,7 +25,7 @@ RUN git init /src/linuxcnc \
     && git -C /src/linuxcnc remote add origin https://github.com/LinuxCNC/linuxcnc.git \
     && git -C /src/linuxcnc fetch --depth=1 origin "$(cat /tmp/linuxcnc-patches/base-revision)" \
     && git -C /src/linuxcnc checkout --detach FETCH_HEAD \
-    && /tmp/linuxcnc-patches/apply.sh /src/linuxcnc
+    && /tmp/linuxcnc-patches/apply.sh --detach /src/linuxcnc
 
 RUN cd /src/linuxcnc \
     && export DEB_BUILD_PROFILES="pkg.linuxcnc.headless nodoc" \

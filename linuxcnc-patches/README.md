@@ -11,10 +11,11 @@ The series is based on the LinuxCNC checkout currently used by this workspace:
 - Revision: the commit recorded in [`base-revision`](./base-revision)
 - Version line: LinuxCNC 2.10 development
 
-`base-revision` is the single source of truth used by the application script
-and CI. CI checks out that exact revision, applies every `*.patch` file in
-lexical order, and then builds LinuxCNC and the Node.js bindings. Changing the
-baseline requires validating and, if necessary, rebasing the complete series.
+`base-revision` is the single source of truth used by the stack tooling and
+CI. Patch files remain the reviewable source of truth in this repository, but
+they are materialized into LinuxCNC as a linear Git history with exactly one
+commit per patch. Changing the baseline requires rebasing and validating the
+complete series.
 
 ## Applying the series
 
@@ -24,13 +25,58 @@ From a clean checkout of the baseline revision:
 ./linuxcnc-patches/apply.sh /path/to/linuxcnc
 ```
 
-The script refuses to patch a different LinuxCNC revision and applies every
-`*.patch` file in lexical order. It is safe to run again when the complete
-series is already applied, and it does not discard unrelated working-tree
-changes.
+The script builds the complete series in a temporary worktree first, then
+creates and checks out `linuxcnc-node/patch-stack`. Every patch is applied with
+`git am`, so `git log`, `git show`, rebase, revert, and bisect work normally.
+It is safe to rerun for the exact stack, but refuses dirty, partial, stale, or
+divergent checkouts.
+
+CI and image builds use detached mode while retaining the same commit history:
+
+```sh
+./linuxcnc-patches/apply.sh --detach /path/to/linuxcnc
+```
+
+For a checkout produced by the former uncommitted workflow, `--adopt` is a
+one-time migration. It succeeds only when the complete working tree exactly
+matches a separately materialized series; it never absorbs extra changes:
+
+```sh
+./linuxcnc-patches/apply.sh --adopt /path/to/linuxcnc
+```
+
+If tracked patch files changed while a clean managed branch still contains an
+older stack, rebuild it explicitly. The previous tip is retained under
+`linuxcnc-node/backups/`:
+
+```sh
+./linuxcnc-patches/apply.sh --rebuild /path/to/linuxcnc
+```
+
+## Editing the series
+
+Work on the managed branch and make each logical LinuxCNC patch one commit.
+Append a new commit for a new patch. To change an existing patch, use
+interactive rebase to edit or amend its commit and rebase the later commits.
+Do not accumulate patch changes as an uncommitted tree.
+
+After the branch is clean and tests pass, export its commits back to the
+reviewable patch files:
+
+```sh
+./linuxcnc-patches/refresh.sh /path/to/linuxcnc
+```
+
+`refresh.sh` requires a linear history rooted at `base-revision`, preserves
+existing filenames by ordinal, names newly appended patches from their commit
+subjects, and replays the generated series before replacing any patch file. It
+then normalizes the checked-out branch to those deterministic replayed commit
+IDs, retaining its prior tip under `linuxcnc-node/backups/` when the IDs
+change. It refuses to remove patches implicitly.
 
 Patch filenames begin with a sequence number. New patches must use the next
-number so their application order remains explicit.
+number so their application order remains explicit. The filename order and
+commit order must match.
 
 ## Patch inventory
 

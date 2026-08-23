@@ -18,18 +18,28 @@ ABI-locked to LinuxCNC built with this series applied.
 
 ## Before patching
 
-1. Confirm `linuxcnc/` is at the pinned baseline:
+1. Materialize the managed patch branch:
    ```sh
-   git -C linuxcnc rev-parse HEAD
-   cat linuxcnc-patches/base-revision
+   ./linuxcnc-patches/apply.sh linuxcnc
    ```
-2. If the local `linuxcnc/` checkout is dirty, reset it to the baseline before
-   starting a new patch.
+2. Confirm the checkout is clean and inspect the existing commits:
+   ```sh
+   git -C linuxcnc status --short
+   git -C linuxcnc log --oneline \
+     "$(cat linuxcnc-patches/base-revision)..HEAD"
+   ```
+
+The tooling refuses dirty, partial, or divergent state. Never reset or discard
+an existing dirty checkout automatically. A checkout produced by the legacy
+uncommitted workflow can be converted with `apply.sh --adopt linuxcnc`, but
+only when its complete tree exactly matches the patch files.
 
 ## Adding or extending a patch
 
-1. **Pick the next patch number.** Patches are applied in lexical order
-   (`0001-...`, `0002-...`). New patches use the next number.
+1. **Work in commits.** Each patch is exactly one commit on the managed
+   `linuxcnc-node/patch-stack` branch. Append a commit for a new patch. To
+   change an existing patch, interactively rebase, amend that commit, and
+   rebase all later commits. Do not layer changes in the working tree.
 
 2. **Modify LinuxCNC source** in `linuxcnc/src/`. Common files:
    - `src/emc/nml_intf/emc_nml.hh` — add fields to `EMC_TASK_STAT` or other
@@ -55,19 +65,21 @@ ABI-locked to LinuxCNC built with this series applied.
 5. **Update TypeScript types** in `types/src/core.ts` to match the new status
    paths emitted by the daemon.
 
-6. **Generate the patch** from a clean LinuxCNC checkout that has all previous
-   patches applied. If the local `linuxcnc/` checkout already contains earlier
-   patches, generate the diff relative to a commit with those earlier patches
-   applied, not relative to the raw baseline. This avoids duplicating prior
-   patches in the new patch file.
+6. **Commit the LinuxCNC change** with the intended patch author and message,
+   then test the clean branch. Refresh every patch file from the linear commit
+   history:
 
    ```sh
-   git -C linuxcnc diff HEAD -- <changed files> > linuxcnc-patches/000N-<name>.patch
+   ./linuxcnc-patches/refresh.sh linuxcnc
    ```
 
-7. **Add a proper patch header** with `From:`, `Date:`, and `Subject:` lines.
+   `refresh.sh` preserves existing filenames by ordinal, creates a numbered
+   filename for each appended commit, normalizes mail headers with
+   `git format-patch`, and verifies a full replay before replacing files. It
+   normalizes the branch to the deterministic replayed commit IDs and retains
+   the pre-normalization tip under `linuxcnc-node/backups/`.
 
-8. **Document the patch** in `linuxcnc-patches/README.md` under the patch
+7. **Document the patch** in `linuxcnc-patches/README.md` under the patch
    inventory section.
 
 ## Applying the series
@@ -78,12 +90,22 @@ From a clean checkout at the pinned baseline:
 ./linuxcnc-patches/apply.sh /path/to/linuxcnc
 ```
 
-The script checks the revision, applies patches in lexical order, and refuses
-if a patch does not apply cleanly.
+The script checks the revision, validates the entire series in a temporary
+worktree, and then creates one commit per patch on
+`linuxcnc-node/patch-stack`. Use `--detach` for CI or image builds. If patch
+files changed while an older managed branch is checked out, use `--rebuild`;
+the script saves the old tip under `linuxcnc-node/backups/` before replacing
+it.
 
 ## Verification
 
-1. Apply the complete series to the local `linuxcnc/` checkout.
+1. Materialize the complete series and verify the commit count equals the
+   patch count:
+   ```sh
+   ./linuxcnc-patches/apply.sh linuxcnc
+   git -C linuxcnc rev-list --count \
+     "$(cat linuxcnc-patches/base-revision)..HEAD"
+   ```
 2. Apply the same series to the system LinuxCNC source used for builds
    (`/home/dariusz/Desktop/linuxcnc` in this workspace).
 3. Rebuild LinuxCNC so the shared libraries match the new `EMC_STAT` layout.
@@ -106,6 +128,5 @@ if a patch does not apply cleanly.
 ## Rebuilding the series after a baseline bump
 
 If `base-revision` changes, the complete patch series must be rebased against
-the new baseline. Validate and, if necessary, regenerate every `*.patch` file
-in order. Do not change `base-revision` without rebuilding and testing the
-full series.
+the new baseline as a linear commit stack, then regenerated with `refresh.sh`.
+Do not change `base-revision` without replaying and testing the full series.

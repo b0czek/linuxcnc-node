@@ -13,6 +13,7 @@
     "check:contracts": "pnpm --filter @linuxcnc-node/types check:generated && pnpm --filter @linuxcnc-node/grpc-client check:generated",
     "test:contracts": "pnpm --filter @linuxcnc-node/types test:conformance && pnpm --filter @linuxcnc-node/grpc-client test:conformance",
     "test:consumers": "pnpm --filter @linuxcnc-node/hal-inspector test",
+    "test:patch-stack": "./linuxcnc-patches/test-stack.sh",
     "pretest": "pnpm --filter @linuxcnc-node/types build && pnpm --filter @linuxcnc-node/grpc-client build",
     "test": "pnpm run test:contracts && pnpm run test:consumers",
     "typecheck": "pnpm run check:contracts && pnpm --filter @linuxcnc-node/types build && pnpm --filter @linuxcnc-node/grpc-client build && pnpm --filter @linuxcnc-node/hal-inspector typecheck",
