@@ -65,6 +65,16 @@ Run the TypeScript contract and consumer tests:
 pnpm test
 ```
 
+## Headless simulator container
+
+`linuxcnc-simulator` packages the pinned patched LinuxCNC backend and the
+native server in one headless image. It accepts a mounted LinuxCNC
+configuration and exposes gRPC on port `50051` plus position telemetry on
+WebSocket port `50052`.
+
+The container configuration, required capabilities, image tags, and custom
+INI contract are documented in [`docker`](./docker/README.md).
+
 ## Patched LinuxCNC Baseline
 
 The maintained patches, their order, and the reason each divergence exists are

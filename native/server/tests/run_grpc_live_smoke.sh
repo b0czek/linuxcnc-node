@@ -211,7 +211,7 @@ fi
 start_server "$root/server.log"
 
 if ! timeout 60s "$smoke" "127.0.0.1:${grpc_port}" \
-    "$fixture_dir/simple_linear.ngc"; then
+    "$fixture_dir/simple_linear.ngc" "127.0.0.1:${telemetry_port}"; then
   cat "$root/linuxcnc.log" "$root/server.log" >&2
   exit 1
 fi
@@ -222,7 +222,8 @@ stop_server_with_deadline "$root/server.log"
 start_server "$root/hold-server.log"
 
 timeout 30s "$smoke" "127.0.0.1:${grpc_port}" \
-  "$fixture_dir/simple_linear.ngc" --hold-shutdown \
+  "$fixture_dir/simple_linear.ngc" "127.0.0.1:${telemetry_port}" \
+  --hold-shutdown \
   > "$root/hold.log" 2>&1 &
 hold_pid=$!
 hold_deadline=$((SECONDS + 15))
@@ -259,7 +260,8 @@ fi
 
 start_server "$root/restarted-server.log"
 if ! timeout 15s "$smoke" "127.0.0.1:${grpc_port}" \
-    "$fixture_dir/simple_linear.ngc" --probe-reacquire \
+    "$fixture_dir/simple_linear.ngc" "127.0.0.1:${telemetry_port}" \
+    --probe-reacquire \
     > "$root/reacquire.log" 2>&1; then
   cat "$root/reacquire.log" "$root/restarted-server.log" >&2
   exit 1

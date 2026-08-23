@@ -1,0 +1,31 @@
+name: linuxcnc-simulator
+
+services:
+  linuxcnc-simulator:
+    image: ${LINUXCNC_SIMULATOR_IMAGE:-ghcr.io/b0czek/linuxcnc-simulator:edge}
+    build:
+      context: .
+      target: runtime
+    environment:
+      LINUXCNC_INI: /config/${LINUXCNC_INI_FILE:-linuxcnc.ini}
+      LINUXCNC_UID: ${LINUXCNC_UID:-1000}
+      LINUXCNC_GID: ${LINUXCNC_GID:-1000}
+    volumes:
+      - ${LINUXCNC_CONFIG_DIR:?Set LINUXCNC_CONFIG_DIR to the machine configuration directory}:/config:rw
+      - linuxcnc-simulator-state:/var/lib/linuxcnc-grpc
+    ports:
+      - "${LINUXCNC_GRPC_PORT:-50051}:50051"
+      - "${LINUXCNC_TELEMETRY_PORT:-50052}:50052"
+    cap_add:
+      - IPC_LOCK
+      - IPC_OWNER
+      - SYS_NICE
+    ulimits:
+      memlock: -1
+      rtprio: 99
+    shm_size: 256m
+    stop_grace_period: 15s
+    restart: unless-stopped
+
+volumes:
+  linuxcnc-simulator-state:

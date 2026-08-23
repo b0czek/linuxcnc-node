@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ini_file=""
+daemon_args=()
+while (( $# > 0 )); do
+  case "$1" in
+    -ini)
+      if (( $# < 2 )); then
+        echo "linuxcnc-grpc-display: -ini requires a path" >&2
+        exit 2
+      fi
+      ini_file="$2"
+      shift 2
+      ;;
+    --)
+      shift
+      ;;
+    *)
+      daemon_args+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if [[ -z "$ini_file" || ! -f "$ini_file" ]]; then
+  echo "linuxcnc-grpc-display: LinuxCNC did not provide a readable INI file" >&2
+  exit 2
+fi
+if [[ -z "${NMLFILE:-}" || ! -f "$NMLFILE" ]]; then
+  echo "linuxcnc-grpc-display: LinuxCNC did not provide a readable NML file" >&2
+  exit 2
+fi
+
+program_prefix="$(inivar -ini "$ini_file" -var PROGRAM_PREFIX -sec DISPLAY)"
+if [[ "$program_prefix" != /* ]]; then
+  program_prefix="$(realpath -m "$(dirname "$ini_file")/$program_prefix")"
+fi
+
+workspace_root="${LINUXCNC_GRPC_WORKSPACE_ROOT:-/var/lib/linuxcnc-grpc/workspaces}"
+mkdir -p "$program_prefix" "$workspace_root"
+
+exec linuxcnc-grpc-server \
+  "--endpoint=${LINUXCNC_GRPC_ENDPOINT:-0.0.0.0:50051}" \
+  "--position-telemetry-endpoint=${LINUXCNC_TELEMETRY_ENDPOINT:-0.0.0.0:50052}" \
+  "--ini=$ini_file" \
+  "--nml=$NMLFILE" \
+  "--workspace-root=$workspace_root" \
+  "--active-program-directory=$program_prefix" \
+  --unsafe-non-loopback \
+  "${daemon_args[@]}"

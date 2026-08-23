@@ -51,7 +51,7 @@ if(LINUXCNC_GRPC_ENABLE_EXTERNAL_DEPS)
 endif()
 
 if(LINUXCNC_GRPC_ENABLE_NML)
-    if(EXISTS "${LINUXCNC_ROOT}/include/emc_nml.hh" AND
+    if(EXISTS "${LINUXCNC_ROOT}/src/emc/nml_intf/emc_nml.hh" AND
        EXISTS "${LINUXCNC_ROOT}/src/emc/nml_intf/emc.cc")
         find_library(LINUXCNC_NML_LIBRARY NAMES nml PATHS "${LINUXCNC_ROOT}/lib" NO_DEFAULT_PATH)
         find_library(LINUXCNC_INI_LIBRARY NAMES linuxcncini PATHS "${LINUXCNC_ROOT}/lib" NO_DEFAULT_PATH)
@@ -189,13 +189,18 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
     set(LINUXCNC_GRPC_PROTO_ROOT "${LINUXCNC_GRPC_REPO_ROOT}/proto" CACHE PATH
         "Root containing versioned LinuxCNC protobuf files")
     set(LINUXCNC_GRPC_PROTO_FILE "${LINUXCNC_GRPC_PROTO_ROOT}/linuxcnc/v1/linuxcnc.proto")
+    set(LINUXCNC_GRPC_HEALTH_PROTO_FILE "${LINUXCNC_GRPC_PROTO_ROOT}/grpc/health/v1/health.proto")
     set(LINUXCNC_GRPC_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
     set(LINUXCNC_GRPC_GENERATED_CC
         "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/linuxcnc.pb.cc"
-        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/linuxcnc.grpc.pb.cc")
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/linuxcnc.grpc.pb.cc"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/grpc/health/v1/health.pb.cc"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/grpc/health/v1/health.grpc.pb.cc")
     set(LINUXCNC_GRPC_GENERATED_HEADERS
         "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/linuxcnc.pb.h"
-        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/linuxcnc.grpc.pb.h")
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/linuxcnc.grpc.pb.h"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/grpc/health/v1/health.pb.h"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/grpc/health/v1/health.grpc.pb.h")
     add_custom_command(
         OUTPUT ${LINUXCNC_GRPC_GENERATED_CC} ${LINUXCNC_GRPC_GENERATED_HEADERS}
         COMMAND ${CMAKE_COMMAND} -E make_directory "${LINUXCNC_GRPC_GENERATED_DIR}"
@@ -206,33 +211,41 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
             --grpc_out=${LINUXCNC_GRPC_GENERATED_DIR}
             --plugin=protoc-gen-grpc=${LINUXCNC_GRPC_CPP_PLUGIN}
             "${LINUXCNC_GRPC_PROTO_FILE}"
-        DEPENDS "${LINUXCNC_GRPC_PROTO_FILE}"
+            "${LINUXCNC_GRPC_HEALTH_PROTO_FILE}"
+        DEPENDS "${LINUXCNC_GRPC_PROTO_FILE}" "${LINUXCNC_GRPC_HEALTH_PROTO_FILE}"
         VERBATIM)
+    add_library(linuxcnc-grpc-proto STATIC ${LINUXCNC_GRPC_GENERATED_CC})
+    target_include_directories(linuxcnc-grpc-proto PUBLIC "${LINUXCNC_GRPC_GENERATED_DIR}")
+    target_link_libraries(linuxcnc-grpc-proto PUBLIC protobuf::libprotobuf gRPC::grpc++)
+    if(TARGET gRPC::grpc++_reflection)
+        target_link_libraries(linuxcnc-grpc-proto PUBLIC gRPC::grpc++_reflection)
+    endif()
     add_library(linuxcnc-grpc-wire STATIC
-        ${LINUXCNC_GRPC_GENERATED_CC}
         src/grpc_gcode_mapping.cc
         src/grpc_hal_mapping.cc)
-    target_include_directories(linuxcnc-grpc-wire PUBLIC "${LINUXCNC_GRPC_GENERATED_DIR}")
-    target_link_libraries(linuxcnc-grpc-wire PUBLIC linuxcnc-grpc-domain)
-    target_link_libraries(linuxcnc-grpc-wire PUBLIC protobuf::libprotobuf gRPC::grpc++)
-    if(TARGET gRPC::grpc++_reflection)
-        target_link_libraries(linuxcnc-grpc-wire PUBLIC gRPC::grpc++_reflection)
-    endif()
+    target_link_libraries(linuxcnc-grpc-wire PUBLIC
+        linuxcnc-grpc-domain linuxcnc-grpc-proto)
     target_sources(linuxcnc-grpc-server PRIVATE src/grpc_server.cc)
     target_sources(linuxcnc-grpc-server PRIVATE src/position_telemetry_server.cc)
     target_compile_definitions(linuxcnc-grpc-server PRIVATE LINUXCNC_GRPC_BUILD_WIRE=1)
     target_compile_definitions(linuxcnc-grpc-server PRIVATE BOOST_ERROR_CODE_HEADER_ONLY=1)
     target_include_directories(linuxcnc-grpc-server PRIVATE ${Boost_INCLUDE_DIRS})
     target_link_libraries(linuxcnc-grpc-server PRIVATE linuxcnc-grpc-wire)
+    add_executable(linuxcnc-grpc-health-check src/health_check_main.cc)
+    target_compile_features(linuxcnc-grpc-health-check PRIVATE cxx_std_17)
+    target_link_libraries(linuxcnc-grpc-health-check PRIVATE linuxcnc-grpc-proto)
+    target_compile_options(linuxcnc-grpc-health-check PRIVATE -Wall -Wextra -Wpedantic)
     add_executable(linuxcnc-grpc-smoke tests/grpc_smoke.cc)
     target_compile_features(linuxcnc-grpc-smoke PRIVATE cxx_std_17)
     target_compile_definitions(linuxcnc-grpc-smoke PRIVATE BOOST_ERROR_CODE_HEADER_ONLY=1)
     target_include_directories(linuxcnc-grpc-smoke PRIVATE ${Boost_INCLUDE_DIRS})
-    target_link_libraries(linuxcnc-grpc-smoke PRIVATE linuxcnc-grpc-wire)
+    target_link_libraries(linuxcnc-grpc-smoke PRIVATE linuxcnc-grpc-proto)
     if(LINUXCNC_GRPC_HAS_NML AND LINUXCNC_GRPC_HAS_HAL)
         add_executable(linuxcnc-grpc-live-smoke tests/grpc_live_smoke.cc)
         target_compile_features(linuxcnc-grpc-live-smoke PRIVATE cxx_std_17)
-        target_link_libraries(linuxcnc-grpc-live-smoke PRIVATE linuxcnc-grpc-wire)
+        target_compile_definitions(linuxcnc-grpc-live-smoke PRIVATE BOOST_ERROR_CODE_HEADER_ONLY=1)
+        target_include_directories(linuxcnc-grpc-live-smoke PRIVATE ${Boost_INCLUDE_DIRS})
+        target_link_libraries(linuxcnc-grpc-live-smoke PRIVATE linuxcnc-grpc-proto)
         target_compile_options(linuxcnc-grpc-live-smoke PRIVATE
             -Wall -Wextra -Wpedantic)
     endif()
@@ -273,6 +286,11 @@ install(TARGETS linuxcnc-grpc-server linuxcnc-grpc-domain
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+
+if(TARGET linuxcnc-grpc-health-check)
+    install(TARGETS linuxcnc-grpc-health-check
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
 if(LINUXCNC_GRPC_BUILD_TESTS)

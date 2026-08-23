@@ -1,0 +1,14 @@
+.git
+.github
+.worktrees
+build
+dist
+node_modules
+linuxcnc
+packages
+apps
+core
+gcode
+hal
+types
+*.tgz

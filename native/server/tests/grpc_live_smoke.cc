@@ -2,6 +2,11 @@
 
 #include <grpcpp/grpcpp.h>
 
+#include <boost/asio/connect.hpp>
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/beast/core.hpp>
+#include <boost/beast/websocket.hpp>
+
 #include <cassert>
 #include <chrono>
 #include <cstdint>
@@ -18,12 +23,49 @@
 
 namespace {
 
+namespace asio = boost::asio;
+namespace beast = boost::beast;
+namespace websocket = beast::websocket;
+using tcp = asio::ip::tcp;
+
 using linuxcnc::v1::ExecuteCommandRequest;
 using linuxcnc::v1::ExecuteCommandResponse;
 using linuxcnc::v1::GetStatusResponse;
 
 std::shared_ptr<grpc::Channel> make_channel(const std::string& endpoint) {
   return grpc::CreateChannel(endpoint, grpc::InsecureChannelCredentials());
+}
+
+std::pair<std::string, std::string> split_endpoint(
+    const std::string& endpoint) {
+  const auto separator = endpoint.rfind(':');
+  if (separator == std::string::npos || separator == 0 ||
+      separator + 1 == endpoint.size()) {
+    std::cerr << "Invalid telemetry endpoint: " << endpoint << "\n";
+    std::abort();
+  }
+  return {endpoint.substr(0, separator), endpoint.substr(separator + 1)};
+}
+
+void verify_position_telemetry(const std::string& endpoint) {
+  const auto [host, port] = split_endpoint(endpoint);
+  asio::io_context io;
+  tcp::resolver resolver(io);
+  websocket::stream<beast::tcp_stream> socket(io);
+  beast::get_lowest_layer(socket).expires_after(std::chrono::seconds(5));
+  beast::get_lowest_layer(socket).connect(resolver.resolve(host, port));
+  socket.handshake(host, "/v1/position-history");
+  beast::flat_buffer buffer;
+  socket.read(buffer);
+  std::vector<std::uint8_t> bytes(buffer.size());
+  asio::buffer_copy(asio::buffer(bytes), buffer.data());
+  assert(bytes.size() >= 40);
+  assert(bytes[0] == 'L' && bytes[1] == 'C' && bytes[2] == 'P' &&
+         bytes[3] == 'H');
+  assert(bytes[4] == 1);
+  assert(bytes[5] == 1);
+  assert(bytes[6] == 10 && bytes[7] == 0);
+  socket.close(websocket::close_code::normal);
 }
 
 GetStatusResponse get_status_with_retry(
@@ -38,6 +80,21 @@ GetStatusResponse get_status_with_retry(
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
   std::cerr << "LinuxCNC status did not become available within 15 seconds\n";
+  std::abort();
+}
+
+GetStatusResponse wait_for_optional_stop(
+    linuxcnc::v1::MachineService::Stub* machine, bool expected) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (std::chrono::steady_clock::now() < deadline) {
+    const auto response = get_status_with_retry(machine);
+    if (response.has_status() && response.status().has_task() &&
+        response.status().task().optional_stop_state() == expected) {
+      return response;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+  std::cerr << "Optional-stop status did not converge within 5 seconds\n";
   std::abort();
 }
 
@@ -306,11 +363,18 @@ int hold_shutdown(const std::string& endpoint) {
 
 int main(int argc, char** argv) {
   if (argc < 3) {
-    std::cerr << "usage: linuxcnc-grpc-live-smoke ENDPOINT GCODE_FIXTURE\n";
+    std::cerr << "usage: linuxcnc-grpc-live-smoke ENDPOINT GCODE_FIXTURE "
+                 "[TELEMETRY_ENDPOINT] [--hold-shutdown|--probe-reacquire]\n";
     return 2;
   }
   const std::string endpoint = argc > 1 ? argv[1] : "127.0.0.1:50051";
-  const std::string mode = argc > 3 ? argv[3] : "";
+  std::string telemetry_endpoint = "127.0.0.1:50052";
+  std::string mode;
+  for (int index = 3; index < argc; ++index) {
+    const std::string argument(argv[index]);
+    if (argument.rfind("--", 0) == 0) mode = argument;
+    else telemetry_endpoint = argument;
+  }
   if (mode == "--hold-shutdown") return hold_shutdown(endpoint);
   if (mode == "--probe-reacquire") return probe_reacquire(endpoint);
   if (!mode.empty()) {
@@ -335,7 +399,7 @@ int main(int argc, char** argv) {
   const auto completed = set_optional_stop(
       machine.get(), target_optional_stop, linuxcnc::v1::WAIT_POLICY_COMPLETED);
   assert(completed.status() == linuxcnc::v1::RCS_STATUS_DONE);
-  const auto changed = get_status_with_retry(machine.get());
+  const auto changed = wait_for_optional_stop(machine.get(), target_optional_stop);
   assert(changed.status().task().optional_stop_state() == target_optional_stop);
 
   // The first event is a typed replay from the baseline sequence. This
@@ -372,6 +436,7 @@ int main(int argc, char** argv) {
   const auto configure_position_status = machine->ConfigurePositionHistory(
       &configure_position_context, position_config, &empty);
   assert(configure_position_status.ok());
+  verify_position_telemetry(telemetry_endpoint);
 
   ExecuteCommandRequest reset_estop;
   reset_estop.mutable_set_state()->set_state(linuxcnc::v1::TASK_STATE_ESTOP_RESET);

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "$(id -u)" == 0 ]]; then
+  runtime_uid="${LINUXCNC_UID:-1000}"
+  runtime_gid="${LINUXCNC_GID:-1000}"
+  if [[ ! "$runtime_uid" =~ ^[1-9][0-9]*$ || ! "$runtime_gid" =~ ^[1-9][0-9]*$ ]]; then
+    echo "linuxcnc-simulator: LINUXCNC_UID and LINUXCNC_GID must be positive integers" >&2
+    exit 2
+  fi
+  mkdir -p /var/lib/linuxcnc-grpc/workspaces
+  chown -R "$runtime_uid:$runtime_gid" /var/lib/linuxcnc-grpc
+  export HOME=/var/lib/linuxcnc-grpc
+  exec setpriv --reuid="$runtime_uid" --regid="$runtime_gid" --clear-groups "$0" "$@"
+fi
+
+ini_file="${1:-${LINUXCNC_INI:-/config/linuxcnc.ini}}"
+if [[ ! -f "$ini_file" ]]; then
+  echo "linuxcnc-simulator: LinuxCNC INI file not found: $ini_file" >&2
+  echo "Mount a configuration at /config and set LINUXCNC_INI if it is not /config/linuxcnc.ini." >&2
+  exit 2
+fi
+
+if (( $# > 0 )); then
+  shift
+fi
+exec linuxcnc "$ini_file" "$@"

@@ -74,3 +74,7 @@ To generate build-tree protobuf/gRPC C++ sources once the standard imports and
 development tools are available, configure with
 `-DLINUXCNC_GRPC_BUILD_WIRE=ON`. Wire generation is the default; pass
 `-DLINUXCNC_GRPC_BUILD_WIRE=OFF` for an explicit domain-only build.
+
+Wire builds also install `linuxcnc-grpc-health-check`. It calls the standard
+gRPC health service at `127.0.0.1:50051` by default, or at the endpoint passed
+as its first argument, and exits nonzero unless the server reports `SERVING`.
