@@ -1,0 +1,1846 @@
+From 1651711566de608f5e8515424b6cc059befc2b3c Mon Sep 17 00:00:00 2001
+From: Dariusz <dariusz@localhost>
+Date: Mon, 17 Aug 2026 22:08:20 +0200
+Subject: [PATCH] linuxcnc: clear G76 passes safely on Stop and Step
+
+Give each generated G76 pass an internal identity spanning its approach,
+synchronized cut, and exact clearance retract. Stop latches the active pass
+and finishes only its marked retract, including when the target arrives after
+the cut or the request crosses the cut/retract handoff.
+
+Teach motion-level Step to finish one marked pass when later passes were
+already queued by AUTO_RUN. Keep task-side pass groups for commands that have
+not reached motion, and preserve the ordinary source-line stepping rule for
+unmarked motion.
+
+Preserve pass ownership on synthetic blend arcs, make marked clearance
+endpoints non-blendable, reset pass-step state on abort and mode changes, and
+extend resumable-stop coverage to cylindrical and tapered Stop-to-Step
+handoffs, exit tapers, arc blending, and deterministic cut/retract timing.
+---
+ docs/src/gcode/g-code.adoc                    |  14 +
+ src/emc/motion/command.c                      |  31 +-
+ src/emc/motion/control.c                      |  25 +-
+ src/emc/motion/motion.h                       |   2 +
+ src/emc/nml_intf/canon.hh                     |   7 +
+ src/emc/nml_intf/emc.cc                       |  12 +
+ src/emc/nml_intf/emc.hh                       |   5 +-
+ src/emc/nml_intf/emc_nml.hh                   |  19 +-
+ src/emc/nml_intf/interpl.cc                   |  17 +-
+ src/emc/nml_intf/interpl.hh                   |   5 +
+ src/emc/rs274ngc/gcodemodule.cc               |   4 +
+ src/emc/rs274ngc/interp_convert.cc            |  10 +
+ src/emc/sai/saicanon.cc                       |   5 +
+ src/emc/task/emccanon.cc                      |  53 ++-
+ src/emc/task/emctask.cc                       |   4 +-
+ src/emc/task/emctaskmain.cc                   |  70 +++-
+ src/emc/task/task.hh                          |   2 +-
+ src/emc/task/taskintf.cc                      |   8 +-
+ src/emc/tp/tc_types.h                         |   2 +
+ src/emc/tp/tp.c                               | 168 +++++++++-
+ src/emc/tp/tp.h                               |   3 +-
+ src/emc/tp/tp_types.h                         |  10 +-
+ tests/interp/compile/use-rs274.cc              |   4 +
+ tests/resumable-stop/README                   |  19 +-
+ tests/resumable-stop/checkresult              |   3 +-
+ .../resumable-stop/g33-followed-by-rapid.ngc  |   7 +
+ tests/resumable-stop/g76-exit-taper.ngc       |   7 +
+ tests/resumable-stop/g76-handoff.ngc          |   7 +
+ tests/resumable-stop/g76-step.ngc             |   4 +
+ .../resumable-stop/g76-tapered-exit-taper.ngc |   7 +
+ tests/resumable-stop/g76-tapered-step.ngc     |   4 +
+ tests/resumable-stop/g76-tapered.ngc          |   7 +
+ tests/resumable-stop/test-ui.py               | 320 +++++++++++++++++-
+ tests/resumable-stop/test.ini                 |   1 +
+ tests/resumable-stop/test.sh                  |  14 +
+ 35 files changed, 824 insertions(+), 56 deletions(-)
+ create mode 100644 tests/resumable-stop/g33-followed-by-rapid.ngc
+ create mode 100644 tests/resumable-stop/g76-exit-taper.ngc
+ create mode 100644 tests/resumable-stop/g76-handoff.ngc
+ create mode 100644 tests/resumable-stop/g76-step.ngc
+ create mode 100644 tests/resumable-stop/g76-tapered-exit-taper.ngc
+ create mode 100644 tests/resumable-stop/g76-tapered-step.ngc
+ create mode 100644 tests/resumable-stop/g76-tapered.ngc
+
+diff --git a/docs/src/gcode/g-code.adoc b/docs/src/gcode/g-code.adoc
+index 4160cfb4a2..49076deac2 100644
+--- a/docs/src/gcode/g-code.adoc
++++ b/docs/src/gcode/g-code.adoc
+@@ -1986,6 +1986,20 @@ pass, so a relief groove will be required at the entry unless the
+ beginning of the thread is past the end of the material or an entry
+ taper is used.
+ 
++In Single Step mode, each G76 pass is one step. The step includes the
++approach, synchronized cut, and immediate retract to the pass clearance
++position. The next step begins the next pass; motion does not stop at thread
++depth between steps. This pass fence does not drain the motion queue during
++normal, uninterrupted `AUTO_RUN` execution. The marked clearance retract is
++an exact, non-blendable endpoint, so motion reaches zero velocity there even
++when arc blending is enabled.
++
++When resumable Stop is enabled, a Stop requested during a G76 cut or its
++immediate clearance retract completes that explicitly marked retract before
++stopping. A later rapid outside the G76 pass is not part of this safe boundary.
++If later passes were already queued by `AUTO_RUN`, each subsequent Single Step
++still executes only one pass through its marked clearance endpoint.
++
+ Unless using an exit taper, the exit move is not synchronized to the
+ spindle speed and will be a <<gcode:g0,rapid move>>. With a slow spindle,
+ the exit move might take only a small fraction of a revolution. If the
+diff --git a/src/emc/motion/command.c b/src/emc/motion/command.c
+index efe02af73d..b6ad9c1504 100644
+--- a/src/emc/motion/command.c
++++ b/src/emc/motion/command.c
+@@ -509,6 +509,8 @@ void emcmotCommandHandler_locked(void *arg, long servo_period)
+ 	    } else if (GET_MOTION_COORD_FLAG()) {
+ 		emcmotInternal->coord_tp.stopping = 0;
+ 		emcmotInternal->coord_tp.stop_tc = 0;
++		emcmotInternal->coord_tp.stop_target_pending = 0;
++		emcmotInternal->coord_tp.stop_pass_id = 0;
+ 		emcmotStatus->stopped = 0;
+ 		tpAbort(&emcmotInternal->coord_tp);
+ 	    } else {
+@@ -1052,7 +1054,9 @@ void emcmotCommandHandler_locked(void *arg, long servo_period)
+ 					emcmotStatus->enables_new,
+ 					issue_atspeed,
+ 					emcmotCommand->turn,
+-					emcmotCommand->tag);
++					emcmotCommand->tag,
++					emcmotCommand->g76_pass_id,
++					emcmotCommand->g76_pass_clearance);
+         //KLUDGE ignore zero length line
+         if (res_addline < 0) {
+             reportError(_("can't add linear move at line %d, error code %d"),
+@@ -1226,8 +1230,11 @@ void emcmotCommandHandler_locked(void *arg, long servo_period)
+ 
+ 	case EMCMOT_STOP:
+ 	    rtapi_print_msg(RTAPI_MSG_DBG, "STOP");
++	    emcmotStatus->stepping = 0;
+ 	    emcmotInternal->coord_tp.stopping = 1;
+ 	    emcmotInternal->coord_tp.stop_tc = 0;
++	    emcmotInternal->coord_tp.stop_target_pending = 0;
++	    emcmotInternal->coord_tp.stop_pass_id = 0;
+ 	    tpPause(&emcmotInternal->coord_tp);
+ 	    emcmotStatus->paused = 1;
+ 	    emcmotStatus->stopped = 0;
+@@ -1254,19 +1261,31 @@ void emcmotCommandHandler_locked(void *arg, long servo_period)
+ 	    emcmotStatus->stepping = 0;
+ 	    emcmotInternal->coord_tp.stopping = 0;
+ 	    emcmotInternal->coord_tp.stop_tc = 0;
++	    emcmotInternal->coord_tp.stop_target_pending = 0;
++	    emcmotInternal->coord_tp.stop_pass_id = 0;
+ 	    tpResume(&emcmotInternal->coord_tp);
+ 	    emcmotStatus->paused = 0;
+ 	    emcmotStatus->stopped = 0;
+ 	    break;
+ 
+ 	case EMCMOT_STEP:
+-	    /* resume paused motion until id changes */
++	    /* resume paused motion through one G76 pass or until id changes */
+ 	    /* can happen at any time */
+             rtapi_print_msg(RTAPI_MSG_DBG, "STEP");
+             if(emcmotStatus->paused) {
+-                emcmotInternal->idForStep = emcmotStatus->id;
++                TP_STRUCT *tp = &emcmotInternal->coord_tp;
++                tpResume(tp);
+                 emcmotStatus->stepping = 1;
+-                tpResume(&emcmotInternal->coord_tp);
++                tp->stepping_to_pass_clearance = 1;
++                tp->step_target_pending = 0;
++                tpPause(tp);
++                if (!tp->step_target_pending) {
++                    tp->step_tc = 0;
++                    tp->step_pass_id = 0;
++                    tp->stepping_to_pass_clearance = 0;
++                    emcmotInternal->idForStep = emcmotStatus->id;
++                    tpResume(tp);
++                }
+                 emcmotStatus->paused = 1;
+             } else {
+ 		reportError(_("MOTION: can't STEP while already executing"));
+@@ -1523,7 +1542,9 @@ void emcmotCommandHandler_locked(void *arg, long servo_period)
+ 				emcmotStatus->enables_new,
+ 				0,
+ 				-1,
+-				emcmotCommand->tag)) {
++				emcmotCommand->tag,
++				0,
++				0)) {
+ 		reportError(_("can't add probe move"));
+ 		emcmotStatus->commandStatus = EMCMOT_COMMAND_BAD_EXEC;
+ 		tpAbort(&emcmotInternal->coord_tp);
+diff --git a/src/emc/motion/control.c b/src/emc/motion/control.c
+index 0a5d550480..160c2dcd2c 100644
+--- a/src/emc/motion/control.c
++++ b/src/emc/motion/control.c
+@@ -1993,12 +1993,11 @@ static void output_to_hal(void)
+     /*
+      * Alternate trajectory planners only provide the established tpPause()
+      * interface.  Treat a completed fallback pause as a completed Stop.  The
+-     * default planner sets stop_tc while an active position-synchronized
+-     * segment must finish, so do not complete Stop at an intermediate zero
+-     * velocity in that case.
++     * default planner latches stop_target_pending while a selected segment
++     * must finish, so do not complete Stop at an intermediate zero velocity.
+      */
+     if (emcmotInternal->coord_tp.stopping &&
+-            !emcmotInternal->coord_tp.stop_tc &&
++            !emcmotInternal->coord_tp.stop_target_pending &&
+             fabs(emcmotStatus->current_vel) < TP_VEL_EPSILON) {
+         emcmotStatus->stopped = 1;
+     }
+@@ -2224,10 +2223,20 @@ static void update_status(void)
+     /* check to see if we should pause in order to implement
+        single emcmotStatus->stepping */
+ 
+-    if (emcmotStatus->stepping && emcmotInternal->idForStep != emcmotStatus->id) {
+-      tpPause(&emcmotInternal->coord_tp);
+-      emcmotStatus->stepping = 0;
+-      emcmotStatus->paused = 1;
++    if (emcmotStatus->stepping) {
++        TP_STRUCT *tp = &emcmotInternal->coord_tp;
++        bool pass_step_done = tp->stepping_to_pass_clearance &&
++            !tp->step_target_pending;
++        bool line_step_done = !tp->stepping_to_pass_clearance &&
++            emcmotInternal->idForStep != emcmotStatus->id;
++        if (pass_step_done || line_step_done) {
++            tp->step_tc = 0;
++            tp->step_pass_id = 0;
++            tp->stepping_to_pass_clearance = 0;
++            tpPause(tp);
++            emcmotStatus->stepping = 0;
++            emcmotStatus->paused = 1;
++        }
+     }
+     // State Tags handling
+     // Get the current executing trajectory component (the "Source of Truth")
+diff --git a/src/emc/motion/motion.h b/src/emc/motion/motion.h
+index 84ab8eb6ce..4651a285e5 100644
+--- a/src/emc/motion/motion.h
++++ b/src/emc/motion/motion.h
+@@ -275,6 +275,8 @@ extern "C" {
+     double ext_offset_vel;	/* velocity for an external axis offset */
+     double ext_offset_acc;	/* acceleration for an external axis offset */
+     struct state_tag_t tag;
++    int g76_pass_id;       /* internal G76 pass ownership, zero otherwise */
++    int g76_pass_clearance;/* this move is that pass's clearance retract */
+     } emcmot_command_t;
+ 
+ /*! \todo FIXME - these packed bits might be replaced with chars
+diff --git a/src/emc/nml_intf/canon.hh b/src/emc/nml_intf/canon.hh
+index 23ef06ec5f..92fe0ffe08 100644
+--- a/src/emc/nml_intf/canon.hh
++++ b/src/emc/nml_intf/canon.hh
+@@ -1056,6 +1056,13 @@ extern int USER_DEFINED_FUNCTION_ADD(USER_DEFINED_FUNCTION_TYPE func,
+  * last segment to be output, if it has been held to do segment merging */
+ extern void FINISH(void);
+ 
++// Group one G76 pass for task-level Single Step and identify the cut and its
++// particular clearance retract for resumable Stop.
++extern void START_G76_PASS(void);
++extern void START_G76_CUT(void);
++extern void START_G76_CLEARANCE(void);
++extern void FINISH_G76_PASS(int line_number);
++
+ // to be called when there is an abort, to dump the last segment instead of adding
+ // it to the interp list in certain cases
+ extern void ON_RESET(void);
+diff --git a/src/emc/nml_intf/emc.cc b/src/emc/nml_intf/emc.cc
+index fb74ca4faa..230ef23142 100644
+--- a/src/emc/nml_intf/emc.cc
++++ b/src/emc/nml_intf/emc.cc
+@@ -214,6 +214,9 @@ int emcFormat(NMLTYPE type, void *buffer, CMS * cms)
+     case EMC_TASK_PLAN_SYNCH_TYPE:
+ 	((EMC_TASK_PLAN_SYNCH *) buffer)->update(cms);
+ 	break;
++    case EMC_TASK_PLAN_PASS_GROUP_FENCE_TYPE:
++	((EMC_TASK_PLAN_PASS_GROUP_FENCE *) buffer)->update(cms);
++	break;
+     case EMC_TASK_PLAN_SET_OPTIONAL_STOP_TYPE:
+ 	((EMC_TASK_PLAN_SET_OPTIONAL_STOP *) buffer)->update(cms);
+ 	break;
+@@ -472,6 +475,8 @@ const char *emc_symbol_lookup(uint32_t type)
+ 	return "EMC_TASK_PLAN_STEP";
+     case EMC_TASK_PLAN_SYNCH_TYPE:
+ 	return "EMC_TASK_PLAN_SYNCH";
++    case EMC_TASK_PLAN_PASS_GROUP_FENCE_TYPE:
++	return "EMC_TASK_PLAN_PASS_GROUP_FENCE";
+     case EMC_TASK_PLAN_SET_OPTIONAL_STOP_TYPE:
+ 	return "EMC_TASK_PLAN_SET_OPTIONAL_STOP";
+     case EMC_TASK_PLAN_SET_BLOCK_DELETE_TYPE:
+@@ -757,6 +762,11 @@ void EMC_TASK_PLAN_SYNCH::update(CMS * cms)
+     EMC_TASK_CMD_MSG::update(cms);
+ }
+ 
++void EMC_TASK_PLAN_PASS_GROUP_FENCE::update(CMS * cms)
++{
++    EMC_TASK_CMD_MSG::update(cms);
++}
++
+ /*
+ *	NML/CMS Update function for EMC_COOLANT_CMD_MSG
+ *	Automatically generated by NML CodeGen Java Applet.
+@@ -1090,6 +1100,8 @@ void EMC_TRAJ_LINEAR_MOVE::update(CMS * cms)
+     cms->update(acc);
+     cms->update(feed_mode);
+     cms->update(indexer_jnum);
++    cms->update(g76_pass_id);
++    cms->update(g76_pass_clearance);
+ }
+ 
+ /*
+diff --git a/src/emc/nml_intf/emc.hh b/src/emc/nml_intf/emc.hh
+index ee07d5620d..d64730966b 100644
+--- a/src/emc/nml_intf/emc.hh
++++ b/src/emc/nml_intf/emc.hh
+@@ -144,6 +144,7 @@ struct PM_CARTESIAN;
+ #define EMC_TASK_PLAN_OPTIONAL_STOP_TYPE             ((NMLTYPE) 519)
+ #define EMC_TASK_PLAN_REVERSE_TYPE                   ((NMLTYPE) 520)
+ #define EMC_TASK_PLAN_FORWARD_TYPE                   ((NMLTYPE) 521)
++#define EMC_TASK_PLAN_PASS_GROUP_FENCE_TYPE           ((NMLTYPE) 522)
+ 
+ #define EMC_TASK_STAT_TYPE                           ((NMLTYPE) 599)
+ 
+@@ -380,7 +381,9 @@ extern int emcTrajStep();
+ extern int emcTrajResume();
+ extern int emcTrajDelay(double delay);
+ extern int emcTrajLinearMove(const EmcPose& end, int type, double vel,
+-                             double ini_maxvel, double acc, double ini_maxjerk, int indexer_jnum);
++                             double ini_maxvel, double acc, double ini_maxjerk,
++                             int indexer_jnum, int g76_pass_id,
++                             int g76_pass_clearance);
+ extern int emcTrajCircularMove(const EmcPose& end, const PM_CARTESIAN& center, const PM_CARTESIAN&
+         normal, int turn, int type, double vel, double ini_maxvel, double acc, double ini_maxjerk);
+ extern int emcTrajSetTermCond(int cond, double tolerance);
+diff --git a/src/emc/nml_intf/emc_nml.hh b/src/emc/nml_intf/emc_nml.hh
+index 3d373a493c..70e695c8d7 100644
+--- a/src/emc/nml_intf/emc_nml.hh
++++ b/src/emc/nml_intf/emc_nml.hh
+@@ -746,7 +746,9 @@ class EMC_TRAJ_LINEAR_MOVE:public EMC_TRAJ_CMD_MSG {
+         acc(0.0),
+         ini_maxjerk(0.0),
+         feed_mode(0),
+-        indexer_jnum(0)
++        indexer_jnum(0),
++        g76_pass_id(0),
++        g76_pass_clearance(0)
+     {};
+ 
+     // For internal NML/CMS use only.
+@@ -759,6 +761,8 @@ class EMC_TRAJ_LINEAR_MOVE:public EMC_TRAJ_CMD_MSG {
+     double vel, ini_maxvel, acc, ini_maxjerk;
+     int feed_mode;
+     int indexer_jnum;
++    int g76_pass_id;
++    int g76_pass_clearance;
+ };
+ 
+ class EMC_TRAJ_CIRCULAR_MOVE:public EMC_TRAJ_CMD_MSG {
+@@ -1396,6 +1400,19 @@ class EMC_TASK_PLAN_SYNCH:public EMC_TASK_CMD_MSG {
+     void update(CMS * cms);
+ };
+ 
++// Internal pass-group fence. In Single Step mode task waits for preceding
++// motion to finish; in normal AUTO_RUN this is bookkeeping only and does not
++// drain the motion or IO queues.
++class EMC_TASK_PLAN_PASS_GROUP_FENCE:public EMC_TASK_CMD_MSG {
++  public:
++    EMC_TASK_PLAN_PASS_GROUP_FENCE()
++      : EMC_TASK_CMD_MSG(EMC_TASK_PLAN_PASS_GROUP_FENCE_TYPE,
++                         sizeof(EMC_TASK_PLAN_PASS_GROUP_FENCE))
++    {};
++
++    void update(CMS * cms);
++};
++
+ class EMC_TASK_PLAN_SET_OPTIONAL_STOP:public EMC_TASK_CMD_MSG {
+   public:
+     EMC_TASK_PLAN_SET_OPTIONAL_STOP()
+diff --git a/src/emc/nml_intf/interpl.cc b/src/emc/nml_intf/interpl.cc
+index 80fd26ffb1..1c58826f25 100644
+--- a/src/emc/nml_intf/interpl.cc
++++ b/src/emc/nml_intf/interpl.cc
+@@ -30,6 +30,11 @@ void NML_INTERP_LIST::set_line_number(int line)
+     next_line_number = line;
+ }
+ 
++void NML_INTERP_LIST::set_pass_group(int group)
++{
++    next_pass_group = group;
++}
++
+ int NML_INTERP_LIST::append(std::unique_ptr<NMLmsg>&& nml_msg_ptr)
+ {
+     /* check for invalid data */
+@@ -48,7 +53,8 @@ int NML_INTERP_LIST::append(std::unique_ptr<NMLmsg>&& nml_msg_ptr)
+         return -1;
+     }
+ 
+-    NML_INTERP_LIST_NODE node {next_line_number, std::move(nml_msg_ptr)};
++    NML_INTERP_LIST_NODE node {
++        next_line_number, next_pass_group, std::move(nml_msg_ptr)};
+ 
+     // stick it on the list
+     linked_list.emplace_back(std::move(node));
+@@ -70,6 +76,7 @@ std::unique_ptr<NMLmsg> NML_INTERP_LIST::get()
+ {
+     if (linked_list.empty()) {
+         line_number = 0;
++        pass_group = 0;
+         return NULL;
+     }
+ 
+@@ -79,6 +86,7 @@ std::unique_ptr<NMLmsg> NML_INTERP_LIST::get()
+ 
+     // save line number of this one, for use by get_line_number
+     line_number = node.line_number;
++    pass_group = node.pass_group;
+ 
+     if (emc_debug & EMC_DEBUG_INTERP_LIST) {
+         rcs_print("NML_INTERP_LIST(%p)::get(): {size=%ld, type=%s}, list_size=%lu\n",
+@@ -97,6 +105,8 @@ void NML_INTERP_LIST::clear()
+         rcs_print("NML_INTERP_LIST(%p)::clear(): discarding %lu items\n", this, linked_list.size());
+     }
+     linked_list.clear();
++    next_pass_group = 0;
++    pass_group = 0;
+ }
+ 
+ void NML_INTERP_LIST::print()
+@@ -118,3 +128,8 @@ int NML_INTERP_LIST::get_line_number()
+ {
+     return line_number;
+ }
++
++int NML_INTERP_LIST::get_pass_group()
++{
++    return pass_group;
++}
+diff --git a/src/emc/nml_intf/interpl.hh b/src/emc/nml_intf/interpl.hh
+index b5ef1652a6..324db10675 100644
+--- a/src/emc/nml_intf/interpl.hh
++++ b/src/emc/nml_intf/interpl.hh
+@@ -26,6 +26,7 @@ class NMLmsg;
+ struct NML_INTERP_LIST_NODE
+ {
+     int line_number;  // line number it was on
++    int pass_group;   // generated pass within a source line, or zero
+     // std::vector<char> command;
+     std::unique_ptr<NMLmsg> command;
+ };
+@@ -36,6 +37,8 @@ class NML_INTERP_LIST
+ public:
+     void set_line_number(int line);
+     int get_line_number();
++    void set_pass_group(int group);
++    int get_pass_group();
+     int append(std::unique_ptr<NMLmsg>&& command);
+     std::unique_ptr<NMLmsg> get();
+     void clear();
+@@ -46,6 +49,8 @@ private:
+     std::deque<NML_INTERP_LIST_NODE> linked_list;
+     int next_line_number = 0;  // line number used to fill temp_node
+     int line_number = 0;       // line number of node from get()
++    int next_pass_group = 0;
++    int pass_group = 0;
+                                // NML_INTERP_LIST_NODE node; // pointer returned by get
+ };
+ 
+diff --git a/src/emc/rs274ngc/gcodemodule.cc b/src/emc/rs274ngc/gcodemodule.cc
+index 32aeed560b..bea2ba1795 100644
+--- a/src/emc/rs274ngc/gcodemodule.cc
++++ b/src/emc/rs274ngc/gcodemodule.cc
+@@ -559,6 +559,10 @@ void WAIT_SPINDLE_ORIENT_COMPLETE(int /*s*/, double /*timeout*/) {}
+ void PROGRAM_STOP() {}
+ void PROGRAM_END() {}
+ void FINISH() {}
++void START_G76_PASS() {}
++void START_G76_CUT() {}
++void START_G76_CLEARANCE() {}
++void FINISH_G76_PASS(int /*line_number*/) {}
+ void ON_RESET() {}
+ void PALLET_SHUTTLE() {}
+ void SELECT_TOOL(int tool) {selected_tool = tool;}
+diff --git a/src/emc/rs274ngc/interp_convert.cc b/src/emc/rs274ngc/interp_convert.cc
+index 373916cfb0..834405159d 100644
+--- a/src/emc/rs274ngc/interp_convert.cc
++++ b/src/emc/rs274ngc/interp_convert.cc
+@@ -5618,11 +5618,13 @@ threading_pass(setup_pointer settings, block_pointer block,
+ 	       double start_y, double start_z, double zoff, double taper_dist,
+ 	       int entry_taper, int exit_taper, double taper_pitch,
+ 	       double pitch, double full_threadheight, double target_z) {
++    START_G76_PASS();
+     STRAIGHT_TRAVERSE(block->line_number, boring?
+ 		      safe_x + depth - end_depth:
+ 		      safe_x - depth + end_depth,
+ 		      start_y, start_z - zoff, AABBCC); //back
+     if(taper_dist && entry_taper) {
++	START_G76_CUT();
+ 	DISABLE_FEED_OVERRIDE();
+ 	START_SPEED_FEED_SYNCH(settings->active_spindle, taper_pitch, 0);
+ 	STRAIGHT_FEED(block->line_number, boring?
+@@ -5635,6 +5637,7 @@ threading_pass(setup_pointer settings, block_pointer block,
+     } else {
+ 	STRAIGHT_TRAVERSE(block->line_number, boring? safe_x + depth: safe_x - depth,
+ 			  start_y, start_z - zoff, AABBCC); //in
++	START_G76_CUT();
+ 	DISABLE_FEED_OVERRIDE();
+ 	START_SPEED_FEED_SYNCH(settings->active_spindle, pitch, 0);
+     }
+@@ -5652,11 +5655,13 @@ threading_pass(setup_pointer settings, block_pointer block,
+ 		      start_y, target_z - zoff, AABBCC); //over
+     }
+     STOP_SPEED_FEED_SYNCH();
++    START_G76_CLEARANCE();
+     STRAIGHT_TRAVERSE(block->line_number, boring?
+ 		      safe_x + depth - end_depth:
+ 		      safe_x - depth + end_depth,
+ 		      start_y, target_z - zoff, AABBCC); //out
+     ENABLE_FEED_OVERRIDE();
++    FINISH_G76_PASS(block->line_number);
+ }
+ 
+ // Make one threading pass along a tapered XZ drive line.  X coordinates are
+@@ -5670,6 +5675,7 @@ tapered_threading_pass(setup_pointer settings, block_pointer block,
+ 	       double full_compound_offset, double taper_dist,
+ 	       int entry_taper, int exit_taper, double pitch,
+ 	       double full_threadheight) {
++    START_G76_PASS();
+     const double drive_dx = end_x - start_x;
+     const double drive_dz = end_z - start_z;
+     const double drive_length = hypot(drive_dx, drive_dz);
+@@ -5701,6 +5707,7 @@ tapered_threading_pass(setup_pointer settings, block_pointer block,
+ 		  entry_end_z - pass_start_z) /
+ 	    fabs(entry_end_z - pass_start_z);
+ 
++	START_G76_CUT();
+ 	DISABLE_FEED_OVERRIDE();
+ 	START_SPEED_FEED_SYNCH(settings->active_spindle, entry_pitch, 0);
+ 	STRAIGHT_FEED(block->line_number, crest_start_x,
+@@ -5711,6 +5718,7 @@ tapered_threading_pass(setup_pointer settings, block_pointer block,
+     } else {
+ 	STRAIGHT_TRAVERSE(block->line_number, cut_start_x,
+ 			  start_y, pass_start_z, AABBCC); // in
++	START_G76_CUT();
+ 	DISABLE_FEED_OVERRIDE();
+ 	START_SPEED_FEED_SYNCH(settings->active_spindle, drive_pitch, 0);
+     }
+@@ -5735,10 +5743,12 @@ tapered_threading_pass(setup_pointer settings, block_pointer block,
+ 		      start_y, pass_end_z, AABBCC); // over
+     }
+     STOP_SPEED_FEED_SYNCH();
++    START_G76_CLEARANCE();
+     STRAIGHT_TRAVERSE(block->line_number,
+ 		      cut_end_x - depth_direction * end_depth,
+ 		      start_y, pass_end_z, AABBCC); // out
+     ENABLE_FEED_OVERRIDE();
++    FINISH_G76_PASS(block->line_number);
+ }
+ 
+ int Interp::convert_threading_cycle(block_pointer block,
+diff --git a/src/emc/sai/saicanon.cc b/src/emc/sai/saicanon.cc
+index b349f4952d..ad80e0495d 100644
+--- a/src/emc/sai/saicanon.cc
++++ b/src/emc/sai/saicanon.cc
+@@ -1072,6 +1072,11 @@ void FINISH(void) {
+     PRINT("FINISH()\n");
+ }
+ 
++void START_G76_PASS(void) {}
++void START_G76_CUT(void) {}
++void START_G76_CLEARANCE(void) {}
++void FINISH_G76_PASS(int /*line_number*/) {}
++
+ void ON_RESET(void)
+ {
+     PRINT("ON_RESET()\n");
+diff --git a/src/emc/task/emccanon.cc b/src/emc/task/emccanon.cc
+index e5d71a60e8..ceb43d9905 100644
+--- a/src/emc/task/emccanon.cc
++++ b/src/emc/task/emccanon.cc
+@@ -149,6 +149,46 @@ struct JerkData{
+ static PM_QUATERNION quat(1, 0, 0, 0);
+ 
+ static void flush_segments(void);
++static int next_g76_pass_id = 1;
++static int current_g76_pass_id = 0;
++static int motion_g76_pass_id = 0;
++static int motion_g76_pass_clearance = 0;
++
++void START_G76_PASS(void)
++{
++    flush_segments();
++    current_g76_pass_id = next_g76_pass_id;
++    motion_g76_pass_id = current_g76_pass_id;
++    motion_g76_pass_clearance = 0;
++    interp_list.set_pass_group(current_g76_pass_id);
++    next_g76_pass_id = next_g76_pass_id == 0x7fffffff
++        ? 1 : next_g76_pass_id + 1;
++}
++
++void START_G76_CUT(void)
++{
++    flush_segments();
++    motion_g76_pass_id = current_g76_pass_id;
++    motion_g76_pass_clearance = 0;
++}
++
++void START_G76_CLEARANCE(void)
++{
++    flush_segments();
++    motion_g76_pass_id = current_g76_pass_id;
++    motion_g76_pass_clearance = 1;
++}
++
++void FINISH_G76_PASS(int line_number)
++{
++    flush_segments();
++    interp_list.set_line_number(line_number);
++    interp_list.append(std::make_unique<EMC_TASK_PLAN_PASS_GROUP_FENCE>());
++    interp_list.set_pass_group(0);
++    current_g76_pass_id = 0;
++    motion_g76_pass_id = 0;
++    motion_g76_pass_clearance = 0;
++}
+ 
+ 
+ /**
+@@ -1047,6 +1087,8 @@ struct pt {
+     double x, y, z, a, b, c, u, v, w;
+     int line_no;
+     StateTag tag;
++    int g76_pass_id;
++    int g76_pass_clearance;
+ };
+ 
+ static std::vector<struct pt> chained_points;
+@@ -1092,6 +1134,8 @@ static void flush_segments(void) {
+ 
+     auto linearMoveMsg = std::make_unique<EMC_TRAJ_LINEAR_MOVE>();
+     linearMoveMsg->feed_mode = canon.feed_mode;
++    linearMoveMsg->g76_pass_id = pos.g76_pass_id;
++    linearMoveMsg->g76_pass_clearance = pos.g76_pass_clearance;
+ 
+     // now x, y, z, and b are in absolute mm or degree units
+     linearMoveMsg->end.tran.x = TO_EXT_LEN(x);
+@@ -1191,7 +1235,8 @@ see_segment(int line_number,
+     if(!chained_points.empty() && !linkable(x, y, z, a, b, c, u, v, w)) {
+         flush_segments();
+     }
+-    pt pos = {x, y, z, a, b, c, u, v, w, line_number, tag};
++    pt pos = {x, y, z, a, b, c, u, v, w, line_number, tag,
++              motion_g76_pass_id, motion_g76_pass_clearance};
+     chained_points.push_back(pos);
+     if(changed_abc || changed_uvw) {
+         flush_segments();
+@@ -1204,6 +1249,10 @@ void FINISH() {
+ 
+ void ON_RESET() {
+     drop_segments();
++    interp_list.set_pass_group(0);
++    current_g76_pass_id = 0;
++    motion_g76_pass_id = 0;
++    motion_g76_pass_clearance = 0;
+ }
+ 
+ 
+@@ -1294,6 +1343,8 @@ void STRAIGHT_TRAVERSE(int line_number,
+     auto linearMoveMsg = std::make_unique<EMC_TRAJ_LINEAR_MOVE>();
+ 
+     linearMoveMsg->feed_mode = 0;
++    linearMoveMsg->g76_pass_id = motion_g76_pass_id;
++    linearMoveMsg->g76_pass_clearance = motion_g76_pass_clearance;
+     if (canon.rotary_unlock_for_traverse != -1)
+         linearMoveMsg->type = EMC_MOTION_TYPE_INDEXROTARY;
+     else
+diff --git a/src/emc/task/emctask.cc b/src/emc/task/emctask.cc
+index d5c060f669..e0fe4e3616 100644
+--- a/src/emc/task/emctask.cc
++++ b/src/emc/task/emctask.cc
+@@ -249,8 +249,7 @@ int emcTaskAbort()
+     emcStatus->task.command[0] = 0;
+     emcStatus->task.callLevel = 0;
+ 
+-    stepping = 0;
+-    steppingWait = 0;
++    emcTaskResetSteppingState();
+ 
+     // now queue up command to resynch interpreter
+     emcTaskQueueTaskPlanSynchCmd();
+@@ -791,4 +790,3 @@ int emcAbortCleanup(EMC_ABORT reason, const char *message)
+ 	print_interp_error(status);
+     return status;
+ }
+-
+diff --git a/src/emc/task/emctaskmain.cc b/src/emc/task/emctaskmain.cc
+index dc3abc0125..966fb760fc 100644
+--- a/src/emc/task/emctaskmain.cc
++++ b/src/emc/task/emctaskmain.cc
+@@ -463,6 +463,22 @@ static int programStartLine = 0;	// which line to run program from
+ int stepping = 0;
+ int steppingWait = 0;
+ static int steppedLine = 0;
++/*
++ * Pass groups delimit commands that are still owned by task. Motion that was
++ * already queued before resumable Stop is stepped by TP to its marked G76
++ * clearance instead; source-line motion IDs cannot distinguish those passes.
++ */
++static int currentPassGroup = 0;
++static int steppedPassGroup = 0;
++
++void emcTaskResetSteppingState()
++{
++    stepping = 0;
++    steppingWait = 0;
++    steppedLine = 0;
++    currentPassGroup = 0;
++    steppedPassGroup = 0;
++}
+ 
+ // Variables to handle MDI call interrupts
+ // Depth of call level before interrupted MDI call
+@@ -787,10 +803,9 @@ static void emcTaskResumeInterpreter()
+ {
+     if (emcStatus->task.interpState == EMC_TASK_INTERP::PAUSED) {
+         emcStatus->task.interpState = interpResumeState;
+     }
+     emcStatus->motion.traj.single_stepping = 0;
+-    stepping = 0;
+-    steppingWait = 0;
++    emcTaskResetSteppingState();
+ }
+ 
+ static void emcTaskStepInterpreter()
+@@ -1421,6 +1436,10 @@ static int emcTaskPlan(void)
+ 		    emcStatus->motion.traj.single_stepping = 1;
+ 		    stepping = 1;	// set stepping mode in case it's not
+ 		    steppingWait = 0;	// clear the wait
++		    if (emcStatus->motion.traj.paused &&
++			emcStatus->motion.traj.queue > 0) {
++			emcTrajStep();
++		    }
+ 		    break;
+ 
+ 		    // otherwise we can't handle it
+@@ -1573,6 +1592,10 @@ static int emcTaskPlan(void)
+ 		    emcStatus->motion.traj.single_stepping = 1;
+ 		    stepping = 1;	// set stepping mode in case it's not
+ 		    steppingWait = 0;	// clear the wait
++		    if (emcStatus->motion.traj.paused &&
++			emcStatus->motion.traj.queue > 0) {
++			emcTrajStep();
++		    }
+ 		    break;
+ 
+ 		    // otherwise we can't handle it
+@@ -1825,6 +1848,11 @@ static EMC_TASK_EXEC emcTaskCheckPreconditions(NMLmsg * cmd)
+ 	return EMC_TASK_EXEC::WAITING_FOR_MOTION_AND_IO;
+ 	break;
+ 
++    case EMC_TASK_PLAN_PASS_GROUP_FENCE_TYPE:
++	return stepping ? EMC_TASK_EXEC::WAITING_FOR_MOTION :
++	    EMC_TASK_EXEC::DONE;
++	break;
++
+     case EMC_TRAJ_DELAY_TYPE:
+ 	return EMC_TASK_EXEC::WAITING_FOR_MOTION_AND_IO;
+ 	break;
+@@ -2066,7 +2094,9 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+         retval = emcTrajLinearMove(emcTrajLinearMoveMsg->end,
+                                    emcTrajLinearMoveMsg->type, emcTrajLinearMoveMsg->vel,
+                                    emcTrajLinearMoveMsg->ini_maxvel, emcTrajLinearMoveMsg->acc, emcTrajLinearMoveMsg->ini_maxjerk,
+-                                   emcTrajLinearMoveMsg->indexer_jnum);
++                                   emcTrajLinearMoveMsg->indexer_jnum,
++                                   emcTrajLinearMoveMsg->g76_pass_id,
++                                   emcTrajLinearMoveMsg->g76_pass_clearance);
+ 	break;
+ 
+     case EMC_TRAJ_CIRCULAR_MOVE_TYPE:
+@@ -2403,6 +2433,8 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+ 	} else { // we can honour the modeswitch
+ 	    if (mode_msg->mode != emcStatus->task.mode) {
+ 		emcTaskStopClear();
++		emcStatus->motion.traj.single_stepping = 0;
++		emcTaskResetSteppingState();
+ 	    }
+ 	    if (mode_msg->mode == EMC_TASK_MODE::MANUAL &&
+ 		emcStatus->task.mode != EMC_TASK_MODE::MANUAL) {
+@@ -2436,8 +2468,7 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+ 		emcStatus->task.interpState = EMC_TASK_INTERP::IDLE;
+ 		emcStatus->task.execState = EMC_TASK_EXEC::DONE;
+ 		emcStatus->motion.traj.single_stepping = 0;
+-		stepping = 0;
+-		steppingWait = 0;
++		emcTaskResetSteppingState();
+ 
+ 		// now queue up command to resynch interpreter
+ 		emcTaskQueueTaskPlanSynchCmd();
+@@ -2450,6 +2481,8 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+ 	state_msg = reinterpret_cast<EMC_TASK_SET_STATE *>(cmd);
+ 	if (state_msg->state != EMC_TASK_STATE::ON) {
+ 	    emcTaskStopClear();
++	    emcStatus->motion.traj.single_stepping = 0;
++	    emcTaskResetSteppingState();
+ 	}
+ 	retval = emcTaskSetState(state_msg->state);
+ 	break;
+@@ -2534,8 +2567,7 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+ 
+     case EMC_TASK_PLAN_EXECUTE_TYPE:
+ 	emcStatus->motion.traj.single_stepping = 0;
+-	stepping = 0;
+-	steppingWait = 0;
++	emcTaskResetSteppingState();
+ 	execute_msg = reinterpret_cast<EMC_TASK_PLAN_EXECUTE *>(cmd);
+         if (!all_homed() && !no_force_homing) { //!no_force_homing = force homing before MDI
+             emcOperatorError(_("Can't issue MDI command when not homed"));
+@@ -2630,8 +2662,7 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+             break;
+         }
+ 	emcStatus->motion.traj.single_stepping = 0;
+-	stepping = 0;
+-	steppingWait = 0;
++	emcTaskResetSteppingState();
+ 	if (!taskplanopen && emcStatus->task.file[0] != 0) {
+ 	    emcTaskPlanOpen(emcStatus->task.file);
+ 	}
+@@ -2699,6 +2730,10 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+ 	}
+ 	break;
+ 
++    case EMC_TASK_PLAN_PASS_GROUP_FENCE_TYPE:
++	retval = 0;
++	break;
++
+     case EMC_TASK_PLAN_SET_OPTIONAL_STOP_TYPE:
+ 	os_msg = reinterpret_cast<EMC_TASK_PLAN_SET_OPTIONAL_STOP *>(cmd);
+ 	emcTaskPlanSetOptionalStop(os_msg->state);
+@@ -2802,6 +2837,7 @@ static EMC_TASK_EXEC emcTaskCheckPostconditions(NMLmsg * cmd)
+     case EMC_TASK_PLAN_END_TYPE:
+     case EMC_TASK_PLAN_INIT_TYPE:
+     case EMC_TASK_PLAN_SYNCH_TYPE:
++    case EMC_TASK_PLAN_PASS_GROUP_FENCE_TYPE:
+     case EMC_TASK_PLAN_EXECUTE_TYPE:
+     case EMC_TASK_PLAN_OPTIONAL_STOP_TYPE:
+ 	return EMC_TASK_EXEC::DONE;
+@@ -2845,9 +2881,16 @@ if (stepping) {                                                            \
+   if (! steppingWait) {                                                    \
+-    steppingWait = 1;                                                      \
+-    steppedLine = emcStatus->task.currentLine;                             \
++    /* In DONE with no command, the next command has not been dequeued yet. \
++       Defer the latch so its line and pass group become the step target. */ \
++    if (emcStatus->task.execState != EMC_TASK_EXEC::DONE || emcTaskCommand) { \
++      steppingWait = 1;                                                    \
++      steppedLine = emcStatus->task.currentLine;                           \
++      steppedPassGroup = currentPassGroup;                                 \
++    }                                                                      \
+   }                                                                        \
+   else {                                                                   \
+-    if (emcStatus->task.currentLine != steppedLine) {                      \
++    if (currentPassGroup != steppedPassGroup ||                            \
++        (!currentPassGroup &&                                              \
++         emcStatus->task.currentLine != steppedLine)) {                    \
+       break;                                                               \
+     }                                                                      \
+   }                                                                        \
+@@ -2908,8 +2951,7 @@ static int emcTaskExecute(void)
+ 	emcStatus->task.interpState = EMC_TASK_INTERP::IDLE;
+ 	emcStatus->task.execState = EMC_TASK_EXEC::DONE;
+ 	emcStatus->motion.traj.single_stepping = 0;
+-	stepping = 0;
+-	steppingWait = 0;
++	emcTaskResetSteppingState();
+ 
+ 	// now queue up command to resynch interpreter
+ 	emcTaskQueueTaskPlanSynchCmd();
+@@ -2931,6 +2973,7 @@ static int emcTaskExecute(void)
+ 		if (0 != emcTaskCommand) {
+ 		    emcTaskEager = 1;
+ 		    emcStatus->task.currentLine = interp_list.get_line_number();
++		    currentPassGroup = interp_list.get_pass_group();
+ 		    emcStatus->task.callLevel = emcTaskPlanLevel();
+ 		    // and set it for all subsystems which use queued ids
+ 		    emcTrajSetMotionId(emcStatus->task.currentLine);
+@@ -3759,8 +3802,7 @@ int main(int argc, char *argv[])
+ 	    emcStatus->task.interpState = EMC_TASK_INTERP::IDLE;
+ 	    emcStatus->task.execState = EMC_TASK_EXEC::DONE;
+ 		emcStatus->motion.traj.single_stepping = 0;
+-	    stepping = 0;
+-	    steppingWait = 0;
++	    emcTaskResetSteppingState();
+ 
+ 	    // now queue up command to resynch interpreter
+ 	    emcTaskQueueTaskPlanSynchCmd();
+diff --git a/src/emc/task/task.hh b/src/emc/task/task.hh
+index d8c619cdb5..79dbeb68bc 100644
+--- a/src/emc/task/task.hh
++++ b/src/emc/task/task.hh
+@@ -22,6 +22,7 @@
+ extern std::unique_ptr<NMLmsg> emcTaskCommand;
+ extern int stepping;
+ extern int steppingWait;
++void emcTaskResetSteppingState();
+ extern int emcTaskQueueCommand(std::unique_ptr<NMLmsg> &&cmd);
+ extern int emcTaskOnce(const char *inifile, EMC_IO_STAT &emcioStatus);
+ 
+@@ -59,4 +60,3 @@ int emcTaskPlanCommand(char *cmd);
+ int emcTaskUpdate(EMC_TASK_STAT * stat);
+ 
+ #endif
+-
+diff --git a/src/emc/task/taskintf.cc b/src/emc/task/taskintf.cc
+index 86fdd15940..4796832331 100644
+--- a/src/emc/task/taskintf.cc
++++ b/src/emc/task/taskintf.cc
+@@ -1499,8 +1499,10 @@ int emcTrajSetTermCond(int cond, double tolerance)
+     return usrmotWriteEmcmotCommand(&emcmotCommand);
+ }
+ 
+-int emcTrajLinearMove(const EmcPose& end, int type, double vel, double ini_maxvel, double acc, double ini_maxjerk, 
+-                      int indexer_jnum)
++int emcTrajLinearMove(const EmcPose& end, int type, double vel,
++                      double ini_maxvel, double acc, double ini_maxjerk,
++                      int indexer_jnum, int g76_pass_id,
++                      int g76_pass_clearance)
+ {
+ #ifdef ISNAN_TRAP
+     if (std::isnan(end.tran.x) || std::isnan(end.tran.y) || std::isnan(end.tran.z) ||
+@@ -1523,6 +1525,8 @@ int emcTrajLinearMove(const EmcPose& end, int type, double vel, double ini_maxve
+     emcmotCommand.acc = acc;
+     emcmotCommand.ini_maxjerk = ini_maxjerk;
+     emcmotCommand.turn = indexer_jnum;
++    emcmotCommand.g76_pass_id = g76_pass_id;
++    emcmotCommand.g76_pass_clearance = g76_pass_clearance;
+ 
+     return usrmotWriteEmcmotCommand(&emcmotCommand);
+ }
+diff --git a/src/emc/tp/tc_types.h b/src/emc/tp/tc_types.h
+index c1767d5613..5a6a330397 100644
+--- a/src/emc/tp/tc_types.h
++++ b/src/emc/tp/tc_types.h
+@@ -167,6 +167,8 @@ typedef struct {
+                             // TC_RIGIDTAP (coords.rigidtap)
+     int active;            // this motion is being executed
+     int canon_motion_type;  // this motion is due to which canon function?
++    int g76_pass_id;        // internal G76 pass ownership, zero otherwise
++    int g76_pass_clearance; // marked safe completion target for that pass
+     int term_cond;          // gcode requests continuous feed at the end of
+                             // this segment (g64 mode)
+ 
+diff --git a/src/emc/tp/tp.c b/src/emc/tp/tp.c
+index 676c66e4c5..f5e64c2674 100644
+--- a/src/emc/tp/tp.c
++++ b/src/emc/tp/tp.c
+@@ -254,7 +254,7 @@ STATIC double tpGetFeedScale(TP_STRUCT const * const tp,
+         (tp->pausing &&
+          (tc->synchronized == TC_SYNC_NONE ||
+           tc->synchronized == TC_SYNC_VELOCITY)) ||
+-        (tp->stopping && tc != tp->stop_tc);
++        (tp->stopping && !tp->stop_target_pending);
+     bool aborting = tp->aborting;
+     if (pausing)  {
+         tc_debug_print("pausing\n");
+@@ -342,7 +342,10 @@ STATIC inline double tpGetRealFinalVel(TP_STRUCT const * const tp,
+      * If the term_cond gets changed out from under us, detect this and force final velocity to zero
+      */
+ 
+-    if (emcmotStatus->stepping || tc->term_cond != TC_TERM_COND_TANGENT || tp->reverse_run) {
++    if ((emcmotStatus->stepping && !tp->stepping_to_pass_clearance) ||
++            (tp->stopping && tc == tp->stop_tc) ||
++            (tp->stepping_to_pass_clearance && tc == tp->step_tc) ||
++            tc->term_cond != TC_TERM_COND_TANGENT || tp->reverse_run) {
+         return 0.0;
+     }
+ 
+@@ -496,6 +499,12 @@ int tpClear(TP_STRUCT * const tp)
+     tp->pausing = 0;
+     tp->stopping = 0;
+     tp->stop_tc = 0;
++    tp->stop_target_pending = 0;
++    tp->stop_pass_id = 0;
++    tp->step_tc = 0;
++    tp->step_target_pending = 0;
++    tp->step_pass_id = 0;
++    tp->stepping_to_pass_clearance = 0;
+     tp->reverse_run = 0;
+     tp->synchronized = 0;
+     tp->uu_per_rev = 0.0;
+@@ -914,6 +923,8 @@ STATIC int tpInitBlendArcFromPrev(TP_STRUCT const * const tp,
+ 
+     // copy state tag from previous segment during blend motion
+     blend_tc->tag = prev_tc->tag;
++    blend_tc->g76_pass_id = prev_tc->g76_pass_id;
++    blend_tc->g76_pass_clearance = prev_tc->g76_pass_clearance;
+ 
+     return TP_ERR_OK;
+ }
+@@ -1579,6 +1590,23 @@ tp_err_t tpCreateLineLineBlend(TP_STRUCT * const tp, TC_STRUCT * const prev_tc,
+  */
+ STATIC inline int tpAddSegmentToQueue(TP_STRUCT * const tp, TC_STRUCT * const tc, int inc_id) {
+ 
++    if (inc_id && tp->stopping && tp->stop_target_pending &&
++            tp->stop_pass_id && !tp->stop_tc &&
++            tc->g76_pass_id != tp->stop_pass_id) {
++        rtapi_print_msg(RTAPI_MSG_ERR,
++                "G76 Stop pass %d reached another motion before its clearance\n",
++                tp->stop_pass_id);
++        return TP_ERR_FAIL;
++    }
++    if (inc_id && tp->stepping_to_pass_clearance &&
++            tp->step_target_pending && tp->step_pass_id && !tp->step_tc &&
++            tc->g76_pass_id != tp->step_pass_id) {
++        rtapi_print_msg(RTAPI_MSG_ERR,
++                "G76 Step pass %d reached another motion before its clearance\n",
++                tp->step_pass_id);
++        return TP_ERR_FAIL;
++    }
++
+     tc->id = tp->nextId;
+     if (tcqPut(&tp->queue, tc) == -1) {
+         rtapi_print_msg(RTAPI_MSG_ERR, "tcqPut failed.\n");
+@@ -1588,6 +1614,19 @@ STATIC inline int tpAddSegmentToQueue(TP_STRUCT * const tp, TC_STRUCT * const tc
+         tp->nextId++;
+     }
+ 
++    TC_STRUCT *queued_tc = tcqLast(&tp->queue);
++    if (queued_tc && queued_tc->g76_pass_clearance) {
++        if (tp->stopping && tp->stop_target_pending && !tp->stop_tc &&
++                queued_tc->g76_pass_id == tp->stop_pass_id) {
++            tp->stop_tc = queued_tc;
++        }
++        if (tp->stepping_to_pass_clearance && tp->step_target_pending &&
++                !tp->step_tc &&
++                queued_tc->g76_pass_id == tp->step_pass_id) {
++            tp->step_tc = queued_tc;
++        }
++    }
++
+     // Store end of current move as new final goal of TP
+     // KLUDGE: endpoint is garbage for rigid tap since it's supposed to retract past the start point.
+     if (tc->motion_type != TC_RIGIDTAP) {
+@@ -1611,6 +1650,10 @@ STATIC int handleModeChange(TC_STRUCT * const prev_tc, TC_STRUCT * const tc)
+         tp_debug_print("Blending disabled: can't blend between rapid and feed motions\n");
+         tcSetTermCond(prev_tc, tc, TC_TERM_COND_STOP);
+     }
++    if (prev_tc->g76_pass_clearance) {
++        tp_debug_print("Blending disabled: G76 pass clearance endpoint\n");
++        tcSetTermCond(prev_tc, tc, TC_TERM_COND_STOP);
++    }
+     if (prev_tc->synchronized != TC_SYNC_POSITION &&
+             tc->synchronized == TC_SYNC_POSITION) {
+         tp_debug_print("Blending disabled: changing spindle sync mode from %d to %d\n",
+@@ -2108,6 +2151,10 @@ tc_blend_type_t tpHandleBlendArc(TP_STRUCT * const tp, TC_STRUCT * const tc) {
+         tp_debug_print(" queue empty\n");
+         return NO_BLEND;
+     }
++    if (prev_tc->g76_pass_clearance) {
++        tp_debug_print(" G76 pass clearance is an exact endpoint\n");
++        return NO_BLEND;
++    }
+     if (prev_tc->progress > prev_tc->target / 2.0) {
+         tp_debug_print(" prev_tc progress (%f) is too large, aborting blend arc\n", prev_tc->progress);
+         return NO_BLEND;
+@@ -2156,7 +2203,8 @@ tc_blend_type_t tpHandleBlendArc(TP_STRUCT * const tp, TC_STRUCT * const tc) {
+ 
+ int tpAddLine(TP_STRUCT * const tp, EmcPose end, int canon_motion_type,
+             double vel, double ini_maxvel, double acc, double ini_maxjerk, unsigned char enables,
+-            char atspeed, int indexer_jnum, struct state_tag_t tag)
++            char atspeed, int indexer_jnum, struct state_tag_t tag,
++            int g76_pass_id, int g76_pass_clearance)
+ {
+     if (tpErrorCheck(tp) < 0) {
+         return TP_ERR_FAIL;
+@@ -2172,12 +2220,17 @@ int tpAddLine(TP_STRUCT * const tp, EmcPose end, int canon_motion_type,
+             enables,
+             atspeed);
+     tc.tag = tag;
++    tc.g76_pass_id = g76_pass_id;
++    tc.g76_pass_clearance = g76_pass_clearance;
+ 
+     // Setup any synced IO for this move
+     tpSetupSyncedIO(tp, &tc);
+ 
+     // Copy over state data from the trajectory planner
+     tcSetupState(&tc, tp);
++    if (tc.g76_pass_clearance) {
++        tc.term_cond = TC_TERM_COND_STOP;
++    }
+ 
+     // Copy in motion parameters
+     tcSetupMotion(&tc,
+@@ -2840,7 +2893,7 @@ int tpCalculateSCurveAccel(TP_STRUCT const * const tp, TC_STRUCT * const tc, TC_
+         (tp->pausing &&
+          (tc->synchronized == TC_SYNC_NONE ||
+           tc->synchronized == TC_SYNC_VELOCITY)) ||
+-        (tp->stopping && tc != tp->stop_tc);
++        (tp->stopping && !tp->stop_target_pending);
+     bool is_aborting = tp->aborting;
+ 
+     /*
+@@ -3318,7 +3371,7 @@ STATIC void tpHandleEmptyQueue(TP_STRUCT * const tp)
+ 
+     tpUpdateMovementStatus(tp, NULL);
+ 
+-    if (!tp->stopping) {
++    if (!tp->stopping && !tp->step_target_pending) {
+         tpResume(tp);
+     }
+ }
+@@ -3380,6 +3433,17 @@ STATIC int tpCompleteSegment(TP_STRUCT * const tp,
+     // Clean up Ruckig planner resources
+     tcCleanupRuckig(tc);
+ 
++    if (tp->stopping && tp->stop_target_pending && tc == tp->stop_tc) {
++        tp->stop_target_pending = 0;
++        tp->stop_tc = 0;
++        tp->stop_pass_id = 0;
++    }
++    if (tp->stepping_to_pass_clearance && tp->step_target_pending &&
++            tc == tp->step_tc) {
++        tp->step_target_pending = 0;
++        tp->step_tc = 0;
++    }
++
+     //TODO make progress to match target?
+     // done with this move
+     if (tp->reverse_run) {
+@@ -4139,22 +4203,31 @@ int tpRunCycle(TP_STRUCT * const tp, long period)
+     if(!tc) {
+         if (tp->stopping) {
+             tpHandleEmptyQueue(tp);
++            if (tp->stop_target_pending && tp->stop_pass_id &&
++                    !tp->stop_tc) {
++                return TP_ERR_WAITING;
++            }
+             if (tp->stopping) {
+                 tp->pausing = 1;
+                 emcmotStatus->stopped = 1;
+             }
+             return TP_ERR_WAITING;
+         }
++        if (tp->stepping_to_pass_clearance && tp->step_target_pending &&
++                tp->step_pass_id && !tp->step_tc) {
++            tpHandleEmptyQueue(tp);
++            return TP_ERR_WAITING;
++        }
+         tpHandleEmptyQueue(tp);
+         return TP_ERR_WAITING;
+     }
+ 
+-    if (tp->stopping && tc != tp->stop_tc) {
++    if (tp->stopping && !tp->stop_target_pending) {
+         tp->pausing = 1;
+     }
+ 
+     if (((tp->pausing && tc->synchronized != TC_SYNC_POSITION) ||
+-         (tp->stopping && tc != tp->stop_tc)) &&
++         (tp->stopping && !tp->stop_target_pending)) &&
+             fabs(emcmotStatus->current_vel) < TP_VEL_EPSILON) {
+         emcmotStatus->stopped = 1;
+     }
+@@ -4259,6 +4332,28 @@ int tpSetSpindleSync(TP_STRUCT * const tp, int spindle, double sync, int mode) {
+     return TP_ERR_OK;
+ }
+ 
++STATIC TC_STRUCT *tpFindG76PassClearance(TP_STRUCT * const tp,
++        int pass_id)
++{
++    if (!pass_id) {
++        return 0;
++    }
++    for (int i = 0; i < tcqLen(&tp->queue); ++i) {
++        TC_STRUCT *candidate = tcqItem(&tp->queue, i);
++        if (candidate && candidate->g76_pass_id == pass_id &&
++                candidate->g76_pass_clearance) {
++            return candidate;
++        }
++    }
++    return 0;
++}
++
++STATIC int tpGetQueuedG76PassId(TP_STRUCT * const tp)
++{
++    TC_STRUCT *tc = tcqItem(&tp->queue, 0);
++    return tc ? tc->g76_pass_id : 0;
++}
++
+ int tpPause(TP_STRUCT * const tp)
+ {
+     if (0 == tp) {
+@@ -4266,12 +4361,57 @@ int tpPause(TP_STRUCT * const tp)
+     }
+ 
+     if (tp->stopping) {
++        tp->step_tc = 0;
++        tp->step_target_pending = 0;
++        tp->step_pass_id = 0;
++        tp->stepping_to_pass_clearance = 0;
+         TC_STRUCT *tc = tcqItem(&tp->queue, 0);
+-        if (tc && tc->active && tc->synchronized == TC_SYNC_POSITION) {
++        bool in_g76_cut_or_clearance = tc && tc->g76_pass_id &&
++            (tc->synchronized == TC_SYNC_POSITION ||
++             tc->g76_pass_clearance);
++        if (in_g76_cut_or_clearance) {
++            /*
++             * Only an explicitly marked G76 cut/retract may extend Stop to
++             * its pass clearance. This also covers the handoff cycle where
++             * the marked retract has become queue head but is not active yet.
++             * If task has not delivered the retract yet, retain the pass ID
++             * and bind the exact target as soon as it enters the TP queue.
++             */
++            tp->stop_pass_id = tc->g76_pass_id;
++            tp->stop_tc = tpFindG76PassClearance(tp, tp->stop_pass_id);
++            tp->stop_target_pending = 1;
++            tp->pausing = 0;
++        } else if (tc && tc->active &&
++                tc->synchronized == TC_SYNC_POSITION) {
++            /* Preserve the established G33 and rigid-tap Stop boundary. */
++            tp->stop_pass_id = 0;
+             tp->stop_tc = tc;
++            tp->stop_target_pending = 1;
+             tp->pausing = 0;
+         } else {
++            tp->stop_pass_id = 0;
+             tp->stop_tc = 0;
++            tp->stop_target_pending = 0;
++            tp->pausing = 1;
++        }
++    } else if (emcmotStatus->stepping &&
++            tp->stepping_to_pass_clearance) {
++        /*
++         * EMCMOT_STEP requests default-TP pass targeting through the existing
++         * tpPause ABI. Alternate planners leave step_target_pending clear and
++         * command.c falls back to established source-line stepping.
++         */
++        int pass_id = tpGetQueuedG76PassId(tp);
++        if (pass_id) {
++            tp->step_pass_id = pass_id;
++            tp->step_tc = tpFindG76PassClearance(tp, pass_id);
++            tp->step_target_pending = 1;
++            tp->pausing = 0;
++        } else {
++            tp->step_tc = 0;
++            tp->step_target_pending = 0;
++            tp->step_pass_id = 0;
++            tp->stepping_to_pass_clearance = 0;
+             tp->pausing = 1;
+         }
+     } else {
+@@ -4288,6 +4428,12 @@ int tpResume(TP_STRUCT * const tp)
+     tp->pausing = 0;
+     tp->stopping = 0;
+     tp->stop_tc = 0;
++    tp->stop_target_pending = 0;
++    tp->stop_pass_id = 0;
++    tp->step_tc = 0;
++    tp->step_target_pending = 0;
++    tp->step_pass_id = 0;
++    tp->stepping_to_pass_clearance = 0;
+     emcmotStatus->stopped = 0;
+     return TP_ERR_OK;
+ }
+@@ -4300,6 +4446,10 @@ int tpAbort(TP_STRUCT * const tp)
+ 
+     if (!tp->aborting) {
+         /* const to abort, signal a pause and set our abort flag */
++        tp->step_tc = 0;
++        tp->step_target_pending = 0;
++        tp->step_pass_id = 0;
++        tp->stepping_to_pass_clearance = 0;
+         tpPause(tp);
+         tp->aborting = 1;
+     }
+diff --git a/src/emc/tp/tp.h b/src/emc/tp/tp.h
+index e00b457ad2..c89f3608f6 100644
+--- a/src/emc/tp/tp.h
++++ b/src/emc/tp/tp.h
+@@ -57,7 +57,8 @@ int tpAddRigidTap(TP_STRUCT * const tp,
+         struct state_tag_t tag);
+ int tpAddLine(TP_STRUCT * const tp, EmcPose end, int canon_motion_type,
+ 	      double vel, double ini_maxvel, double acc, double ini_maxjerk, unsigned char enables,
+-	      char atspeed, int indexrotary, struct state_tag_t tag);
++	      char atspeed, int indexrotary, struct state_tag_t tag,
++	      int g76_pass_id, int g76_pass_clearance);
+ int tpAddCircle(TP_STRUCT * const tp, EmcPose end, PmCartesian center,
+ 		PmCartesian normal, int turn, int canon_motion_type, double vel,
+ 		double ini_maxvel, double acc, double ini_maxjerk, unsigned char enables,
+diff --git a/src/emc/tp/tp_types.h b/src/emc/tp/tp_types.h
+index 8d8aa3a362..15be0f3127 100644
+--- a/src/emc/tp/tp_types.h
++++ b/src/emc/tp/tp_types.h
+@@ -137,11 +137,17 @@ typedef struct {
+     syncdio_t syncdio; //record tpSetDout's here
+ 
+     /*
+-     * Keep Stop extension fields at the end so existing alternate trajectory
+-     * planners retain the offsets of every member in the established ABI.
++     * Keep Stop/Step extension fields at the end so existing alternate
++     * trajectory planners retain every established member offset.
+      */
+     int stopping;
+     TC_STRUCT *stop_tc;
++    int stop_target_pending;
++    int stop_pass_id;
++    TC_STRUCT *step_tc;
++    int step_target_pending;
++    int step_pass_id;
++    int stepping_to_pass_clearance;
+ 
+ } TP_STRUCT;
+ 
+diff --git a/tests/interp/compile/use-rs274.cc b/tests/interp/compile/use-rs274.cc
+--- a/tests/interp/compile/use-rs274.cc
++++ b/tests/interp/compile/use-rs274.cc
+@@ -257,6 +257,10 @@ int GET_EXTERNAL_DIGITAL_INPUT(int index, int def) { return 0; }
+ double GET_EXTERNAL_ANALOG_INPUT(int index, double def) { return 0.0; }
+ int GET_EXTERNAL_AXIS_MASK() { return 7; }
+ void FINISH(void) {}
++void START_G76_PASS(void) {}
++void START_G76_CUT(void) {}
++void START_G76_CLEARANCE(void) {}
++void FINISH_G76_PASS(int line_number) {}
+ void ON_RESET(void) {}
+ void CANON_ERROR(const char *fmt, ...) {}
+ void UPDATE_TAG(const StateTag& tag) {}
+diff --git a/tests/resumable-stop/README b/tests/resumable-stop/README
+index e457195324..28a455c537 100644
+--- a/tests/resumable-stop/README
++++ b/tests/resumable-stop/README
+@@ -5,6 +5,19 @@ This regression test exercises the task-level Stop operation directly through
+ the Python command API. It checks that an active feed move stops without
+ aborting queued AUTO state, that spindle and coolant outputs are disabled
+ while stopped, and that Resume restores them before continuing the same
+-program to completion. The G95 scenario enables the jerk-limited trajectory
+-planner and rejects zero-limit Ruckig fallback errors while spindle feedback
+-recovers after Resume.
++program to completion. The G76 scenarios check that Stop executes only the
++explicitly marked post-cut rapid retract, leaving the tool clear of the
++finished thread rather than stopped at cutting depth. Coverage includes
++cylindrical and tapered drive lines, synchronized exit tapers, repeated Stop
++requests across the cut/retract handoff, and a negative G33 test proving that
++an unrelated following rapid is not executed. Single Step coverage enters the
++first G76 pass directly and verifies every cylindrical and tapered
++approach/cut/retract pass. It also starts G76 in normal AUTO_RUN, stops after
++the first pass with later passes already queued, and verifies that each
++following AUTO_STEP reaches exactly one cylindrical or tapered pass clearance.
++Arc blending is enabled for all scenarios, so the exact-clearance assertions
++also prove that a marked G76 retract endpoint is not trimmed by a following
++rapid. The handoff stress case uses a slow synchronized feed and issues Stop at
++least 20 task cycles before the cut endpoint. The G95 scenario enables the
++jerk-limited trajectory planner and rejects zero-limit Ruckig fallback errors
++while spindle feedback recovers after Resume.
+diff --git a/tests/resumable-stop/checkresult b/tests/resumable-stop/checkresult
+index c491888fc8..dead72d7d5 100755
+--- a/tests/resumable-stop/checkresult
++++ b/tests/resumable-stop/checkresult
+@@ -1,3 +1,4 @@
+ #!/bin/sh
++set -e
+-test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 15
++test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 25
+ grep -q '^resumable stop scenarios complete$' "$1"
+diff --git a/tests/resumable-stop/g33-followed-by-rapid.ngc b/tests/resumable-stop/g33-followed-by-rapid.ngc
+new file mode 100644
+index 0000000000..a12bcb3029
+--- /dev/null
++++ b/tests/resumable-stop/g33-followed-by-rapid.ngc
+@@ -0,0 +1,7 @@
++G21 G18 G90
++G0 X10 Z0
++S60 M3
++G33 Z-5 K1
++G0 X30
++M5
++M2
+diff --git a/tests/resumable-stop/g76-exit-taper.ngc b/tests/resumable-stop/g76-exit-taper.ngc
+new file mode 100644
+index 0000000000..5b04e6921e
+--- /dev/null
++++ b/tests/resumable-stop/g76-exit-taper.ngc
+@@ -0,0 +1,7 @@
++G21 G18 G90
++G0 X10 Z0
++S60 M3
++G76 P1 Z-5 I-1 J0.2 K0.6 R1 E1 L2
++G1 X20 F600
++M5
++M2
+diff --git a/tests/resumable-stop/g76-handoff.ngc b/tests/resumable-stop/g76-handoff.ngc
+new file mode 100644
+index 0000000000..01a62a26a5
+--- /dev/null
++++ b/tests/resumable-stop/g76-handoff.ngc
+@@ -0,0 +1,7 @@
++G21 G18 G90
++G0 X10 Z0
++S60 M3
++G76 P1 Z-1 I-1 J0.2 K0.21 R1
++G1 X20 F600
++M5
++M2
+diff --git a/tests/resumable-stop/g76-step.ngc b/tests/resumable-stop/g76-step.ngc
+new file mode 100644
+index 0000000000..c8ee28f7ed
+--- /dev/null
++++ b/tests/resumable-stop/g76-step.ngc
+@@ -0,0 +1,4 @@
++G21 G18 G90 G76 P1 Z-5 I-1 J0.2 K0.6 R1
++G1 X20 F600
++M5
++M2
+diff --git a/tests/resumable-stop/g76-tapered-exit-taper.ngc b/tests/resumable-stop/g76-tapered-exit-taper.ngc
+new file mode 100644
+index 0000000000..488d2a9300
+--- /dev/null
++++ b/tests/resumable-stop/g76-tapered-exit-taper.ngc
+@@ -0,0 +1,7 @@
++G21 G18 G90
++G0 X10 Z0
++S60 M3
++G76 P1 X8 Z-5 I-1 J0.2 K0.6 R1 E1 L2
++G1 X20 F600
++M5
++M2
+diff --git a/tests/resumable-stop/g76-tapered-step.ngc b/tests/resumable-stop/g76-tapered-step.ngc
+new file mode 100644
+index 0000000000..241f777682
+--- /dev/null
++++ b/tests/resumable-stop/g76-tapered-step.ngc
+@@ -0,0 +1,4 @@
++G21 G18 G90 G76 P1 X8 Z-5 I-1 J0.2 K0.6 R1
++G1 X20 F600
++M5
++M2
+diff --git a/tests/resumable-stop/g76-tapered.ngc b/tests/resumable-stop/g76-tapered.ngc
+new file mode 100644
+index 0000000000..b0eb997e19
+--- /dev/null
++++ b/tests/resumable-stop/g76-tapered.ngc
+@@ -0,0 +1,7 @@
++G21 G18 G90
++G0 X10 Z0
++S60 M3
++G76 P1 X8 Z-5 I-1 J0.2 K0.6 R1
++G1 X20 F600
++M5
++M2
+diff --git a/tests/resumable-stop/test-ui.py b/tests/resumable-stop/test-ui.py
+index 8b6ddc32c3..1454d2e81d 100755
+--- a/tests/resumable-stop/test-ui.py
++++ b/tests/resumable-stop/test-ui.py
+@@ -17,13 +17,13 @@ def fail(message):
+     sys.exit(1)
+ 
+ 
+-def wait_for(predicate, message, timeout=10.0):
++def wait_for(predicate, message, timeout=10.0, poll_interval=0.02):
+     start = time.time()
+     while time.time() - start < timeout:
+         s.poll()
+         if predicate():
+             return
+-        time.sleep(0.02)
++        time.sleep(poll_interval)
+     fail(message)
+ 
+ 
+@@ -447,6 +447,41 @@ def run_threading_stop_resume_test():
+     )
+ 
+ 
++def run_g33_does_not_execute_following_rapid_test():
++    open_auto_program("g33-followed-by-rapid.ngc")
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: s.position[2] < -0.5 and s.position[2] > -4.5,
++        "G33 did not enter synchronized motion before negative Stop test",
++        timeout=15.0,
++    )
++    c.stop()
++    wait_complete("G33 negative Stop command did not complete")
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
++        "G33 negative test did not reach STOPPED",
++        timeout=15.0,
++    )
++
++    if s.position[2] > -4.90:
++        fail("G33 negative test stopped before its synchronized move completed")
++    if not math.isclose(s.position[0], 10.0, abs_tol=0.05):
++        fail(
++            "Stop executed the unmarked rapid following G33: X=%.6f"
++            % s.position[0]
++        )
++
++    time.sleep(0.25)
++    s.poll()
++    if not math.isclose(s.position[0], 10.0, abs_tol=0.05):
++        fail("unmarked post-G33 rapid moved while stopped")
++
++    c.auto(linuxcnc.AUTO_RESUME)
++    wait_for_program_complete(30.0, expected_z=-5.0, timeout=20.0)
++    assert_outputs_stopped_after_program()
++
++
+ def run_fperrev_stop_resume_test():
+     open_auto_program("fperrev.ngc")
+     c.auto(linuxcnc.AUTO_RUN, 0)
+@@ -511,9 +546,9 @@ def run_g76_stop_resume_test():
+     if s.position[2] > -4.90:
+         fail("G76 stopped before its active threading TC completed")
+ 
+-    if s.position[0] >= 9.5:
++    if not math.isclose(s.position[0], 10.4, abs_tol=0.05):
+         fail(
+-            "G76 executed its retract or a later pass before STOPPED: X=%.6f"
++            "G76 did not stop at the first pass clearance: X=%.6f"
+             % s.position[0]
+         )
+ 
+@@ -532,6 +567,274 @@ def run_g76_stop_resume_test():
+     assert_outputs_stopped_after_program()
+ 
+ 
++def run_tapered_g76_stop_resume_test():
++    open_auto_program("g76-tapered.ngc")
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: s.task_mode == linuxcnc.MODE_AUTO
++        and s.position[0] < 8.6
++        and s.position[2] < -0.5
++        and s.position[2] > -4.5,
++        "tapered G76 did not enter its first synchronized pass",
++        timeout=15.0,
++    )
++
++    c.stop()
++    wait_complete("tapered G76 stop command did not complete")
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
++        "task did not stop after the active tapered G76 pass",
++        timeout=15.0,
++    )
++
++    if s.position[2] > -4.90:
++        fail("tapered G76 stopped before its synchronized cut completed")
++    if not math.isclose(s.position[0], 8.4, abs_tol=0.05):
++        fail(
++            "tapered G76 did not stop at the first pass clearance: X=%.6f Z=%.6f"
++            % (s.position[0], s.position[2])
++        )
++
++    stopped_x = s.position[0]
++    stopped_z = s.position[2]
++    time.sleep(0.25)
++    s.poll()
++    if (
++        not math.isclose(s.position[0], stopped_x, abs_tol=0.001)
++        or not math.isclose(s.position[2], stopped_z, abs_tol=0.001)
++    ):
++        fail("tapered G76 moved while stopped")
++
++    c.auto(linuxcnc.AUTO_RESUME)
++    wait_for_program_complete(20.0, expected_z=-5.0)
++    assert_outputs_stopped_after_program()
++
++
++def step_g76_pass(expected_clear_x):
++    c.auto(linuxcnc.AUTO_STEP)
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_IDLE
++        and s.task_paused
++        and s.queue == 0
++        and abs(s.current_vel) < 0.001
++        and s.position[2] <= -4.90
++        and math.isclose(s.position[0], expected_clear_x, abs_tol=0.05),
++        "G76 Single Step did not finish one complete pass at X%.3f"
++        % expected_clear_x,
++        timeout=20.0,
++    )
++
++    stepped_x = s.position[0]
++    stepped_z = s.position[2]
++    time.sleep(0.25)
++    s.poll()
++    if (
++        not math.isclose(s.position[0], stepped_x, abs_tol=0.001)
++        or not math.isclose(s.position[2], stepped_z, abs_tol=0.001)
++    ):
++        fail("G76 advanced into another pass after one Single Step")
++
++
++def step_prequeued_g76_pass(expected_clear_x, label):
++    """Step one pass that was already admitted to motion before Stop."""
++    c.auto(linuxcnc.AUTO_STEP)
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_IDLE
++        and s.task_paused
++        and abs(s.current_vel) < 0.001
++        and s.position[2] <= -4.90
++        and math.isclose(s.position[0], expected_clear_x, abs_tol=0.01),
++        "%s did not stop at the next prequeued pass clearance X%.3f"
++        % (label, expected_clear_x),
++        timeout=20.0,
++    )
++
++    stepped_x = s.position[0]
++    stepped_z = s.position[2]
++    time.sleep(0.25)
++    s.poll()
++    if (
++        not math.isclose(s.position[0], stepped_x, abs_tol=0.001)
++        or not math.isclose(s.position[2], stepped_z, abs_tol=0.001)
++    ):
++        fail("%s advanced into another prequeued pass" % label)
++
++
++def run_g76_single_step_program(program, expected_clearances):
++    c.mode(linuxcnc.MODE_MDI)
++    wait_complete("G76 Single Step setup did not enter MDI")
++    c.mdi("G21 G18 G90 G0 X10 Z0")
++    wait_complete("G76 Single Step setup did not reach X10 Z0")
++    c.spindle(linuxcnc.SPINDLE_FORWARD, 60.0, 0)
++    wait_complete("G76 Single Step setup did not start the spindle")
++
++    open_auto_program(program)
++
++    # LinuxCNC's first AUTO_STEP from IDLE primes the program in PAUSED state.
++    c.auto(linuxcnc.AUTO_STEP)
++    wait_for(
++        lambda: s.interp_state == linuxcnc.INTERP_PAUSED and s.task_paused,
++        "G76 Single Step did not prime the program",
++    )
++
++    for expected_clearance in expected_clearances:
++        step_g76_pass(expected_clearance)
++
++    c.auto(linuxcnc.AUTO_RESUME)
++    wait_for_program_complete(20.0, expected_z=-5.0)
++    assert_outputs_stopped_after_program()
++
++
++def run_g76_single_step_test():
++    run_g76_single_step_program("g76-step.ngc", (10.4, 10.2, 10.0))
++
++
++def run_tapered_g76_single_step_test():
++    run_g76_single_step_program(
++        "g76-tapered-step.ngc", (8.4, 8.2, 8.0)
++    )
++
++
++def run_g76_stop_then_single_step_program(
++    program, first_cut_x, expected_clearances, label
++):
++    open_auto_program(program)
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: s.task_mode == linuxcnc.MODE_AUTO
++        and s.position[0] < first_cut_x
++        and s.position[2] < -0.5
++        and s.position[2] > -4.5,
++        "%s did not enter its first synchronized pass" % label,
++        timeout=15.0,
++    )
++
++    c.stop()
++    wait_complete("%s Stop command did not complete" % label)
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_STOPPED
++        and s.task_paused
++        and abs(s.current_vel) < 0.001
++        and s.position[2] <= -4.90
++        and math.isclose(
++            s.position[0], expected_clearances[0], abs_tol=0.01
++        ),
++        "%s did not stop at its first pass clearance" % label,
++        timeout=20.0,
++    )
++
++    if s.queue <= 0:
++        fail("%s did not preserve prequeued later passes" % label)
++
++    step_prequeued_g76_pass(expected_clearances[1], label)
++    step_prequeued_g76_pass(expected_clearances[2], label)
++
++    c.auto(linuxcnc.AUTO_RESUME)
++    wait_for_program_complete(20.0, expected_z=-5.0, timeout=20.0)
++    assert_outputs_stopped_after_program()
++
++
++def run_g76_stop_then_single_step_test():
++    run_g76_stop_then_single_step_program(
++        "g76.ngc", 9.5, (10.4, 10.2, 10.0), "cylindrical G76"
++    )
++
++
++def run_tapered_g76_stop_then_single_step_test():
++    run_g76_stop_then_single_step_program(
++        "g76-tapered.ngc",
++        8.6,
++        (8.4, 8.2, 8.0),
++        "tapered-drive G76",
++    )
++
++
++def run_g76_exit_taper_stop_test(program, expected_clear_x, label):
++    open_auto_program(program)
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: s.position[2] < -0.5
++        and s.position[2] > -3.5
++        and s.position[0] < 9.5,
++        "%s did not enter its first synchronized pass" % label,
++        timeout=15.0,
++    )
++    c.stop()
++    wait_complete("%s Stop command did not complete" % label)
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
++        "%s did not reach STOPPED" % label,
++        timeout=15.0,
++    )
++
++    if s.position[2] > -4.90 or not math.isclose(
++        s.position[0], expected_clear_x, abs_tol=0.05
++    ):
++        fail(
++            "%s did not complete its synchronized exit taper and clearance: "
++            "X=%.6f Z=%.6f" % (label, s.position[0], s.position[2])
++        )
++
++    c.auto(linuxcnc.AUTO_RESUME)
++    wait_for_program_complete(20.0, expected_z=-5.0)
++    assert_outputs_stopped_after_program()
++
++
++def run_cylindrical_g76_exit_taper_stop_test():
++    run_g76_exit_taper_stop_test(
++        "g76-exit-taper.ngc", 10.4, "cylindrical exit-taper G76"
++    )
++
++
++def run_tapered_g76_exit_taper_stop_test():
++    run_g76_exit_taper_stop_test(
++        "g76-tapered-exit-taper.ngc", 8.4, "tapered-drive exit-taper G76"
++    )
++
++
++def run_g76_cut_retract_handoff_stress_test():
++    # At S60 and P1 the synchronized feed is 1 mm/s. Even the closest
++    # trigger remains 20 task cycles before the endpoint, so Python polling
++    # reliably submits Stop while the cut is active instead of after retract.
++    thresholds = (-0.92, -0.94, -0.96, -0.97, -0.98) * 2
++
++    for attempt, threshold in enumerate(thresholds, 1):
++        open_auto_program("g76-handoff.ngc")
++        c.auto(linuxcnc.AUTO_RUN, 0)
++        wait_for(
++            lambda: s.position[2] <= threshold and s.position[0] < 9.5,
++            "G76 handoff attempt %d missed the cut/retract boundary" % attempt,
++            timeout=10.0,
++            poll_interval=0.001,
++        )
++
++        c.stop()
++        wait_complete(
++            "G76 handoff attempt %d Stop command did not complete" % attempt
++        )
++        wait_for(
++            lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
++            "G76 handoff attempt %d did not reach STOPPED" % attempt,
++            timeout=10.0,
++            poll_interval=0.001,
++        )
++
++        if s.position[2] > -0.99 or not math.isclose(
++            s.position[0], 10.01, abs_tol=0.01
++        ):
++            fail(
++                "G76 handoff attempt %d missed complete clearance: "
++                "X=%.6f Z=%.6f" % (attempt, s.position[0], s.position[2])
++            )
++
++        c.auto(linuxcnc.AUTO_RESUME)
++        wait_for_program_complete(20.0, expected_z=-1.0, timeout=10.0)
++        assert_outputs_stopped_after_program()
++
++
+ def run_queued_threading_stop_resume_test():
+     hal.set_p("spindle.0.at-speed", "false")
+     open_auto_program("thread.ngc")
+@@ -791,8 +1094,17 @@ SCENARIOS = {
+     "abort-empty": run_abort_from_empty_stopped_queue_test,
+     "queued-g33": run_queued_threading_stop_resume_test,
+     "g33": run_threading_stop_resume_test,
++    "g33-no-following-rapid": run_g33_does_not_execute_following_rapid_test,
+     "fperrev": run_fperrev_stop_resume_test,
+     "g76": run_g76_stop_resume_test,
++    "g76-tapered": run_tapered_g76_stop_resume_test,
++    "g76-single-step": run_g76_single_step_test,
++    "g76-tapered-single-step": run_tapered_g76_single_step_test,
++    "g76-stop-single-step": run_g76_stop_then_single_step_test,
++    "g76-tapered-stop-single-step": run_tapered_g76_stop_then_single_step_test,
++    "g76-exit-taper": run_cylindrical_g76_exit_taper_stop_test,
++    "g76-tapered-exit-taper": run_tapered_g76_exit_taper_stop_test,
++    "g76-handoff-stress": run_g76_cut_retract_handoff_stress_test,
+     "rigid-tap": run_rigid_tap_stop_resume_test,
+     "orientation": run_spindle_orientation_stop_test,
+     "dwell": run_dwell_stop_resume_test,
+diff --git a/tests/resumable-stop/test.ini b/tests/resumable-stop/test.ini
+index a97cb95f4b..ecfccd19be 100644
+--- a/tests/resumable-stop/test.ini
++++ b/tests/resumable-stop/test.ini
+@@ -30,6 +30,7 @@ SPINDLES = 2
+ LINEAR_UNITS = mm
+ ANGULAR_UNITS = degree
+ PLANNER_TYPE = 1
++ARC_BLEND_ENABLE = 1
+ DEFAULT_LINEAR_VELOCITY = 10
+ MAX_LINEAR_VELOCITY = 50
+ MAX_LINEAR_JERK = 5000
+diff --git a/tests/resumable-stop/test.sh b/tests/resumable-stop/test.sh
+index 7bdacbb211..7c90c58a63 100755
+--- a/tests/resumable-stop/test.sh
++++ b/tests/resumable-stop/test.sh
+@@ -7,6 +7,11 @@ if nm -D -u "$EMC2_HOME/rtlib/motmod.so" | grep -q '[[:space:]]tpStop$'; then
+     exit 1
+ fi
+ 
++if nm -D -u "$EMC2_HOME/rtlib/motmod.so" | grep -q '[[:space:]]tpStep$'; then
++    echo "motmod unexpectedly requires the nonstandard tpStep symbol" >&2
++    exit 1
++fi
++
+ scenarios=(
+     ordinary
+     single-step
+@@ -17,13 +22,22 @@ scenarios=(
+     abort-empty
+     queued-g33
+     g33
++    g33-no-following-rapid
+     fperrev
+     g76
++    g76-tapered
+     rigid-tap
+     orientation
+     dwell
+     multi-spindle
+     css
++    g76-single-step
++    g76-tapered-single-step
++    g76-stop-single-step
++    g76-tapered-stop-single-step
++    g76-exit-taper
++    g76-tapered-exit-taper
++    g76-handoff-stress
+ )
+ 
+ scenario_log=$(mktemp)
+-- 
+2.53.0

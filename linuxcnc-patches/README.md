@@ -184,3 +184,29 @@ direction (the default) and `D1` to alternate roughing passes across the final
 thread line; full-depth and spring passes remain centered, and `Q0` keeps every
 pass on the centered line. Both cylindrical and tapered alternating paths are
 covered. No NML or Node.js API changes are required.
+
+### 0009 — Safe G76 Stop clearance and pass-by-pass Single Step
+
+G76 marks each approach, synchronized cut, and particular clearance retract
+with an internal pass ID. When Stop is requested during the cut or clearance,
+the trajectory planner latches that pass and completes exactly its marked
+retract before entering `STOPPED`, binding the target when it reaches motion
+if necessary. This leaves the tool clear instead of cutting a groove at thread
+depth, while ordinary G33, rigid tapping, and unrelated following rapids
+retain their prior Stop boundaries. The clearance is an exact, non-blendable
+endpoint, so arc blending cannot trim it. Synthetic blend arcs within a
+synchronized cut inherit the pass owner, keeping Stop bound to that pass's
+marked clearance.
+
+Each generated cylindrical or tapered G76 pass is also a distinct Single Step
+unit containing its approach, synchronized cut, and clearance retract. Its
+internal motion fence is active only while stepping, so uninterrupted
+`AUTO_RUN` retains task readahead, although the exact clearance boundary
+reaches zero velocity. Motion-level pass targeting also limits each
+`AUTO_STEP` after Stop when later G76 passes were already queued during normal
+`AUTO_RUN`; ordinary unmarked motion retains source-line stepping. Twenty-five
+runtime scenarios cover direct first passes, fresh and prequeued cylindrical
+and tapered passes, synchronized exit tapers, arc-blend clearance endpoints,
+an unmarked post-G33 rapid, and repeated Stops with deterministic cut-side
+timing near the cut/retract handoff. The internal NML and motion fields add no
+public status field or Node.js binding requirement.

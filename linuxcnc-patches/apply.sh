@@ -40,6 +40,33 @@ if [[ ${#patches[@]} -eq 0 ]]; then
   exit 1
 fi
 
+# Later patches may intentionally edit lines introduced by earlier patches,
+# which makes a per-patch reverse check insufficient on a completed series.
+# Build the expected final index from the pinned baseline and compare only the
+# paths owned by the series. Unrelated working-tree changes remain permitted.
+readonly PATCH_INDEX_DIR="$(mktemp -d)"
+readonly PATCH_INDEX="${PATCH_INDEX_DIR}/index"
+trap 'rm -rf -- "${PATCH_INDEX_DIR}"' EXIT
+
+GIT_INDEX_FILE="${PATCH_INDEX}" git -C "${LINUXCNC_DIR}" read-tree HEAD
+for patch in "${patches[@]}"; do
+  GIT_INDEX_FILE="${PATCH_INDEX}" git -C "${LINUXCNC_DIR}" apply --cached "${patch}"
+done
+
+mapfile -d '' patched_paths < <(
+  GIT_INDEX_FILE="${PATCH_INDEX}" git -C "${LINUXCNC_DIR}" \
+    diff --cached --name-only -z HEAD
+)
+
+if GIT_INDEX_FILE="${PATCH_INDEX}" git -C "${LINUXCNC_DIR}" \
+    diff --quiet -- "${patched_paths[@]}"; then
+  for patch in "${patches[@]}"; do
+    echo "Already applied: $(basename -- "${patch}")"
+  done
+  echo "LinuxCNC patch series ready: 0 applied, ${#patches[@]} already present"
+  exit 0
+fi
+
 applied=0
 for patch in "${patches[@]}"; do
   patch_name="$(basename -- "${patch}")"

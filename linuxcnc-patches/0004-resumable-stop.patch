@@ -17,7 +17,7 @@ Add a dedicated task and trajectory Stop operation that preserves interpreter an
  src/emc/nml_intf/emc.hh                       |  10 +
  src/emc/nml_intf/emc_nml.hh                   |  22 +
  src/emc/nml_intf/emcops.cc                    |   4 +
- src/emc/task/emctaskmain.cc                   | 340 +++++++-
+ src/emc/task/emctaskmain.cc                   | 342 +++++++-
  src/emc/task/taskintf.cc                      |  11 +
  src/emc/tp/tp.c                               |  64 +-
  src/emc/tp/tp_types.h                         |   7 +
@@ -44,7 +44,7 @@ Add a dedicated task and trajectory Stop operation that preserves interpreter an
  tests/resumable-stop/thread.ngc               |   7 +
  tests/resumable-stop/tool.tbl                 |   1 +
  tests/resumable-stop/zero-speed-spindle.ngc   |   7 +
- 39 files changed, 1647 insertions(+), 16 deletions(-)
+ 39 files changed, 1650 insertions(+), 16 deletions(-)
  create mode 100644 tests/resumable-stop/README
  create mode 100644 tests/resumable-stop/after-abort.ngc
  create mode 100755 tests/resumable-stop/checkresult
@@ -567,13 +567,15 @@ index 3bf13a702d..a590facb26 100644
  	// now handle call logic
  	// check for subsystems done
  	if (interp_list.len() == 0 &&
-@@ -745,6 +783,186 @@ static bool allow_while_idle_type() {
+@@ -745,6 +783,188 @@ static bool allow_while_idle_type() {
      return 0;
  }
  
 +static void emcTaskResumeInterpreter()
 +{
-+    emcStatus->task.interpState = interpResumeState;
++    if (emcStatus->task.interpState == EMC_TASK_INTERP::PAUSED) {
++        emcStatus->task.interpState = interpResumeState;
++    }
 +    emcStatus->motion.traj.single_stepping = 0;
 +    stepping = 0;
 +    steppingWait = 0;
@@ -754,7 +756,7 @@ index 3bf13a702d..a590facb26 100644
  /*
    emcTaskPlan()
  
-@@ -773,6 +991,28 @@ static int emcTaskPlan(void)
+@@ -773,6 +993,28 @@ static int emcTaskPlan(void)
  	return retval;
      }
  
@@ -783,7 +785,7 @@ index 3bf13a702d..a590facb26 100644
      // handle any new command
      switch (emcStatus->task.state) {
      case EMC_TASK_STATE::OFF:
-@@ -1843,6 +2083,11 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -1843,6 +2085,11 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  	retval = emcTrajPause();
  	break;
  
@@ -795,7 +797,7 @@ index 3bf13a702d..a590facb26 100644
      case EMC_TRAJ_RESUME_TYPE:
  	emcStatus->task.task_paused = 0;
  	retval = emcTrajResume();
-@@ -1923,6 +2168,11 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -1923,6 +2170,11 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  
      case EMC_SPINDLE_WAIT_ORIENT_COMPLETE_TYPE:
  	wait_spindle_orient_complete_msg = reinterpret_cast<EMC_SPINDLE_WAIT_ORIENT_COMPLETE *>(cmd);
@@ -807,7 +809,7 @@ index 3bf13a702d..a590facb26 100644
  	taskExecDelayTimeout = etime() + wait_spindle_orient_complete_msg->timeout;
  	break;
  
-@@ -1983,6 +2233,14 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -1983,6 +2235,14 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  
      case EMC_SPINDLE_ORIENT_TYPE:
  	spindle_orient_msg = reinterpret_cast<EMC_SPINDLE_ORIENT *>(cmd);
@@ -822,7 +824,7 @@ index 3bf13a702d..a590facb26 100644
  	retval = emcSpindleOrient(spindle_orient_msg->spindle, spindle_orient_msg->orientation,
  			spindle_orient_msg->mode);
  	break;
-@@ -2075,7 +2333,47 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -2075,7 +2335,47 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  
  	// task commands
  
@@ -870,7 +872,7 @@ index 3bf13a702d..a590facb26 100644
  	// abort everything
  	emcTaskAbort();
  	// KLUDGE call motion abort before state restore to make absolutely sure no
-@@ -2099,6 +2397,9 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -2099,6 +2399,9 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  	    mode_msg->mode != EMC_TASK_MODE::AUTO) {
  	    emcOperatorError(_("Can't switch mode while mode is AUTO and interpreter is not IDLE"));
  	} else { // we can honour the modeswitch
@@ -880,7 +882,7 @@ index 3bf13a702d..a590facb26 100644
  	    if (mode_msg->mode == EMC_TASK_MODE::MANUAL &&
  		emcStatus->task.mode != EMC_TASK_MODE::MANUAL) {
  		// leaving auto or mdi mode for manual
-@@ -2143,6 +2444,9 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -2143,6 +2446,9 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  
      case EMC_TASK_SET_STATE_TYPE:
  	state_msg = reinterpret_cast<EMC_TASK_SET_STATE *>(cmd);
@@ -890,7 +892,7 @@ index 3bf13a702d..a590facb26 100644
  	retval = emcTaskSetState(state_msg->state);
  	break;
  
-@@ -2368,11 +2672,8 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -2368,11 +2674,8 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  
      case EMC_TASK_PLAN_RESUME_TYPE:
  	emcTrajResume();
@@ -903,7 +905,7 @@ index 3bf13a702d..a590facb26 100644
  	retval = 0;
  	break;
  
-@@ -2569,6 +2870,7 @@ static int emcTaskExecute(void)
+@@ -2569,6 +2872,7 @@ static int emcTaskExecute(void)
  
      switch (emcStatus->task.execState) {
      case EMC_TASK_EXEC::ERROR:
@@ -911,7 +913,7 @@ index 3bf13a702d..a590facb26 100644
  
  	/*! \todo FIXME-- duplicate code for abort,
  	   also near end of main, when aborting on subordinate errors,
-@@ -2614,7 +2916,9 @@ static int emcTaskExecute(void)
+@@ -2614,7 +2918,9 @@ static int emcTaskExecute(void)
      case EMC_TASK_EXEC::DONE:
  	STEPPING_CHECK();
  	if (!emcStatus->motion.traj.queueFull &&
@@ -922,7 +924,7 @@ index 3bf13a702d..a590facb26 100644
  	    if (0 == emcTaskCommand) {
  		// need a new command
  		emcTaskCommand = interp_list.get();
-@@ -2739,6 +3043,18 @@ static int emcTaskExecute(void)
+@@ -2739,6 +3045,18 @@ static int emcTaskExecute(void)
  
      case EMC_TASK_EXEC::WAITING_FOR_DELAY:
  	STEPPING_CHECK();
@@ -941,7 +943,7 @@ index 3bf13a702d..a590facb26 100644
  	// check if delay has passed
  	emcStatus->task.delayLeft = taskExecDelayTimeout - etime();
  	if (etime() >= taskExecDelayTimeout) {
-@@ -3154,6 +3470,9 @@ static int iniLoad(const char *filename)
+@@ -3154,6 +3472,9 @@ static int iniLoad(const char *filename)
          }
      }
  
@@ -951,7 +953,7 @@ index 3bf13a702d..a590facb26 100644
      if (auto inistring = inifile.findString("RS274NGC_STARTUP_CODE", "RS274NGC")) {
  	// copy to global
  	rtapi_strxcpy(rs274ngc_startup_code, inistring->c_str());
-@@ -3325,6 +3644,7 @@ int main(int argc, char *argv[])
+@@ -3325,6 +3646,7 @@ int main(int argc, char *argv[])
  	prev_traj_enabled = emcStatus->motion.traj.enabled;
  	// synchronize subordinate states
  	if (emcStatus->io.aux.estop) {
@@ -959,7 +961,7 @@ index 3bf13a702d..a590facb26 100644
  	    if (emcStatus->motion.traj.enabled) {
  		emcTrajDisable();
  		emcTaskAbort();
-@@ -3406,6 +3726,7 @@ int main(int argc, char *argv[])
+@@ -3406,6 +3728,7 @@ int main(int argc, char *argv[])
  	    // 	emcOperatorError("wait for orient complete timed out");
  	    // }
  
@@ -967,7 +969,7 @@ index 3bf13a702d..a590facb26 100644
              // abort everything
              emcTaskAbort();
              emcIoAbort(EMC_ABORT::MOTION_OR_IO_RCS_ERROR);
-@@ -3441,6 +3762,12 @@ int main(int argc, char *argv[])
+@@ -3441,6 +3764,12 @@ int main(int argc, char *argv[])
  	    emcTaskQueueTaskPlanSynchCmd();
  	}
  
@@ -980,7 +982,7 @@ index 3bf13a702d..a590facb26 100644
  	// update task-specific status
  	emcTaskUpdate(&emcStatus->task);
  
-@@ -3461,6 +3788,9 @@ int main(int argc, char *argv[])
+@@ -3461,6 +3790,9 @@ int main(int argc, char *argv[])
  	    emcStatus->io.status == RCS_STATUS::ERROR) {
  	    emcStatus->status = RCS_STATUS::ERROR;
  	    emcStatus->task.status = RCS_STATUS::ERROR;
@@ -1052,7 +1054,7 @@ index e5667b3f29..676c66e4c5 100644
      tp->reverse_run = 0;
      tp->synchronized = 0;
      tp->uu_per_rev = 0.0;
-@@ -2830,12 +2836,23 @@ int tpCalculateSCurveAccel(TP_STRUCT const * const tp, TC_STRUCT * const tc, TC_
+@@ -2830,12 +2836,24 @@ int tpCalculateSCurveAccel(TP_STRUCT const * const tp, TC_STRUCT * const tc, TC_
      }
  
      // Check pause/abort state
@@ -1066,15 +1068,16 @@ index e5667b3f29..676c66e4c5 100644
  
 -    // Check if feed_override = 0 (not pause/abort, but velocity limited to 0)
 +    /*
-+     * Velocity-synchronized motion derives its limit from spindle feedback.
-+     * That limit can legitimately be zero while a spindle restarts after a
-+     * resumable Stop. Ruckig position control rejects a zero maximum velocity,
-+     * so remain in velocity control until feedback provides a usable limit.
++     * Synchronized motion derives its limit from spindle feedback. That limit
++     * can legitimately be zero while waiting for position synchronization or
++     * while a spindle restarts after a resumable Stop. Ruckig position control
++     * rejects a zero maximum velocity, so remain in velocity control until
++     * feedback provides a usable limit.
 +     */
      bool use_velocity_control = (is_pausing || is_aborting ||
 -                                   emcmotStatus->net_feed_scale <= TP_VEL_EPSILON);
 +                                   emcmotStatus->net_feed_scale <= TP_VEL_EPSILON ||
-+                                   (tc->synchronized == TC_SYNC_VELOCITY &&
++                                   (tc->synchronized != TC_SYNC_NONE &&
 +                                    tc_target_vel <= TP_VEL_EPSILON));
      // Normal operation parameters
      double effective_max_vel = tc_target_vel;
@@ -2120,7 +2123,7 @@ index 0000000000..8b6ddc32c3
 +        "program did not continue after spindle orientation completed",
 +    )
 +
-+    wait_for_program_complete(20.0)
++    wait_for_program_complete(20.0, timeout=25.0)
 +
 +
 +def run_dwell_stop_resume_test():

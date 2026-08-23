@@ -41,6 +41,7 @@ Subject: [PATCH] native automatic tool wear
  tests/ccomp/mill-g90g91g92/expected           |   1 +
  tests/ccomp/mill-line-arc-entry/expected      |   1 +
  tests/interp/cam-nisley/expected              |   1 +
+ tests/interp/compile/use-rs274.cc             |   3 +-
  tests/interp/g10/g10-l1-l10/expected          |   9 +-
  tests/interp/g10/g10-l1-l10/test.ngc          |   4 +-
  tests/interp/g10/g10-l11/expected             |   2 +
@@ -66,7 +67,7 @@ Subject: [PATCH] native automatic tool wear
  tests/toolchanger/m61/test-ui.py              |  30 ++--
  .../nonrandom/expected-gcode-output           |  24 +--
  .../random/expected-gcode-output              |  24 +--
- 62 files changed, 535 insertions(+), 188 deletions(-)
+ 63 files changed, 537 insertions(+), 189 deletions(-)
  create mode 100644 tests/interp/tool-wear/expected
  create mode 100644 tests/interp/tool-wear/invalid-i.ngc
  create mode 100644 tests/interp/tool-wear/invalid-j.ngc
@@ -1297,6 +1298,18 @@ index 4bc9ee3753..6f3aab576f 100644
   N..... COMMENT("-----------------")
   N..... MESSAGE("Verify METRIC Sherline.tbl file!")
   N..... MESSAGE("Align XY=0 at center, Z=0 at surface, spindle to match S value, hit [Run]")
+diff --git a/tests/interp/compile/use-rs274.cc b/tests/interp/compile/use-rs274.cc
+--- a/tests/interp/compile/use-rs274.cc
++++ b/tests/interp/compile/use-rs274.cc
+@@ -143,6 +143,7 @@ void WAIT_SPINDLE_ORIENT_COMPLETE(int spindle, double timeout) {}
+ void LOCK_SPINDLE_Z() {}
+ void USE_SPINDLE_FORCE() {}
+ void USE_NO_SPINDLE_FORCE() {}
+-void SET_TOOL_TABLE_ENTRY(int pocket, int toolno, const EmcPose& offset, double diameter,
++void SET_TOOL_TABLE_ENTRY(int pocket, int toolno, const EmcPose& offset,
++                                 const EmcPose& wear_offset, double diameter,
+                                  double frontangle, double backangle, int orientation) {}
+ void USE_TOOL_LENGTH_OFFSET(const EmcPose& offset) {}
 diff --git a/tests/interp/g10/g10-l1-l10/expected b/tests/interp/g10/g10-l1-l10/expected
 index cbc131cb22..c9b18bd22c 100644
 --- a/tests/interp/g10/g10-l1-l10/expected
@@ -2039,4 +2052,3 @@ index d5986569f1..928fdfd1ed 100644
  X = 0.111000
 -- 
 2.53.0
-
