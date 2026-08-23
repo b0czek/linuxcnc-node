@@ -363,7 +363,7 @@ int hold_shutdown(const std::string& endpoint) {
 
 int main(int argc, char** argv) {
   if (argc < 3) {
-    std::cerr << "usage: linuxcnc-grpc-live-smoke ENDPOINT GCODE_FIXTURE "
+    std::cerr << "usage: linuxcnc-grpc-live-integration ENDPOINT GCODE_FIXTURE "
                  "[TELEMETRY_ENDPOINT] [--hold-shutdown|--probe-reacquire]\n";
     return 2;
   }
@@ -906,6 +906,6 @@ int main(int argc, char** argv) {
   const auto scope_status = scope_session->Finish();
   assert(scope_status.ok());
 
-  std::cout << "native LinuxCNC gRPC live smoke passed\n";
+  std::cout << "native LinuxCNC gRPC live integration passed\n";
   return 0;
 }

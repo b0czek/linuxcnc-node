@@ -135,7 +135,7 @@ int main(int argc, char** argv) {
   grpc::ClientContext context;
   linuxcnc::v1::GetStatusResponse status;
   const auto status_result = machine->GetStatus(&context, {}, &status);
-  // The smoke daemon has no LinuxCNC NML instance. It must expose an
+  // The integration daemon has no LinuxCNC NML instance. It must expose an
   // explicit unavailable status rather than fabricate an empty snapshot.
   assert(status_result.error_code() == grpc::StatusCode::UNAVAILABLE);
 

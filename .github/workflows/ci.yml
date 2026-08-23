@@ -267,5 +267,5 @@ jobs:
           cache-from: type=gha,scope=linuxcnc-simulator-amd64
           cache-to: type=gha,mode=max,scope=linuxcnc-simulator-amd64
 
-      - name: Run full-stack container smoke test
-        run: ./docker/smoke-test.sh linuxcnc-simulator:test
+      - name: Run full-stack container acceptance test
+        run: ./docker/acceptance-test.sh linuxcnc-simulator:test

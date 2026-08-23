@@ -73,15 +73,15 @@ Both `linux/amd64` and `linux/arm64` are published.
 Plaintext listeners are the default. TLS and mTLS affect gRPC only; mount the
 certificate files and pass the existing server options through `DISPLAY`.
 
-## Smoke test
+## Full-stack acceptance test
 
 The disposable `test` target contains the native full-stack acceptance client:
 
 ```sh
 docker build --target test -t linuxcnc-simulator:test .
-./docker/smoke-test.sh linuxcnc-simulator:test
+./docker/acceptance-test.sh linuxcnc-simulator:test
 ```
 
-The smoke test copies its fixture to a temporary writable directory, exercises
+The acceptance test copies its fixture to a temporary writable directory, exercises
 the live machine, program, HAL, scope, and telemetry APIs, then checks graceful
 container shutdown.

@@ -11,7 +11,7 @@ using linuxcnc::server::gcode::SerializedRs274Parser;
 
 int main(int argc, char** argv) {
   if (argc != 3) {
-    std::cerr << "usage: gcode_parser_smoke <ini-path> <gcode-path>\n";
+    std::cerr << "usage: gcode_parser_integration <ini-path> <gcode-path>\n";
     return 2;
   }
 

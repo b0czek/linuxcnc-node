@@ -846,6 +846,10 @@ void WAIT_SPINDLE_ORIENT_COMPLETE(int, double) {}
 void SPINDLE_RETRACT() {}
 void SPINDLE_RETRACT_TRAVERSE() {}
 void USE_NO_SPINDLE_FORCE() {}
+void START_G76_PASS() {}
+void START_G76_CUT() {}
+void START_G76_CLEARANCE() {}
+void FINISH_G76_PASS(int) {}
 void PROGRAM_STOP() {}
 void PROGRAM_END() {}
 void FINISH() {}

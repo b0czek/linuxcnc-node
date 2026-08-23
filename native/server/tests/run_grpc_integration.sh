@@ -2,10 +2,10 @@
 set -euo pipefail
 
 server="$1"
-smoke="$2"
-port="${LINUXCNC_GRPC_SMOKE_PORT:-$((52000 + ($$ % 1000)))}"
-telemetry_port="${LINUXCNC_POSITION_TELEMETRY_SMOKE_PORT:-$((53000 + ($$ % 1000)))}"
-root="$(mktemp -d "${TMPDIR:-/tmp}/linuxcnc-grpc-smoke.XXXXXX")"
+integration="$2"
+port="${LINUXCNC_GRPC_INTEGRATION_PORT:-$((52000 + ($$ % 1000)))}"
+telemetry_port="${LINUXCNC_POSITION_TELEMETRY_INTEGRATION_PORT:-$((53000 + ($$ % 1000)))}"
+root="$(mktemp -d "${TMPDIR:-/tmp}/linuxcnc-grpc-integration.XXXXXX")"
 cleanup() {
   if [[ -n "${server_pid:-}" ]]; then
     kill -TERM "${server_pid}" 2>/dev/null || true
@@ -14,7 +14,7 @@ cleanup() {
       sleep 0.1
     done
     if kill -0 "${server_pid}" 2>/dev/null; then
-      echo "linuxcnc-grpc-smoke: server did not exit gracefully" >&2
+      echo "linuxcnc-grpc-integration: server did not exit gracefully" >&2
       kill -KILL "${server_pid}" 2>/dev/null || true
       wait "${server_pid}" 2>/dev/null || true
       return 1
@@ -57,10 +57,10 @@ if ! grep -q "listening on 127.0.0.1:${port}" "$root/server.log"; then
   cat "$root/server.log"
   exit 1
 fi
-"$smoke" "127.0.0.1:${port}" "127.0.0.1:${telemetry_port}"
+"$integration" "127.0.0.1:${port}" "127.0.0.1:${telemetry_port}"
 
 # Keep a callback stream active while SIGTERM drives the ordered shutdown.
-"$smoke" "127.0.0.1:${port}" --hold-stream &
+"$integration" "127.0.0.1:${port}" --hold-stream &
 client_pid=$!
 sleep 0.05
 kill -TERM "$server_pid"
@@ -69,7 +69,7 @@ for _ in $(seq 1 20); do
   sleep 0.1
 done
 if kill -0 "$server_pid" 2>/dev/null; then
-  echo "linuxcnc-grpc-smoke: server exceeded two-second graceful shutdown limit" >&2
+  echo "linuxcnc-grpc-integration: server exceeded two-second graceful shutdown limit" >&2
   exit 1
 fi
 wait "$server_pid"

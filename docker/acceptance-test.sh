@@ -4,7 +4,7 @@ set -euo pipefail
 image="${1:-linuxcnc-simulator:test}"
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 fixture="$(mktemp -d "${TMPDIR:-/tmp}/linuxcnc-simulator-config.XXXXXX")"
-container="linuxcnc-simulator-smoke-$$"
+container="linuxcnc-simulator-acceptance-$$"
 
 cleanup() {
   docker rm -f "$container" >/dev/null 2>&1 || true
@@ -44,7 +44,7 @@ if [[ "${status:-}" != healthy ]]; then
   exit 1
 fi
 
-docker exec "$container" linuxcnc-grpc-live-smoke \
+docker exec "$container" linuxcnc-grpc-live-integration \
   127.0.0.1:50051 \
   /opt/linuxcnc-simulator/test/simple_linear.ngc \
   127.0.0.1:50052

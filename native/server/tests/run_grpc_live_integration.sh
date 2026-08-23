@@ -2,12 +2,12 @@
 set -euo pipefail
 
 if [[ $# -ne 3 ]]; then
-  echo "usage: $0 SERVER LIVE_SMOKE LINUXCNC_ROOT" >&2
+  echo "usage: $0 SERVER LIVE_INTEGRATION LINUXCNC_ROOT" >&2
   exit 2
 fi
 
 server="$1"
-smoke="$2"
+integration="$2"
 linuxcnc_root="$3"
 fixture_dir="$(cd "$(dirname "$0")/fixtures" && pwd)"
 root="$(mktemp -d "${TMPDIR:-/tmp}/linuxcnc-grpc-live.XXXXXX")"
@@ -87,22 +87,22 @@ cleanup() {
 trap cleanup EXIT
 
 if [[ -e /tmp/linuxcnc.lock ]]; then
-  echo "linuxcnc-grpc-live-smoke: /tmp/linuxcnc.lock exists; refusing to disturb another LinuxCNC instance" >&2
+  echo "linuxcnc-grpc-live-integration: /tmp/linuxcnc.lock exists; refusing to disturb another LinuxCNC instance" >&2
   exit 77
 fi
 if LC_ALL=C ipcs -m 2>/dev/null |
     awk '$1 == "0x48414c32" { found = 1 } END { exit found ? 0 : 1 }'; then
-  echo "linuxcnc-grpc-live-smoke: a HAL runtime already exists; refusing to disturb it" >&2
+  echo "linuxcnc-grpc-live-integration: a HAL runtime already exists; refusing to disturb it" >&2
   exit 77
 fi
 for process_name in linuxcncsvr milltask rtapi_app halui; do
   if pgrep -x "$process_name" >/dev/null 2>&1; then
-    echo "linuxcnc-grpc-live-smoke: $process_name is already running; refusing to disturb it" >&2
+    echo "linuxcnc-grpc-live-integration: $process_name is already running; refusing to disturb it" >&2
     exit 77
   fi
 done
 if [[ ! -x "$linuxcnc_root/scripts/rip-environment" ]]; then
-  echo "linuxcnc-grpc-live-smoke: LinuxCNC run-in-place environment is unavailable: $linuxcnc_root" >&2
+  echo "linuxcnc-grpc-live-integration: LinuxCNC run-in-place environment is unavailable: $linuxcnc_root" >&2
   exit 77
 fi
 
@@ -178,7 +178,7 @@ stop_server_with_deadline() {
     sleep 0.1
   done
   if kill -0 "$server_pid" 2>/dev/null; then
-    echo "linuxcnc-grpc-live-smoke: daemon exceeded two-second shutdown limit" >&2
+    echo "linuxcnc-grpc-live-integration: daemon exceeded two-second shutdown limit" >&2
     cat "$log_file" >&2
     return 1
   fi
@@ -210,7 +210,7 @@ fi
 
 start_server "$root/server.log"
 
-if ! timeout 60s "$smoke" "127.0.0.1:${grpc_port}" \
+if ! timeout 60s "$integration" "127.0.0.1:${grpc_port}" \
     "$fixture_dir/simple_linear.ngc" "127.0.0.1:${telemetry_port}"; then
   cat "$root/linuxcnc.log" "$root/server.log" >&2
   exit 1
@@ -221,7 +221,7 @@ fi
 stop_server_with_deadline "$root/server.log"
 start_server "$root/hold-server.log"
 
-timeout 30s "$smoke" "127.0.0.1:${grpc_port}" \
+timeout 30s "$integration" "127.0.0.1:${grpc_port}" \
   "$fixture_dir/simple_linear.ngc" "127.0.0.1:${telemetry_port}" \
   --hold-shutdown \
   > "$root/hold.log" 2>&1 &
@@ -249,17 +249,17 @@ grep -q "LIVE_SHUTDOWN_TERMINATED" "$root/hold.log"
 
 if "$linuxcnc_root/scripts/rip-environment" halcmd show comp 2>/dev/null |
     grep -q "grpc-shutdown-owned"; then
-  echo "linuxcnc-grpc-live-smoke: shutdown-owned HAL component survived" >&2
+  echo "linuxcnc-grpc-live-integration: shutdown-owned HAL component survived" >&2
   exit 1
 fi
 if "$linuxcnc_root/scripts/rip-environment" halcmd show pin 2>/dev/null |
     grep -q "grpc-shutdown-owned.value"; then
-  echo "linuxcnc-grpc-live-smoke: shutdown-owned HAL pin survived" >&2
+  echo "linuxcnc-grpc-live-integration: shutdown-owned HAL pin survived" >&2
   exit 1
 fi
 
 start_server "$root/restarted-server.log"
-if ! timeout 15s "$smoke" "127.0.0.1:${grpc_port}" \
+if ! timeout 15s "$integration" "127.0.0.1:${grpc_port}" \
     "$fixture_dir/simple_linear.ngc" "127.0.0.1:${telemetry_port}" \
     --probe-reacquire \
     > "$root/reacquire.log" 2>&1; then

@@ -58,8 +58,8 @@ jobs:
           cache-from: type=gha,scope=linuxcnc-simulator-${{ matrix.suffix }}
           cache-to: type=gha,mode=max,scope=linuxcnc-simulator-${{ matrix.suffix }}
 
-      - name: Run full-stack container smoke test
-        run: ./docker/smoke-test.sh linuxcnc-simulator:test
+      - name: Run full-stack container acceptance test
+        run: ./docker/acceptance-test.sh linuxcnc-simulator:test
 
       - name: Build and push platform image
         id: push

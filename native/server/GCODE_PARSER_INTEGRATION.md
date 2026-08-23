@@ -54,7 +54,7 @@ every workspace parse. `batch_size` bounds each `OperationBatch` delivered to
 never performs network I/O from canonical/realtime code: it runs on the parser
 worker thread after the interpreter step.
 
-The optional `gcode_parser_smoke` test checks complete batching, extents, and
-cancellation. Use `tests/run_gcode_parser_smoke.sh <binary>`; the runner owns
+The optional `gcode_parser_integration` test checks complete batching, extents, and
+cancellation. Use `tests/run_gcode_parser_integration.sh <binary>`; the runner owns
 its native fixtures and copies the INI parameter/tool files into a temporary
 working directory so parser state cannot create files in the repository.

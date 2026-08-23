@@ -66,7 +66,7 @@ RUN cmake -S . -B /build/native-release \
       -DLINUXCNC_GRPC_ENABLE_NML=ON \
       -DCMAKE_BUILD_TYPE=Debug \
     && cmake --build /build/native-test --parallel "$(nproc)" \
-      --target linuxcnc-grpc-live-smoke
+      --target linuxcnc-grpc-live-integration
 
 FROM ubuntu:24.04 AS runtime
 
@@ -121,5 +121,5 @@ ENTRYPOINT ["/usr/bin/tini", "-g", "--", "/usr/local/bin/linuxcnc-simulator-entr
 
 FROM runtime AS test
 
-COPY --from=builder /build/native-test/native/server/linuxcnc-grpc-live-smoke /usr/local/bin/
+COPY --from=builder /build/native-test/native/server/linuxcnc-grpc-live-integration /usr/local/bin/
 COPY native/server/tests/fixtures/simple_linear.ngc /opt/linuxcnc-simulator/test/simple_linear.ngc

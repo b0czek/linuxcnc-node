@@ -1,4 +1,4 @@
-; Generic LinuxCNC parser smoke program.
+; Generic LinuxCNC parser integration program.
 G21 ; millimetres
 G17 ; XY plane
 G90 ; absolute mode

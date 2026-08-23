@@ -235,34 +235,34 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
     target_compile_features(linuxcnc-grpc-health-check PRIVATE cxx_std_17)
     target_link_libraries(linuxcnc-grpc-health-check PRIVATE linuxcnc-grpc-proto)
     target_compile_options(linuxcnc-grpc-health-check PRIVATE -Wall -Wextra -Wpedantic)
-    add_executable(linuxcnc-grpc-smoke tests/grpc_smoke.cc)
-    target_compile_features(linuxcnc-grpc-smoke PRIVATE cxx_std_17)
-    target_compile_definitions(linuxcnc-grpc-smoke PRIVATE BOOST_ERROR_CODE_HEADER_ONLY=1)
-    target_include_directories(linuxcnc-grpc-smoke PRIVATE ${Boost_INCLUDE_DIRS})
-    target_link_libraries(linuxcnc-grpc-smoke PRIVATE linuxcnc-grpc-proto)
+    add_executable(linuxcnc-grpc-integration tests/grpc_integration.cc)
+    target_compile_features(linuxcnc-grpc-integration PRIVATE cxx_std_17)
+    target_compile_definitions(linuxcnc-grpc-integration PRIVATE BOOST_ERROR_CODE_HEADER_ONLY=1)
+    target_include_directories(linuxcnc-grpc-integration PRIVATE ${Boost_INCLUDE_DIRS})
+    target_link_libraries(linuxcnc-grpc-integration PRIVATE linuxcnc-grpc-proto)
     if(LINUXCNC_GRPC_HAS_NML AND LINUXCNC_GRPC_HAS_HAL)
-        add_executable(linuxcnc-grpc-live-smoke tests/grpc_live_smoke.cc)
-        target_compile_features(linuxcnc-grpc-live-smoke PRIVATE cxx_std_17)
-        target_compile_definitions(linuxcnc-grpc-live-smoke PRIVATE BOOST_ERROR_CODE_HEADER_ONLY=1)
-        target_include_directories(linuxcnc-grpc-live-smoke PRIVATE ${Boost_INCLUDE_DIRS})
-        target_link_libraries(linuxcnc-grpc-live-smoke PRIVATE linuxcnc-grpc-proto)
-        target_compile_options(linuxcnc-grpc-live-smoke PRIVATE
+        add_executable(linuxcnc-grpc-live-integration tests/grpc_live_integration.cc)
+        target_compile_features(linuxcnc-grpc-live-integration PRIVATE cxx_std_17)
+        target_compile_definitions(linuxcnc-grpc-live-integration PRIVATE BOOST_ERROR_CODE_HEADER_ONLY=1)
+        target_include_directories(linuxcnc-grpc-live-integration PRIVATE ${Boost_INCLUDE_DIRS})
+        target_link_libraries(linuxcnc-grpc-live-integration PRIVATE linuxcnc-grpc-proto)
+        target_compile_options(linuxcnc-grpc-live-integration PRIVATE
             -Wall -Wextra -Wpedantic)
     endif()
     if(LINUXCNC_GRPC_BUILD_TESTS)
         if(NOT LINUXCNC_GRPC_HAS_HAL)
-            add_test(NAME linuxcnc-grpc-smoke
-                COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_grpc_smoke.sh"
+            add_test(NAME linuxcnc-grpc-integration
+                COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_grpc_integration.sh"
                         "$<TARGET_FILE:linuxcnc-grpc-server>"
-                        "$<TARGET_FILE:linuxcnc-grpc-smoke>")
+                        "$<TARGET_FILE:linuxcnc-grpc-integration>")
         endif()
         if(LINUXCNC_GRPC_HAS_NML AND LINUXCNC_GRPC_HAS_HAL)
-            add_test(NAME linuxcnc-grpc-live-smoke
-                COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_grpc_live_smoke.sh"
+            add_test(NAME linuxcnc-grpc-live-integration
+                COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_grpc_live_integration.sh"
                         "$<TARGET_FILE:linuxcnc-grpc-server>"
-                        "$<TARGET_FILE:linuxcnc-grpc-live-smoke>"
+                        "$<TARGET_FILE:linuxcnc-grpc-live-integration>"
                         "${LINUXCNC_ROOT}")
-            set_tests_properties(linuxcnc-grpc-live-smoke PROPERTIES
+            set_tests_properties(linuxcnc-grpc-live-integration PROPERTIES
                 SKIP_RETURN_CODE 77
                 TIMEOUT 120)
         endif()
@@ -321,12 +321,12 @@ if(LINUXCNC_GRPC_BUILD_TESTS)
              COMMAND linuxcnc-grpc-hal-adapter-contract-tests)
 
     if(LINUXCNC_GRPC_HAS_RS274)
-        add_executable(linuxcnc-grpc-gcode-parser-smoke tests/gcode_parser_smoke.cc)
-        target_compile_features(linuxcnc-grpc-gcode-parser-smoke PRIVATE cxx_std_17)
-        target_link_libraries(linuxcnc-grpc-gcode-parser-smoke PRIVATE linuxcnc-grpc-domain)
-        add_test(NAME linuxcnc-grpc-gcode-parser-smoke
-            COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_gcode_parser_smoke.sh"
-                    "$<TARGET_FILE:linuxcnc-grpc-gcode-parser-smoke>")
+        add_executable(linuxcnc-grpc-gcode-parser-integration tests/gcode_parser_integration.cc)
+        target_compile_features(linuxcnc-grpc-gcode-parser-integration PRIVATE cxx_std_17)
+        target_link_libraries(linuxcnc-grpc-gcode-parser-integration PRIVATE linuxcnc-grpc-domain)
+        add_test(NAME linuxcnc-grpc-gcode-parser-integration
+            COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_gcode_parser_integration.sh"
+                    "$<TARGET_FILE:linuxcnc-grpc-gcode-parser-integration>")
     endif()
 
     if(LINUXCNC_GRPC_HAS_SCOPE)
