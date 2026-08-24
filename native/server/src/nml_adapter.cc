@@ -103,7 +103,8 @@ struct NmlAdapter::Impl {
         std::lock_guard lock(mutex);
         if (status && status->peek() == EMC_STAT_TYPE) {
           auto* value = static_cast<EMC_STAT*>(status->get_address());
-          if (value && value->echo_serial_number >= serial) {
+          if (value && value->echo_serial_number > serial) return true;
+          if (value && value->echo_serial_number == serial) {
             if (value->status == RCS_STATUS::ERROR) {
               throw std::runtime_error("LinuxCNC rejected the command");
             }
