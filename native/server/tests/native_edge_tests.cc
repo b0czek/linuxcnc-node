@@ -328,7 +328,9 @@ void workspace_traversal_quota_ttl_and_materialization_test() {
     ProgramWorkspaceStore store(base / "workspace", base / "active",
                                 WorkspaceLimits{1024, 2048, std::chrono::hours(24)});
     const auto id = store.create();
+    assert(store.write_file(id, ".upload-2", bytes("user data")));
     assert(store.write_file(id, "program/main.ngc", bytes("G0 X1\n")));
+    assert(read_file(store.root() / id / ".upload-2") == "user data");
     assert(store.write_file(id, "program/main.tbl", bytes("tool companion\n")));
     assert(store.write_file(id, "subdir/notes.txt", bytes("notes")));
     fs::create_directories(store.active_directory() / "stale", error);

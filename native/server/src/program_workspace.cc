@@ -1,10 +1,13 @@
 #include "linuxcnc_grpc/program_workspace.hpp"
 
+#include <cerrno>
+#include <fcntl.h>
 #include <fstream>
 #include <random>
 #include <stdexcept>
 #include <system_error>
 #include <unordered_map>
+#include <unistd.h>
 
 namespace linuxcnc::server {
 namespace fs = std::filesystem;
@@ -99,22 +102,29 @@ bool ProgramWorkspaceStore::write_file(const std::string& workspace_id,
   std::error_code error;
   fs::create_directories(destination.parent_path(), error);
   if (error || has_symlink_component(destination.parent_path(), workspace)) return false;
-  const auto temporary = destination.parent_path() / (".upload-" + std::to_string(next_id_++));
-  {
-    std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
-    if (!output) return false;
-    if (!contents.empty()) {
-      output.write(reinterpret_cast<const char*>(contents.data()),
-                   static_cast<std::streamsize>(contents.size()));
-    }
-    if (!output) {
+  fs::path temporary;
+  int descriptor = -1;
+  for (int attempt = 0; attempt < 128; ++attempt) {
+    temporary = destination.parent_path() / (".upload-" + opaque_workspace_id());
+    descriptor = ::open(temporary.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC,
+                        S_IRUSR | S_IWUSR);
+    if (descriptor >= 0) break;
+    if (errno != EEXIST) return false;
+  }
+  if (descriptor < 0) return false;
+  std::size_t offset = 0;
+  while (offset < contents.size()) {
+    const auto written = ::write(descriptor, contents.data() + offset,
+                                 contents.size() - offset);
+    if (written < 0 && errno == EINTR) continue;
+    if (written <= 0) {
+      ::close(descriptor);
       fs::remove(temporary, error);
       return false;
     }
+    offset += static_cast<std::size_t>(written);
   }
-  fs::permissions(temporary, fs::perms::owner_read | fs::perms::owner_write,
-                  fs::perm_options::replace, error);
-  if (error) {
+  if (::close(descriptor) != 0) {
     fs::remove(temporary, error);
     return false;
   }
