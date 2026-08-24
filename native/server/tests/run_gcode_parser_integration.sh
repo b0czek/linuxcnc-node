@@ -13,6 +13,9 @@ binary=$1
 fixture_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/fixtures" && pwd)
 ini="$fixture_dir/config.ini"
 program="$fixture_dir/simple_linear.ngc"
+operations_program="$fixture_dir/preview_operations.ngc"
+cutter_compensation_program="$fixture_dir/cutter_compensation.ngc"
+python_remap_program="$fixture_dir/python_remap.ngc"
 parameter_file="$fixture_dir/sim_mm.var"
 tool_table="$fixture_dir/sim_mm.tbl"
 workdir=$(mktemp -d "${TMPDIR:-/tmp}/linuxcnc-gcode-parser.XXXXXX")
@@ -24,6 +27,10 @@ trap 'rm -rf "$workdir"' EXIT
 cp "$ini" "$workdir/machine.ini"
 cp "$parameter_file" "$workdir/sim_mm.var"
 cp "$tool_table" "$workdir/sim_mm.tbl"
+cp "$fixture_dir/remap.py" "$workdir/remap.py"
+cp "$fixture_dir/toplevel.py" "$workdir/toplevel.py"
 
 cd "$workdir"
-EMC2_HOME="${EMC2_HOME:-}" "$binary" "$workdir/machine.ini" "$program"
+EMC2_HOME="${EMC2_HOME:-}" "$binary" "$workdir/machine.ini" "$program" \
+    "$operations_program" "$cutter_compensation_program" \
+    "$python_remap_program"

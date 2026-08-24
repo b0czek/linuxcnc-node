@@ -15,3 +15,16 @@ and health schema beside the installed package by default. Packaged
 applications with a custom layout can pass `protoRoot`, `protoPath`, and/or
 `healthProtoPath` explicitly; the health path is never inferred from the
 application schema filename.
+
+## Streaming program previews
+
+Use `clients.program.parseProgram(...)` as a readable server stream. Append
+every `event.batch.operations` array immediately instead of waiting for the
+terminal summary; progress events may be coalesced, while operation batches
+are ordered and never dropped. A successful stream ends with exactly one
+summary containing authoritative extents and the total operation count.
+
+Call `stream.cancel()` when a preview is superseded or its consumer closes.
+The daemon then cancels interpretation and releases the workspace lease. The
+high-frequency position-history feed remains a separate WebSocket and should
+not be used for program-preview operations.

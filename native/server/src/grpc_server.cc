@@ -1496,6 +1496,8 @@ class ProgramServiceImpl final : public ProgramCallbackBase {
   };
 
   class ParseReactor final : public grpc::ServerWriteReactor<ParseProgramEvent> {
+    static constexpr std::size_t kMaxQueuedBatches = 2;
+
     struct State {
       std::mutex mutex;
       std::condition_variable condition;
@@ -1607,6 +1609,7 @@ class ProgramServiceImpl final : public ProgramCallbackBase {
                 wake();
               };
               options.on_batch = [state, wake](gcode::OperationBatch&& batch) {
+                if (batch.empty()) return true;
                 ParseProgramEvent event;
                 auto* encoded = event.mutable_batch();
                 for (const auto& operation : batch)
@@ -1614,7 +1617,8 @@ class ProgramServiceImpl final : public ProgramCallbackBase {
                 {
                   std::unique_lock lock(state->mutex);
                   state->condition.wait(lock, [state] {
-                    return state->cancelled || state->batches.size() < 2;
+                    return state->cancelled ||
+                           state->batches.size() < kMaxQueuedBatches;
                   });
                   if (state->cancelled) return false;
                   state->batches.push_back(std::move(event));

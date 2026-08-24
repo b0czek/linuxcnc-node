@@ -152,6 +152,7 @@ start_server() {
     "--workspace-root=$root/workspaces" \
     "--active-program-directory=$root/active" \
     "--workspace-ttl-seconds=3600" \
+    "--gcode-batch-size=8" \
     > "$log_file" 2>&1 &
   server_pid=$!
 
@@ -211,7 +212,8 @@ fi
 start_server "$root/server.log"
 
 if ! timeout 60s "$integration" "127.0.0.1:${grpc_port}" \
-    "$fixture_dir/simple_linear.ngc" "127.0.0.1:${telemetry_port}"; then
+    "$fixture_dir/simple_linear.ngc" "127.0.0.1:${telemetry_port}" \
+    --batch-size=8; then
   cat "$root/linuxcnc.log" "$root/server.log" >&2
   exit 1
 fi

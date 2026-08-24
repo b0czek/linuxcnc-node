@@ -1,4 +1,4 @@
-From 1651711566de608f5e8515424b6cc059befc2b3c Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Dariusz <dariusz@localhost>
 Date: Mon, 17 Aug 2026 22:08:20 +0200
 Subject: [PATCH] linuxcnc: clear G76 passes safely on Stop and Step
@@ -33,14 +33,14 @@ handoffs, exit tapers, arc blending, and deterministic cut/retract timing.
  src/emc/sai/saicanon.cc                       |   5 +
  src/emc/task/emccanon.cc                      |  53 ++-
  src/emc/task/emctask.cc                       |   4 +-
- src/emc/task/emctaskmain.cc                   |  70 +++-
+ src/emc/task/emctaskmain.cc                   |  74 +++-
  src/emc/task/task.hh                          |   2 +-
  src/emc/task/taskintf.cc                      |   8 +-
  src/emc/tp/tc_types.h                         |   2 +
- src/emc/tp/tp.c                               | 168 +++++++++-
+ src/emc/tp/tp.c                               | 168 ++++++++-
  src/emc/tp/tp.h                               |   3 +-
  src/emc/tp/tp_types.h                         |  10 +-
- tests/interp/compile/use-rs274.cc              |   4 +
+ tests/interp/compile/use-rs274.cc             |   4 +
  tests/resumable-stop/README                   |  19 +-
  tests/resumable-stop/checkresult              |   3 +-
  .../resumable-stop/g33-followed-by-rapid.ngc  |   7 +
@@ -53,7 +53,7 @@ handoffs, exit tapers, arc blending, and deterministic cut/retract timing.
  tests/resumable-stop/test-ui.py               | 320 +++++++++++++++++-
  tests/resumable-stop/test.ini                 |   1 +
  tests/resumable-stop/test.sh                  |  14 +
- 35 files changed, 824 insertions(+), 56 deletions(-)
+ 35 files changed, 826 insertions(+), 58 deletions(-)
  create mode 100644 tests/resumable-stop/g33-followed-by-rapid.ngc
  create mode 100644 tests/resumable-stop/g76-exit-taper.ngc
  create mode 100644 tests/resumable-stop/g76-handoff.ngc
@@ -673,7 +673,7 @@ index d5c060f669..e0fe4e3616 100644
  }
 -
 diff --git a/src/emc/task/emctaskmain.cc b/src/emc/task/emctaskmain.cc
-index dc3abc0125..966fb760fc 100644
+index 235a747ed2..1addd75459 100644
 --- a/src/emc/task/emctaskmain.cc
 +++ b/src/emc/task/emctaskmain.cc
 @@ -463,6 +463,22 @@ static int programStartLine = 0;	// which line to run program from
@@ -699,9 +699,7 @@ index dc3abc0125..966fb760fc 100644
  
  // Variables to handle MDI call interrupts
  // Depth of call level before interrupted MDI call
-@@ -787,10 +803,9 @@ static void emcTaskResumeInterpreter()
- {
-     if (emcStatus->task.interpState == EMC_TASK_INTERP::PAUSED) {
+@@ -789,8 +805,7 @@ static void emcTaskResumeInterpreter()
          emcStatus->task.interpState = interpResumeState;
      }
      emcStatus->motion.traj.single_stepping = 0;
@@ -823,7 +821,9 @@ index dc3abc0125..966fb760fc 100644
      case EMC_TASK_PLAN_EXECUTE_TYPE:
      case EMC_TASK_PLAN_OPTIONAL_STOP_TYPE:
  	return EMC_TASK_EXEC::DONE;
-@@ -2845,9 +2881,16 @@ if (stepping) {                                                            \
+@@ -2843,11 +2879,18 @@ static EMC_TASK_EXEC emcTaskCheckPostconditions(NMLmsg * cmd)
+ #define STEPPING_CHECK()                                                   \
+ if (stepping) {                                                            \
    if (! steppingWait) {                                                    \
 -    steppingWait = 1;                                                      \
 -    steppedLine = emcStatus->task.currentLine;                             \
@@ -928,7 +928,7 @@ index c1767d5613..5a6a330397 100644
                              // this segment (g64 mode)
  
 diff --git a/src/emc/tp/tp.c b/src/emc/tp/tp.c
-index 676c66e4c5..f5e64c2674 100644
+index 3b78e008c0..2bb6f31ed0 100644
 --- a/src/emc/tp/tp.c
 +++ b/src/emc/tp/tp.c
 @@ -254,7 +254,7 @@ STATIC double tpGetFeedScale(TP_STRUCT const * const tp,
@@ -998,7 +998,7 @@ index 676c66e4c5..f5e64c2674 100644
      tc->id = tp->nextId;
      if (tcqPut(&tp->queue, tc) == -1) {
          rtapi_print_msg(RTAPI_MSG_ERR, "tcqPut failed.\n");
-@@ -1588,6 +1614,19 @@ STATIC inline int tpAddSegmentToQueue(TP_STRUCT * const tp, TC_STRUCT * const tc
+@@ -1588,6 +1616,19 @@ STATIC inline int tpAddSegmentToQueue(TP_STRUCT * const tp, TC_STRUCT * const tc
          tp->nextId++;
      }
  
@@ -1018,7 +1018,7 @@ index 676c66e4c5..f5e64c2674 100644
      // Store end of current move as new final goal of TP
      // KLUDGE: endpoint is garbage for rigid tap since it's supposed to retract past the start point.
      if (tc->motion_type != TC_RIGIDTAP) {
-@@ -1611,6 +1650,10 @@ STATIC int handleModeChange(TC_STRUCT * const prev_tc, TC_STRUCT * const tc)
+@@ -1611,6 +1652,10 @@ STATIC int handleModeChange(TC_STRUCT * const prev_tc, TC_STRUCT * const tc)
          tp_debug_print("Blending disabled: can't blend between rapid and feed motions\n");
          tcSetTermCond(prev_tc, tc, TC_TERM_COND_STOP);
      }
@@ -1029,7 +1029,7 @@ index 676c66e4c5..f5e64c2674 100644
      if (prev_tc->synchronized != TC_SYNC_POSITION &&
              tc->synchronized == TC_SYNC_POSITION) {
          tp_debug_print("Blending disabled: changing spindle sync mode from %d to %d\n",
-@@ -2108,6 +2151,10 @@ tc_blend_type_t tpHandleBlendArc(TP_STRUCT * const tp, TC_STRUCT * const tc) {
+@@ -2108,6 +2153,10 @@ tc_blend_type_t tpHandleBlendArc(TP_STRUCT * const tp, TC_STRUCT * const tc) {
          tp_debug_print(" queue empty\n");
          return NO_BLEND;
      }
@@ -1040,7 +1040,7 @@ index 676c66e4c5..f5e64c2674 100644
      if (prev_tc->progress > prev_tc->target / 2.0) {
          tp_debug_print(" prev_tc progress (%f) is too large, aborting blend arc\n", prev_tc->progress);
          return NO_BLEND;
-@@ -2156,7 +2203,8 @@ tc_blend_type_t tpHandleBlendArc(TP_STRUCT * const tp, TC_STRUCT * const tc) {
+@@ -2156,7 +2205,8 @@ tc_blend_type_t tpHandleBlendArc(TP_STRUCT * const tp, TC_STRUCT * const tc) {
  
  int tpAddLine(TP_STRUCT * const tp, EmcPose end, int canon_motion_type,
              double vel, double ini_maxvel, double acc, double ini_maxjerk, unsigned char enables,
@@ -1050,7 +1050,7 @@ index 676c66e4c5..f5e64c2674 100644
  {
      if (tpErrorCheck(tp) < 0) {
          return TP_ERR_FAIL;
-@@ -2172,12 +2220,17 @@ int tpAddLine(TP_STRUCT * const tp, EmcPose end, int canon_motion_type,
+@@ -2172,12 +2222,17 @@ int tpAddLine(TP_STRUCT * const tp, EmcPose end, int canon_motion_type,
              enables,
              atspeed);
      tc.tag = tag;
@@ -1068,7 +1068,7 @@ index 676c66e4c5..f5e64c2674 100644
  
      // Copy in motion parameters
      tcSetupMotion(&tc,
-@@ -2840,7 +2893,7 @@ int tpCalculateSCurveAccel(TP_STRUCT const * const tp, TC_STRUCT * const tc, TC_
+@@ -2840,7 +2895,7 @@ int tpCalculateSCurveAccel(TP_STRUCT const * const tp, TC_STRUCT * const tc, TC_
          (tp->pausing &&
           (tc->synchronized == TC_SYNC_NONE ||
            tc->synchronized == TC_SYNC_VELOCITY)) ||
@@ -1077,7 +1077,7 @@ index 676c66e4c5..f5e64c2674 100644
      bool is_aborting = tp->aborting;
  
      /*
-@@ -3318,7 +3371,7 @@ STATIC void tpHandleEmptyQueue(TP_STRUCT * const tp)
+@@ -3319,7 +3374,7 @@ STATIC void tpHandleEmptyQueue(TP_STRUCT * const tp)
  
      tpUpdateMovementStatus(tp, NULL);
  
@@ -1086,7 +1086,7 @@ index 676c66e4c5..f5e64c2674 100644
          tpResume(tp);
      }
  }
-@@ -3380,6 +3433,17 @@ STATIC int tpCompleteSegment(TP_STRUCT * const tp,
+@@ -3381,6 +3436,17 @@ STATIC int tpCompleteSegment(TP_STRUCT * const tp,
      // Clean up Ruckig planner resources
      tcCleanupRuckig(tc);
  
@@ -1104,7 +1104,7 @@ index 676c66e4c5..f5e64c2674 100644
      //TODO make progress to match target?
      // done with this move
      if (tp->reverse_run) {
-@@ -4139,22 +4203,31 @@ int tpRunCycle(TP_STRUCT * const tp, long period)
+@@ -4140,22 +4206,31 @@ int tpRunCycle(TP_STRUCT * const tp, long period)
      if(!tc) {
          if (tp->stopping) {
              tpHandleEmptyQueue(tp);
@@ -1138,7 +1138,7 @@ index 676c66e4c5..f5e64c2674 100644
              fabs(emcmotStatus->current_vel) < TP_VEL_EPSILON) {
          emcmotStatus->stopped = 1;
      }
-@@ -4259,6 +4332,28 @@ int tpSetSpindleSync(TP_STRUCT * const tp, int spindle, double sync, int mode) {
+@@ -4260,6 +4335,28 @@ int tpSetSpindleSync(TP_STRUCT * const tp, int spindle, double sync, int mode) {
      return TP_ERR_OK;
  }
  
@@ -1167,7 +1167,7 @@ index 676c66e4c5..f5e64c2674 100644
  int tpPause(TP_STRUCT * const tp)
  {
      if (0 == tp) {
-@@ -4266,12 +4361,57 @@ int tpPause(TP_STRUCT * const tp)
+@@ -4267,12 +4364,57 @@ int tpPause(TP_STRUCT * const tp)
      }
  
      if (tp->stopping) {
@@ -1226,7 +1226,7 @@ index 676c66e4c5..f5e64c2674 100644
              tp->pausing = 1;
          }
      } else {
-@@ -4288,6 +4428,12 @@ int tpResume(TP_STRUCT * const tp)
+@@ -4289,6 +4431,12 @@ int tpResume(TP_STRUCT * const tp)
      tp->pausing = 0;
      tp->stopping = 0;
      tp->stop_tc = 0;
@@ -1239,7 +1239,7 @@ index 676c66e4c5..f5e64c2674 100644
      emcmotStatus->stopped = 0;
      return TP_ERR_OK;
  }
-@@ -4300,6 +4446,10 @@ int tpAbort(TP_STRUCT * const tp)
+@@ -4301,6 +4449,10 @@ int tpAbort(TP_STRUCT * const tp)
  
      if (!tp->aborting) {
          /* const to abort, signal a pause and set our abort flag */
@@ -1289,9 +1289,10 @@ index 8d8aa3a362..15be0f3127 100644
  } TP_STRUCT;
  
 diff --git a/tests/interp/compile/use-rs274.cc b/tests/interp/compile/use-rs274.cc
+index 4a55bad0de..e68a13589c 100644
 --- a/tests/interp/compile/use-rs274.cc
 +++ b/tests/interp/compile/use-rs274.cc
-@@ -257,6 +257,10 @@ int GET_EXTERNAL_DIGITAL_INPUT(int index, int def) { return 0; }
+@@ -258,6 +258,10 @@ int GET_EXTERNAL_DIGITAL_INPUT(int index, int def) { return 0; }
  double GET_EXTERNAL_ANALOG_INPUT(int index, double def) { return 0.0; }
  int GET_EXTERNAL_AXIS_MASK() { return 7; }
  void FINISH(void) {}
@@ -1330,13 +1331,13 @@ index e457195324..28a455c537 100644
 +jerk-limited trajectory planner and rejects zero-limit Ruckig fallback errors
 +while spindle feedback recovers after Resume.
 diff --git a/tests/resumable-stop/checkresult b/tests/resumable-stop/checkresult
-index c491888fc8..dead72d7d5 100755
+index c491888fc8..32057a5049 100755
 --- a/tests/resumable-stop/checkresult
 +++ b/tests/resumable-stop/checkresult
 @@ -1,3 +1,4 @@
  #!/bin/sh
-+set -e
 -test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 15
++set -e
 +test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 25
  grep -q '^resumable stop scenarios complete$' "$1"
 diff --git a/tests/resumable-stop/g33-followed-by-rapid.ngc b/tests/resumable-stop/g33-followed-by-rapid.ngc
@@ -1425,7 +1426,7 @@ index 0000000000..b0eb997e19
 +M5
 +M2
 diff --git a/tests/resumable-stop/test-ui.py b/tests/resumable-stop/test-ui.py
-index 8b6ddc32c3..1454d2e81d 100755
+index 13dc57d304..00d4754446 100755
 --- a/tests/resumable-stop/test-ui.py
 +++ b/tests/resumable-stop/test-ui.py
 @@ -17,13 +17,13 @@ def fail(message):
@@ -1842,5 +1843,3 @@ index 7bdacbb211..7c90c58a63 100755
  )
  
  scenario_log=$(mktemp)
--- 
-2.53.0

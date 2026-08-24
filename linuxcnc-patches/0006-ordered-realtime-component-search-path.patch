@@ -1,4 +1,4 @@
-From 690bc1f56f786f237ca5b3c5e71b1e6de00f43f2 Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Dariusz <dariusz@localhost>
 Date: Wed, 29 Jul 2026 14:39:31 +0200
 Subject: [PATCH] hal: add ordered trusted realtime component search path
@@ -869,6 +869,3 @@ index 0000000000..d4e8e6777f
 +    ../../src/rtapi/rtmod_path.c test.c -o test_rtmod_path
 +./test_rtmod_path
 +rm -f test_rtmod_path
--- 
-2.53.0
-

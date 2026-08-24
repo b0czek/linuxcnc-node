@@ -1,6 +1,6 @@
 // LinuxCNC's rs274 shared library expects the embedding executable to provide
-// the built-in remap modules. This is the standalone daemon equivalent of the
-// old addon's registration and intentionally contains no Node/N-API code.
+// the built-in remap modules. This is the daemon's small Python embedding
+// adapter; the recording canon itself has no Python or RPC dependency.
 
 #include <Python.h>
 

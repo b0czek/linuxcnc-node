@@ -1,9 +1,4 @@
-/**
- * Canon Preview - Header
- *
- * Implements LinuxCNC canonical machining functions for G-code preview/parsing.
- * These functions are called by the rs274ngc interpreter during execution.
- */
+// Adapter from LinuxCNC recording-canon events to native preview operations.
 
 #ifndef LINUXCNC_GRPC_GCODE_CANON_PREVIEW_HPP
 #define LINUXCNC_GRPC_GCODE_CANON_PREVIEW_HPP
@@ -11,13 +6,14 @@
 #include "linuxcnc_grpc/gcode_operation_types.hpp"
 #include <functional>
 
+namespace linuxcnc::recording {
+class Session;
+}
+
 namespace linuxcnc::server::gcode
 {
 
-  /**
-   * Context for tracking parser state during G-code interpretation.
-   * This is set as a thread-local before parsing begins.
-   */
+  /** Context for translating one recording-canon event stream. */
   struct ParseContext
   {
     // Output
@@ -30,7 +26,9 @@ namespace linuxcnc::server::gcode
     Units currentUnits = Units::MM;
     double currentFeedRate = 0.0;
     int selectedTool = 0;
-    bool metric = false;
+    // Canon callbacks use the active program units; operations are normalized
+    // to millimetres at this boundary.
+    double linearUnitScale = 25.4;
 
     // For tracking state changes
     double lastFeedRate = -1.0;
@@ -54,21 +52,8 @@ namespace linuxcnc::server::gcode
     void reportProgress(size_t bytesRead);
   };
 
-  /**
-   * Set the current parse context.
-   * Must be called before interpreter execution.
-   */
-  void setParseContext(ParseContext *ctx);
-
-  /**
-   * Get the current parse context.
-   */
-  ParseContext *getParseContext();
-
-  /**
-   * Clear the current parse context.
-   */
-  void clearParseContext();
+  void consumeRecordingEvents(::linuxcnc::recording::Session &session,
+                              ParseContext &context);
 
 } // namespace linuxcnc::server::gcode
 

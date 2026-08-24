@@ -1,3 +1,4 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: linuxcnc-node maintainers <maintainers@linuxcnc-node.local>
 Date: Tue, 21 Jul 2026 20:00:00 +0200
 Subject: [PATCH] Add headless and manpage-free build options
@@ -6,11 +7,25 @@ Add an explicit backend-only build mode and make manpage generation
 independently optional.  Keep the default GUI and documentation behaviour
 unchanged, while allowing minimal images to build without graphical stacks or
 Asciidoctor.
-
 ---
-Failed to create stream fd: Operation not permitted
-Failed to create stream fd: Operation not permitted
-Failed to create stream fd: Operation not permitted
+ debian/configure                              | 19 ++++-
+ debian/control.main-pkg.in                    | 24 +-----
+ debian/control.top.in                         | 63 +++++++--------
+ debian/linuxcnc-headless.install.in           |  3 +
+ debian/rules.in                               | 14 ++++
+ scripts/linuxcnc.in                           | 16 ++--
+ src/Makefile                                  | 69 ++++++++++++++++-
+ src/Makefile.inc.in                           |  3 +-
+ src/configure.ac                              | 76 ++++++++++++++++---
+ src/emc/usr_intf/Submakefile                  |  4 +-
+ src/emc/usr_intf/axis/Submakefile             | 12 ++-
+ src/emc/usr_intf/axis/extensions/emcmodule.cc |  9 +++
+ src/emc/usr_intf/emcsh.cc                     |  7 +-
+ src/hal/components/Submakefile                |  2 +
+ src/hal/user_comps/Submakefile                |  5 ++
+ 15 files changed, 249 insertions(+), 77 deletions(-)
+ create mode 100644 debian/linuxcnc-headless.install.in
+
 diff --git a/debian/configure b/debian/configure
 index 096b3f4a5e..7eed1f95eb 100755
 --- a/debian/configure
@@ -320,7 +335,7 @@ index 789b9de0ec..3eaca77e7b 100644
      true
    elif [ -e "$INI_DIR/$img" ]; then
 diff --git a/src/Makefile b/src/Makefile
-index 482d453198..8a03c8d78b 100644
+index 482d453198..ba06388947 100644
 --- a/src/Makefile
 +++ b/src/Makefile
 @@ -24,7 +24,7 @@ default: build-software

@@ -1,7 +1,8 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Dariusz Majnert <dariusz@users.noreply.github.com>
 Date: Sat, 27 Jun 2026 20:00:00 +0200
-Subject: [PATCH] rs274ngc: preserve G96/G97 modal state across task-mode switches
+Subject: [PATCH] rs274ngc: preserve G96/G97 modal state across task-mode
+ switches
 
 Every MANUAL/MDI task-mode transition calls Interp::synch(), which
 unconditionally reset _setup.spindle_mode[] to CONSTANT_RPM (G97) for
@@ -14,7 +15,6 @@ Interp::init(), and preserve _setup.spindle_mode[] across synch()
 calls.  Also update Interp::convert_stop() (M2/M30) to set the
 interpreter model back to G97 when it already turns CSS off at the
 canon level.
-
 ---
  src/emc/rs274ngc/interp_convert.cc | 3 ++-
  src/emc/rs274ngc/rs274ngc_pre.cc   | 7 +++++--

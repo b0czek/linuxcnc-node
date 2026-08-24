@@ -265,3 +265,12 @@ and tapered passes, synchronized exit tapers, arc-blend clearance endpoints,
 an unmarked post-G33 rapid, and repeated Stops with deterministic cut-side
 timing near the cut/retract handoff. The internal NML and motion fields add no
 public status field or Node.js binding requirement.
+
+### 0010 — Recording canon backend for native G-code preview
+
+Adds `recordingcanon.cc` and `recordingcanon.hh`, a separate link-selected
+implementation of LinuxCNC's global CANON API for native offline interpreters.
+It follows the same backend boundary already used by task (`emccanon.cc`), Axis
+(`gcodemodule.cc`), and the standalone interpreter (`saicanon.cc`), leaving
+those existing implementations untouched.
+

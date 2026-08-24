@@ -172,6 +172,18 @@ std::string make_large_gcode() {
   return result;
 }
 
+constexpr std::size_t kChunkedPreviewFeedCount = 257;
+
+std::string make_chunked_preview_gcode() {
+  std::string result{"G21 G90\nG0 X0 Y0 Z0\n"};
+  for (std::size_t index = 1; index <= kChunkedPreviewFeedCount; ++index) {
+    result += "G1 X" + std::to_string(index % 97) + " Y" +
+              std::to_string((index * 7) % 89) + " F100\n";
+  }
+  result += "M2\n";
+  return result;
+}
+
 linuxcnc::v1::CreateWorkspaceResponse upload_program(
     linuxcnc::v1::ProgramService::Stub* program, const std::string& path,
     const std::string& contents) {
@@ -194,6 +206,129 @@ linuxcnc::v1::CreateWorkspaceResponse upload_program(
   assert(upload->WritesDone());
   assert(upload->Finish().ok());
   return workspace;
+}
+
+void delete_workspace(linuxcnc::v1::ProgramService::Stub* program,
+                      const std::string& workspace_id) {
+  linuxcnc::v1::DeleteWorkspaceRequest request;
+  request.set_workspace_id(workspace_id);
+  grpc::ClientContext context;
+  google::protobuf::Empty response;
+  assert(program->DeleteWorkspace(&context, request, &response).ok());
+}
+
+void verify_chunked_preview_stream(
+    linuxcnc::v1::ProgramService::Stub* program,
+    std::size_t batch_limit) {
+  // Leave enough work outstanding that cancellation is observed while the
+  // bounded server queue is backpressuring the serialized parser.
+  const auto cancelled_workspace = upload_program(
+      program, "cancelled-preview.ngc", make_large_gcode());
+  linuxcnc::v1::ParseProgramRequest cancelled_request;
+  cancelled_request.mutable_entry()->set_workspace_id(
+      cancelled_workspace.workspace_id());
+  cancelled_request.mutable_entry()->set_relative_path(
+      "cancelled-preview.ngc");
+  grpc::ClientContext cancelled_context;
+  cancelled_context.set_deadline(
+      std::chrono::system_clock::now() + std::chrono::seconds(15));
+  auto cancelled_stream = program->ParseProgram(
+      &cancelled_context, cancelled_request);
+  linuxcnc::v1::ParseProgramEvent event;
+  bool saw_cancelled_batch = false;
+  while (cancelled_stream->Read(&event)) {
+    if (!event.has_batch()) continue;
+    assert(event.batch().operations_size() > 0);
+    assert(static_cast<std::size_t>(event.batch().operations_size()) <=
+           batch_limit);
+    saw_cancelled_batch = true;
+    cancelled_context.TryCancel();
+    break;
+  }
+  while (cancelled_stream->Read(&event)) {}
+  const auto cancelled_status = cancelled_stream->Finish();
+  assert(saw_cancelled_batch);
+  assert(cancelled_status.error_code() == grpc::StatusCode::CANCELLED);
+
+  // A successful parse immediately after cancellation proves the parser
+  // worker, stream admission, and workspace lease were all released.
+  const auto workspace = upload_program(
+      program, "chunked-preview.ngc", make_chunked_preview_gcode());
+  linuxcnc::v1::ParseProgramRequest request;
+  request.mutable_entry()->set_workspace_id(workspace.workspace_id());
+  request.mutable_entry()->set_relative_path("chunked-preview.ngc");
+  grpc::ClientContext context;
+  context.set_deadline(
+      std::chrono::system_clock::now() + std::chrono::seconds(15));
+  auto stream = program->ParseProgram(&context, request);
+
+  std::size_t batch_count = 0;
+  std::size_t last_batch_size = 0;
+  std::size_t operation_count = 0;
+  std::size_t feed_count = 0;
+  std::uint64_t progress_bytes = 0;
+  std::uint64_t progress_operations = 0;
+  std::uint32_t progress_percent = 0;
+  bool saw_progress = false;
+  bool saw_summary = false;
+  while (stream->Read(&event)) {
+    // A successful summary is terminal: no progress or batch may follow it.
+    assert(!saw_summary);
+    if (event.has_batch()) {
+      const auto& batch = event.batch();
+      assert(batch.operations_size() > 0);
+      assert(static_cast<std::size_t>(batch.operations_size()) <= batch_limit);
+      ++batch_count;
+      last_batch_size = static_cast<std::size_t>(batch.operations_size());
+      operation_count += static_cast<std::size_t>(batch.operations_size());
+      for (const auto& operation : batch.operations()) {
+        if (operation.type() != linuxcnc::v1::OPERATION_TYPE_FEED) continue;
+        ++feed_count;
+        assert(feed_count <= kChunkedPreviewFeedCount);
+        assert(operation.has_pos());
+        assert(operation.pos().values_size() >= 2);
+        assert(operation.pos().values(0) ==
+               static_cast<double>(feed_count % 97));
+        assert(operation.pos().values(1) ==
+               static_cast<double>((feed_count * 7) % 89));
+      }
+      // Exercise the daemon's bounded queue with a temporarily slow reader.
+      if (batch_count == 1)
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    } else if (event.has_progress()) {
+      const auto& progress = event.progress();
+      assert(progress.bytes_read() >= progress_bytes);
+      assert(progress.operation_count() >= progress_operations);
+      assert(progress.percent() >= progress_percent);
+      progress_bytes = progress.bytes_read();
+      progress_operations = progress.operation_count();
+      progress_percent = progress.percent();
+      saw_progress = true;
+    } else if (event.has_summary()) {
+      assert(batch_count > 1);
+      assert(last_batch_size > 0);
+      assert(last_batch_size < batch_limit);
+      assert(event.summary().operation_count() == operation_count);
+      assert(event.summary().has_extents());
+      saw_summary = true;
+    } else if (event.has_error()) {
+      std::cerr << "Chunked ParseProgram error: "
+                << event.error().message() << "\n";
+      std::abort();
+    } else {
+      std::cerr << "Chunked ParseProgram returned an empty event\n";
+      std::abort();
+    }
+  }
+  const auto status = stream->Finish();
+  assert(status.ok());
+  assert(batch_count > 1);
+  assert(feed_count == kChunkedPreviewFeedCount);
+  assert(saw_progress);
+  assert(saw_summary);
+
+  delete_workspace(program, workspace.workspace_id());
+  delete_workspace(program, cancelled_workspace.workspace_id());
 }
 
 int probe_reacquire(const std::string& endpoint) {
@@ -364,16 +499,24 @@ int hold_shutdown(const std::string& endpoint) {
 int main(int argc, char** argv) {
   if (argc < 3) {
     std::cerr << "usage: linuxcnc-grpc-live-integration ENDPOINT GCODE_FIXTURE "
-                 "[TELEMETRY_ENDPOINT] [--hold-shutdown|--probe-reacquire]\n";
+                 "[TELEMETRY_ENDPOINT] [--batch-size=N] "
+                 "[--hold-shutdown|--probe-reacquire]\n";
     return 2;
   }
   const std::string endpoint = argc > 1 ? argv[1] : "127.0.0.1:50051";
   std::string telemetry_endpoint = "127.0.0.1:50052";
   std::string mode;
+  std::size_t batch_limit = 128;
   for (int index = 3; index < argc; ++index) {
     const std::string argument(argv[index]);
-    if (argument.rfind("--", 0) == 0) mode = argument;
-    else telemetry_endpoint = argument;
+    if (argument.rfind("--batch-size=", 0) == 0) {
+      batch_limit = static_cast<std::size_t>(
+          std::stoul(argument.substr(std::string("--batch-size=").size())));
+    } else if (argument.rfind("--", 0) == 0) {
+      mode = argument;
+    } else {
+      telemetry_endpoint = argument;
+    }
   }
   if (mode == "--hold-shutdown") return hold_shutdown(endpoint);
   if (mode == "--probe-reacquire") return probe_reacquire(endpoint);
@@ -548,6 +691,8 @@ int main(int argc, char** argv) {
   assert(parse_status.ok());
   assert(parsed_operations > 0);
   assert(saw_parse_summary);
+
+  verify_chunked_preview_stream(program.get(), batch_limit);
 
   linuxcnc::v1::DeleteWorkspaceRequest delete_workspace_request;
   delete_workspace_request.set_workspace_id(workspace.workspace_id());

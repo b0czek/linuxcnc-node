@@ -1,4 +1,4 @@
-From e428624410404b5287741b47999eb38ba1252935 Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Dariusz Majnert <dariusz.majnert@gmail.com>
 Date: Fri, 14 Aug 2026 18:32:49 +0200
 Subject: [PATCH] native automatic tool wear
@@ -1002,10 +1002,10 @@ index d2a0e0d0f2..e5d71a60e8 100644
  }
 -
 diff --git a/src/emc/task/emctaskmain.cc b/src/emc/task/emctaskmain.cc
-index a590facb26..dc3abc0125 100644
+index c98b34f24f..235a747ed2 100644
 --- a/src/emc/task/emctaskmain.cc
 +++ b/src/emc/task/emctaskmain.cc
-@@ -2320,6 +2320,8 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -2322,6 +2322,8 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  	retval = emcToolSetOffset(emc_tool_set_offset_msg->pocket,
                                    emc_tool_set_offset_msg->toolno,
                                    emc_tool_set_offset_msg->offset,
@@ -1299,9 +1299,10 @@ index 4bc9ee3753..6f3aab576f 100644
   N..... MESSAGE("Verify METRIC Sherline.tbl file!")
   N..... MESSAGE("Align XY=0 at center, Z=0 at surface, spindle to match S value, hit [Run]")
 diff --git a/tests/interp/compile/use-rs274.cc b/tests/interp/compile/use-rs274.cc
+index 223fcdf3bd..4a55bad0de 100644
 --- a/tests/interp/compile/use-rs274.cc
 +++ b/tests/interp/compile/use-rs274.cc
-@@ -143,6 +143,7 @@ void WAIT_SPINDLE_ORIENT_COMPLETE(int spindle, double timeout) {}
+@@ -143,7 +143,8 @@ void WAIT_SPINDLE_ORIENT_COMPLETE(int spindle, double timeout) {}
  void LOCK_SPINDLE_Z() {}
  void USE_SPINDLE_FORCE() {}
  void USE_NO_SPINDLE_FORCE() {}
@@ -1310,6 +1311,7 @@ diff --git a/tests/interp/compile/use-rs274.cc b/tests/interp/compile/use-rs274.
 +                                 const EmcPose& wear_offset, double diameter,
                                   double frontangle, double backangle, int orientation) {}
  void USE_TOOL_LENGTH_OFFSET(const EmcPose& offset) {}
+ void CHANGE_TOOL() {}	
 diff --git a/tests/interp/g10/g10-l1-l10/expected b/tests/interp/g10/g10-l1-l10/expected
 index cbc131cb22..c9b18bd22c 100644
 --- a/tests/interp/g10/g10-l1-l10/expected
@@ -2050,5 +2052,3 @@ index d5986569f1..928fdfd1ed 100644
  
  sequence number 30.000000
  X = 0.111000
--- 
-2.53.0

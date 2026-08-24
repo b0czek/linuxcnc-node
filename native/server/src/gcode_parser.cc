@@ -4,9 +4,11 @@
 
 #include "interp_base.hh"
 #include "interp_return.hh"
+#include "recordingcanon.hh"
 #include "tooldata.hh"
 
 #include <algorithm>
+#include <cstdlib>
 #include <mutex>
 #include <stdexcept>
 #include <sys/stat.h>
@@ -36,6 +38,13 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
   std::lock_guard<std::mutex> lock(rs274_mutex);
   ensure_python_modules_linked();
 
+  // Interp::ini_load() loads the parameter file name; the rest of LinuxCNC's
+  // interpreter configuration (including REMAP and PYTHON) is intentionally
+  // discovered through INI_FILE_NAME during init(). Parsing is serialized, so
+  // this process-global LinuxCNC convention cannot race another session.
+  if (setenv("INI_FILE_NAME", options.ini_path.c_str(), 1) != 0)
+    throw std::runtime_error("failed to set LinuxCNC INI_FILE_NAME");
+
   struct stat file_stat {};
   if (stat(filepath.c_str(), &file_stat) != 0)
     throw std::runtime_error("G-code file not found: " + filepath);
@@ -50,7 +59,10 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
   context.cancellationCallback = options.is_cancelled;
   context.batchSize = options.batch_size;
 
-  setParseContext(&context);
+  // The selected canon backend records every call made by the interpreter,
+  // including calls from Python/NGC remaps. Translation and RPC batching stay
+  // outside the interpreter/canonical call stack.
+  ::linuxcnc::recording::Session recording_session;
   bool opened = false;
 
   try {
@@ -69,6 +81,7 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
     }
     if (interpreter_->init() != 0)
       throw std::runtime_error("failed to initialize rs274 interpreter");
+    consumeRecordingEvents(recording_session, context);
 
     // Tool data is optional for preview. LinuxCNC's canonical tool callbacks
     // continue to return safe defaults when no tool table is available.
@@ -104,6 +117,7 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
 
       result = interpreter_->execute();
       ++line_count;
+      consumeRecordingEvents(recording_session, context);
       if (!context.cancellationRequested()) {
         // Delivery happens after execute returns, outside canonical callback
         // code, so a gRPC adapter can enqueue work without doing network I/O
@@ -135,6 +149,7 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
 
     interpreter_->close();
     opened = false;
+    consumeRecordingEvents(recording_session, context);
 
     // Flush the final partial batch only if the consumer is still connected.
     // A cancelled stream must not retain or deliver an unbounded tail.
@@ -145,11 +160,8 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
   } catch (...) {
     if (opened)
       interpreter_->close();
-    clearParseContext();
     throw;
   }
-
-  clearParseContext();
 
   if (!context.extents.isValid()) {
     context.extents.min = {0, 0, 0};

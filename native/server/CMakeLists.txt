@@ -105,7 +105,8 @@ if(LINUXCNC_GRPC_ENABLE_NML AND
         target_sources(linuxcnc-grpc-domain PRIVATE
             src/gcode_parser.cc
             src/gcode_canon_preview.cc
-            src/gcode_python_modules.cc)
+            src/gcode_python_modules.cc
+            "${LINUXCNC_ROOT}/src/emc/rs274ngc/recordingcanon.cc")
         target_compile_definitions(linuxcnc-grpc-domain PUBLIC LINUXCNC_GRPC_HAS_RS274=1)
         set(LINUXCNC_GRPC_HAS_RS274 TRUE)
         target_compile_definitions(linuxcnc-grpc-domain PRIVATE ULAPI)
@@ -118,7 +119,6 @@ if(LINUXCNC_GRPC_ENABLE_NML AND
             "${LINUXCNC_ROOT}/src/emc/nml_intf"
             "${LINUXCNC_ROOT}/src/emc/tooldata"
             "${LINUXCNC_ROOT}/src/emc/motion"
-            "${LINUXCNC_ROOT}/src/emc/sai"
             "${LINUXCNC_ROOT}/src/libnml/buffer"
             "${LINUXCNC_ROOT}/src/libnml/cms"
             "${LINUXCNC_ROOT}/src/libnml/linklist"

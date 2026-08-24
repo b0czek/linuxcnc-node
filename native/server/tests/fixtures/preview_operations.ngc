@@ -1,0 +1,21 @@
+; Exercise the native preview target implemented by LinuxCNC's gcode module.
+G21
+G17
+G90
+G54
+G0 X0 Y0 Z5
+F100
+G1 X10 Y0 Z0
+G2 X10 Y20 I0 J10
+G4 P0.25
+G18
+G0 X0 Y0 Z0
+G2 X20 Z0 I10 K0
+G17
+G92 X0 Y0
+G1 X5 Y5 F200
+G92.1
+G20
+G1 X1 Y2
+G21
+M2

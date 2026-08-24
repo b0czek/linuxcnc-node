@@ -78,3 +78,25 @@ development tools are available, configure with
 Wire builds also install `linuxcnc-grpc-health-check`. It calls the standard
 gRPC health service at `127.0.0.1:50051` by default, or at the endpoint passed
 as its first argument, and exits nonzero unless the server reports `SERVING`.
+
+## Program preview gRPC stream
+
+`ProgramService.ParseProgram` is the only public program-preview stream. It is
+a finite, server-streaming RPC; program previews are not published through the
+position-history WebSocket. A successful stream contains zero or more
+coalesced `progress` events and ordered, nonempty `batch` events, followed by
+exactly one terminal `summary`. The summary carries the authoritative extents
+and total operation count. An `error` event is terminal for an interpreter
+failure.
+
+Each batch contains at most `--gcode-batch-size` operations (128 by default).
+The final partial batch is sent before the summary. The server retains at most
+two encoded batches ahead of the active write, so a slow client applies
+backpressure to the serialized interpreter instead of growing an unbounded
+preview in daemon memory. Progress may be coalesced under load; operation
+batches are never coalesced or discarded.
+
+Clients should append `batch.operations` as events arrive and use the summary
+to finalize camera fitting or other whole-program state. Cancelling or closing
+the RPC stops interpretation at the next interpreter-step boundary, releases
+the workspace lease, and does not emit a success summary.

@@ -1,17 +1,49 @@
 #include "linuxcnc_grpc/gcode_parser.hpp"
 
+#include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <iostream>
+#include <iterator>
 #include <string>
+#include <vector>
 
+using linuxcnc::server::gcode::ArcOp;
+using linuxcnc::server::gcode::DwellOp;
+using linuxcnc::server::gcode::FeedOp;
+using linuxcnc::server::gcode::FeedRateChangeOp;
+using linuxcnc::server::gcode::G5xOffsetOp;
+using linuxcnc::server::gcode::G92OffsetOp;
+using linuxcnc::server::gcode::Operation;
 using linuxcnc::server::gcode::OperationBatch;
 using linuxcnc::server::gcode::ParseOptions;
+using linuxcnc::server::gcode::PlaneChangeOp;
 using linuxcnc::server::gcode::SerializedRs274Parser;
+using linuxcnc::server::gcode::TraverseOp;
+using linuxcnc::server::gcode::UnitsChangeOp;
+
+namespace {
+
+template <typename T>
+std::size_t count_operations(const std::vector<Operation>& operations) {
+  return static_cast<std::size_t>(
+      std::count_if(operations.begin(), operations.end(), [](const auto& op) {
+        return std::holds_alternative<T>(op);
+      }));
+}
+
+bool nearly_equal(double actual, double expected) {
+  return std::abs(actual - expected) < 1e-9;
+}
+
+}  // namespace
 
 int main(int argc, char** argv) {
-  if (argc != 3) {
-    std::cerr << "usage: gcode_parser_integration <ini-path> <gcode-path>\n";
+  if (argc != 6) {
+    std::cerr << "usage: gcode_parser_integration <ini-path> <gcode-path> "
+                 "<operations-gcode-path> <cutter-comp-gcode-path> "
+                 "<python-remap-gcode-path>\n";
     return 2;
   }
 
@@ -35,6 +67,109 @@ int main(int argc, char** argv) {
   assert(parsed.operationCount > 0);
   assert(delivered > 0);
   assert(parsed.extents.isValid());
+
+  std::vector<Operation> preview_operations;
+  ParseOptions preview_options;
+  preview_options.ini_path = argv[1];
+  preview_options.batch_size = 3;
+  preview_options.on_batch = [&](OperationBatch&& batch) {
+    preview_operations.insert(
+        preview_operations.end(),
+        std::make_move_iterator(batch.begin()),
+        std::make_move_iterator(batch.end()));
+    return true;
+  };
+  const auto preview = parser.parse_file(argv[3], preview_options);
+  assert(!preview.cancelled);
+  assert(preview.operationCount == preview_operations.size());
+  assert(count_operations<TraverseOp>(preview_operations) >= 2);
+  assert(count_operations<FeedOp>(preview_operations) >= 3);
+  assert(count_operations<ArcOp>(preview_operations) == 2);
+  assert(count_operations<DwellOp>(preview_operations) == 1);
+  assert(count_operations<G5xOffsetOp>(preview_operations) >= 1);
+  assert(count_operations<G92OffsetOp>(preview_operations) >= 1);
+  assert(count_operations<PlaneChangeOp>(preview_operations) >= 2);
+  // Interpreter initialization may report its configured unit system before
+  // the program's explicit G21. The G20/G21 pair must add at least two unit
+  // transitions in every case.
+  assert(count_operations<UnitsChangeOp>(preview_operations) >= 2);
+  assert(count_operations<FeedRateChangeOp>(preview_operations) >= 2);
+  assert(preview.extents.isValid());
+  assert(preview.extents.max.x >= 25.4);
+  assert(preview.extents.max.y >= 50.8);
+
+  const auto inch_feed = std::find_if(
+      preview_operations.begin(), preview_operations.end(), [](const auto& op) {
+        const auto* feed = std::get_if<FeedOp>(&op);
+        return feed && nearly_equal(feed->pos.x, 25.4) &&
+               nearly_equal(feed->pos.y, 50.8);
+      });
+  assert(inch_feed != preview_operations.end());
+
+  // Cutter compensation is resolved by the interpreter before canonical
+  // output. The preview therefore receives the compensated tool-center path:
+  // a 2 mm diameter left compensation offsets these legs by a 1 mm radius.
+  std::vector<Operation> compensated_operations;
+  ParseOptions compensated_options;
+  compensated_options.ini_path = argv[1];
+  compensated_options.on_batch = [&](OperationBatch&& batch) {
+    compensated_operations.insert(
+        compensated_operations.end(),
+        std::make_move_iterator(batch.begin()),
+        std::make_move_iterator(batch.end()));
+    return true;
+  };
+  const auto compensated = parser.parse_file(argv[4], compensated_options);
+  assert(!compensated.cancelled);
+  assert(compensated.operationCount == compensated_operations.size());
+  const auto compensated_horizontal = std::find_if(
+      compensated_operations.begin(), compensated_operations.end(),
+      [](const auto& op) {
+        const auto* feed = std::get_if<FeedOp>(&op);
+        return feed && nearly_equal(feed->pos.x, 9.0) &&
+               nearly_equal(feed->pos.y, 1.0);
+      });
+  const auto compensated_vertical = std::find_if(
+      compensated_operations.begin(), compensated_operations.end(),
+      [](const auto& op) {
+        const auto* feed = std::get_if<FeedOp>(&op);
+        return feed && nearly_equal(feed->pos.x, 9.0) &&
+               nearly_equal(feed->pos.y, 10.0);
+      });
+  assert(compensated_horizontal != compensated_operations.end());
+  assert(compensated_vertical != compensated_operations.end());
+
+  // Both self.execute() and direct emccanon calls in a Python remap use the
+  // same recording canon as ordinary G-code. No callback into the RPC adapter
+  // is involved, and self.task == 0 keeps LinuxCNC's preview semantics.
+  std::vector<Operation> remap_operations;
+  ParseOptions remap_options;
+  remap_options.ini_path = argv[1];
+  remap_options.on_batch = [&](OperationBatch&& batch) {
+    remap_operations.insert(
+        remap_operations.end(),
+        std::make_move_iterator(batch.begin()),
+        std::make_move_iterator(batch.end()));
+    return true;
+  };
+  const auto remapped = parser.parse_file(argv[5], remap_options);
+  assert(!remapped.cancelled);
+  assert(remapped.operationCount == remap_operations.size());
+  const auto self_execute_feed = std::find_if(
+      remap_operations.begin(), remap_operations.end(), [](const auto& op) {
+        const auto* feed = std::get_if<FeedOp>(&op);
+        return feed && nearly_equal(feed->pos.x, 12.0) &&
+               nearly_equal(feed->pos.y, 3.0);
+      });
+  const auto direct_canon_feed = std::find_if(
+      remap_operations.begin(), remap_operations.end(), [](const auto& op) {
+        const auto* feed = std::get_if<FeedOp>(&op);
+        return feed && feed->lineNumber == 405 &&
+               nearly_equal(feed->pos.x, 20.0) &&
+               nearly_equal(feed->pos.y, 4.0);
+      });
+  assert(self_execute_feed != remap_operations.end());
+  assert(direct_canon_feed != remap_operations.end());
 
   // A callback can cancel after a bounded batch. Cancellation is observed
   // before the next rs274 read/execute step and never removes that batch.

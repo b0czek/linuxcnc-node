@@ -1,1080 +1,374 @@
-/**
- * Canon Preview - Implementation
- *
- * Implements LinuxCNC canonical machining functions for G-code preview/parsing.
- * These functions are called by the rs274ngc interpreter during execution.
- */
-
 #include "linuxcnc_grpc/gcode_canon_preview.hpp"
 
-// Public LinuxCNC headers only
-#include "canon.hh"
-#include "emcpos.h"
-#include "emctool.h"
-#include "tooldata.hh"
+#include "recordingcanon.hh"
 
 #include <algorithm>
-#include <cstring>
 #include <cmath>
+#include <utility>
 
-// Keep the canonical callback names in the global namespace required by
-// rs274ngc while allowing the extracted domain types to live under the daemon
-// namespace. This alias is local to this translation unit.
-namespace GCodeParser = linuxcnc::server::gcode;
+namespace linuxcnc::server::gcode {
+namespace {
 
-// Disable _task for preview mode
-int _task = 0;
+namespace canon = ::linuxcnc::recording;
+constexpr double pi = 3.14159265358979323846;
 
-// Parameter file name storage
-char _parameter_file_name[PARAMETER_FILE_NAME_LENGTH];
+double positive_angle(double angle) {
+  const double turn = 2.0 * pi;
+  angle = std::fmod(angle, turn);
+  return angle < 0.0 ? angle + turn : angle;
+}
 
-// Tool offset storage
-EmcPose tool_offset;
+bool angle_is_on_arc(double angle, double start_angle, double sweep,
+                     bool clockwise) {
+  constexpr double epsilon = 1e-12;
+  const double distance = clockwise
+                              ? positive_angle(start_angle - angle)
+                              : positive_angle(angle - start_angle);
+  return distance <= sweep + epsilon;
+}
 
-// Thread-local parse context
-static thread_local linuxcnc::server::gcode::ParseContext *g_parseContext = nullptr;
+Plane preview_plane(CANON_PLANE plane) {
+  switch (plane) {
+    case CANON_PLANE::XY: return Plane::XY;
+    case CANON_PLANE::YZ: return Plane::YZ;
+    case CANON_PLANE::XZ: return Plane::XZ;
+    case CANON_PLANE::UV: return Plane::UV;
+    case CANON_PLANE::VW: return Plane::VW;
+    case CANON_PLANE::UW: return Plane::UW;
+  }
+  return Plane::XY;
+}
 
-namespace linuxcnc::server::gcode
-{
+double linear_value(const ParseContext& context, double value) {
+  return value * context.linearUnitScale;
+}
 
-  namespace
-  {
-    constexpr double pi = 3.14159265358979323846;
+Position preview_position(const ParseContext& context, const EmcPose& pose) {
+  return {linear_value(context, pose.tran.x),
+          linear_value(context, pose.tran.y),
+          linear_value(context, pose.tran.z),
+          pose.a, pose.b, pose.c,
+          linear_value(context, pose.u),
+          linear_value(context, pose.v),
+          linear_value(context, pose.w)};
+}
 
-    double positiveAngle(double angle)
-    {
-      const double turn = 2.0 * pi;
-      angle = std::fmod(angle, turn);
-      return angle < 0.0 ? angle + turn : angle;
-    }
+void set_plane_end(Plane plane, double first, double second,
+                   Position* position) {
+  switch (plane) {
+    case Plane::XY: position->x = first; position->y = second; break;
+    case Plane::YZ: position->y = first; position->z = second; break;
+    case Plane::XZ: position->z = first; position->x = second; break;
+    case Plane::UV: position->u = first; position->v = second; break;
+    case Plane::VW: position->v = first; position->w = second; break;
+    case Plane::UW: position->u = first; position->w = second; break;
+  }
+}
 
-    bool angleIsOnArc(double angle, double startAngle, double sweep, bool clockwise)
-    {
-      constexpr double epsilon = 1e-12;
-      const double distance = clockwise
-                                  ? positiveAngle(startAngle - angle)
-                                  : positiveAngle(angle - startAngle);
-      return distance <= sweep + epsilon;
-    }
-
-    void updateArcExtents(ParseContext &ctx, const Position &start, const ArcOp &op)
-    {
-      double startFirst;
-      double startSecond;
-      switch (op.plane)
-      {
-      case Plane::XY:
-        startFirst = start.x;
-        startSecond = start.y;
-        break;
-      case Plane::YZ:
-        startFirst = start.y;
-        startSecond = start.z;
-        break;
-      case Plane::XZ:
-        startFirst = start.z;
-        startSecond = start.x;
-        break;
-      default:
-        ctx.updateExtents(start);
-        ctx.updateExtents(op.pos);
-        return;
-      }
-
-      const double firstOffset = startFirst - op.arcData.centerFirst;
-      const double secondOffset = startSecond - op.arcData.centerSecond;
-      const double radius = std::hypot(firstOffset, secondOffset);
-      if (!std::isfinite(radius) || radius <= 0.0)
-      {
-        ctx.updateExtents(start);
-        ctx.updateExtents(op.pos);
-        return;
-      }
-
-      double endFirst;
-      double endSecond;
-      switch (op.plane)
-      {
-      case Plane::XY:
-        endFirst = op.pos.x;
-        endSecond = op.pos.y;
-        break;
-      case Plane::YZ:
-        endFirst = op.pos.y;
-        endSecond = op.pos.z;
-        break;
-      case Plane::XZ:
-        endFirst = op.pos.z;
-        endSecond = op.pos.x;
-        break;
-      default:
-        return;
-      }
-
-      const double startAngle = std::atan2(secondOffset, firstOffset);
-      const double endAngle = std::atan2(endSecond - op.arcData.centerSecond,
-                                         endFirst - op.arcData.centerFirst);
-      const bool clockwise = op.arcData.rotation < 0;
-      double sweep = clockwise
-                         ? positiveAngle(startAngle - endAngle)
-                         : positiveAngle(endAngle - startAngle);
-      const int turnCount = std::abs(op.arcData.rotation);
-      if (sweep == 0.0 && turnCount >= 1)
-        sweep = 2.0 * pi;
-      else if (turnCount >= 1)
-        sweep += (turnCount - 1) * 2.0 * pi;
-      else if (sweep == 0.0)
-        sweep = 2.0 * pi;
-
-      ctx.updateExtents(start);
-      ctx.updateExtents(op.pos);
-      constexpr double cardinalAngles[] = {
-          0.0,
-          pi / 2.0,
-          pi,
-          3.0 * pi / 2.0,
-      };
-      for (const double angle : cardinalAngles)
-      {
-        if (!angleIsOnArc(angle, startAngle, sweep, clockwise))
-          continue;
-
-        Position point = start;
-        const double first = op.arcData.centerFirst + radius * std::cos(angle);
-        const double second = op.arcData.centerSecond + radius * std::sin(angle);
-        switch (op.plane)
-        {
-        case Plane::XY:
-          point.x = first;
-          point.y = second;
-          break;
-        case Plane::YZ:
-          point.y = first;
-          point.z = second;
-          break;
-        case Plane::XZ:
-          point.z = first;
-          point.x = second;
-          break;
-        default:
-          break;
-        }
-        ctx.updateExtents(point);
-      }
-    }
-  } // namespace
-
-  void ParseContext::addOperation(Operation &&op)
-  {
-    if (cancelled)
+void update_arc_extents(ParseContext& context, const Position& start,
+                        const ArcOp& operation) {
+  double start_first;
+  double start_second;
+  switch (operation.plane) {
+    case Plane::XY: start_first = start.x; start_second = start.y; break;
+    case Plane::YZ: start_first = start.y; start_second = start.z; break;
+    case Plane::XZ: start_first = start.z; start_second = start.x; break;
+    default:
+      context.updateExtents(start);
+      context.updateExtents(operation.pos);
       return;
-    operations.push_back(std::move(op));
-    ++operationCount;
   }
-
-  bool ParseContext::flushReadyBatch()
-  {
-    if (!batchCallback || batchSize == 0 || operations.size() < batchSize)
-      return !cancelled;
-    return flushBatch();
-  }
-
-  bool ParseContext::flushBatch()
-  {
-    if (!batchCallback || operations.empty())
-      return !cancelled;
-
-    const std::size_t maxBatch = batchSize == 0 ? operations.size() : batchSize;
-    while (!operations.empty() && !cancelled) {
-      const std::size_t count = std::min(maxBatch, operations.size());
-      OperationBatch batch;
-      batch.reserve(count);
-      for (std::size_t index = 0; index < count; ++index)
-        batch.push_back(std::move(operations[index]));
-      operations.erase(operations.begin(), operations.begin() + count);
-      if (!batchCallback(std::move(batch)))
-        cancelled = true;
-    }
-    return !cancelled;
-  }
-
-  bool ParseContext::cancellationRequested()
-  {
-    if (cancelled)
-      return true;
-    if (cancellationCallback && cancellationCallback())
-      cancelled = true;
-    return cancelled;
-  }
-
-  void ParseContext::updateExtents(const Position &pos)
-  {
-    extents.update(pos);
-  }
-
-  void ParseContext::reportProgress(size_t bytesRead)
-  {
-    if (progressCallback && totalBytes > 0)
-    {
-      ParseProgress progress;
-      progress.bytesRead = bytesRead;
-      progress.totalBytes = totalBytes;
-      progress.percent = (static_cast<double>(bytesRead) / totalBytes) * 100.0;
-      progress.operationCount = operationCount;
-      progressCallback(progress);
-    }
-  }
-
-  void setParseContext(ParseContext *ctx)
-  {
-    g_parseContext = ctx;
-  }
-
-  ParseContext *getParseContext()
-  {
-    return g_parseContext;
-  }
-
-  void clearParseContext()
-  {
-    g_parseContext = nullptr;
-  }
-
-} // namespace linuxcnc::server::gcode
-
-// Helper macro to get context safely
-#define GET_CTX()                           \
-  auto *ctx = linuxcnc::server::gcode::getParseContext(); \
-  if (!ctx)                                 \
+  const double first_offset = start_first - operation.arcData.centerFirst;
+  const double second_offset = start_second - operation.arcData.centerSecond;
+  const double radius = std::hypot(first_offset, second_offset);
+  if (!std::isfinite(radius) || radius <= 0.0) {
+    context.updateExtents(start);
+    context.updateExtents(operation.pos);
     return;
-
-#define GET_CTX_RET(ret)                    \
-  auto *ctx = linuxcnc::server::gcode::getParseContext(); \
-  if (!ctx)                                 \
-    return ret;
-
-// ============================================================================
-// Motion Functions
-// ============================================================================
-
-void STRAIGHT_TRAVERSE(int lineno,
-                       double x, double y, double z,
-                       double a, double b, double c,
-                       double u, double v, double w)
-{
-  GET_CTX();
-
-  if (!ctx->metric)
-  {
-    x *= 25.4;
-    y *= 25.4;
-    z *= 25.4;
-    u *= 25.4;
-    v *= 25.4;
-    w *= 25.4;
   }
-  GCodeParser::TraverseOp op;
-  op.lineNumber = lineno;
-  op.pos = {x, y, z, a, b, c, u, v, w};
+  double end_first;
+  double end_second;
+  switch (operation.plane) {
+    case Plane::XY: end_first = operation.pos.x; end_second = operation.pos.y; break;
+    case Plane::YZ: end_first = operation.pos.y; end_second = operation.pos.z; break;
+    case Plane::XZ: end_first = operation.pos.z; end_second = operation.pos.x; break;
+    default: return;
+  }
+  const double start_angle = std::atan2(second_offset, first_offset);
+  const double end_angle = std::atan2(
+      end_second - operation.arcData.centerSecond,
+      end_first - operation.arcData.centerFirst);
+  const bool clockwise = operation.arcData.rotation < 0;
+  double sweep = clockwise ? positive_angle(start_angle - end_angle)
+                           : positive_angle(end_angle - start_angle);
+  const int turn_count = std::abs(operation.arcData.rotation);
+  if (sweep == 0.0 && turn_count >= 1)
+    sweep = 2.0 * pi;
+  else if (turn_count >= 1)
+    sweep += (turn_count - 1) * 2.0 * pi;
+  else if (sweep == 0.0)
+    sweep = 2.0 * pi;
 
-  ctx->currentPosition = op.pos;
-  ctx->updateExtents(op.pos);
-  ctx->addOperation(std::move(op));
+  context.updateExtents(start);
+  context.updateExtents(operation.pos);
+  constexpr double cardinals[] = {0.0, pi / 2.0, pi, 3.0 * pi / 2.0};
+  for (const double angle : cardinals) {
+    if (!angle_is_on_arc(angle, start_angle, sweep, clockwise)) continue;
+    Position point = start;
+    set_plane_end(operation.plane,
+                  operation.arcData.centerFirst + radius * std::cos(angle),
+                  operation.arcData.centerSecond + radius * std::sin(angle),
+                  &point);
+    context.updateExtents(point);
+  }
 }
 
-void STRAIGHT_FEED(int lineno,
-                   double x, double y, double z,
-                   double a, double b, double c,
-                   double u, double v, double w)
-{
-  GET_CTX();
-
-  if (!ctx->metric)
-  {
-    x *= 25.4;
-    y *= 25.4;
-    z *= 25.4;
-    u *= 25.4;
-    v *= 25.4;
-    w *= 25.4;
-  }
-  GCodeParser::FeedOp op;
-  op.lineNumber = lineno;
-  op.pos = {x, y, z, a, b, c, u, v, w};
-
-  ctx->currentPosition = op.pos;
-  ctx->updateExtents(op.pos);
-  ctx->addOperation(std::move(op));
+void consume(ParseContext& context, const canon::StraightTraverse& event) {
+  TraverseOp operation;
+  operation.lineNumber = event.line_number;
+  operation.pos = preview_position(context, event.end);
+  context.currentPosition = operation.pos;
+  context.updateExtents(operation.pos);
+  context.addOperation(std::move(operation));
 }
 
-void ARC_FEED(int lineno,
-              double first_end, double second_end,
-              double first_axis, double second_axis,
-              int rotation, double axis_end_point,
-              double a, double b, double c,
-              double u, double v, double w)
-{
-  GET_CTX();
-
-  if (!ctx->metric)
-  {
-    first_end *= 25.4;
-    second_end *= 25.4;
-    first_axis *= 25.4;
-    second_axis *= 25.4;
-    axis_end_point *= 25.4;
-    u *= 25.4;
-    v *= 25.4;
-    w *= 25.4;
-  }
-  GCodeParser::ArcOp op;
-  op.lineNumber = lineno;
-  op.plane = ctx->currentPlane;
-
-  // Set end position based on plane
-  op.pos = ctx->currentPosition;
-  switch (ctx->currentPlane)
-  {
-  case GCodeParser::Plane::XY:
-    op.pos.x = first_end;
-    op.pos.y = second_end;
-    op.pos.z = axis_end_point;
-    break;
-  case GCodeParser::Plane::YZ:
-    op.pos.y = first_end;
-    op.pos.z = second_end;
-    op.pos.x = axis_end_point;
-    break;
-  case GCodeParser::Plane::XZ:
-    op.pos.z = first_end;
-    op.pos.x = second_end;
-    op.pos.y = axis_end_point;
-    break;
-  default:
-    op.pos.x = first_end;
-    op.pos.y = second_end;
-    op.pos.z = axis_end_point;
-    break;
-  }
-  op.pos.a = a;
-  op.pos.b = b;
-  op.pos.c = c;
-  op.pos.u = u;
-  op.pos.v = v;
-  op.pos.w = w;
-
-  // Arc data
-  op.arcData.centerFirst = first_axis;
-  op.arcData.centerSecond = second_axis;
-  op.arcData.rotation = rotation;
-  op.arcData.axisEndPoint = axis_end_point;
-
-  GCodeParser::updateArcExtents(*ctx, ctx->currentPosition, op);
-  ctx->currentPosition = op.pos;
-  ctx->addOperation(std::move(op));
+void consume(ParseContext& context, const canon::StraightFeed& event) {
+  FeedOp operation;
+  operation.lineNumber = event.line_number;
+  operation.pos = preview_position(context, event.end);
+  context.currentPosition = operation.pos;
+  context.updateExtents(operation.pos);
+  context.addOperation(std::move(operation));
 }
 
-void STRAIGHT_PROBE(int lineno,
-                    double x, double y, double z,
-                    double a, double b, double c,
-                    double u, double v, double w,
-                    unsigned char /*probe_type*/)
-{
-  GET_CTX();
-
-  if (!ctx->metric)
-  {
-    x *= 25.4;
-    y *= 25.4;
-    z *= 25.4;
-    u *= 25.4;
-    v *= 25.4;
-    w *= 25.4;
-  }
-  GCodeParser::ProbeOp op;
-  op.lineNumber = lineno;
-  op.pos = {x, y, z, a, b, c, u, v, w};
-
-  ctx->currentPosition = op.pos;
-  ctx->updateExtents(op.pos);
-  ctx->addOperation(std::move(op));
-}
-
-void RIGID_TAP(int lineno, double x, double y, double z, double scale)
-{
-  GET_CTX();
-
-  if (!ctx->metric)
-  {
-    x *= 25.4;
-    y *= 25.4;
-    z *= 25.4;
-  }
-  GCodeParser::RigidTapOp op;
-  op.lineNumber = lineno;
-  op.pos = {x, y, z};
-  op.scale = scale;
-
-  // Update position (rigid tap returns to start Z)
-  ctx->currentPosition.x = x;
-  ctx->currentPosition.y = y;
-  // Z returns to original after tap
-  ctx->updateExtents({x, y, z, 0, 0, 0, 0, 0, 0});
-  ctx->addOperation(std::move(op));
-}
-
-void DWELL(double seconds)
-{
-  GET_CTX();
-
-  GCodeParser::DwellOp op;
-  op.pos = ctx->currentPosition;
-  op.duration = seconds;
-  op.plane = ctx->currentPlane;
-
-  ctx->addOperation(std::move(op));
-}
-
-// ============================================================================
-// NURBS Functions
-// ============================================================================
-
-void NURBS_G5_FEED(int lineno,
-                   const std::vector<NURBS_CONTROL_POINT> &nurbs_control_points,
-                   unsigned int nurbs_order,
-                   CANON_PLANE plane)
-{
-  GET_CTX();
-
-  GCodeParser::NurbsG5Op op;
-  op.lineNumber = lineno;
-
-  
-  // Convert plane
-  switch (plane)
-  {
-  case CANON_PLANE::XY:
-    op.plane = GCodeParser::Plane::XY;
-    break;
-  case CANON_PLANE::YZ:
-    op.plane = GCodeParser::Plane::YZ;
-    break;
-  case CANON_PLANE::XZ:
-    op.plane = GCodeParser::Plane::XZ;
-    break;
-  default:
-    op.plane = GCodeParser::Plane::XY;
-    break;
-  }
-
-  op.nurbsData.order = nurbs_order;
-  for (const auto &cp : nurbs_control_points)
-  {
-    GCodeParser::NurbsG5ControlPoint point;
-    point.x = !ctx->metric ? cp.NURBS_X * 25.4 : cp.NURBS_X;
-    point.y = !ctx->metric ? cp.NURBS_Y * 25.4 : cp.NURBS_Y;
-    point.weight = cp.NURBS_W;
-    op.nurbsData.controlPoints.push_back(point);
-  }
-
-  // End position is last control point
-  if (!nurbs_control_points.empty())
-  {
-    const auto &last = nurbs_control_points.back();
-    double ex = !ctx->metric ? last.NURBS_X * 25.4 : last.NURBS_X;
-    double ey = !ctx->metric ? last.NURBS_Y * 25.4 : last.NURBS_Y;
-
-    switch (op.plane)
-    {
-    case GCodeParser::Plane::XY:
-      op.pos = ctx->currentPosition;
-      op.pos.x = ex;
-      op.pos.y = ey;
-      break;
-    case GCodeParser::Plane::YZ:
-      op.pos = ctx->currentPosition;
-      op.pos.y = ex;
-      op.pos.z = ey;
-      break;
-    case GCodeParser::Plane::XZ:
-      op.pos = ctx->currentPosition;
-      op.pos.x = ey;
-      op.pos.z = ex;
-      break;
+void consume(ParseContext& context, const canon::ArcFeed& event) {
+  ArcOp operation;
+  operation.lineNumber = event.line_number;
+  operation.plane = preview_plane(event.plane);
+  operation.pos = context.currentPosition;
+  const double first_end = linear_value(context, event.first_end);
+  const double second_end = linear_value(context, event.second_end);
+  const double axis_end = linear_value(context, event.axis_end_point);
+  switch (operation.plane) {
+    case Plane::XY:
+      operation.pos.x = first_end; operation.pos.y = second_end;
+      operation.pos.z = axis_end; break;
+    case Plane::YZ:
+      operation.pos.y = first_end; operation.pos.z = second_end;
+      operation.pos.x = axis_end; break;
+    case Plane::XZ:
+      operation.pos.z = first_end; operation.pos.x = second_end;
+      operation.pos.y = axis_end; break;
     default:
-      op.pos = ctx->currentPosition;
-      op.pos.x = ex;
-      op.pos.y = ey;
+      set_plane_end(operation.plane, first_end, second_end, &operation.pos);
       break;
-    }
-    ctx->currentPosition = op.pos;
-    ctx->updateExtents(op.pos);
   }
-
-  ctx->addOperation(std::move(op));
+  operation.pos.a = event.a;
+  operation.pos.b = event.b;
+  operation.pos.c = event.c;
+  operation.pos.u = linear_value(context, event.u);
+  operation.pos.v = linear_value(context, event.v);
+  operation.pos.w = linear_value(context, event.w);
+  operation.arcData.centerFirst = linear_value(context, event.first_axis);
+  operation.arcData.centerSecond = linear_value(context, event.second_axis);
+  operation.arcData.rotation = event.rotation;
+  operation.arcData.axisEndPoint = axis_end;
+  update_arc_extents(context, context.currentPosition, operation);
+  context.currentPosition = operation.pos;
+  context.addOperation(std::move(operation));
 }
 
-void NURBS_G6_FEED(int lineno,
-                   const std::vector<NURBS_G6_CONTROL_POINT> &nurbs_control_points,
-                   unsigned int k,
-                   double /*feedrate*/,
-                   int /*L_option*/,
-                   CANON_PLANE plane)
-{
-  GET_CTX();
+void consume(ParseContext& context, const canon::StraightProbe& event) {
+  ProbeOp operation;
+  operation.lineNumber = event.line_number;
+  operation.pos = preview_position(context, event.end);
+  context.currentPosition = operation.pos;
+  context.updateExtents(operation.pos);
+  context.addOperation(std::move(operation));
+}
 
-  GCodeParser::NurbsG6Op op;
-  op.lineNumber = lineno;
-  
-  switch (plane)
-  {
-  case CANON_PLANE::XY:
-    op.plane = GCodeParser::Plane::XY;
-    break;
-  case CANON_PLANE::YZ:
-    op.plane = GCodeParser::Plane::YZ;
-    break;
-  case CANON_PLANE::XZ:
-    op.plane = GCodeParser::Plane::XZ;
-    break;
-  default:
-    op.plane = GCodeParser::Plane::XY;
-    break;
+void consume(ParseContext& context, const canon::RigidTap& event) {
+  RigidTapOp operation;
+  operation.lineNumber = event.line_number;
+  operation.pos = {linear_value(context, event.x),
+                   linear_value(context, event.y),
+                   linear_value(context, event.z)};
+  operation.scale = event.scale;
+  context.currentPosition.x = operation.pos.x;
+  context.currentPosition.y = operation.pos.y;
+  context.extents.update(operation.pos.x, operation.pos.y, operation.pos.z);
+  context.addOperation(std::move(operation));
+}
+
+void consume(ParseContext& context, const canon::Dwell& event) {
+  DwellOp operation;
+  operation.pos = context.currentPosition;
+  operation.duration = event.seconds;
+  operation.plane = context.currentPlane;
+  context.addOperation(std::move(operation));
+}
+
+void consume(ParseContext& context, const canon::NurbsG5Feed& event) {
+  NurbsG5Op operation;
+  operation.lineNumber = event.line_number;
+  operation.plane = preview_plane(event.plane);
+  operation.nurbsData.order = event.order;
+  operation.nurbsData.controlPoints.reserve(event.control_points.size());
+  for (const auto& source : event.control_points)
+    operation.nurbsData.controlPoints.push_back({
+        linear_value(context, source.NURBS_X),
+        linear_value(context, source.NURBS_Y), source.NURBS_W});
+  operation.pos = context.currentPosition;
+  if (!operation.nurbsData.controlPoints.empty()) {
+    const auto& last = operation.nurbsData.controlPoints.back();
+    set_plane_end(operation.plane, last.x, last.y, &operation.pos);
+    context.currentPosition = operation.pos;
+    context.updateExtents(operation.pos);
   }
+  context.addOperation(std::move(operation));
+}
 
-  op.nurbsData.order = k;
-  for (const auto &cp : nurbs_control_points)
-  {
-    GCodeParser::NurbsG6ControlPoint point;
-    point.x = !ctx->metric ? cp.NURBS_X * 25.4 : cp.NURBS_X;
-    point.y = !ctx->metric ? cp.NURBS_Y * 25.4 : cp.NURBS_Y;
-    point.r = cp.NURBS_R;
-    point.k = cp.NURBS_K;
-    op.nurbsData.controlPoints.push_back(point);
+void consume(ParseContext& context, const canon::NurbsG6Feed& event) {
+  NurbsG6Op operation;
+  operation.lineNumber = event.line_number;
+  operation.plane = preview_plane(event.plane);
+  operation.nurbsData.order = event.order;
+  operation.nurbsData.controlPoints.reserve(event.control_points.size());
+  for (const auto& source : event.control_points)
+    operation.nurbsData.controlPoints.push_back({
+        linear_value(context, source.NURBS_X),
+        linear_value(context, source.NURBS_Y), source.NURBS_R, source.NURBS_K});
+  operation.pos = context.currentPosition;
+  if (operation.nurbsData.controlPoints.size() > event.order) {
+    const auto& last = operation.nurbsData.controlPoints.back();
+    set_plane_end(operation.plane, last.x, last.y, &operation.pos);
+    context.currentPosition = operation.pos;
+    context.updateExtents(operation.pos);
   }
+  context.addOperation(std::move(operation));
+}
 
-  // End position
-  if (nurbs_control_points.size() > k)
-  {
-    size_t lastIdx = nurbs_control_points.size() - 1;
-    const auto &last = nurbs_control_points[lastIdx];
-    double ex = !ctx->metric ? last.NURBS_X * 25.4 : last.NURBS_X;
-    double ey = !ctx->metric ? last.NURBS_Y * 25.4 : last.NURBS_Y;
-
-    op.pos = ctx->currentPosition;
-    switch (op.plane)
-    {
-    case GCodeParser::Plane::XY:
-      op.pos.x = ex;
-      op.pos.y = ey;
-      break;
-    case GCodeParser::Plane::YZ:
-      op.pos.y = ex;
-      op.pos.z = ey;
-      break;
-    case GCodeParser::Plane::XZ:
-      op.pos.x = ey;
-      op.pos.z = ex;
-      break;
-    default:
-      op.pos.x = ex;
-      op.pos.y = ey;
-      break;
-    }
-    ctx->currentPosition = op.pos;
-    ctx->updateExtents(op.pos);
+void consume(ParseContext& context, const canon::LengthUnits& event) {
+  Units next_units = Units::MM;
+  switch (event.units) {
+    case CANON_UNITS_INCHES:
+      next_units = Units::INCHES; context.linearUnitScale = 25.4; break;
+    case CANON_UNITS_MM:
+      next_units = Units::MM; context.linearUnitScale = 1.0; break;
+    case CANON_UNITS_CM:
+      next_units = Units::CM; context.linearUnitScale = 10.0; break;
   }
-
-  ctx->addOperation(std::move(op));
+  if (next_units == context.currentUnits) return;
+  context.currentUnits = next_units;
+  UnitsChangeOp operation;
+  operation.units = next_units;
+  context.addOperation(std::move(operation));
 }
 
-// ============================================================================
-// State Change Functions
-// ============================================================================
+void consume(ParseContext& context, const canon::Plane& event) {
+  const Plane next_plane = preview_plane(event.plane);
+  if (next_plane == context.currentPlane) return;
+  context.currentPlane = next_plane;
+  PlaneChangeOp operation;
+  operation.plane = next_plane;
+  context.addOperation(std::move(operation));
+}
 
-void USE_LENGTH_UNITS(CANON_UNITS u)
-{
-  GET_CTX();
+void consume(ParseContext& context, const canon::G5xOffset& event) {
+  G5xOffsetOp operation;
+  operation.origin = event.index;
+  operation.offset = preview_position(context, event.offset);
+  context.addOperation(std::move(operation));
+}
 
-  GCodeParser::Units newUnits;
-  switch (u)
-  {
-  case CANON_UNITS_INCHES:
-    newUnits = GCodeParser::Units::INCHES;
-    ctx->metric = false;
-    break;
-  case CANON_UNITS_MM:
-    newUnits = GCodeParser::Units::MM;
-    ctx->metric = true;
-    break;
-  case CANON_UNITS_CM:
-    newUnits = GCodeParser::Units::CM;
-    ctx->metric = true;
-    break;
-  default:
-    newUnits = GCodeParser::Units::MM;
-    ctx->metric = true;
-    break;
+void consume(ParseContext& context, const canon::G92Offset& event) {
+  G92OffsetOp operation;
+  operation.offset = preview_position(context, event.offset);
+  context.addOperation(std::move(operation));
+}
+
+void consume(ParseContext& context, const canon::XyRotation& event) {
+  XYRotationOp operation;
+  operation.rotation = event.degrees;
+  context.addOperation(std::move(operation));
+}
+
+void consume(ParseContext& context, const canon::FeedRate& event) {
+  const double rate = linear_value(context, event.rate);
+  context.currentFeedRate = rate;
+  if (rate == context.lastFeedRate) return;
+  context.lastFeedRate = rate;
+  FeedRateChangeOp operation;
+  operation.feedRate = rate;
+  context.addOperation(std::move(operation));
+}
+
+void consume(ParseContext& context, const canon::ToolOffset& event) {
+  ToolOffsetOp operation;
+  operation.offset = preview_position(context, event.offset);
+  context.addOperation(std::move(operation));
+}
+
+void consume(ParseContext& context, const canon::ToolChange& event) {
+  context.selectedTool = event.tool_number;
+  ToolChangeOp operation;
+  operation.toolNumber = event.tool_number;
+  context.addOperation(std::move(operation));
+}
+
+}  // namespace
+
+void ParseContext::addOperation(Operation&& operation) {
+  if (cancelled) return;
+  operations.push_back(std::move(operation));
+  ++operationCount;
+}
+
+bool ParseContext::flushReadyBatch() {
+  if (!batchCallback || batchSize == 0 || operations.size() < batchSize)
+    return !cancelled;
+  return flushBatch();
+}
+
+bool ParseContext::flushBatch() {
+  if (!batchCallback || operations.empty()) return !cancelled;
+  const std::size_t max_batch = batchSize == 0 ? operations.size() : batchSize;
+  while (!operations.empty() && !cancelled) {
+    const std::size_t count = std::min(max_batch, operations.size());
+    OperationBatch batch;
+    batch.reserve(count);
+    for (std::size_t index = 0; index < count; ++index)
+      batch.push_back(std::move(operations[index]));
+    operations.erase(operations.begin(), operations.begin() + count);
+    if (!batchCallback(std::move(batch))) cancelled = true;
   }
-
-  if (newUnits != ctx->currentUnits)
-  {
-    ctx->currentUnits = newUnits;
-    GCodeParser::UnitsChangeOp op;
-    op.units = newUnits;
-    ctx->addOperation(std::move(op));
-  }
+  return !cancelled;
 }
 
-void SELECT_PLANE(CANON_PLANE pl)
-{
-  GET_CTX();
-
-  GCodeParser::Plane newPlane;
-  switch (pl)
-  {
-  case CANON_PLANE::XY:
-    newPlane = GCodeParser::Plane::XY;
-    break;
-  case CANON_PLANE::YZ:
-    newPlane = GCodeParser::Plane::YZ;
-    break;
-  case CANON_PLANE::XZ:
-    newPlane = GCodeParser::Plane::XZ;
-    break;
-  case CANON_PLANE::UV:
-    newPlane = GCodeParser::Plane::UV;
-    break;
-  case CANON_PLANE::VW:
-    newPlane = GCodeParser::Plane::VW;
-    break;
-  case CANON_PLANE::UW:
-    newPlane = GCodeParser::Plane::UW;
-    break;
-  default:
-    newPlane = GCodeParser::Plane::XY;
-    break;
-  }
-
-  if (newPlane != ctx->currentPlane)
-  {
-    ctx->currentPlane = newPlane;
-    GCodeParser::PlaneChangeOp op;
-    op.plane = newPlane;
-    ctx->addOperation(std::move(op));
-  }
+bool ParseContext::cancellationRequested() {
+  if (cancelled) return true;
+  if (cancellationCallback && cancellationCallback()) cancelled = true;
+  return cancelled;
 }
 
-void SET_G5X_OFFSET(int g5x_index,
-                    double x, double y, double z,
-                    double a, double b, double c,
-                    double u, double v, double w)
-{
-  GET_CTX();
-
-
-
-  if (!ctx->metric)
-  {
-    x *= 25.4;
-    y *= 25.4;
-    z *= 25.4;
-    u *= 25.4;
-    v *= 25.4;
-    w *= 25.4;
-  }
-  GCodeParser::G5xOffsetOp op;
-  op.origin = g5x_index;
-  op.offset = {x, y, z, a, b, c, u, v, w};
-  ctx->addOperation(std::move(op));
+void ParseContext::updateExtents(const Position& position) {
+  extents.update(position);
 }
 
-void SET_G92_OFFSET(double x, double y, double z,
-                    double a, double b, double c,
-                    double u, double v, double w)
-{
-  GET_CTX();
-
-
-
-  if (!ctx->metric)
-  {
-    x *= 25.4;
-    y *= 25.4;
-    z *= 25.4;
-    u *= 25.4;
-    v *= 25.4;
-    w *= 25.4;
-  }
-  GCodeParser::G92OffsetOp op;
-  op.offset = {x, y, z, a, b, c, u, v, w};
-  ctx->addOperation(std::move(op));
+void ParseContext::reportProgress(std::size_t bytes_read) {
+  if (!progressCallback || totalBytes == 0) return;
+  ParseProgress progress;
+  progress.bytesRead = bytes_read;
+  progress.totalBytes = totalBytes;
+  progress.percent = (static_cast<double>(bytes_read) / totalBytes) * 100.0;
+  progress.operationCount = operationCount;
+  progressCallback(progress);
 }
 
-void SET_XY_ROTATION(double t)
-{
-  GET_CTX();
-
-  GCodeParser::XYRotationOp op;
-  op.rotation = t;
-  ctx->addOperation(std::move(op));
+void consumeRecordingEvents(::linuxcnc::recording::Session& session,
+                            ParseContext& context) {
+  for (const auto& event : session.take_events())
+    std::visit([&context](const auto& value) { consume(context, value); }, event);
 }
 
-void SET_FEED_RATE(double rate)
-{
-  GET_CTX();
-
-
-
-  if (rate != ctx->lastFeedRate)
-  {
-    if (!ctx->metric)
-    {
-      rate *= 25.4;
-    }
-    ctx->currentFeedRate = rate;
-    ctx->lastFeedRate = rate;
-
-    GCodeParser::FeedRateChangeOp op;
-    op.feedRate = rate;
-    ctx->addOperation(std::move(op));
-  }
-  else
-  {
-    ctx->currentFeedRate = rate;
-  }
-}
-
-void USE_TOOL_LENGTH_OFFSET(const EmcPose &offset)
-{
-  GET_CTX();
-
-  tool_offset = offset;
-
-  GCodeParser::ToolOffsetOp op;
-  if (!ctx->metric)
-  {
-    op.offset.x = offset.tran.x * 25.4;
-    op.offset.y = offset.tran.y * 25.4;
-    op.offset.z = offset.tran.z * 25.4;
-    op.offset.u = offset.u * 25.4;
-    op.offset.v = offset.v * 25.4;
-    op.offset.w = offset.w * 25.4;
-  }
-  else
-  {
-    op.offset.x = offset.tran.x;
-    op.offset.y = offset.tran.y;
-    op.offset.z = offset.tran.z;
-    op.offset.u = offset.u;
-    op.offset.v = offset.v;
-    op.offset.w = offset.w;
-  }
-  op.offset.a = offset.a;
-  op.offset.b = offset.b;
-  op.offset.c = offset.c;
-
-  ctx->addOperation(std::move(op));
-}
-
-// ============================================================================
-// Tool Functions
-// ============================================================================
-
-static int g_selectedTool = 0;
-
-void SELECT_TOOL(int tool)
-{
-  g_selectedTool = tool;
-}
-
-void CHANGE_TOOL()
-{
-  GET_CTX();
-
-  ctx->selectedTool = g_selectedTool;
-
-  // Get tool data from tool table
-  CANON_TOOL_TABLE toolTable = GET_EXTERNAL_TOOL_TABLE(g_selectedTool);
-
-  GCodeParser::ToolChangeOp op;
-  op.toolNumber = toolTable.toolno;
-
-  ctx->addOperation(std::move(op));
-}
-
-void CHANGE_TOOL_NUMBER(int /*pocket*/) {}
-void RELOAD_TOOLDATA(void) {}
-void SET_TOOL_TABLE_ENTRY(int, int, const EmcPose &, const EmcPose &, double, double, double, int) {}
-
-// ============================================================================
-// Comment Function
-// ============================================================================
-
-void COMMENT(const char *comment)
-{
-}
-
-void MESSAGE(char *s)
-{
-  COMMENT(s);
-}
-
-// ============================================================================
-// Stub/No-op Functions (required by interpreter but not needed for preview)
-// ============================================================================
-
-void INIT_CANON() {}
-void SET_TRAVERSE_RATE(double) {}
-void SET_FEED_MODE(int, int) {}
-void SET_FEED_REFERENCE(double) {}
-void SET_FEED_REFERENCE(CANON_FEED_REFERENCE) {}
-void SET_CUTTER_RADIUS_COMPENSATION(double) {}
-void START_CUTTER_RADIUS_COMPENSATION(int) {}
-void STOP_CUTTER_RADIUS_COMPENSATION(int) {}
-void STOP_CUTTER_RADIUS_COMPENSATION() {}
-void START_SPEED_FEED_SYNCH() {}
-void START_SPEED_FEED_SYNCH(int, double, bool) {}
-void STOP_SPEED_FEED_SYNCH() {}
-void START_SPINDLE_COUNTERCLOCKWISE(int, int) {}
-void START_SPINDLE_CLOCKWISE(int, int) {}
-void SET_SPINDLE_MODE(int, double) {}
-void STOP_SPINDLE_TURNING(int) {}
-void SET_SPINDLE_SPEED(int, double) {}
-void ORIENT_SPINDLE(int, double, int) {}
-void WAIT_SPINDLE_ORIENT_COMPLETE(int, double) {}
-void SPINDLE_RETRACT() {}
-void SPINDLE_RETRACT_TRAVERSE() {}
-void USE_NO_SPINDLE_FORCE() {}
-void START_G76_PASS() {}
-void START_G76_CUT() {}
-void START_G76_CLEARANCE() {}
-void FINISH_G76_PASS(int) {}
-void PROGRAM_STOP() {}
-void PROGRAM_END() {}
-void FINISH() {}
-void ON_RESET() {}
-void PALLET_SHUTTLE() {}
-void UPDATE_TAG(const StateTag &) {}
-void OPTIONAL_PROGRAM_STOP() {}
-void SET_MOTION_CONTROL_MODE(CANON_MOTION_MODE, double) {}
-void SET_MOTION_CONTROL_MODE(double) {}
-void SET_MOTION_CONTROL_MODE(CANON_MOTION_MODE) {}
-void SET_NAIVECAM_TOLERANCE(double) {}
-void CANON_ERROR(const char *, ...) {}
-void CLAMP_AXIS(CANON_AXIS) {}
-void UNCLAMP_AXIS(CANON_AXIS) {}
-void DISABLE_ADAPTIVE_FEED() {}
-void ENABLE_ADAPTIVE_FEED() {}
-void DISABLE_FEED_OVERRIDE() {}
-void ENABLE_FEED_OVERRIDE() {}
-void DISABLE_SPEED_OVERRIDE(int) {}
-void ENABLE_SPEED_OVERRIDE(int) {}
-void DISABLE_FEED_HOLD() {}
-void ENABLE_FEED_HOLD() {}
-void FLOOD_OFF() {}
-void FLOOD_ON() {}
-void MIST_OFF() {}
-void MIST_ON() {}
-void CLEAR_AUX_OUTPUT_BIT(int) {}
-void SET_AUX_OUTPUT_BIT(int) {}
-void SET_AUX_OUTPUT_VALUE(int, double) {}
-void CLEAR_MOTION_OUTPUT_BIT(int) {}
-void SET_MOTION_OUTPUT_BIT(int) {}
-void SET_MOTION_OUTPUT_VALUE(int, double) {}
-void TURN_PROBE_ON() {}
-void TURN_PROBE_OFF() {}
-int UNLOCK_ROTARY(int, int) { return 0; }
-int LOCK_ROTARY(int, int) { return 0; }
-void INTERP_ABORT(int, const char *) {}
-void SET_BLOCK_DELETE(bool) {}
-void SET_OPTIONAL_PROGRAM_STOP(bool) {}
-void LOG(char *) {}
-void LOGOPEN(char *) {}
-void LOGAPPEND(char *) {}
-void LOGCLOSE() {}
-int USER_DEFINED_FUNCTION_ADD(USER_DEFINED_FUNCTION_TYPE, int) { return 0; }
-
-// ============================================================================
-// External Getter Functions (return defaults for preview mode)
-// ============================================================================
-
-bool GET_BLOCK_DELETE(void) { return false; }
-bool GET_OPTIONAL_PROGRAM_STOP() { return false; }
-int GET_EXTERNAL_TC_FAULT() { return 0; }
-int GET_EXTERNAL_TC_REASON() { return 0; }
-
-double GET_EXTERNAL_MOTION_CONTROL_TOLERANCE() { return 0.1; }
-double GET_EXTERNAL_MOTION_CONTROL_NAIVECAM_TOLERANCE() { return 0.1; }
-
-double GET_EXTERNAL_PROBE_POSITION_X()
-{
-  auto *ctx = GCodeParser::getParseContext();
-  return ctx ? ctx->currentPosition.x : 0.0;
-}
-double GET_EXTERNAL_PROBE_POSITION_Y()
-{
-  auto *ctx = GCodeParser::getParseContext();
-  return ctx ? ctx->currentPosition.y : 0.0;
-}
-double GET_EXTERNAL_PROBE_POSITION_Z()
-{
-  auto *ctx = GCodeParser::getParseContext();
-  return ctx ? ctx->currentPosition.z : 0.0;
-}
-double GET_EXTERNAL_PROBE_POSITION_A()
-{
-  auto *ctx = GCodeParser::getParseContext();
-  return ctx ? ctx->currentPosition.a : 0.0;
-}
-double GET_EXTERNAL_PROBE_POSITION_B()
-{
-  auto *ctx = GCodeParser::getParseContext();
-  return ctx ? ctx->currentPosition.b : 0.0;
-}
-double GET_EXTERNAL_PROBE_POSITION_C()
-{
-  auto *ctx = GCodeParser::getParseContext();
-  return ctx ? ctx->currentPosition.c : 0.0;
-}
-double GET_EXTERNAL_PROBE_POSITION_U()
-{
-  auto *ctx = GCodeParser::getParseContext();
-  return ctx ? ctx->currentPosition.u : 0.0;
-}
-double GET_EXTERNAL_PROBE_POSITION_V()
-{
-  auto *ctx = GCodeParser::getParseContext();
-  return ctx ? ctx->currentPosition.v : 0.0;
-}
-double GET_EXTERNAL_PROBE_POSITION_W()
-{
-  auto *ctx = GCodeParser::getParseContext();
-  return ctx ? ctx->currentPosition.w : 0.0;
-}
-
-double GET_EXTERNAL_PROBE_VALUE() { return 0.0; }
-int GET_EXTERNAL_PROBE_TRIPPED_VALUE() { return 0; }
-
-double GET_EXTERNAL_POSITION_X()
-{
-  auto *ctx = GCodeParser::getParseContext();
-  return ctx ? ctx->currentPosition.x : 0.0;
-}
-double GET_EXTERNAL_POSITION_Y()
-{
-  auto *ctx = GCodeParser::getParseContext();
-  return ctx ? ctx->currentPosition.y : 0.0;
-}
-double GET_EXTERNAL_POSITION_Z()
-{
-  auto *ctx = GCodeParser::getParseContext();
-  return ctx ? ctx->currentPosition.z : 0.0;
-}
-double GET_EXTERNAL_POSITION_A()
-{
-  auto *ctx = GCodeParser::getParseContext();
-  return ctx ? ctx->currentPosition.a : 0.0;
-}
-double GET_EXTERNAL_POSITION_B()
-{
-  auto *ctx = GCodeParser::getParseContext();
-  return ctx ? ctx->currentPosition.b : 0.0;
-}
-double GET_EXTERNAL_POSITION_C()
-{
-  auto *ctx = GCodeParser::getParseContext();
-  return ctx ? ctx->currentPosition.c : 0.0;
-}
-double GET_EXTERNAL_POSITION_U()
-{
-  auto *ctx = GCodeParser::getParseContext();
-  return ctx ? ctx->currentPosition.u : 0.0;
-}
-double GET_EXTERNAL_POSITION_V()
-{
-  auto *ctx = GCodeParser::getParseContext();
-  return ctx ? ctx->currentPosition.v : 0.0;
-}
-double GET_EXTERNAL_POSITION_W()
-{
-  auto *ctx = GCodeParser::getParseContext();
-  return ctx ? ctx->currentPosition.w : 0.0;
-}
-
-CANON_UNITS GET_EXTERNAL_LENGTH_UNIT_TYPE() { return CANON_UNITS_INCHES; }
-
-CANON_TOOL_TABLE GET_EXTERNAL_TOOL_TABLE(int pocket)
-{
-  CANON_TOOL_TABLE tdata{};
-  tdata.toolno = -1;
-  tdata.pocketno = -1;
-  // Try to get real tool data if tool table is available
-  // For now return default
-  tdata.toolno = pocket;
-  return tdata;
-}
-
-int GET_EXTERNAL_DIGITAL_INPUT(int, int def) { return def; }
-double GET_EXTERNAL_ANALOG_INPUT(int, double def) { return def; }
-int WAIT(int, int, int, double) { return 0; }
-
-int GET_EXTERNAL_QUEUE_EMPTY() { return 1; }
-CANON_DIRECTION GET_EXTERNAL_SPINDLE(int) { return CANON_STOPPED; }
-int GET_EXTERNAL_TOOL_SLOT() { return 0; }
-int GET_EXTERNAL_SELECTED_TOOL_SLOT() { return 0; }
-double GET_EXTERNAL_FEED_RATE() { return 1; }
-double GET_EXTERNAL_TRAVERSE_RATE() { return 0; }
-int GET_EXTERNAL_FLOOD() { return 0; }
-int GET_EXTERNAL_MIST() { return 0; }
-CANON_PLANE GET_EXTERNAL_PLANE() { return CANON_PLANE::XY; }
-double GET_EXTERNAL_SPEED(int) { return 0; }
-CANON_MOTION_MODE GET_EXTERNAL_MOTION_CONTROL_MODE() { return CANON_CONTINUOUS; }
-
-int GET_EXTERNAL_FEED_OVERRIDE_ENABLE() { return 1; }
-int GET_EXTERNAL_SPINDLE_OVERRIDE_ENABLE(int) { return 1; }
-int GET_EXTERNAL_ADAPTIVE_FEED_ENABLE() { return 0; }
-int GET_EXTERNAL_FEED_HOLD_ENABLE() { return 1; }
-
-int GET_EXTERNAL_OFFSET_APPLIED() { return 0; }
-EmcPose GET_EXTERNAL_OFFSETS()
-{
-  EmcPose e = {};
-  return e;
-}
-
-int GET_EXTERNAL_AXIS_MASK() { return 7; } // XYZ
-
-double GET_EXTERNAL_TOOL_LENGTH_XOFFSET() { return tool_offset.tran.x; }
-double GET_EXTERNAL_TOOL_LENGTH_YOFFSET() { return tool_offset.tran.y; }
-double GET_EXTERNAL_TOOL_LENGTH_ZOFFSET() { return tool_offset.tran.z; }
-double GET_EXTERNAL_TOOL_LENGTH_AOFFSET() { return tool_offset.a; }
-double GET_EXTERNAL_TOOL_LENGTH_BOFFSET() { return tool_offset.b; }
-double GET_EXTERNAL_TOOL_LENGTH_COFFSET() { return tool_offset.c; }
-double GET_EXTERNAL_TOOL_LENGTH_UOFFSET() { return tool_offset.u; }
-double GET_EXTERNAL_TOOL_LENGTH_VOFFSET() { return tool_offset.v; }
-double GET_EXTERNAL_TOOL_LENGTH_WOFFSET() { return tool_offset.w; }
-
-double GET_EXTERNAL_ANGLE_UNITS() { return 1.0; }
-double GET_EXTERNAL_LENGTH_UNITS() { return 0.03937007874016; } // 1/25.4
-
-void GET_EXTERNAL_PARAMETER_FILE_NAME(char *name, int max_size)
-{
-  if (name && max_size > 0)
-  {
-    strncpy(name, _parameter_file_name, max_size - 1);
-    name[max_size - 1] = '\0';
-  }
-}
-
-void SET_PARAMETER_FILE_NAME(const char *name)
-{
-  if (name)
-  {
-    strncpy(_parameter_file_name, name, PARAMETER_FILE_NAME_LENGTH - 1);
-    _parameter_file_name[PARAMETER_FILE_NAME_LENGTH - 1] = '\0';
-  }
-}
-
-// User defined functions
-USER_DEFINED_FUNCTION_TYPE USER_DEFINED_FUNCTION[USER_DEFINED_FUNCTION_NUM] = {};
+}  // namespace linuxcnc::server::gcode
