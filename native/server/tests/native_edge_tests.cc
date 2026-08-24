@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <mutex>
 #include <stdexcept>
 #include <string>
@@ -262,6 +263,15 @@ void position_cursor_generation_and_replacement_test() {
   assert(cleared.first_sequence == cleared.next_sequence);
   assert(cleared.packed.empty());
   assert(history.since(history.next_sequence(), 0, cleared.generation).packed.empty());
+
+  PositionHistory non_finite_history(8);
+  auto finite = position(1.0);
+  auto invalid = finite;
+  invalid.coordinates[0] = std::numeric_limits<double>::quiet_NaN();
+  assert(non_finite_history.append(finite));
+  assert(non_finite_history.append(invalid));
+  assert(!non_finite_history.append(invalid));
+  assert(non_finite_history.append(finite));
 }
 
 void position_telemetry_wire_test() {

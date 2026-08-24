@@ -95,6 +95,13 @@ std::uint64_t PositionHistory::next_sequence() const {
 bool PositionHistory::changed(const PositionSample& a, const PositionSample& b,
                               double epsilon) {
   for (std::size_t i = 0; i < a.coordinates.size(); ++i) {
+    if (!std::isfinite(a.coordinates[i]) || !std::isfinite(b.coordinates[i])) {
+      const bool same_non_finite =
+          (std::isnan(a.coordinates[i]) && std::isnan(b.coordinates[i])) ||
+          a.coordinates[i] == b.coordinates[i];
+      if (!same_non_finite) return true;
+      continue;
+    }
     if (std::abs(a.coordinates[i] - b.coordinates[i]) > epsilon) return true;
   }
   return a.motion_type != b.motion_type;
