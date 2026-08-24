@@ -620,6 +620,10 @@ CommandTicket NmlAdapter::submit(NmlCommand command, std::function<bool()> cance
             if (index < 0) throw std::runtime_error("tool is not present in the tool table");
             if (tooldata_put(tooldata_entry_init(), index) == IDX_FAIL)
               throw std::runtime_error("failed to delete tool from LinuxCNC tool table");
+            if (impl_->tool_table_filename.empty() ||
+                tooldata_save(impl_->tool_table_filename.c_str()) != 0) {
+              throw std::runtime_error("failed to save LinuxCNC tool table after deletion");
+            }
             direct_tool_mutation = true;
             break;
           }
