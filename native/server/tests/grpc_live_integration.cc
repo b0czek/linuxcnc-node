@@ -713,6 +713,20 @@ int main(int argc, char** argv) {
   assert(topology.has_topology());
   assert(topology.topology().pins_size() > 0);
 
+  grpc::ClientContext future_topology_context;
+  future_topology_context.set_deadline(
+      std::chrono::system_clock::now() + std::chrono::seconds(2));
+  linuxcnc::v1::WatchHalTopologyRequest future_topology_request;
+  future_topology_request.set_after_sequence(topology.sequence() + 1000);
+  auto future_topology = hal->WatchTopology(
+      &future_topology_context, future_topology_request);
+  linuxcnc::v1::WatchHalTopologyEvent future_topology_event;
+  assert(future_topology->Read(&future_topology_event));
+  assert(future_topology_event.sequence() < future_topology_request.after_sequence());
+  assert(future_topology_event.has_topology());
+  future_topology_context.TryCancel();
+  (void)future_topology->Finish();
+
   // A real HAL mutation must advance the typed topology stream.
   grpc::ClientContext topology_watch_context;
   topology_watch_context.set_deadline(

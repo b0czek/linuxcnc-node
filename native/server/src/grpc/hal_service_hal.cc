@@ -291,7 +291,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
                     reactor.finish(status);
                     return;
                   }
-                  if (sequence <= reactor.after_) return;
+                  if (sequence == reactor.after_) return;
                   reactor.message_.Clear();
                   reactor.message_.set_sequence(sequence);
                   *reactor.message_.mutable_topology() = std::move(topology);

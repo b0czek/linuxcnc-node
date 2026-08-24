@@ -281,7 +281,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     }
     void emit() {
       const auto topology = service_.repository_.topology();
-      if (topology.generation <= sequence_) return;
+      if (topology.generation == sequence_) return;
       message_.Clear();
       message_.set_sequence(topology.generation);
       for (const auto& item : topology.items) {

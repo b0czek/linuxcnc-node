@@ -188,5 +188,17 @@ int main(int argc, char** argv) {
   auto hal = linuxcnc::v1::HalService::NewStub(channel);
   linuxcnc::v1::GetHalTopologyResponse topology;
   assert(hal->GetTopology(&context5, {}, &topology).ok());
+  grpc::ClientContext future_topology_context;
+  future_topology_context.set_deadline(
+      std::chrono::system_clock::now() + std::chrono::seconds(2));
+  linuxcnc::v1::WatchHalTopologyRequest future_topology_request;
+  future_topology_request.set_after_sequence(topology.sequence() + 1000);
+  auto future_topology = hal->WatchTopology(
+      &future_topology_context, future_topology_request);
+  linuxcnc::v1::WatchHalTopologyEvent future_topology_event;
+  assert(future_topology->Read(&future_topology_event));
+  assert(future_topology_event.sequence() < future_topology_request.after_sequence());
+  future_topology_context.TryCancel();
+  (void)future_topology->Finish();
   return 0;
 }
