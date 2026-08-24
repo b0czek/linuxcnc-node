@@ -2,12 +2,17 @@
 
 #include "server_service.hpp"
 
-#include "linuxcnc_grpc/callback_runtime.hpp"
-#include "linuxcnc_grpc/daemon_config.hpp"
-#include "linuxcnc_grpc/position_telemetry.hpp"
-#include "linuxcnc_grpc/program_workspace.hpp"
-
 #include <memory>
+
+namespace linuxcnc::server {
+
+class BoundedExecutor;
+class AdmissionCounter;
+class PositionTelemetry;
+class ProgramWorkspaceStore;
+struct DaemonConfig;
+
+}  // namespace linuxcnc::server
 
 namespace linuxcnc::server::detail {
 

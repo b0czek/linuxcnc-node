@@ -225,12 +225,25 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
         src/grpc_hal_mapping.cc)
     target_link_libraries(linuxcnc-grpc-wire PUBLIC
         linuxcnc-grpc-domain linuxcnc-grpc-proto)
-    target_sources(linuxcnc-grpc-server PRIVATE
+    set(LINUXCNC_GRPC_SERVER_SOURCES
         src/grpc_server.cc
+        src/grpc/server_runtime.cc
         src/grpc/machine_service.cc
+        src/grpc/machine_status_codec.cc
         src/grpc/program_service.cc
         src/grpc/hal_service.cc
         src/grpc/scope_service.cc)
+    if(LINUXCNC_GRPC_HAS_HAL)
+        list(APPEND LINUXCNC_GRPC_SERVER_SOURCES src/grpc/hal_service_hal.cc)
+    else()
+        list(APPEND LINUXCNC_GRPC_SERVER_SOURCES src/grpc/hal_service_repository.cc)
+    endif()
+    if(LINUXCNC_GRPC_HAS_SCOPE)
+        list(APPEND LINUXCNC_GRPC_SERVER_SOURCES src/grpc/scope_service_controller.cc)
+    else()
+        list(APPEND LINUXCNC_GRPC_SERVER_SOURCES src/grpc/scope_service_manager.cc)
+    endif()
+    target_sources(linuxcnc-grpc-server PRIVATE ${LINUXCNC_GRPC_SERVER_SOURCES})
     target_sources(linuxcnc-grpc-server PRIVATE src/position_telemetry_server.cc)
     target_compile_definitions(linuxcnc-grpc-server PRIVATE LINUXCNC_GRPC_BUILD_WIRE=1)
     target_compile_definitions(linuxcnc-grpc-server PRIVATE BOOST_ERROR_CODE_HEADER_ONLY=1)
@@ -315,13 +328,31 @@ if(LINUXCNC_GRPC_BUILD_TESTS)
         -Wall -Wextra -Wpedantic)
     add_test(NAME linuxcnc-grpc-native-edge-tests
              COMMAND linuxcnc-grpc-native-edge-tests)
+    set(LINUXCNC_GRPC_CALLBACK_SOURCES
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc_server.cc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/server_runtime.cc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/server_runtime.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/machine_service.cc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/program_service.cc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/hal_service.cc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/scope_service.cc")
+    if(LINUXCNC_GRPC_HAS_HAL)
+        list(APPEND LINUXCNC_GRPC_CALLBACK_SOURCES
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/hal_service_hal.cc")
+    else()
+        list(APPEND LINUXCNC_GRPC_CALLBACK_SOURCES
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/hal_service_repository.cc")
+    endif()
+    if(LINUXCNC_GRPC_HAS_SCOPE)
+        list(APPEND LINUXCNC_GRPC_CALLBACK_SOURCES
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/scope_service_controller.cc")
+    else()
+        list(APPEND LINUXCNC_GRPC_CALLBACK_SOURCES
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/scope_service_manager.cc")
+    endif()
     add_test(NAME linuxcnc-grpc-callback-source-assertion
         COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/tests/assert_callback_server.sh"
-                "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc_server.cc"
-                "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/machine_service.cc"
-                "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/program_service.cc"
-                "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/hal_service.cc"
-                "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/scope_service.cc")
+                ${LINUXCNC_GRPC_CALLBACK_SOURCES})
     add_executable(linuxcnc-grpc-hal-adapter-contract-tests
         tests/hal_adapter_contract_tests.cc)
     target_compile_features(linuxcnc-grpc-hal-adapter-contract-tests PRIVATE cxx_std_17)
