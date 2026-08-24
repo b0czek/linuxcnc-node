@@ -225,11 +225,18 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
         src/grpc_hal_mapping.cc)
     target_link_libraries(linuxcnc-grpc-wire PUBLIC
         linuxcnc-grpc-domain linuxcnc-grpc-proto)
-    target_sources(linuxcnc-grpc-server PRIVATE src/grpc_server.cc)
+    target_sources(linuxcnc-grpc-server PRIVATE
+        src/grpc_server.cc
+        src/grpc/machine_service.cc
+        src/grpc/program_service.cc
+        src/grpc/hal_service.cc
+        src/grpc/scope_service.cc)
     target_sources(linuxcnc-grpc-server PRIVATE src/position_telemetry_server.cc)
     target_compile_definitions(linuxcnc-grpc-server PRIVATE LINUXCNC_GRPC_BUILD_WIRE=1)
     target_compile_definitions(linuxcnc-grpc-server PRIVATE BOOST_ERROR_CODE_HEADER_ONLY=1)
     target_include_directories(linuxcnc-grpc-server PRIVATE ${Boost_INCLUDE_DIRS})
+    target_include_directories(linuxcnc-grpc-server PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_link_libraries(linuxcnc-grpc-server PRIVATE linuxcnc-grpc-wire)
     add_executable(linuxcnc-grpc-health-check src/health_check_main.cc)
     target_compile_features(linuxcnc-grpc-health-check PRIVATE cxx_std_17)
@@ -310,7 +317,11 @@ if(LINUXCNC_GRPC_BUILD_TESTS)
              COMMAND linuxcnc-grpc-native-edge-tests)
     add_test(NAME linuxcnc-grpc-callback-source-assertion
         COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/tests/assert_callback_server.sh"
-                "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc_server.cc")
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc_server.cc"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/machine_service.cc"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/program_service.cc"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/hal_service.cc"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/scope_service.cc")
     add_executable(linuxcnc-grpc-hal-adapter-contract-tests
         tests/hal_adapter_contract_tests.cc)
     target_compile_features(linuxcnc-grpc-hal-adapter-contract-tests PRIVATE cxx_std_17)
