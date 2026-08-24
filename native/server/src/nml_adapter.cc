@@ -122,15 +122,15 @@ struct NmlAdapter::Impl {
     return tool_mmap_ready;
   }
 
-  bool update_tool_data(const NmlToolEntry& source) {
-    if (!ensure_tool_mmap()) return false;
+  std::optional<int> update_tool_data(const NmlToolEntry& source) {
+    if (!ensure_tool_mmap()) return std::nullopt;
     int index = tooldata_find_index_for_tool(source.tool_no);
     if (index < 0) {
       index = tooldata_last_index_get() + 1;
-      if (index >= CANON_POCKETS_MAX) return false;
+      if (index >= CANON_POCKETS_MAX) return std::nullopt;
     }
     CANON_TOOL_TABLE entry = tooldata_entry_init();
-    if (tooldata_get(&entry, index) != IDX_OK) return false;
+    if (tooldata_get(&entry, index) != IDX_OK) return std::nullopt;
     entry.toolno = source.tool_no;
     entry.pocketno = source.pocket_no;
     entry.offset = to_emc_pose(source.offset);
@@ -139,9 +139,9 @@ struct NmlAdapter::Impl {
     entry.backangle = source.back_angle; entry.orientation = source.orientation;
     std::strncpy(entry.comment, source.comment.c_str(), sizeof(entry.comment) - 1);
     entry.comment[sizeof(entry.comment) - 1] = '\0';
-    if (tooldata_put(entry, index) == IDX_FAIL) return false;
+    if (tooldata_put(entry, index) == IDX_FAIL) return std::nullopt;
     if (!tool_table_filename.empty()) (void)tooldata_save(tool_table_filename.c_str());
-    return true;
+    return index;
   }
 
   void read_tool_table_path() {
@@ -595,9 +595,9 @@ CommandTicket NmlAdapter::submit(NmlCommand command, std::function<bool()> cance
             // Keep the shared tool table (including comment and wear data)
             // coherent before sending the corresponding NML offset command.
             // The NML command remains authoritative when no tool mmap exists.
-            impl_->update_tool_data(command.tool);
+            const auto tooldata_index = impl_->update_tool_data(command.tool);
             auto value = std::make_unique<EMC_TOOL_SET_OFFSET>();
-            value->pocket = command.tool.pocket_no;
+            value->pocket = tooldata_index.value_or(command.tool.pocket_no);
             value->toolno = command.tool.tool_no;
             value->offset = to_emc_pose(command.tool.offset);
             value->wear_offset = to_emc_pose(command.tool.wear_offset);
