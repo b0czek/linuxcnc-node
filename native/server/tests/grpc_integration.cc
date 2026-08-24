@@ -152,6 +152,12 @@ int main(int argc, char** argv) {
   const auto oversized = machine->ConfigurePositionHistory(
       &oversized_context, config, &empty);
   assert(oversized.error_code() == grpc::StatusCode::RESOURCE_EXHAUSTED);
+  grpc::ClientContext slow_sample_context;
+  config.set_capacity(0);
+  config.set_sample_period_ms(60001);
+  const auto slow_sample = machine->ConfigurePositionHistory(
+      &slow_sample_context, config, &empty);
+  assert(slow_sample.error_code() == grpc::StatusCode::INVALID_ARGUMENT);
 
   grpc::ClientContext clear_context;
   assert(machine->ClearPositionHistory(&clear_context, empty, &empty).ok());

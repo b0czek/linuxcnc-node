@@ -36,6 +36,8 @@ namespace {
 
 using namespace ::linuxcnc::v1;
 
+constexpr std::uint32_t kMaxPositionSamplePeriodMs = 60'000;
+
 ::grpc::Status Invalid(const std::string& message) {
   return {::grpc::StatusCode::INVALID_ARGUMENT, message};
 }
@@ -540,6 +542,9 @@ class MachineServiceImpl final : public MachineCallbackBase,
       return {::grpc::StatusCode::RESOURCE_EXHAUSTED,
               "position history capacity exceeds 100000 samples"};
     }
+    if (request.sample_period_ms() > kMaxPositionSamplePeriodMs) {
+      return Invalid("position history sample period exceeds 60000 ms");
+    }
     if (request.capacity() > 0) {
       positions_->configure(request.capacity());
     }
@@ -549,7 +554,9 @@ class MachineServiceImpl final : public MachineCallbackBase,
       if (request.sample_period_ms() > 0) {
         position_period_ = std::chrono::milliseconds(request.sample_period_ms());
       }
+      ++position_config_generation_;
     }
+    position_condition_.notify_all();
     if (!request.enabled()) positions_->clear();
     return ::grpc::Status::OK;
   }
@@ -872,8 +879,10 @@ class MachineServiceImpl final : public MachineCallbackBase,
       }
       std::unique_lock lock(position_mutex_);
       const auto period = position_period_;
-      position_condition_.wait_for(lock, period, [this] {
-        return stopping_.load(std::memory_order_relaxed);
+      const auto generation = position_config_generation_;
+      position_condition_.wait_for(lock, period, [this, generation] {
+        return stopping_.load(std::memory_order_relaxed) ||
+               position_config_generation_ != generation;
       });
     }
   }
@@ -931,6 +940,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
   std::mutex position_mutex_;
   std::condition_variable position_condition_;
   bool position_enabled_ = true;
+  std::uint64_t position_config_generation_ = 0;
   std::atomic<bool> stopping_;
   std::thread position_poller_;
 };
