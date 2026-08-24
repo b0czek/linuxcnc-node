@@ -79,11 +79,21 @@ struct NmlToolEntry {
   std::int32_t pocket_no = 0;
   NmlPose offset;
   NmlPose wear_offset;
+  std::size_t offset_values = 0;
+  std::size_t wear_offset_values = 0;
   double diameter = 0.0;
   double front_angle = 0.0;
   double back_angle = 0.0;
   std::int32_t orientation = 0;
   std::string comment;
+  bool has_pocket_no = false;
+  bool has_offset = false;
+  bool has_wear_offset = false;
+  bool has_diameter = false;
+  bool has_front_angle = false;
+  bool has_back_angle = false;
+  bool has_orientation = false;
+  bool has_comment = false;
 };
 
 struct NmlTaskStatus {

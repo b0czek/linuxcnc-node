@@ -581,6 +581,34 @@ int main(int argc, char** argv) {
   assert(configure_position_status.ok());
   verify_position_telemetry(telemetry_endpoint);
 
+  // A slow position-history cadence must not throttle the independent status
+  // watcher. The old shared sleep made this update take up to 60 seconds.
+  position_config.set_sample_period_ms(60000);
+  grpc::ClientContext slow_position_context;
+  assert(machine->ConfigurePositionHistory(
+      &slow_position_context, position_config, &empty).ok());
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  const auto before_slow_position_command = get_status_with_retry(machine.get());
+  grpc::ClientContext independent_watch_context;
+  independent_watch_context.set_deadline(
+      std::chrono::system_clock::now() + std::chrono::seconds(2));
+  linuxcnc::v1::WatchStatusRequest independent_watch_request;
+  independent_watch_request.set_after_sequence(before_slow_position_command.sequence());
+  auto independent_watch = machine->WatchStatus(
+      &independent_watch_context, independent_watch_request);
+  const bool independent_optional_stop =
+      !before_slow_position_command.status().task().optional_stop_state();
+  (void)set_optional_stop(machine.get(), independent_optional_stop,
+                          linuxcnc::v1::WAIT_POLICY_COMPLETED);
+  linuxcnc::v1::WatchStatusEvent independent_event;
+  assert(independent_watch->Read(&independent_event));
+  independent_watch_context.TryCancel();
+  (void)independent_watch->Finish();
+  position_config.set_sample_period_ms(10);
+  grpc::ClientContext restore_position_context;
+  assert(machine->ConfigurePositionHistory(
+      &restore_position_context, position_config, &empty).ok());
+
   ExecuteCommandRequest reset_estop;
   reset_estop.mutable_set_state()->set_state(linuxcnc::v1::TASK_STATE_ESTOP_RESET);
   (void)execute_completed(machine.get(), std::move(reset_estop));
@@ -625,6 +653,35 @@ int main(int argc, char** argv) {
       return 1;
     }
   }
+
+  const auto tool_status = get_status_with_retry(machine.get());
+  linuxcnc::v1::ToolEntry expected_tool;
+  for (const auto& tool : tool_status.status().tool_table()) {
+    if (tool.tool_no() == 1) expected_tool = tool;
+  }
+  assert(expected_tool.tool_no() == 1);
+  ExecuteCommandRequest partial_tool_update;
+  auto* partial_tool = partial_tool_update.mutable_set_tool()->mutable_tool();
+  partial_tool->set_tool_no(1);
+  partial_tool->mutable_wear_offset()->add_values(0.25);
+  (void)execute_completed(machine.get(), std::move(partial_tool_update));
+  expected_tool.mutable_wear_offset()->set_values(0, 0.25);
+  const auto tool_deadline = std::chrono::steady_clock::now() +
+                             std::chrono::seconds(5);
+  bool tool_updated = false;
+  while (std::chrono::steady_clock::now() < tool_deadline && !tool_updated) {
+    const auto status = get_status_with_retry(machine.get());
+    for (const auto& tool : status.status().tool_table()) {
+      if (tool.tool_no() == 1 &&
+          tool.SerializeAsString() == expected_tool.SerializeAsString()) {
+        tool_updated = true;
+        break;
+      }
+    }
+    if (!tool_updated) std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+  assert(tool_updated);
+
   expect_command_error(machine.get(), ExecuteCommandRequest{},
                        grpc::StatusCode::INVALID_ARGUMENT);
 

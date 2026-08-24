@@ -78,6 +78,13 @@ development tools are available, configure with
 Wire builds also install `linuxcnc-grpc-health-check`. It calls the standard
 gRPC health service at `127.0.0.1:50051` by default, or at the endpoint passed
 as its first argument, and exits nonzero unless the server reports `SERVING`.
+For TLS, pass `--tls-ca=PATH`; mTLS additionally accepts
+`--tls-certificate=PATH` and `--tls-private-key=PATH`. The equivalent
+`LINUXCNC_GRPC_TLS_CA`, `LINUXCNC_GRPC_TLS_CERT`, and
+`LINUXCNC_GRPC_TLS_KEY` environment variables are read automatically, so the
+Docker health check inherits the same client credentials as the container.
+Use `--tls-server-name=NAME` or `LINUXCNC_GRPC_TLS_SERVER_NAME` when the
+certificate identity differs from the health-check endpoint.
 
 ## Program preview gRPC stream
 

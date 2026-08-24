@@ -127,26 +127,56 @@ struct NmlAdapter::Impl {
     return tool_mmap_ready;
   }
 
-  std::optional<int> update_tool_data(const NmlToolEntry& source) {
+  std::optional<int> update_tool_data(NmlToolEntry* source) {
     std::lock_guard lock(tool_mutex);
     if (!ensure_tool_mmap_unlocked()) return std::nullopt;
-    int index = tooldata_find_index_for_tool(source.tool_no);
+    int index = tooldata_find_index_for_tool(source->tool_no);
+    bool is_new = false;
     if (index < 0) {
-      index = tooldata_last_index_get() + 1;
+      const int next_index = tooldata_last_index_get() + 1;
+      const int first_index = tool_mmap_is_random_toolchanger() ? 0 : 1;
+      for (int candidate = first_index; candidate < next_index; ++candidate) {
+        CANON_TOOL_TABLE candidate_entry;
+        if (tooldata_get(&candidate_entry, candidate) == IDX_OK &&
+            candidate_entry.toolno < 0) {
+          index = candidate;
+          is_new = true;
+          break;
+        }
+      }
+      if (index < 0) {
+        index = next_index;
+        is_new = true;
+      }
       if (index >= CANON_POCKETS_MAX) return std::nullopt;
     }
     CANON_TOOL_TABLE entry = tooldata_entry_init();
-    if (tooldata_get(&entry, index) != IDX_OK) return std::nullopt;
-    entry.toolno = source.tool_no;
-    entry.pocketno = source.pocket_no;
-    entry.offset = to_emc_pose(source.offset);
-    entry.wear_offset = to_emc_pose(source.wear_offset);
-    entry.diameter = source.diameter; entry.frontangle = source.front_angle;
-    entry.backangle = source.back_angle; entry.orientation = source.orientation;
-    std::strncpy(entry.comment, source.comment.c_str(), sizeof(entry.comment) - 1);
-    entry.comment[sizeof(entry.comment) - 1] = '\0';
+    if (!is_new && tooldata_get(&entry, index) != IDX_OK) return std::nullopt;
+    entry.toolno = source->tool_no;
+    if (source->has_pocket_no) entry.pocketno = source->pocket_no;
+    if (source->has_offset) {
+      auto values = from_emc_pose(entry.offset);
+      std::copy_n(source->offset.values.begin(), source->offset_values,
+                  values.values.begin());
+      entry.offset = to_emc_pose(values);
+    }
+    if (source->has_wear_offset) {
+      auto values = from_emc_pose(entry.wear_offset);
+      std::copy_n(source->wear_offset.values.begin(), source->wear_offset_values,
+                  values.values.begin());
+      entry.wear_offset = to_emc_pose(values);
+    }
+    if (source->has_diameter) entry.diameter = source->diameter;
+    if (source->has_front_angle) entry.frontangle = source->front_angle;
+    if (source->has_back_angle) entry.backangle = source->back_angle;
+    if (source->has_orientation) entry.orientation = source->orientation;
+    if (source->has_comment) {
+      std::strncpy(entry.comment, source->comment.c_str(), sizeof(entry.comment) - 1);
+      entry.comment[sizeof(entry.comment) - 1] = '\0';
+    }
     if (tooldata_put(entry, index) == IDX_FAIL) return std::nullopt;
     if (!tool_table_filename.empty()) (void)tooldata_save(tool_table_filename.c_str());
+    fill_tool(entry, source);
     return index;
   }
 
@@ -602,10 +632,12 @@ CommandTicket NmlAdapter::submit(NmlCommand command, std::function<bool()> cance
           case NmlCommandKind::SetTool: {
             // Keep the shared tool table (including comment and wear data)
             // coherent before sending the corresponding NML offset command.
-            // The NML command remains authoritative when no tool mmap exists.
-            const auto tooldata_index = impl_->update_tool_data(command.tool);
+            const auto tooldata_index = impl_->update_tool_data(&command.tool);
+            if (!tooldata_index) {
+              throw std::runtime_error("unable to update LinuxCNC tool table");
+            }
             auto value = std::make_unique<EMC_TOOL_SET_OFFSET>();
-            value->pocket = tooldata_index.value_or(command.tool.pocket_no);
+            value->pocket = *tooldata_index;
             value->toolno = command.tool.tool_no;
             value->offset = to_emc_pose(command.tool.offset);
             value->wear_offset = to_emc_pose(command.tool.wear_offset);

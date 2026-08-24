@@ -317,6 +317,7 @@ void workspace_traversal_quota_ttl_and_materialization_test() {
     const auto first = store.create();
     assert(store.write_file(first, "one.ngc", bytes("1234")));
     assert(store.write_file(first, "one.ngc", bytes("5678")));
+    assert(store.write_file(first, "one.ngc", bytes("1234567")));
     assert(!store.write_file(first, "two.ngc", bytes("12345")));
     const auto second = store.create();
     assert(store.write_file(second, "two.ngc", bytes("xy")));

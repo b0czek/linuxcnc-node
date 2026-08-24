@@ -30,9 +30,10 @@ test("scope packed channels become the existing Float64Array domain layout", () 
 test("indexed scope channels retain disabled slots", () => {
   const capture = mapScopeCapture({
     channels: [
+      // proto3 omits index zero and false enabled metadata on the wire.
+      { enabled: true, values: [1, 2] },
+      { index: 1 },
       { index: 2, enabled: true, values: [3] },
-      { index: 0, enabled: true, values: [1, 2] },
-      { index: 1, enabled: false },
     ],
   });
 

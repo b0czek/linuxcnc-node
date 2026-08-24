@@ -97,4 +97,22 @@ assert.deepEqual(packed.values, [1.25, -2.5]);
 assert.equal(packed.index, 7);
 assert.equal(packed.enabled, true);
 
-console.log("generated grpc service, command/oneof, reserved-field, 64-bit, unknown-field, and packed-channel conformance passed");
+const spindleOn = loaded.linuxcnc.v1.SpindleOn;
+const spindleDefault = spindleOn.deserialize(spindleOn.serialize({ speed: 1000 }));
+const spindleNoWait = spindleOn.deserialize(spindleOn.serialize({ speed: 1000, waitForSpeed: false }));
+assert.equal(spindleDefault.waitForSpeed, undefined);
+assert.equal(spindleNoWait.waitForSpeed, false);
+assert.equal(spindleNoWait._waitForSpeed, "waitForSpeed");
+
+const toolEntry = loaded.linuxcnc.v1.ToolEntry;
+const partialTool = toolEntry.deserialize(toolEntry.serialize({
+  toolNo: 7,
+  diameter: 0,
+  wearOffset: { values: [0.25] },
+}));
+assert.equal(partialTool.pocketNo, undefined);
+assert.equal(partialTool.diameter, 0);
+assert.equal(partialTool._diameter, "diameter");
+assert.deepEqual(partialTool.wearOffset.values, [0.25]);
+
+console.log("generated grpc service, command/oneof, scalar presence, 64-bit, unknown-field, and packed-channel conformance passed");

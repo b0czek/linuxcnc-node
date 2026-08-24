@@ -12,6 +12,12 @@ export interface ToolEntry {
   'backAngle'?: (number | string);
   'orientation'?: (number);
   'comment'?: (string);
+  '_pocketNo'?: "pocketNo";
+  '_diameter'?: "diameter";
+  '_frontAngle'?: "frontAngle";
+  '_backAngle'?: "backAngle";
+  '_orientation'?: "orientation";
+  '_comment'?: "comment";
 }
 
 export interface ToolEntry__Output {
@@ -24,4 +30,10 @@ export interface ToolEntry__Output {
   'backAngle'?: (number);
   'orientation'?: (number);
   'comment'?: (string);
+  '_pocketNo'?: "pocketNo";
+  '_diameter'?: "diameter";
+  '_frontAngle'?: "frontAngle";
+  '_backAngle'?: "backAngle";
+  '_orientation'?: "orientation";
+  '_comment'?: "comment";
 }

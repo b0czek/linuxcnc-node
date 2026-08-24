@@ -6,6 +6,7 @@ export interface SpindleOn {
   'spindleIndex'?: (number);
   'waitForSpeed'?: (boolean);
   'hasSpindleIndex'?: (boolean);
+  '_waitForSpeed'?: "waitForSpeed";
 }
 
 export interface SpindleOn__Output {
@@ -13,4 +14,5 @@ export interface SpindleOn__Output {
   'spindleIndex'?: (number);
   'waitForSpeed'?: (boolean);
   'hasSpindleIndex'?: (boolean);
+  '_waitForSpeed'?: "waitForSpeed";
 }

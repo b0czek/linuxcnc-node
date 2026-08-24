@@ -7,6 +7,7 @@ const api = worker!.getAppAPI() as HostConnection<HalInspectorProtocol>;
 let client: HalScopeClient | null = null;
 let scope: ScopeSession | null = null;
 let scopeOff: (() => void) | null = null;
+let scopeErrorOff: (() => void) | null = null;
 let connected = false;
 let startupError = "HAL Inspector is starting";
 let topologyRevision = 0;
@@ -119,12 +120,21 @@ async function ensureScope(): Promise<ScopeSession> {
   if (scope) return scope;
   if (!client) throw new Error(startupError);
   scope = await client.openScope();
-  scopeOff = scope.onMessage((message) => {
+  const session = scope;
+  scopeOff = session.onMessage((message) => {
     if (message.status) api.send("scope/status", mapScopeStatus(message.status));
     if (message.capture) deliverCapture(mapScopeCapture(message.capture));
     if (message.roll) deliverRoll(mapScopeDelta(message.roll));
   });
-  return scope;
+  scopeErrorOff = session.onError((error) => {
+    if (scope !== session) return;
+    scopeOff?.(); scopeOff = null;
+    scopeErrorOff?.(); scopeErrorOff = null;
+    scope = null;
+    setRunMode("stop");
+    api.send("error", { code: classifyGrpcError(error), message: error.message });
+  });
+  return session;
 }
 function queued<T>(operation: () => Promise<RpcResult<T>> | RpcResult<T>): Promise<RpcResult<T>> { const next = operationQueue.then(operation, operation); operationQueue = next.then(() => undefined, () => undefined); return next; }
 
@@ -134,16 +144,16 @@ api.handle("subscriptions/set", async ({ refs, intervalMs }) => { subscribed = [
 api.handle("item/write", async ({ ref, value }) => { try { const meta = itemMeta(ref); if (!meta) return fail("NOT_FOUND", `${ref.kind} '${ref.name}' is unavailable`); const writable = ref.kind === "param" ? meta.direction === "rw" : ref.kind === "pin" ? meta.direction !== "out" && !meta.signalName : meta.writers === 0; if (!writable) return fail("NOT_WRITABLE", `${ref.name} is not safely writable`); const parsed = parseWrite(meta.type, value); if (!client) return fail("DISCONNECTED", startupError); const written = await client.write(ref, meta.type, parsed); previousValues.set(refKey(ref), written); return ok({ value: written }); } catch (error) { return fail("INVALID_VALUE", error); } });
 
 api.handle("scope/ensure", () => queued(async () => { try { return ok((await ensureScope()).status ?? defaultScopeStatus()); } catch (error) { return fail(classifyGrpcError(error), error); } }));
-api.handle("scope/configure", (config: ScopeAcquisitionConfig) => queued(async () => { try { const session = await ensureScope(); scopeConfig = copyScopeConfig(config); const wasRunning = runMode === "run"; const wasRolling = runMode === "roll"; const wasSingle = runMode === "single"; const current = session.status ?? defaultScopeStatus(); session.send(scopeConfigure(wireScopeConfig(config))); if (wasRolling) { pendingCapture = null; pendingRoll = null; skippedCaptures = 0; rollGeneration++; session.send(scopeConfigure(wireScopeConfig(rollConfig(scopeConfig, current.recordLength)))); session.send(scopeRun(3)); return ok({ ...current, state: "init" }); } if (wasRunning) session.send(scopeRun(1)); if (wasSingle) setRunMode("stop"); return ok(session.status ?? current); } catch (error) { setRunMode("stop"); return fail(classifyGrpcError(error), error); } }));
-api.handle("scope/run", ({ mode }) => queued(async () => { try { const session = await ensureScope(); if (!scopeConfig) return fail("SCOPE_INVALID_SOURCE", "Configure scope channels before starting acquisition"); const current = session.status ?? defaultScopeStatus(); pendingCapture = null; pendingRoll = null; skippedCaptures = 0; const config = mode === "roll" ? rollConfig(scopeConfig, current.recordLength) : scopeConfig; session.send(scopeConfigure(wireScopeConfig(config))); if (mode === "roll") rollGeneration++; session.send(scopeRun(mode === "run" ? 1 : mode === "single" ? 2 : 3)); setRunMode(mode); return ok(session.status ?? current); } catch (error) { setRunMode("stop"); return fail(classifyGrpcError(error), error); } }));
-api.handle("scope/stop", () => queued(async () => { try { if (!scope) return fail("SCOPE_UNAVAILABLE", "Scope is not attached"); scope.send(scopeStop()); setRunMode("stop"); pendingRoll = null; return ok(scope.status ?? defaultScopeStatus()); } catch (error) { return fail(classifyGrpcError(error), error); } }));
-api.handle("scope/force-trigger", () => queued(async () => { try { if (!scope) return fail("SCOPE_UNAVAILABLE", "Scope is not attached"); if (runMode === "roll") return fail("INVALID_VALUE", "Force trigger is unavailable in Roll mode"); scope.send(scopeTrigger()); return ok(scope.status ?? defaultScopeStatus()); } catch (error) { return fail(classifyGrpcError(error), error); } }));
+api.handle("scope/configure", (config: ScopeAcquisitionConfig) => queued(async () => { try { const session = await ensureScope(); scopeConfig = copyScopeConfig(config); const wasRunning = runMode === "run"; const wasRolling = runMode === "roll"; const wasSingle = runMode === "single"; const current = session.status ?? defaultScopeStatus(); await session.send(scopeConfigure(wireScopeConfig(config))); if (wasRolling) { pendingCapture = null; pendingRoll = null; skippedCaptures = 0; rollGeneration++; await session.send(scopeConfigure(wireScopeConfig(rollConfig(scopeConfig, current.recordLength)))); await session.send(scopeRun(3)); return ok(session.status ?? { ...current, state: "init" }); } if (wasRunning) await session.send(scopeRun(1)); if (wasSingle) setRunMode("stop"); return ok(session.status ?? current); } catch (error) { setRunMode("stop"); return fail(classifyGrpcError(error), error); } }));
+api.handle("scope/run", ({ mode }) => queued(async () => { try { const session = await ensureScope(); if (!scopeConfig) return fail("SCOPE_INVALID_SOURCE", "Configure scope channels before starting acquisition"); const current = session.status ?? defaultScopeStatus(); pendingCapture = null; pendingRoll = null; skippedCaptures = 0; const config = mode === "roll" ? rollConfig(scopeConfig, current.recordLength) : scopeConfig; await session.send(scopeConfigure(wireScopeConfig(config))); if (mode === "roll") rollGeneration++; await session.send(scopeRun(mode === "run" ? 1 : mode === "single" ? 2 : 3)); setRunMode(mode); return ok(session.status ?? current); } catch (error) { setRunMode("stop"); return fail(classifyGrpcError(error), error); } }));
+api.handle("scope/stop", () => queued(async () => { try { if (!scope) return fail("SCOPE_UNAVAILABLE", "Scope is not attached"); await scope.send(scopeStop()); setRunMode("stop"); pendingRoll = null; return ok(scope.status ?? defaultScopeStatus()); } catch (error) { return fail(classifyGrpcError(error), error); } }));
+api.handle("scope/force-trigger", () => queued(async () => { try { if (!scope) return fail("SCOPE_UNAVAILABLE", "Scope is not attached"); if (runMode === "roll") return fail("INVALID_VALUE", "Force trigger is unavailable in Roll mode"); await scope.send(scopeTrigger()); return ok(scope.status ?? defaultScopeStatus()); } catch (error) { return fail(classifyGrpcError(error), error); } }));
 
 api.on("ui/state", (state) => { visible = state.visible; scopeExpanded = state.scopeExpanded; if (visible) void pollValues(); if (visible && scopeExpanded && pendingCapture && inFlightCapture === null) { const capture = pendingCapture; pendingCapture = null; deliverCapture(capture); } if (visible && scopeExpanded && pendingRoll && inFlightCapture === null) { const batch = pendingRoll; pendingRoll = null; deliverRoll(batch); } });
-api.on("scope/capture-ack", ({ id }) => { if (inFlightCapture !== id) return; scope?.send(scopeAck(inFlightGeneration ?? BigInt(id))); inFlightCapture = null; inFlightGeneration = undefined; if (visible && scopeExpanded && pendingRoll) { const batch = pendingRoll; pendingRoll = null; deliverRoll(batch); } else if (visible && scopeExpanded && pendingCapture) { const capture = pendingCapture; pendingCapture = null; deliverCapture(capture); } });
+api.on("scope/capture-ack", ({ id }) => { if (inFlightCapture !== id) return; void scope?.send(scopeAck(inFlightGeneration ?? BigInt(id))).catch(() => undefined); inFlightCapture = null; inFlightGeneration = undefined; if (visible && scopeExpanded && pendingRoll) { const batch = pendingRoll; pendingRoll = null; deliverRoll(batch); } else if (visible && scopeExpanded && pendingCapture) { const capture = pendingCapture; pendingCapture = null; deliverCapture(capture); } });
 
 async function initialize(): Promise<void> { try { client = await createHalScopeClient(); topology = await client.getTopology(); client.watchTopology((next) => { topology = { ...next, revision: ++topologyRevision }; api.send("topology/changed", topology); }); restartValueTimer(); connected = true; startupError = ""; api.send("connection/state", { connected: true }); } catch (error) { connected = false; startupError = error instanceof Error ? error.message : String(error); console.error("LinuxCNC gRPC initialization failed:", error); api.send("connection/state", { connected: false, message: startupError }); } }
-function cleanup(): void { if (pollTimer) clearInterval(pollTimer); scopeOff?.(); scope?.close(); scope = null; client?.close(); client = null; }
+function cleanup(): void { if (pollTimer) clearInterval(pollTimer); scopeOff?.(); scopeErrorOff?.(); scope?.close(); scope = null; client?.close(); client = null; }
 setImmediate(() => void initialize());
 process.once("exit", cleanup);
 process.once("SIGTERM", () => { cleanup(); process.exit(0); });

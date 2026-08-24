@@ -193,13 +193,17 @@ function mapChannels(channels: any[] | undefined): Array<Float64Array | null> {
   // New daemon frames carry the logical slot index so a disabled/null channel
   // cannot collapse the fixed scope layout.  Keep accepting the old ordered
   // representation while peers roll forward.
-  const indexed = values.some((channel) => channel && Number.isInteger(channel.index));
+  const indexed = values.some((channel) => channel &&
+    (Number.isInteger(channel.index) || channel.enabled !== undefined));
   if (!indexed) return values.map((channel) => channel ? new Float64Array(channel.values ?? []) : null);
-  const lastIndex = values.reduce((max, channel) => Math.max(max, channel && Number.isInteger(channel.index) ? channel.index : -1), -1);
+  const lastIndex = values.reduce((max, channel, position) =>
+    Math.max(max, channel && Number.isInteger(channel.index) ? channel.index : position), -1);
   const mapped: Array<Float64Array | null> = new Array(lastIndex + 1).fill(null);
-  for (const channel of values) {
-    if (!channel || !Number.isInteger(channel.index) || channel.enabled === false) continue;
-    mapped[channel.index] = new Float64Array(channel.values ?? []);
+  for (let position = 0; position < values.length; position++) {
+    const channel = values[position];
+    if (!channel || channel.enabled !== true) continue;
+    const index = Number.isInteger(channel.index) ? channel.index : position;
+    mapped[index] = new Float64Array(channel.values ?? []);
   }
   return mapped;
 }
@@ -241,10 +245,11 @@ export function wireScopeConfig(config: ScopeAcquisitionConfig): WireScopeAcquis
 }
 
 export interface ScopeSession {
-  send(message: ScopeSessionMessage): void;
+  send(message: ScopeSessionMessage): Promise<void>;
   close(): void;
   readonly status: ScopeStatus | null;
   readonly onMessage: (listener: (message: ScopeSessionMessage__Output) => void) => () => void;
+  readonly onError: (listener: (error: Error) => void) => () => void;
 }
 
 export function scopeAcquire(): ScopeSessionMessage { return { message: "acquire", acquire: {} }; }
@@ -280,9 +285,21 @@ export async function createHalScopeClient(): Promise<HalScopeClient> {
   const topologyListeners = new Set<(value: TopologySnapshot) => void>();
   let watchStarted = false;
   let topologyStream: { cancel?: () => void; destroy?: () => void } | null = null;
+  let topologyRetry: NodeJS.Timeout | undefined;
+  let topologyRetryMs = 250;
+  let closed = false;
+
+  const scheduleTopologyWatch = (): void => {
+    if (closed || topologyListeners.size === 0 || topologyRetry) return;
+    topologyRetry = setTimeout(() => {
+      topologyRetry = undefined;
+      startTopologyWatch();
+    }, topologyRetryMs);
+    topologyRetryMs = Math.min(topologyRetryMs * 2, 5000);
+  };
 
   const startTopologyWatch = (): void => {
-    if (watchStarted) return;
+    if (closed || watchStarted) return;
     watchStarted = true;
     void (async () => {
       try {
@@ -290,13 +307,15 @@ export async function createHalScopeClient(): Promise<HalScopeClient> {
         topologyStream = stream;
         for await (const event of stream) {
           topology = mapTopology(event, ++revision);
+          topologyRetryMs = 250;
           for (const listener of topologyListeners) listener(topology);
         }
       } catch {
         // The unary snapshot remains usable while a transient watch reconnects.
-        watchStarted = false;
       } finally {
         topologyStream = null;
+        watchStarted = false;
+        scheduleTopologyWatch();
       }
     })();
   };
@@ -323,31 +342,72 @@ export async function createHalScopeClient(): Promise<HalScopeClient> {
     },
     async openScope() {
       const listeners = new Set<(message: ScopeSessionMessage__Output) => void>();
+      const errorListeners = new Set<(error: Error) => void>();
       let latestStatus: ScopeStatus | null = null;
+      let streamError: Error | null = null;
+      const acknowledgements: Array<{ resolve: () => void; reject: (error: Error) => void }> = [];
       const stream = scope.session() as AsyncIterable<ScopeSessionMessage__Output> & {
         write: (message: ScopeSessionMessage) => boolean;
         end: () => void;
         cancel?: () => void;
         destroy?: () => void;
       };
-      void (async () => {
+      const fail = (error: unknown): Error => {
+        if (streamError) return streamError;
+        const failure = error instanceof Error ? error : new Error(String(error));
+        streamError = failure;
+        for (const acknowledgement of acknowledgements.splice(0)) acknowledgement.reject(failure);
+        for (const listener of errorListeners) listener(failure);
+        return failure;
+      };
+      const reader = (async () => {
         try {
           for await (const message of stream) {
             if (message.status) latestStatus = mapScopeStatus(message.status);
             for (const listener of listeners) listener(message);
+            if (message.status) acknowledgements.shift()?.resolve();
           }
+          throw new Error("Scope session closed before the daemon acknowledged all commands");
+        } catch (error) {
+          throw fail(error);
         } finally {
           stream.end();
         }
       })();
-      stream.write(scopeAcquire());
+      // The reader is intentionally detached after its failures have been
+      // converted into command rejections and application error callbacks.
+      void reader.catch(() => undefined);
+      const send = (message: ScopeSessionMessage): Promise<void> => {
+        if (streamError) return Promise.reject(streamError);
+        if (message.message === "ack") {
+          try {
+            stream.write(message);
+            return Promise.resolve();
+          } catch (error) {
+            return Promise.reject(fail(error));
+          }
+        }
+        return new Promise<void>((resolve, reject) => {
+          acknowledgements.push({ resolve, reject });
+          try {
+            stream.write(message);
+          } catch (error) {
+            acknowledgements.pop();
+            reject(fail(error));
+          }
+        });
+      };
+      await send(scopeAcquire());
       return {
-        send(message) { stream.write(message); }, close() { stream.end(); stream.cancel?.(); stream.destroy?.(); },
+        send, close() { stream.end(); stream.cancel?.(); stream.destroy?.(); },
         get status() { return latestStatus; },
         onMessage(listener) { listeners.add(listener); return () => listeners.delete(listener); },
+        onError(listener) { errorListeners.add(listener); return () => errorListeners.delete(listener); },
       } satisfies ScopeSession;
     },
     close() {
+      closed = true;
+      if (topologyRetry) clearTimeout(topologyRetry);
       topologyStream?.cancel?.();
       topologyStream?.destroy?.();
       for (const service of [hal, scope, clients.machine, clients.program, clients.health]) {

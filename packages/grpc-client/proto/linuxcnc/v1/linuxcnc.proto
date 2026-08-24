@@ -248,14 +248,14 @@ message Position {
 
 message ToolEntry {
   int32 tool_no = 1;
-  int32 pocket_no = 2;
+  optional int32 pocket_no = 2;
   Position offset = 3;
   Position wear_offset = 4;
-  double diameter = 5;
-  double front_angle = 6;
-  double back_angle = 7;
-  int32 orientation = 8;
-  string comment = 9;
+  optional double diameter = 5;
+  optional double front_angle = 6;
+  optional double back_angle = 7;
+  optional int32 orientation = 8;
+  optional string comment = 9;
 }
 
 message ActiveGCodes {
@@ -659,7 +659,7 @@ message JogStop { int32 axis_or_joint_index = 1; bool is_joint_jog = 2; }
 message JogContinuous { int32 axis_or_joint_index = 1; bool is_joint_jog = 2; double speed = 3; }
 message JogIncrement { int32 axis_or_joint_index = 1; bool is_joint_jog = 2; double speed = 3; double increment = 4; }
 message JointLimit { int32 joint_index = 1; double limit = 2; }
-message SpindleOn { double speed = 1; int32 spindle_index = 2; bool wait_for_speed = 3; bool has_spindle_index = 4; }
+message SpindleOn { double speed = 1; int32 spindle_index = 2; optional bool wait_for_speed = 3; bool has_spindle_index = 4; }
 message SpindleIndex { int32 spindle_index = 1; }
 message SpindleBrake { bool engage = 1; int32 spindle_index = 2; bool has_spindle_index = 3; }
 message SetTool { ToolEntry tool = 1; }

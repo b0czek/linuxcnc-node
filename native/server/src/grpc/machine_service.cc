@@ -415,7 +415,8 @@ class MachineServiceImpl final : public MachineCallbackBase,
         command.number = request->spindle_on().speed();
         command.integer = request->spindle_on().has_spindle_index()
             ? request->spindle_on().spindle_index() : 0;
-        command.boolean = request->spindle_on().wait_for_speed();
+        command.boolean = !request->spindle_on().has_wait_for_speed() ||
+                          request->spindle_on().wait_for_speed();
         break;
       case ExecuteCommandRequest::kSpindleIncrease:
         command.kind = NmlCommandKind::SpindleIncrease;
@@ -448,14 +449,24 @@ class MachineServiceImpl final : public MachineCallbackBase,
         command.kind = NmlCommandKind::SetTool;
         const auto& source = request->set_tool().tool();
         command.tool.tool_no = source.tool_no();
+        command.tool.has_pocket_no = source.has_pocket_no();
         command.tool.pocket_no = source.pocket_no();
+        command.tool.has_offset = source.has_offset();
+        command.tool.has_wear_offset = source.has_wear_offset();
+        command.tool.has_diameter = source.has_diameter();
         command.tool.diameter = source.diameter();
+        command.tool.has_front_angle = source.has_front_angle();
         command.tool.front_angle = source.front_angle();
+        command.tool.has_back_angle = source.has_back_angle();
         command.tool.back_angle = source.back_angle();
+        command.tool.has_orientation = source.has_orientation();
         command.tool.orientation = source.orientation();
+        command.tool.has_comment = source.has_comment();
         command.tool.comment = source.comment();
+        command.tool.offset_values = std::min<int>(source.offset().values_size(), 9);
         for (int index = 0; index < source.offset().values_size() && index < 9; ++index)
           command.tool.offset.values[static_cast<std::size_t>(index)] = source.offset().values(index);
+        command.tool.wear_offset_values = std::min<int>(source.wear_offset().values_size(), 9);
         for (int index = 0; index < source.wear_offset().values_size() && index < 9; ++index)
           command.tool.wear_offset.values[static_cast<std::size_t>(index)] = source.wear_offset().values(index);
         break;
@@ -845,31 +856,42 @@ class MachineServiceImpl final : public MachineCallbackBase,
   void poll_positions() {
     auto next_status = std::chrono::steady_clock::now();
     auto next_error = next_status;
+    auto next_position = next_status;
     while (!stopping_.load(std::memory_order_relaxed)) {
-      NmlStatusSnapshot snapshot;
       bool enabled = false;
+      std::chrono::milliseconds position_period;
+      std::uint64_t generation = 0;
       {
         std::lock_guard lock(position_mutex_);
         enabled = position_enabled_;
-      }
-      if (nml_.poll_status(&snapshot)) {
-        const auto now = std::chrono::steady_clock::now();
-        if (now >= next_status) {
-          observe_status(snapshot);
-          next_status = now + status_period_;
-        }
-        if (enabled) {
-          PositionSample sample;
-          for (std::size_t index = 0;
-               index < sample.coordinates.size() && index < snapshot.actual_position.size();
-               ++index) {
-            sample.coordinates[index] = snapshot.actual_position[index];
-          }
-          sample.motion_type = snapshot.motion_type;
-          positions_->append(sample);
-        }
+        position_period = position_period_;
+        generation = position_config_generation_;
       }
       const auto now = std::chrono::steady_clock::now();
+      const bool status_due = now >= next_status;
+      const bool position_due = enabled && now >= next_position;
+      if (status_due || position_due) {
+        NmlStatusSnapshot snapshot;
+        if (nml_.poll_status(&snapshot)) {
+          if (status_due) observe_status(snapshot);
+          if (position_due) {
+            PositionSample sample;
+            for (std::size_t index = 0;
+                 index < sample.coordinates.size() && index < snapshot.actual_position.size();
+                 ++index) {
+              sample.coordinates[index] = snapshot.actual_position[index];
+            }
+            sample.motion_type = snapshot.motion_type;
+            positions_->append(sample);
+          }
+        }
+        if (status_due) {
+          next_status = now + status_period_;
+        }
+        if (position_due) next_position = now + position_period;
+      } else if (!enabled) {
+        next_position = now + position_period;
+      }
       if (now >= next_error) {
         if (auto error = nml_.poll_error()) {
           const auto sequence = errors_.publish(std::move(*error));
@@ -878,12 +900,15 @@ class MachineServiceImpl final : public MachineCallbackBase,
         next_error = now + error_period_;
       }
       std::unique_lock lock(position_mutex_);
-      const auto period = position_period_;
-      const auto generation = position_config_generation_;
-      position_condition_.wait_for(lock, period, [this, generation] {
+      auto deadline = std::min(next_status, next_error);
+      if (position_enabled_) deadline = std::min(deadline, next_position);
+      position_condition_.wait_until(lock, deadline, [this, generation] {
         return stopping_.load(std::memory_order_relaxed) ||
                position_config_generation_ != generation;
       });
+      if (position_config_generation_ != generation) {
+        next_position = std::chrono::steady_clock::now();
+      }
     }
   }
 

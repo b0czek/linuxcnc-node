@@ -92,7 +92,6 @@ bool ProgramWorkspaceStore::write_file(const std::string& workspace_id,
   const auto old_size = fs::is_regular_file(existing) ? fs::file_size(destination) : 0;
   const auto workspace_size = directory_size(workspace);
   if (contents.size() > limits_.max_workspace_bytes || contents.size() > limits_.max_total_bytes ||
-      contents.size() > limits_.max_workspace_bytes - std::min(old_size, limits_.max_workspace_bytes) ||
       workspace_size - std::min(old_size, workspace_size) > limits_.max_workspace_bytes - contents.size()) {
     return false;
   }
