@@ -798,6 +798,9 @@ void LinuxCncScopeController::run(const std::string& owner, ScopeRunMode mode) {
   }
   if (mode == ScopeRunMode::Roll) {
     impl_->control->pre_trig = std::max(0, impl_->control->rec_len - 1);
+  } else {
+    impl_->control->pre_trig = std::clamp(
+        impl_->config.pre_trigger, 0, std::max(0, impl_->control->rec_len - 1));
   }
   impl_->delta_initialized = false;
   impl_->delta_sequence = 0;
