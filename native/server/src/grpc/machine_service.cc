@@ -550,14 +550,14 @@ class MachineServiceImpl final : public MachineCallbackBase,
     }
     {
       std::lock_guard lock(position_mutex_);
-      position_enabled_ = request.enabled();
+      if (request.has_enabled()) position_enabled_ = request.enabled();
       if (request.sample_period_ms() > 0) {
         position_period_ = std::chrono::milliseconds(request.sample_period_ms());
       }
       ++position_config_generation_;
     }
     position_condition_.notify_all();
-    if (!request.enabled()) positions_->clear();
+    if (request.has_enabled() && !request.enabled()) positions_->clear();
     return ::grpc::Status::OK;
   }
 

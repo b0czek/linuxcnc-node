@@ -670,7 +670,7 @@ message SetDebugLevel { int32 level = 1; }
 message MessageCommand { string message = 1; }
 
 message PositionHistoryConfig {
-  bool enabled = 1;
+  optional bool enabled = 1;
   uint32 capacity = 2;
   uint32 sample_period_ms = 3;
 }

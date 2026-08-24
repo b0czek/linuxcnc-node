@@ -147,6 +147,13 @@ int main(int argc, char** argv) {
   assert(machine->ConfigurePositionHistory(&context2, config, &empty).ok());
   const auto configured_frame = read_telemetry_frame(telemetry);
   assert(read_u64_le(configured_frame, 8) != initial_generation);
+  grpc::ClientContext capacity_only_context;
+  linuxcnc::v1::PositionHistoryConfig capacity_only;
+  capacity_only.set_capacity(64);
+  assert(machine->ConfigurePositionHistory(
+      &capacity_only_context, capacity_only, &empty).ok());
+  const auto capacity_only_frame = read_telemetry_frame(telemetry);
+  assert(read_u64_le(capacity_only_frame, 8) != read_u64_le(configured_frame, 8));
   grpc::ClientContext oversized_context;
   config.set_capacity(100001);
   const auto oversized = machine->ConfigurePositionHistory(
