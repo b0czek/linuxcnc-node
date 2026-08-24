@@ -96,6 +96,7 @@ struct NmlAdapter::Impl {
   std::unique_ptr<RCS_STAT_CHANNEL> status;
   std::unique_ptr<NML> errors;
   mutable std::mutex mutex;
+  mutable std::mutex tool_mutex;
   bool tool_mmap_ready = false;
   std::string tool_table_filename;
 
@@ -120,14 +121,15 @@ struct NmlAdapter::Impl {
     throw std::runtime_error("timed out waiting for LinuxCNC command completion");
   }
 
-  bool ensure_tool_mmap() {
+  bool ensure_tool_mmap_unlocked() {
     if (tool_mmap_ready) return true;
     tool_mmap_ready = tool_mmap_user() == 0;
     return tool_mmap_ready;
   }
 
   std::optional<int> update_tool_data(const NmlToolEntry& source) {
-    if (!ensure_tool_mmap()) return std::nullopt;
+    std::lock_guard lock(tool_mutex);
+    if (!ensure_tool_mmap_unlocked()) return std::nullopt;
     int index = tooldata_find_index_for_tool(source.tool_no);
     if (index < 0) {
       index = tooldata_last_index_get() + 1;
@@ -157,6 +159,7 @@ struct NmlAdapter::Impl {
                       filename, sizeof(filename)) != 0 || filename[0] == '\0') return;
     std::filesystem::path path(filename);
     if (path.is_relative()) path = std::filesystem::path(value->task.ini_filename).parent_path() / path;
+    std::lock_guard lock(tool_mutex);
     tool_table_filename = std::filesystem::absolute(path).string();
   }
 #endif
@@ -302,7 +305,8 @@ bool NmlAdapter::poll_status(NmlStatusSnapshot* snapshot) {
   snapshot->io_stat.mist = status->io.coolant.mist; snapshot->io_stat.flood = status->io.coolant.flood;
   snapshot->io_stat.estop = status->io.aux.estop;
   snapshot->tool_table.clear();
-  if (impl_->ensure_tool_mmap()) {
+  std::lock_guard tool_lock(impl_->tool_mutex);
+  if (impl_->ensure_tool_mmap_unlocked()) {
     const int last = std::min(CANON_POCKETS_MAX - 1, tooldata_last_index_get());
     for (int index = 0; index <= last; ++index) {
       CANON_TOOL_TABLE entry{};
@@ -614,7 +618,8 @@ CommandTicket NmlAdapter::submit(NmlCommand command, std::function<bool()> cance
             break;
           }
           case NmlCommandKind::DeleteTool: {
-            if (!impl_->ensure_tool_mmap())
+            std::lock_guard tool_lock(impl_->tool_mutex);
+            if (!impl_->ensure_tool_mmap_unlocked())
               throw std::runtime_error("LinuxCNC tool table is unavailable");
             const auto index = tooldata_find_index_for_tool(command.integer);
             if (index < 0) throw std::runtime_error("tool is not present in the tool table");
