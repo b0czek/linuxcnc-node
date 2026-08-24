@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
+#include <cmath>
 #include <csignal>
 #include <cstring>
 #include <limits>
@@ -193,6 +194,20 @@ void set_trigger_level(linuxcnc_scope_shm_control_t* control, hal_type_t type,
     case HAL_S32: control->trig_level.d_s32 = static_cast<rtapi_s32>(value); break;
     case HAL_U32: control->trig_level.d_u32 = static_cast<rtapi_u32>(value); break;
     default: control->trig_level.d_real = value; break;
+  }
+}
+
+void validate_trigger_level(hal_type_t type, double value) {
+  if (type == HAL_S32 &&
+      (!std::isfinite(value) ||
+       value < static_cast<double>(std::numeric_limits<rtapi_s32>::lowest()) ||
+       value > static_cast<double>(std::numeric_limits<rtapi_s32>::max()))) {
+    throw ScopeControllerError("S32 trigger level is out of range", -ERANGE);
+  }
+  if (type == HAL_U32 &&
+      (!std::isfinite(value) || value < 0.0 ||
+       value > static_cast<double>(std::numeric_limits<rtapi_u32>::max()))) {
+    throw ScopeControllerError("U32 trigger level is out of range", -ERANGE);
   }
 }
 
@@ -712,6 +727,9 @@ void LinuxCncScopeController::configure(const std::string& owner,
       !config.channels[static_cast<std::size_t>(config.trigger_channel - 1)].enabled) {
     throw ScopeControllerError("trigger channel is not enabled", -EINVAL);
   }
+  const auto trigger_type = config.trigger_channel > 0
+      ? types[static_cast<std::size_t>(config.trigger_channel - 1)] : HAL_FLOAT;
+  validate_trigger_level(trigger_type, config.trigger_level);
 
   if (impl_->control->state != LINUXCNC_SCOPE_IDLE) {
     impl_->control->state = LINUXCNC_SCOPE_RESET;
@@ -752,8 +770,6 @@ void LinuxCncScopeController::configure(const std::string& owner,
       config.pre_trigger, 0, std::max(0, impl_->control->rec_len - 1));
   impl_->control->mult = config.multiplier;
   impl_->control->trig_chan = config.trigger_channel;
-  const auto trigger_type = config.trigger_channel > 0
-      ? types[static_cast<std::size_t>(config.trigger_channel - 1)] : HAL_FLOAT;
   set_trigger_level(impl_->control, trigger_type, config.trigger_level);
   impl_->control->trig_edge = config.rising ? 1 : 0;
   impl_->control->auto_trig = config.automatic ? 1 : 0;
