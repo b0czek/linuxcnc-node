@@ -831,6 +831,23 @@ int main(int argc, char** argv) {
   assert(exact_write_response.values(0).value().s64() == signed_value);
   assert(exact_write_response.values(1).value().u64() == unsigned_value);
 
+  linuxcnc::v1::HalWrite invalid_batch;
+  auto* valid_batch_write = invalid_batch.add_writes();
+  valid_batch_write->mutable_item()->set_kind(linuxcnc::v1::HAL_ITEM_KIND_SIGNAL);
+  valid_batch_write->mutable_item()->set_name("grpc-live-s64");
+  valid_batch_write->mutable_value()->set_type(linuxcnc::v1::HAL_TYPE_S64);
+  valid_batch_write->mutable_value()->set_s64(signed_value + 1);
+  auto* invalid_batch_write = invalid_batch.add_writes();
+  invalid_batch_write->mutable_item()->set_kind(linuxcnc::v1::HAL_ITEM_KIND_SIGNAL);
+  invalid_batch_write->mutable_item()->set_name("grpc-live-missing");
+  invalid_batch_write->mutable_value()->set_type(linuxcnc::v1::HAL_TYPE_S64);
+  invalid_batch_write->mutable_value()->set_s64(0);
+  linuxcnc::v1::HalWriteResponse invalid_batch_response;
+  grpc::ClientContext invalid_batch_context;
+  const auto invalid_batch_status = hal->Write(
+      &invalid_batch_context, invalid_batch, &invalid_batch_response);
+  assert(invalid_batch_status.error_code() == grpc::StatusCode::FAILED_PRECONDITION);
+
   linuxcnc::v1::HalReadRequest exact_read;
   auto* signed_read = exact_read.add_items();
   signed_read->set_kind(linuxcnc::v1::HAL_ITEM_KIND_SIGNAL);

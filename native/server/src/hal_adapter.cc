@@ -500,18 +500,31 @@ bool LinuxCncHalAdapter::write(const HalAdapterReference& reference,
 }
 
 std::size_t LinuxCncHalAdapter::write_many(
-    const std::vector<std::pair<HalAdapterReference, HalAdapterValue>>& updates) {
+    const std::vector<std::pair<HalAdapterReference, HalAdapterValue>>& updates,
+    std::vector<HalAdapterValue>* written) {
   HalMutex lock;
-  std::size_t count = 0;
+  std::vector<ResolvedItem> resolved;
+  resolved.reserve(updates.size());
   for (const auto& [reference, value] : updates) {
     const auto item = resolve_unlocked(reference);
-    if (!item || !same_type(item->type, value)) continue;
-    if (item->param && item->param->dir != HAL_RW) continue;
-    if (item->pin && (item->pin->dir == HAL_OUT || item->pin->signal)) continue;
-    if (item->signal && item->signal->writers > 0) continue;
-    if (write_value(item->type, item->data, value)) ++count;
+    if (!item || !item->data || !same_type(item->type, value)) return 0;
+    if (item->param && item->param->dir != HAL_RW) return 0;
+    if (item->pin && (item->pin->dir == HAL_OUT || item->pin->signal)) return 0;
+    if (item->signal && item->signal->writers > 0) return 0;
+    resolved.push_back(*item);
   }
-  return count;
+  if (written) {
+    written->clear();
+    written->reserve(updates.size());
+  }
+  for (std::size_t index = 0; index < updates.size(); ++index) {
+    const auto& value = updates[index].second;
+    if (!write_value(resolved[index].type, resolved[index].data, value)) return index;
+    if (written) {
+      written->push_back(read_value(resolved[index].type, resolved[index].data));
+    }
+  }
+  return updates.size();
 }
 
 bool LinuxCncHalAdapter::create_signal(const std::string& name, HalAdapterType type) {

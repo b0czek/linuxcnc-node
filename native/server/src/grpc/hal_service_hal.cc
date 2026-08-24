@@ -108,20 +108,25 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
   ::grpc::Status do_write(const HalWrite* request,
                           HalWriteResponse* response) override {
     try {
+      std::vector<std::pair<HalAdapterReference, HalAdapterValue>> updates;
+      updates.reserve(request->writes_size());
       for (const auto& write : request->writes()) {
         auto reference = decode_hal_reference(write.item());
         auto value = decode_hal_scalar(write.value());
         if (!reference || !value) {
           return Invalid("HAL write contains a mismatched reference or scalar oneof");
         }
-        HalAdapterValue written;
-        if (!adapter_.write(*reference, *value, &written)) {
-          return {::grpc::StatusCode::FAILED_PRECONDITION,
-                  "HAL item '" + reference->name + "' is missing, mistyped, or not writable"};
-        }
+        updates.emplace_back(std::move(*reference), std::move(*value));
+      }
+      std::vector<HalAdapterValue> written;
+      if (adapter_.write_many(updates, &written) != updates.size()) {
+        return {::grpc::StatusCode::FAILED_PRECONDITION,
+                "one or more HAL items are missing, mistyped, or not writable"};
+      }
+      for (std::size_t index = 0; index < updates.size(); ++index) {
         auto* encoded = response->add_values();
-        *encoded->mutable_item() = write.item();
-        encode_hal_scalar(written, encoded->mutable_value());
+        *encoded->mutable_item() = request->writes(static_cast<int>(index)).item();
+        encode_hal_scalar(written[index], encoded->mutable_value());
       }
       return ::grpc::Status::OK;
     } catch (const HalAdapterError& error) {

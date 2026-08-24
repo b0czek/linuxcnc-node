@@ -52,17 +52,18 @@ bool HalRepository::write(const std::string& name, HalValue value) {
 
 std::size_t HalRepository::write_many(const std::vector<HalUpdate>& updates) {
   std::lock_guard lock(mutex_);
-  std::size_t written = 0;
   for (const auto& update : updates) {
     const auto found = items_.find(update.name);
     if (found == items_.end() || !found->second.writable ||
         !same_type(found->second.type, update.value)) {
-      continue;
+      return 0;
     }
-    found->second.value = update.value;
-    ++written;
   }
-  return written;
+  for (const auto& update : updates) {
+    const auto found = items_.find(update.name);
+    found->second.value = update.value;
+  }
+  return updates.size();
 }
 
 HalTopology HalRepository::topology() const {

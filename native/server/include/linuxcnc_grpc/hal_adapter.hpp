@@ -156,7 +156,8 @@ class LinuxCncHalAdapter final {
   bool write(const HalAdapterReference& reference, HalAdapterValue value,
              HalAdapterValue* written = nullptr);
   std::size_t write_many(const std::vector<std::pair<HalAdapterReference,
-                                                     HalAdapterValue>>& updates);
+                                                     HalAdapterValue>>& updates,
+                         std::vector<HalAdapterValue>* written = nullptr);
 
   bool create_signal(const std::string& name, HalAdapterType type);
   bool pin_has_writer(const std::string& name) const;
