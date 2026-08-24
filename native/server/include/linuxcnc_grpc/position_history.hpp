@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
+#include <optional>
 #include <vector>
 
 namespace linuxcnc::server {
@@ -22,6 +23,9 @@ struct PositionHistoryBatch {
   std::uint64_t generation = 0;
   std::uint64_t first_sequence = 0;
   std::uint64_t next_sequence = 0;
+  // Delta consumers remove this many points from their current tail before
+  // appending packed. Replacement snapshots always leave this at zero.
+  std::uint32_t replace_count = 0;
   std::vector<double> packed;
 };
 
@@ -47,10 +51,17 @@ class PositionHistory {
   struct Entry {
     std::uint64_t sequence = 0;
     PositionSample sample;
+    // The first sequence in a chain of tail replacements. This lets a
+    // coalesced delta distinguish replacing a point the consumer has seen
+    // from replacing an intermediate point it has not seen.
+    std::optional<std::uint64_t> replacement_root;
   };
 
   static bool changed(const PositionSample& a, const PositionSample& b,
                       double epsilon);
+  static bool collinear(const PositionSample& current,
+                        const PositionSample& previous,
+                        const PositionSample& penultimate);
   static void append_packed(const PositionSample& sample,
                             std::vector<double>* packed);
 

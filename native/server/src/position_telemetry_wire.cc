@@ -33,7 +33,9 @@ std::vector<std::uint8_t> encode_position_telemetry_frame(
   write_le<std::uint64_t>(&output, 24, batch.next_sequence);
   write_le<std::uint32_t>(&output, 32,
                           static_cast<std::uint32_t>(batch.packed.size()));
-  write_le<std::uint32_t>(&output, 36, 0);
+  write_le<std::uint32_t>(
+      &output, 36,
+      kind == PositionTelemetryFrameKind::Delta ? batch.replace_count : 0);
   for (std::size_t index = 0; index < batch.packed.size(); ++index) {
     std::uint64_t bits = 0;
     static_assert(sizeof(bits) == sizeof(double));

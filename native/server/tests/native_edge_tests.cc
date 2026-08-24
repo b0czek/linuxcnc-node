@@ -10,6 +10,7 @@
 #include <atomic>
 #include <cassert>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstdint>
 #include <filesystem>
@@ -219,6 +220,12 @@ PositionSample position(double x, std::int32_t motion = 0) {
   return sample;
 }
 
+PositionSample position_xy(double x, double y, std::int32_t motion = 0) {
+  auto sample = position(x, motion);
+  sample.coordinates[1] = y;
+  return sample;
+}
+
 void position_cursor_generation_and_replacement_test() {
   PositionHistory history(2, 0.1);
   assert(history.next_sequence() == 0);
@@ -274,26 +281,84 @@ void position_cursor_generation_and_replacement_test() {
   assert(non_finite_history.append(finite));
 }
 
+void position_collinear_compaction_test() {
+  PositionHistory straight(16);
+  assert(straight.append(position(0.0)));
+  assert(straight.append(position(1.0)));
+  assert(straight.append(position(2.0)));
+  assert(straight.size() == 2);
+  const auto compacted = straight.snapshot();
+  assert(compacted.next_sequence == 3);
+  assert(compacted.packed.size() == 2 * kPositionStride);
+  assert(compacted.packed[0] == 0.0);
+  assert(compacted.packed[kPositionStride] == 2.0);
+
+  // A consumer that saw the old tail removes it before appending the new
+  // endpoint. A consumer that never saw that intermediate point only appends.
+  const auto seen_tail = straight.since(2);
+  assert(!seen_tail.reset);
+  assert(seen_tail.replace_count == 1);
+  assert(seen_tail.next_sequence == 3);
+  assert(seen_tail.packed.size() == kPositionStride);
+  assert(seen_tail.packed[0] == 2.0);
+  const auto unseen_tail = straight.since(1);
+  assert(unseen_tail.replace_count == 0);
+  assert(unseen_tail.packed.size() == kPositionStride);
+
+  PositionHistory coalesced(16);
+  assert(coalesced.append(position_xy(0.0, 0.0)));
+  assert(coalesced.append(position_xy(1.0, 0.0)));
+  assert(coalesced.append(position_xy(1.0, 1.0)));
+  assert(coalesced.append(position_xy(1.0, 2.0)));
+  const auto before_intermediate = coalesced.since(2);
+  assert(before_intermediate.replace_count == 0);
+  assert(before_intermediate.packed.size() == kPositionStride);
+  assert(before_intermediate.packed[1] == 2.0);
+  const auto after_intermediate = coalesced.since(3);
+  assert(after_intermediate.replace_count == 1);
+  assert(after_intermediate.packed.size() == kPositionStride);
+
+  PositionHistory corner(16);
+  assert(corner.append(position_xy(0.0, 0.0)));
+  assert(corner.append(position_xy(1.0, 0.0)));
+  assert(corner.append(position_xy(1.0, 1.0)));
+  assert(corner.size() == 3);
+
+  PositionHistory arc(256);
+  for (int step = 0; step <= 100; ++step) {
+    const double angle = static_cast<double>(step) * 0.01;
+    assert(arc.append(position_xy(std::cos(angle), std::sin(angle), 3)));
+  }
+  assert(arc.size() > 2);
+  assert(arc.size() < 101);
+}
+
 void position_telemetry_wire_test() {
   PositionHistoryBatch batch;
   batch.reset = true;
   batch.generation = 3;
   batch.first_sequence = 12;
   batch.next_sequence = 14;
+  batch.replace_count = 1;
   batch.packed = {1.25, -2.5};
   const auto frame = encode_position_telemetry_frame(
-      batch, PositionTelemetryFrameKind::Replacement);
+      batch, PositionTelemetryFrameKind::Delta);
   assert(frame.size() == kPositionTelemetryHeaderSize + 2 * sizeof(double));
   assert(frame[0] == 'L' && frame[1] == 'C' && frame[2] == 'P' && frame[3] == 'H');
-  assert(frame[4] == 1);
-  assert(frame[5] == 1);
+  assert(frame[4] == 2);
+  assert(frame[5] == 2);
   assert(frame[6] == 10 && frame[7] == 0);
   assert(frame[8] == 3);
   assert(frame[16] == 12);
   assert(frame[24] == 14);
   assert(frame[32] == 2);
+  assert(frame[36] == 1);
   assert(frame[40] == 0x00 && frame[46] == 0xf4 && frame[47] == 0x3f);
   assert(frame[48] == 0x00 && frame[54] == 0x04 && frame[55] == 0xc0);
+  const auto replacement = encode_position_telemetry_frame(
+      batch, PositionTelemetryFrameKind::Replacement);
+  assert(replacement[5] == 1);
+  assert(replacement[36] == 0);
 }
 
 std::vector<std::uint8_t> bytes(std::string value) {
@@ -451,6 +516,7 @@ int main() {
   command_failure_wait_test();
   status_replay_rollover_test();
   position_cursor_generation_and_replacement_test();
+  position_collinear_compaction_test();
   position_telemetry_wire_test();
   workspace_traversal_quota_ttl_and_materialization_test();
   scope_coalescing_and_conflict_accounting_test();

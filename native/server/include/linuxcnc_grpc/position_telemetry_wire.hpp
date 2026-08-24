@@ -8,7 +8,7 @@
 namespace linuxcnc::server {
 
 inline constexpr std::size_t kPositionTelemetryHeaderSize = 40;
-inline constexpr std::uint8_t kPositionTelemetryVersion = 1;
+inline constexpr std::uint8_t kPositionTelemetryVersion = 2;
 
 enum class PositionTelemetryFrameKind : std::uint8_t {
   Replacement = 1,

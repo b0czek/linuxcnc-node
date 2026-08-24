@@ -62,7 +62,7 @@ void verify_position_telemetry(const std::string& endpoint) {
   assert(bytes.size() >= 40);
   assert(bytes[0] == 'L' && bytes[1] == 'C' && bytes[2] == 'P' &&
          bytes[3] == 'H');
-  assert(bytes[4] == 1);
+  assert(bytes[4] == 2);
   assert(bytes[5] == 1);
   assert(bytes[6] == 10 && bytes[7] == 0);
   socket.close(websocket::close_code::normal);

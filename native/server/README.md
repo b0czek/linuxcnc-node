@@ -42,21 +42,23 @@ little-endian:
 | Offset | Size | Value |
 | ---: | ---: | --- |
 | 0 | 4 | ASCII `LCPH` |
-| 4 | 1 | version, currently `1` |
+| 4 | 1 | version, currently `2` |
 | 5 | 1 | kind: `1` replacement, `2` delta |
 | 6 | 2 | point stride, currently `10` |
 | 8 | 8 | generation (`uint64`) |
 | 16 | 8 | first sequence (`uint64`) |
 | 24 | 8 | next sequence (`uint64`) |
 | 32 | 4 | payload value count (`uint32`) |
-| 36 | 4 | reserved, zero |
+| 36 | 4 | tail points to remove before applying a delta (`uint32`) |
 | 40 | `value_count * 8` | packed Float64 position values |
 
 In a browser, set `socket.binaryType = "arraybuffer"`, validate the magic,
 version, stride, and exact frame length with `DataView`, then create a
 `Float64Array(buffer, 40, valueCount)` on little-endian hosts. Kind 1 replaces
-the preview's accumulated history; kind 2 appends to it. Sequence and generation
-are 64-bit values and should be read with `DataView.getBigUint64(..., true)`.
+the preview's accumulated history and always has a zero replacement count.
+For kind 2, remove `replace_count` points from the accumulated tail before
+appending the payload. Sequence and generation are 64-bit values and should
+be read with `DataView.getBigUint64(..., true)`.
 
 The HAL service uses the pinned LinuxCNC HAL repository for topology, exact
 scalar reads/writes, signals, and session-owned components. The scope service

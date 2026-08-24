@@ -41,7 +41,7 @@ std::vector<std::uint8_t> read_telemetry_frame(
   asio::buffer_copy(asio::buffer(bytes), buffer.data());
   assert(bytes.size() >= 40);
   assert(bytes[0] == 'L' && bytes[1] == 'C' && bytes[2] == 'P' && bytes[3] == 'H');
-  assert(bytes[4] == 1 && bytes[5] == 1);
+  assert(bytes[4] == 2 && bytes[5] == 1);
   assert(bytes[6] == 10 && bytes[7] == 0);
   return bytes;
 }
