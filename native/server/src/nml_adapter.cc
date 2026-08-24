@@ -20,6 +20,9 @@
 #include "timer.hh"
 #include "tooldata.hh"
 #include "inifile.h"
+
+static_assert(linuxcnc::server::NmlAdapter::kDigitalOutputLimit == EMCMOT_MAX_DIO);
+static_assert(linuxcnc::server::NmlAdapter::kAnalogOutputLimit == EMCMOT_MAX_AIO);
 #endif
 
 namespace linuxcnc::server {
@@ -621,6 +624,10 @@ CommandTicket NmlAdapter::submit(NmlCommand command, std::function<bool()> cance
             break;
           }
           case NmlCommandKind::SetDigitalOutput: {
+            if (command.integer < 0 ||
+                command.integer >= NmlAdapter::kDigitalOutputLimit) {
+              throw std::invalid_argument("digital output index is out of range");
+            }
             auto value = std::make_unique<EMC_MOTION_SET_DOUT>();
             value->index = static_cast<unsigned char>(command.integer);
             value->start = value->end = command.boolean ? 1 : 0;
@@ -629,6 +636,10 @@ CommandTicket NmlAdapter::submit(NmlCommand command, std::function<bool()> cance
             break;
           }
           case NmlCommandKind::SetAnalogOutput: {
+            if (command.integer < 0 ||
+                command.integer >= NmlAdapter::kAnalogOutputLimit) {
+              throw std::invalid_argument("analog output index is out of range");
+            }
             auto value = std::make_unique<EMC_MOTION_SET_AOUT>();
             value->index = static_cast<unsigned char>(command.integer);
             value->start = value->end = command.number;

@@ -688,11 +688,19 @@ class MachineServiceImpl final : public MachineCallbackBase,
         command.integer = request->delete_tool().tool_no();
         break;
       case ExecuteCommandRequest::kSetDigitalOutput:
+        if (request->set_digital_output().index() < 0 ||
+            request->set_digital_output().index() >= NmlAdapter::kDigitalOutputLimit) {
+          return Invalid("digital output index is out of range");
+        }
         command.kind = NmlCommandKind::SetDigitalOutput;
         command.integer = request->set_digital_output().index();
         command.boolean = request->set_digital_output().value();
         break;
       case ExecuteCommandRequest::kSetAnalogOutput:
+        if (request->set_analog_output().index() < 0 ||
+            request->set_analog_output().index() >= NmlAdapter::kAnalogOutputLimit) {
+          return Invalid("analog output index is out of range");
+        }
         command.kind = NmlCommandKind::SetAnalogOutput;
         command.integer = request->set_analog_output().index();
         command.number = request->set_analog_output().value();

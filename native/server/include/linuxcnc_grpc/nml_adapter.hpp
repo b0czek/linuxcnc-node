@@ -279,6 +279,9 @@ struct NmlErrorEvent {
 // lifetime, serial command ordering, and completion observation.
 class NmlAdapter {
  public:
+  static constexpr std::int32_t kDigitalOutputLimit = 64;
+  static constexpr std::int32_t kAnalogOutputLimit = 64;
+
   explicit NmlAdapter(std::string nml_file, std::size_t command_capacity = 128);
   ~NmlAdapter();
 
