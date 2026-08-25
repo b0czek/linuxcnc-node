@@ -216,6 +216,10 @@ struct NmlAdapter::Impl {
   }
 
   void read_tool_table_path() {
+    {
+      std::lock_guard lock(tool_mutex);
+      if (!tool_table_filename.empty()) return;
+    }
     if (!status || status->peek() != EMC_STAT_TYPE) return;
     const auto* value = static_cast<const EMC_STAT*>(status->get_address());
     if (!value || value->task.ini_filename[0] == '\0') return;
@@ -246,7 +250,10 @@ NmlAdapter::~NmlAdapter() {
 bool NmlAdapter::connect() {
 #ifdef LINUXCNC_GRPC_HAS_NML
   std::lock_guard lock(impl_->mutex);
-  if (impl_->connected) return true;
+  if (impl_->connected) {
+    impl_->read_tool_table_path();
+    return true;
+  }
   if (impl_->nml_file.empty()) return false;
   impl_->command = std::make_unique<RCS_CMD_CHANNEL>(
       emcFormat, "emcCommand", "xemc", impl_->nml_file.c_str());
