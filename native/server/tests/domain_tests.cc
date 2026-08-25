@@ -8,12 +8,12 @@
 
 #include "linuxcnc_grpc/callback_runtime.hpp"
 #include "linuxcnc_grpc/command_coordinator.hpp"
-#include "linuxcnc_grpc/daemon_config.hpp"
-#include "linuxcnc_grpc/hal_repository.hpp"
-#include "linuxcnc_grpc/nml_adapter.hpp"
-#include "linuxcnc_grpc/position_history.hpp"
-#include "linuxcnc_grpc/program_workspace.hpp"
-#include "linuxcnc_grpc/scope_manager.hpp"
+#include "linuxcnc_grpc/daemon/config.hpp"
+#include "linuxcnc_grpc/hal/repository.hpp"
+#include "linuxcnc_grpc/linuxcnc/nml_adapter.hpp"
+#include "linuxcnc_grpc/position/history.hpp"
+#include "linuxcnc_grpc/program/workspace.hpp"
+#include "linuxcnc_grpc/scope/manager.hpp"
 #include "linuxcnc_grpc/status_hub.hpp"
 
 namespace fs = std::filesystem;
@@ -197,7 +197,7 @@ void cleanup_reserve_saturation_test() {
 void nml_command_catalog_test() {
   static_assert(static_cast<std::size_t>(NmlCommandKind::SetRapidRate) == 50);
   // The enum is deliberately contiguous: the wire catalog has a matching
-  // static assertion in grpc/machine_service.cc, so adding a command forces
+  // static assertion in machine/grpc/service.cc, so adding a command forces
   // both boundaries to be reviewed at compile time.
   for (std::size_t index = 0; index <= 50; ++index) {
     assert(static_cast<std::size_t>(static_cast<NmlCommandKind>(index)) ==

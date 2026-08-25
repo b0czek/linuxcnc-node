@@ -3,7 +3,7 @@
 #include <limits>
 #include <type_traits>
 
-#include "linuxcnc_grpc/hal_adapter.hpp"
+#include "linuxcnc_grpc/hal/adapter.hpp"
 
 using namespace linuxcnc::server;
 

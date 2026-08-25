@@ -19,15 +19,15 @@ set(LINUXCNC_ROOT "${LINUXCNC_GRPC_REPO_ROOT}/linuxcnc" CACHE PATH
 set(LINUXCNC_GRPC_DOMAIN_SOURCES
     src/callback_runtime.cc
     src/command_coordinator.cc
-    src/daemon_config.cc
-    src/hal_repository.cc
-    src/hal_value_telemetry.cc
-    src/position_history.cc
-    src/position_telemetry.cc
-    src/program_workspace.cc
-    src/scope_manager.cc
+    src/daemon/config.cc
+    src/hal/repository.cc
+    src/hal/value_telemetry.cc
+    src/position/history.cc
+    src/position/telemetry.cc
+    src/program/workspace.cc
+    src/scope/manager.cc
     src/status_hub.cc
-    src/nml_adapter.cc
+    src/linuxcnc/nml_adapter.cc
 )
 
 add_library(linuxcnc-grpc-domain STATIC ${LINUXCNC_GRPC_DOMAIN_SOURCES})
@@ -74,10 +74,10 @@ if(LINUXCNC_GRPC_ENABLE_NML)
                 "${LINUXCNC_ROOT}/src/rtapi"
                 "${LINUXCNC_ROOT}/include")
             target_sources(linuxcnc-grpc-domain PRIVATE
-                src/linuxcnc_emc_globals.cc
-                src/linuxcnc_emc_format.cc
-                src/linuxcnc_emc_ops.cc
-                src/linuxcnc_modal_state.cc)
+                src/linuxcnc/emc_globals.cc
+                src/linuxcnc/emc_format.cc
+                src/linuxcnc/emc_ops.cc
+                src/linuxcnc/modal_state_wrapper.cc)
             target_link_libraries(linuxcnc-grpc-domain PUBLIC
                 "${LINUXCNC_NML_LIBRARY}"
                 "${LINUXCNC_INI_LIBRARY}"
@@ -103,9 +103,9 @@ if(LINUXCNC_GRPC_ENABLE_NML AND
     if(LINUXCNC_RS274_LIBRARY AND LINUXCNC_PARSER_INI_LIBRARY AND
        LINUXCNC_PARSER_TOOLDATA_LIBRARY AND Python3_Development_FOUND)
         target_sources(linuxcnc-grpc-domain PRIVATE
-            src/gcode_parser.cc
-            src/gcode_canon_preview.cc
-            src/gcode_python_modules.cc
+            src/gcode/parser.cc
+            src/gcode/canon_preview.cc
+            src/gcode/python_modules.cc
             "${LINUXCNC_ROOT}/src/emc/rs274ngc/recordingcanon.cc")
         target_compile_definitions(linuxcnc-grpc-domain PUBLIC LINUXCNC_GRPC_HAS_RS274=1)
         set(LINUXCNC_GRPC_HAS_RS274 TRUE)
@@ -143,8 +143,8 @@ if(LINUXCNC_GRPC_ENABLE_NML AND EXISTS "${LINUXCNC_ROOT}/src/hal/hal_priv.h")
     find_library(LINUXCNC_HAL_LIBRARY NAMES linuxcnchal PATHS "${LINUXCNC_ROOT}/lib" NO_DEFAULT_PATH)
     if(LINUXCNC_HAL_LIBRARY)
         target_sources(linuxcnc-grpc-domain PRIVATE
-            src/hal_adapter.cc
-            src/scope_controller.cc)
+            src/hal/adapter.cc
+            src/scope/controller.cc)
         target_compile_definitions(linuxcnc-grpc-domain PUBLIC LINUXCNC_GRPC_HAS_HAL=1)
         target_compile_definitions(linuxcnc-grpc-domain PUBLIC LINUXCNC_GRPC_HAS_SCOPE=1)
         set(LINUXCNC_GRPC_HAS_HAL TRUE)
@@ -168,7 +168,7 @@ if(EXISTS "${LINUXCNC_ROOT}/lib")
         BUILD_RPATH "${LINUXCNC_ROOT}/lib")
 endif()
 
-add_executable(linuxcnc-grpc-server src/daemon_main.cc)
+add_executable(linuxcnc-grpc-server src/daemon/main.cc)
 target_compile_features(linuxcnc-grpc-server PRIVATE cxx_std_17)
 target_link_libraries(linuxcnc-grpc-server PRIVATE linuxcnc-grpc-domain Threads::Threads)
 target_compile_options(linuxcnc-grpc-server PRIVATE -Wall -Wextra -Wpedantic)
@@ -253,26 +253,26 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
     endif()
     add_library(linuxcnc-grpc-wire STATIC
         src/protobuf_gcode_mapping.cc
-        src/grpc_hal_mapping.cc)
+        src/hal/grpc/mapping.cc)
     target_link_libraries(linuxcnc-grpc-wire PUBLIC
         linuxcnc-grpc-domain linuxcnc-grpc-proto)
     set(LINUXCNC_GRPC_SERVER_SOURCES
-        src/grpc_server.cc
-        src/grpc/server_runtime.cc
-        src/grpc/machine_service.cc
-        src/grpc/machine_status_codec.cc
-        src/grpc/program_service.cc
-        src/grpc/hal_service.cc
-        src/grpc/scope_service.cc)
+        src/grpc/server/main.cc
+        src/grpc/server/runtime.cc
+        src/machine/grpc/service.cc
+        src/machine/grpc/status_codec.cc
+        src/program/grpc/service.cc
+        src/hal/grpc/service.cc
+        src/scope/grpc/service.cc)
     if(LINUXCNC_GRPC_HAS_HAL)
-        list(APPEND LINUXCNC_GRPC_SERVER_SOURCES src/grpc/hal_service_hal.cc)
+        list(APPEND LINUXCNC_GRPC_SERVER_SOURCES src/hal/grpc/service_hal.cc)
     else()
-        list(APPEND LINUXCNC_GRPC_SERVER_SOURCES src/grpc/hal_service_repository.cc)
+        list(APPEND LINUXCNC_GRPC_SERVER_SOURCES src/hal/grpc/service_repository.cc)
     endif()
     if(LINUXCNC_GRPC_HAS_SCOPE)
-        list(APPEND LINUXCNC_GRPC_SERVER_SOURCES src/grpc/scope_service_controller.cc)
+        list(APPEND LINUXCNC_GRPC_SERVER_SOURCES src/scope/grpc/service_controller.cc)
     else()
-        list(APPEND LINUXCNC_GRPC_SERVER_SOURCES src/grpc/scope_service_manager.cc)
+        list(APPEND LINUXCNC_GRPC_SERVER_SOURCES src/scope/grpc/service_manager.cc)
     endif()
     target_sources(linuxcnc-grpc-server PRIVATE ${LINUXCNC_GRPC_SERVER_SOURCES})
     target_sources(linuxcnc-grpc-server PRIVATE src/telemetry_websocket_server.cc)
@@ -360,26 +360,26 @@ if(LINUXCNC_GRPC_BUILD_TESTS)
     add_test(NAME linuxcnc-grpc-native-edge-tests
              COMMAND linuxcnc-grpc-native-edge-tests)
     set(LINUXCNC_GRPC_CALLBACK_SOURCES
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc_server.cc"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/server_runtime.cc"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/server_runtime.hpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/machine_service.cc"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/program_service.cc"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/hal_service.cc"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/scope_service.cc")
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/server/main.cc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/server/runtime.cc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/server/runtime.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/machine/grpc/service.cc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/program/grpc/service.cc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/hal/grpc/service.cc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/scope/grpc/service.cc")
     if(LINUXCNC_GRPC_HAS_HAL)
         list(APPEND LINUXCNC_GRPC_CALLBACK_SOURCES
-            "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/hal_service_hal.cc")
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/hal/grpc/service_hal.cc")
     else()
         list(APPEND LINUXCNC_GRPC_CALLBACK_SOURCES
-            "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/hal_service_repository.cc")
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/hal/grpc/service_repository.cc")
     endif()
     if(LINUXCNC_GRPC_HAS_SCOPE)
         list(APPEND LINUXCNC_GRPC_CALLBACK_SOURCES
-            "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/scope_service_controller.cc")
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/scope/grpc/service_controller.cc")
     else()
         list(APPEND LINUXCNC_GRPC_CALLBACK_SOURCES
-            "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/scope_service_manager.cc")
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/scope/grpc/service_manager.cc")
     endif()
     add_test(NAME linuxcnc-grpc-callback-source-assertion
         COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/tests/assert_callback_server.sh"

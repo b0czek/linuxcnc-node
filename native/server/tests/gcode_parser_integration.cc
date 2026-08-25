@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-#include "linuxcnc_grpc/gcode_parser.hpp"
+#include "linuxcnc_grpc/gcode/parser.hpp"
 
 using linuxcnc::server::gcode::ArcOp;
 using linuxcnc::server::gcode::DwellOp;

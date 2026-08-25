@@ -4,14 +4,14 @@ The extracted parser is deliberately independent of Node, protobuf,
 and gRPC. Add these sources to the daemon's native target:
 
 ```text
-native/server/src/gcode_parser.cc
-native/server/src/gcode_canon_preview.cc
-native/server/src/gcode_python_modules.cc
+native/server/src/gcode/parser.cc
+native/server/src/gcode/canon_preview.cc
+native/server/src/gcode/python_modules.cc
 <linuxcnc>/src/emc/rs274ngc/recordingcanon.cc
 <linuxcnc>/src/emc/rs274ngc/recordingcanon.hh
-native/server/include/linuxcnc_grpc/gcode_parser.hpp
-native/server/include/linuxcnc_grpc/gcode_canon_preview.hpp
-native/server/include/linuxcnc_grpc/gcode_operation_types.hpp
+native/server/include/linuxcnc_grpc/gcode/parser.hpp
+native/server/include/linuxcnc_grpc/gcode/canon_preview.hpp
+native/server/include/linuxcnc_grpc/gcode/operation_types.hpp
 ```
 
 Compile as C++17 with `-DULAPI`. The LinuxCNC include roots required by the

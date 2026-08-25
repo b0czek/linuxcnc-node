@@ -18,10 +18,10 @@
 #include <vector>
 
 #include "linuxcnc_grpc/command_coordinator.hpp"
-#include "linuxcnc_grpc/hal_value_telemetry.hpp"
-#include "linuxcnc_grpc/position_history.hpp"
-#include "linuxcnc_grpc/program_workspace.hpp"
-#include "linuxcnc_grpc/scope_manager.hpp"
+#include "linuxcnc_grpc/hal/value_telemetry.hpp"
+#include "linuxcnc_grpc/position/history.hpp"
+#include "linuxcnc_grpc/program/workspace.hpp"
+#include "linuxcnc_grpc/scope/manager.hpp"
 #include "linuxcnc_grpc/status_hub.hpp"
 
 namespace fs = std::filesystem;

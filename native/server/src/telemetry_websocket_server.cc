@@ -23,10 +23,11 @@
 
 #include "linuxcnc/v1/websocket.pb.h"
 #include "linuxcnc_grpc/callback_runtime.hpp"
-#include "linuxcnc_grpc/daemon_config.hpp"
-#include "linuxcnc_grpc/gcode_parser.hpp"
-#include "linuxcnc_grpc/hal_value_telemetry.hpp"
-#include "linuxcnc_grpc/position_telemetry.hpp"
+#include "linuxcnc_grpc/daemon/config.hpp"
+#include "linuxcnc_grpc/gcode/parser.hpp"
+#include "linuxcnc_grpc/hal/value_telemetry.hpp"
+#include "linuxcnc_grpc/position/telemetry.hpp"
+#include "linuxcnc_grpc/program/workspace.hpp"
 #include "linuxcnc_grpc/protobuf_gcode_mapping.hpp"
 
 namespace linuxcnc::server {

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "linuxcnc/v1/program.pb.h"
-#include "linuxcnc_grpc/gcode_operation_types.hpp"
+#include "linuxcnc_grpc/gcode/operation_types.hpp"
 
 namespace linuxcnc::server {
 

@@ -8,8 +8,8 @@
 #include <cstdint>
 #include <type_traits>
 
-#include "../src/scope_shm_abi.h"
-#include "linuxcnc_grpc/scope_controller.hpp"
+#include "../src/scope/shm_abi.h"
+#include "linuxcnc_grpc/scope/controller.hpp"
 
 using namespace linuxcnc::server;
 
