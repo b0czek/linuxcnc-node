@@ -15,6 +15,8 @@ let topology: TopologySnapshot | null = null;
 let subscribed: HalItemRef[] = [];
 let pollIntervalMs = 100;
 let pollTimer: NodeJS.Timeout | undefined;
+let pollInFlight = false;
+let subscriptionGeneration = 0;
 let valueCursor = 0;
 let previousValues = new Map<string, HalValue>();
 let visible = true;
@@ -90,13 +92,19 @@ async function refreshTopology(send = false): Promise<TopologySnapshot> {
 }
 
 async function pollValues(): Promise<void> {
-  if (!client || !visible || subscribed.length === 0) return;
+  if (!client || !visible || subscribed.length === 0 || pollInFlight) return;
+  const activeClient = client;
+  const refs = [...subscribed];
+  const generation = subscriptionGeneration;
+  pollInFlight = true;
   try {
-    const values = await client.read(subscribed);
+    const values = await activeClient.read(refs);
+    if (client !== activeClient || generation !== subscriptionGeneration) return;
     const changed: Array<{ ref: HalItemRef; value: HalValue }> = [];
-    subscribed.forEach((ref, index) => { const value = values[index]; if (value === undefined) return; const key = refKey(ref); if (!Object.is(previousValues.get(key), value)) { previousValues.set(key, value); changed.push({ ref, value }); } });
+    refs.forEach((ref, index) => { const value = values[index]; if (value === undefined) return; const key = refKey(ref); if (!Object.is(previousValues.get(key), value)) { previousValues.set(key, value); changed.push({ ref, value }); } });
     if (changed.length) api.send("values/delta", { cursor: ++valueCursor, values: changed });
-  } catch (error) { connected = false; api.send("connection/state", { connected: false, message: String(error) }); }
+  } catch (error) { if (client === activeClient) { connected = false; api.send("connection/state", { connected: false, message: String(error) }); } }
+  finally { pollInFlight = false; }
 }
 function restartValueTimer(): void { if (pollTimer) clearInterval(pollTimer); pollTimer = setInterval(() => void pollValues(), pollIntervalMs); }
 
@@ -140,7 +148,7 @@ function queued<T>(operation: () => Promise<RpcResult<T>> | RpcResult<T>): Promi
 
 api.handle("bootstrap/get", async () => { if (!connected) return fail("DISCONNECTED", startupError); try { const value: Bootstrap = { connected, topology: await refreshTopology(), cursor: valueCursor, scope: scope?.status ?? null, scopeRunMode: runMode }; return ok(value); } catch (error) { return fail("DISCONNECTED", error); } });
 api.handle("topology/refresh", async () => { if (!connected) return fail("DISCONNECTED", startupError); try { return ok(await refreshTopology()); } catch (error) { return fail("DISCONNECTED", error); } });
-api.handle("subscriptions/set", async ({ refs, intervalMs }) => { subscribed = [...new Map(refs.map((ref) => [refKey(ref), ref])).values()]; pollIntervalMs = Math.max(50, Math.min(1000, Math.trunc(intervalMs))); previousValues.clear(); restartValueTimer(); await pollValues(); return ok({ intervalMs: pollIntervalMs }); });
+api.handle("subscriptions/set", async ({ refs, intervalMs }) => { subscribed = [...new Map(refs.map((ref) => [refKey(ref), ref])).values()]; subscriptionGeneration++; pollIntervalMs = Math.max(50, Math.min(1000, Math.trunc(intervalMs))); previousValues.clear(); restartValueTimer(); await pollValues(); return ok({ intervalMs: pollIntervalMs }); });
 api.handle("item/write", async ({ ref, value }) => { try { const meta = itemMeta(ref); if (!meta) return fail("NOT_FOUND", `${ref.kind} '${ref.name}' is unavailable`); const writable = ref.kind === "param" ? meta.direction === "rw" : ref.kind === "pin" ? meta.direction !== "out" && !meta.signalName : meta.writers === 0; if (!writable) return fail("NOT_WRITABLE", `${ref.name} is not safely writable`); const parsed = parseWrite(meta.type, value); if (!client) return fail("DISCONNECTED", startupError); const written = await client.write(ref, meta.type, parsed); previousValues.set(refKey(ref), written); return ok({ value: written }); } catch (error) { return fail("INVALID_VALUE", error); } });
 
 api.handle("scope/ensure", () => queued(async () => { try { return ok((await ensureScope()).status ?? defaultScopeStatus()); } catch (error) { return fail(classifyGrpcError(error), error); } }));
