@@ -1,0 +1,15 @@
+Checks: >
+  clang-analyzer-*,
+  bugprone-*,
+  concurrency-*,
+  performance-*,
+  portability-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-exception-escape,
+  -performance-enum-size,
+  -portability-avoid-pragma-once,
+  -portability-template-virtual-member-function,
+  -clang-analyzer-optin.cplusplus.VirtualCall
+WarningsAsErrors: '*'
+HeaderFilterRegex: '^.*/native/server/'
+FormatStyle: file

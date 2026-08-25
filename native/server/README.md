@@ -92,6 +92,40 @@ development tools are available, configure with
 `-DLINUXCNC_GRPC_BUILD_WIRE=ON`. Wire generation is the default; pass
 `-DLINUXCNC_GRPC_BUILD_WIRE=OFF` for an explicit domain-only build.
 
+## Native code quality
+
+Formatting and static analysis are pinned to Clang 18. Install
+`clang-format-18`, `clang-tidy-18`, and `run-clang-tidy-18`, then run the
+formatting workflow from the repository root:
+
+```sh
+pnpm format:native
+pnpm check:native:format
+```
+
+Clang-Tidy consumes a CMake compilation database, so configure and build the
+same feature set that you want to analyze before invoking it. For example, the
+contract-only workflow is:
+
+```sh
+cmake -S . -B build/native-grpc \
+  -DLINUXCNC_GRPC_BUILD_WIRE=ON \
+  -DLINUXCNC_GRPC_ENABLE_NML=OFF \
+  -DLINUXCNC_GRPC_BUILD_TESTS=ON \
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+  -DCMAKE_BUILD_TYPE=Debug
+cmake --build build/native-grpc --parallel
+pnpm lint:native -- build/native-grpc
+ctest --test-dir build/native-grpc --output-on-failure
+```
+
+For full runtime coverage, configure a second build with
+`LINUXCNC_GRPC_ENABLE_NML=ON` and `LINUXCNC_ROOT` set to the built, pinned
+LinuxCNC checkout, again exporting the compilation database. The lint wrapper
+only selects repository-owned files below `native/server`; generated
+protobuf/gRPC sources, the LinuxCNC checkout, system headers, caches, and build
+trees remain outside the analysis pipeline.
+
 Wire builds also install `linuxcnc-grpc-health-check`. It calls the standard
 gRPC health service at `127.0.0.1:50051` by default, or at the endpoint passed
 as its first argument, and exits nonzero unless the server reports `SERVING`.
