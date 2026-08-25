@@ -877,9 +877,11 @@ class MachineServiceImpl final : public MachineCallbackBase,
           if (position_due) {
             PositionSample sample;
             for (std::size_t index = 0;
-                 index < sample.coordinates.size() && index < snapshot.actual_position.size();
+                 index < sample.coordinates.size();
                  ++index) {
-              sample.coordinates[index] = snapshot.actual_position[index];
+              sample.coordinates[index] =
+                  snapshot.motion_stat.traj.position.values[index] -
+                  snapshot.task_stat.tool_offset.values[index];
             }
             sample.motion_type = snapshot.motion_type;
             positions_->append(sample);
