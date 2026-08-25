@@ -208,8 +208,9 @@ struct NmlAdapter::Impl {
       entry.comment[sizeof(entry.comment) - 1] = '\0';
     }
     if (tooldata_put(entry, index) == IDX_FAIL) return std::nullopt;
-    if (!tool_table_filename.empty())
-      (void)tooldata_save(tool_table_filename.c_str());
+    if (!tool_table_filename.empty() &&
+        tooldata_save(tool_table_filename.c_str()) != 0)
+      return std::nullopt;
     fill_tool(entry, source);
     return index;
   }
