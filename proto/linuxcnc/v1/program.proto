@@ -57,10 +57,6 @@ message UploadWorkspaceResponse { uint64 bytes_written = 1; repeated string file
 
 message DeleteWorkspaceRequest { string workspace_id = 1; }
 
-message ParseProgramRequest { ProgramHandle entry = 1; }
-
-message ParseProgress { uint64 bytes_read = 1; uint64 total_bytes = 2; uint32 percent = 3; uint64 operation_count = 4; }
-
 message Extents { Position min = 1; Position max = 2; }
 
 message GCodeOperation {
@@ -115,23 +111,8 @@ message ToolChangeData { int32 tool_number = 1; ToolEntry tool = 2; }
 
 message FeedRateData { double feed_rate = 1; }
 
-message ParseBatch { repeated GCodeOperation operations = 1; }
-
-message ParseSummary { Extents extents = 1; uint64 operation_count = 2; }
-
-message ParseProgramEvent {
-  oneof event {
-    ParseProgress progress = 1;
-    ParseBatch batch = 2;
-    ParseSummary summary = 3;
-    LinuxCNCError error = 4;
-  }
-}
-
 service ProgramService {
   rpc CreateWorkspace(CreateWorkspaceRequest) returns (CreateWorkspaceResponse);
   rpc UploadWorkspace(stream UploadWorkspaceRequest) returns (UploadWorkspaceResponse);
   rpc DeleteWorkspace(DeleteWorkspaceRequest) returns (google.protobuf.Empty);
-  rpc ParseProgram(ParseProgramRequest) returns (stream ParseProgramEvent);
 }
-

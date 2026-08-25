@@ -36,6 +36,18 @@ enum RtapiMessageLevel {
   RTAPI_MESSAGE_LEVEL_ALL = 6;
 }
 
+message HalScalar {
+  HalType type = 1;
+  oneof value {
+    bool bit = 2;
+    double float_value = 3;
+    sint32 s32 = 4;
+    uint32 u32 = 5;
+    sint64 s64 = 6;
+    uint64 u64 = 7;
+  }
+}
+
 message HalComponentInfo { int32 id = 1; string name = 2; HalComponentKind kind = 3; bool ready = 4; int32 pid = 5; }
 
 message HalFunctionInfo { string name = 1; int32 owner_id = 2; string owner_name = 3; bool uses_fp = 4; bool reentrant = 5; int32 users = 6; double runtime = 7; double max_runtime = 8; bool max_runtime_increased = 9; }
@@ -156,4 +168,3 @@ service HalService {
   rpc SetWriterReady(SetHalWriterReadyRequest) returns (google.protobuf.Empty);
   rpc ComponentSession(stream ComponentSessionMessage) returns (stream ComponentSessionMessage);
 }
-

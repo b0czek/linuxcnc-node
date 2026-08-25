@@ -57,13 +57,16 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
 
+      - name: Install LLVM and Clang 21
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "21"
+
       - name: Install C++ gRPC and Clang toolchains
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential \
-            clang-format-18 \
-            clang-tidy-18 \
             cmake \
             libboost-dev \
             libgrpc++-dev \
@@ -74,6 +77,8 @@ jobs:
 
       - name: Check native formatting
         run: pnpm check:native:format
+        env:
+          CLANG_FORMAT: clang-format
 
       - name: Configure
         run: |
@@ -88,7 +93,10 @@ jobs:
         run: cmake --build build/native-grpc --parallel 2
 
       - name: Lint native sources
-        run: pnpm lint:native -- build/native-grpc
+        run: pnpm lint:native build/native-grpc
+        env:
+          CLANG_TIDY: clang-tidy
+          RUN_CLANG_TIDY: run-clang-tidy
 
       - name: Test
         run: ctest --test-dir build/native-grpc --output-on-failure
@@ -132,14 +140,17 @@ jobs:
           echo "revision=${revision}" >> "${GITHUB_OUTPUT}"
 
       - name: Install native daemon and Clang dependencies
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: "21"
+
+      - name: Install native daemon dependencies
         run: |
           set -euo pipefail
 
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential \
-            clang-format-18 \
-            clang-tidy-18 \
             cmake \
             libboost-dev \
             libgrpc++-dev \
@@ -277,7 +288,10 @@ jobs:
         run: cmake --build build/native-grpc-linuxcnc --parallel 2
 
       - name: Lint native LinuxCNC sources
-        run: pnpm lint:native -- build/native-grpc-linuxcnc
+        run: pnpm lint:native build/native-grpc-linuxcnc
+        env:
+          CLANG_TIDY: clang-tidy
+          RUN_CLANG_TIDY: run-clang-tidy
 
       - name: Test native LinuxCNC daemon
         shell: bash

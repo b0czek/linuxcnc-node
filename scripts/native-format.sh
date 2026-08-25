@@ -4,7 +4,7 @@ set -euo pipefail
 
 readonly MODE="${1:-}"
 readonly REPO_ROOT="$(git rev-parse --show-toplevel)"
-readonly CLANG_FORMAT="${CLANG_FORMAT:-clang-format-18}"
+readonly CLANG_FORMAT="${CLANG_FORMAT:-clang-format-21}"
 
 case "${MODE}" in
   format)
@@ -20,12 +20,12 @@ case "${MODE}" in
 esac
 
 if ! command -v "${CLANG_FORMAT}" >/dev/null 2>&1; then
-  echo "error: ${CLANG_FORMAT} is required (install Clang 18 tooling)" >&2
+  echo "error: ${CLANG_FORMAT} is required (install Clang 21 tooling)" >&2
   exit 1
 fi
 
-if ! "${CLANG_FORMAT}" --version | grep -Eq 'version 18([.]| )'; then
-  echo "error: ${CLANG_FORMAT} must be Clang major version 18" >&2
+if ! "${CLANG_FORMAT}" --version | grep -Eq 'version 21([.]| )'; then
+  echo "error: ${CLANG_FORMAT} must be Clang major version 21" >&2
   "${CLANG_FORMAT}" --version >&2
   exit 1
 fi

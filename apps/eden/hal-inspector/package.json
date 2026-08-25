@@ -27,6 +27,7 @@
     "@grpc/grpc-js": "^1.14.0",
     "@kobalte/core": "^0.13.11",
     "@linuxcnc-node/grpc-client": "workspace:*",
+    "@linuxcnc-node/websocket-client": "workspace:*",
     "@linuxcnc-node/types": "workspace:*",
     "@tanstack/solid-virtual": "^3.13.12",
     "solid-icons": "^1.1.0",

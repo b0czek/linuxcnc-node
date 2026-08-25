@@ -45,8 +45,9 @@ sliding 24-hour TTL, 256 MiB per workspace, and 1 GiB total. The active
 workspace is pinned until LinuxCNC closes its program. Before opening a file,
 the daemon materializes the workspace into its fixed active-program directory.
 At startup it verifies that `[DISPLAY]PROGRAM_PREFIX` resolves to that
-directory. Parsing always uses the daemon INI and streams progress, bounded
-operation batches, and one final summary.
+directory. Preview parsing belongs to `TelemetryWebSocketServer`, uses the
+daemon INI, and streams progress, bounded operation batches, and one final
+summary over `/v1/program-preview`.
 
 `HalService` provides topology snapshots and watches, typed batch reads and
 writes, mutable HAL value telemetry subscriptions, signal creation,
@@ -68,7 +69,9 @@ Network work never runs from realtime code.
 The default gRPC endpoint is `127.0.0.1:50051`. The shared telemetry listener
 defaults to `ws://127.0.0.1:50052`, with position history at
 `/v1/position-history` and token-attached HAL values at
-`/v1/hal-values/{token}`. Addresses
+`/v1/hal-values/{token}`, plus uploaded program previews at
+`/v1/program-preview?workspace_id=…&relative_path=…`. Each binary message is
+one route-specific protobuf from `linuxcnc/v1/websocket.proto`. Addresses
 and ports are configurable. The standard gRPC health service is always
 available and reflection is disabled unless explicitly enabled. TLS and mutual
 TLS are supported for the gRPC control plane. The read-only telemetry

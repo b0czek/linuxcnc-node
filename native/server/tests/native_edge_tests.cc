@@ -19,9 +19,7 @@
 
 #include "linuxcnc_grpc/command_coordinator.hpp"
 #include "linuxcnc_grpc/hal_value_telemetry.hpp"
-#include "linuxcnc_grpc/hal_value_telemetry_wire.hpp"
 #include "linuxcnc_grpc/position_history.hpp"
-#include "linuxcnc_grpc/position_telemetry_wire.hpp"
 #include "linuxcnc_grpc/program_workspace.hpp"
 #include "linuxcnc_grpc/scope_manager.hpp"
 #include "linuxcnc_grpc/status_hub.hpp"
@@ -343,35 +341,6 @@ void position_collinear_compaction_test() {
   assert(arc.size() < 101);
 }
 
-void position_telemetry_wire_test() {
-  PositionHistoryBatch batch;
-  batch.reset = true;
-  batch.generation = 3;
-  batch.first_sequence = 12;
-  batch.next_sequence = 14;
-  batch.replace_count = 1;
-  batch.packed = {1.25, -2.5};
-  const auto frame =
-      encode_position_telemetry_frame(batch, PositionTelemetryFrameKind::Delta);
-  assert(frame.size() == kPositionTelemetryHeaderSize + 2 * sizeof(double));
-  assert(frame[0] == 'L' && frame[1] == 'C' && frame[2] == 'P' &&
-         frame[3] == 'H');
-  assert(frame[4] == 2);
-  assert(frame[5] == 2);
-  assert(frame[6] == 10 && frame[7] == 0);
-  assert(frame[8] == 3);
-  assert(frame[16] == 12);
-  assert(frame[24] == 14);
-  assert(frame[32] == 2);
-  assert(frame[36] == 1);
-  assert(frame[40] == 0x00 && frame[46] == 0xf4 && frame[47] == 0x3f);
-  assert(frame[48] == 0x00 && frame[54] == 0x04 && frame[55] == 0xc0);
-  const auto replacement = encode_position_telemetry_frame(
-      batch, PositionTelemetryFrameKind::Replacement);
-  assert(replacement[5] == 1);
-  assert(replacement[36] == 0);
-}
-
 void hal_value_telemetry_test() {
   HalValueTelemetry telemetry(2);
   std::vector<HalTelemetryResolvedItem> items{
@@ -391,17 +360,6 @@ void hal_value_telemetry_test() {
                      HalTelemetryValue{std::uint64_t{0xffffffffffffffffULL}}});
   const auto snapshot = telemetry.snapshot(created->subscription_id);
   assert(snapshot && snapshot->sampled && snapshot->sequence == 1);
-  const auto frame =
-      encode_hal_telemetry_frame(*snapshot, HalTelemetryFrameKind::Replacement);
-  assert(frame.size() == kHalTelemetryHeaderSize + 2 * kHalTelemetryEntrySize);
-  assert(frame[0] == 'L' && frame[1] == 'C' && frame[2] == 'H' &&
-         frame[3] == 'V');
-  assert(frame[4] == 1 && frame[5] == 1 && frame[6] == 16);
-  assert(frame[36] == static_cast<std::uint8_t>(HalTelemetryType::Bit));
-  assert(frame[52] == static_cast<std::uint8_t>(HalTelemetryType::U64));
-  for (std::size_t index = 56; index < 64; ++index)
-    assert(frame[index] == 0xff);
-
   std::vector<HalTelemetryResolvedItem> changed{
       items[0],
       {{HalTelemetryItemKind::Param, "test.s32"}, HalTelemetryType::S32}};
@@ -425,9 +383,9 @@ std::string read_file(const fs::path& path) {
 }
 
 void workspace_restart_cleanup_test() {
-  const auto base = fs::temp_directory_path() /
-                    ("linuxcnc-grpc-workspace-restart-tests-" +
-                     std::to_string(::getpid()));
+  const auto base =
+      fs::temp_directory_path() /
+      ("linuxcnc-grpc-workspace-restart-tests-" + std::to_string(::getpid()));
   const auto root = base / "workspaces";
   const auto active = base / "active-program";
   std::error_code error;
@@ -638,7 +596,6 @@ int main() {
   status_replay_rollover_test();
   position_cursor_generation_and_replacement_test();
   position_collinear_compaction_test();
-  position_telemetry_wire_test();
   hal_value_telemetry_test();
   workspace_restart_cleanup_test();
   workspace_traversal_quota_ttl_and_materialization_test();

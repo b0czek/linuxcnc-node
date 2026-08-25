@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+package linuxcnc.v1;
+
+// Browser-facing data-plane entrypoint. Each WebSocket route serializes one
+// concrete message below per binary WebSocket message; there is no envelope.
+import public "linuxcnc/v1/common.proto";
+import "linuxcnc/v1/program.proto";
+import "linuxcnc/v1/hal.proto";
+
+enum FrameKind {
+  FRAME_KIND_UNSPECIFIED = 0;
+  FRAME_KIND_REPLACEMENT = 1;
+  FRAME_KIND_DELTA = 2;
+}
+
+message PositionHistoryFrame {
+  FrameKind kind = 1;
+  uint64 generation = 2;
+  uint64 first_sequence = 3;
+  uint64 next_sequence = 4;
+  uint32 replacement_count = 5;
+  repeated double values = 6 [packed = true];
+}
+
+message HalValueFrameEntry {
+  uint32 slot = 1;
+  // Omitted when the slot is temporarily unavailable.
+  HalScalar value = 2;
+}
+
+message HalValueFrame {
+  FrameKind kind = 1;
+  uint64 revision = 2;
+  uint64 sequence = 3;
+  repeated HalValueFrameEntry entries = 4;
+}
+
+message ParseProgress {
+  uint64 bytes_read = 1;
+  uint64 total_bytes = 2;
+  uint32 percent = 3;
+  uint64 operation_count = 4;
+}
+
+message ParseBatch { repeated GCodeOperation operations = 1; }
+
+message ParseSummary {
+  Extents extents = 1;
+  uint64 operation_count = 2;
+}
+
+enum ProgramPreviewErrorCode {
+  PROGRAM_PREVIEW_ERROR_CODE_UNSPECIFIED = 0;
+  PROGRAM_PREVIEW_ERROR_CODE_INVALID_ENTRY = 1;
+  PROGRAM_PREVIEW_ERROR_CODE_INTERPRETER = 2;
+  PROGRAM_PREVIEW_ERROR_CODE_INTERNAL = 3;
+}
+
+message ProgramPreviewError {
+  ProgramPreviewErrorCode code = 1;
+  string message = 2;
+  optional int32 line_number = 3;
+}
+
+message ProgramPreviewEvent {
+  oneof event {
+    ParseProgress progress = 1;
+    ParseBatch batch = 2;
+    ParseSummary summary = 3;
+    ProgramPreviewError error = 4;
+  }
+}

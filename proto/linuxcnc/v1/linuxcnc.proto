@@ -8,3 +8,4 @@ import public "linuxcnc/v1/machine.proto";
 import public "linuxcnc/v1/program.proto";
 import public "linuxcnc/v1/hal.proto";
 import public "linuxcnc/v1/scope.proto";
+import public "linuxcnc/v1/websocket.proto";

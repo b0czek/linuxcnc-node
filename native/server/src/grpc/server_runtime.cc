@@ -13,7 +13,7 @@
 #include "linuxcnc_grpc/callback_runtime.hpp"
 #include "linuxcnc_grpc/hal_value_telemetry.hpp"
 #include "linuxcnc_grpc/position_telemetry.hpp"
-#include "linuxcnc_grpc/position_telemetry_server.hpp"
+#include "linuxcnc_grpc/telemetry_websocket_server.hpp"
 
 namespace linuxcnc::server::detail {
 namespace {
@@ -39,7 +39,7 @@ ServerRuntime::ServerRuntime(
     std::unique_ptr<ManagedGrpcService> program,
     std::unique_ptr<ManagedGrpcService> hal,
     std::unique_ptr<ManagedGrpcService> scope,
-    std::unique_ptr<PositionTelemetryServer> position_websocket,
+    std::unique_ptr<TelemetryWebSocketServer> telemetry_websocket,
     std::shared_ptr<PositionTelemetry> position_telemetry,
     std::shared_ptr<HalValueTelemetry> hal_telemetry,
     AdmissionCounter& stream_admission, AdmissionCounter& upload_admission,
@@ -51,7 +51,7 @@ ServerRuntime::ServerRuntime(
       program_(std::move(program)),
       hal_(std::move(hal)),
       scope_(std::move(scope)),
-      position_websocket_(std::move(position_websocket)),
+      telemetry_websocket_(std::move(telemetry_websocket)),
       position_telemetry_(std::move(position_telemetry)),
       hal_telemetry_(std::move(hal_telemetry)),
       stream_admission_(stream_admission),
@@ -100,6 +100,9 @@ void ServerRuntime::request_shutdown() noexcept {
       if (auto* health = server_->GetHealthCheckService()) health->Shutdown();
     }
   });
+  invoke_shutdown("telemetry-websocket", [this] {
+    if (telemetry_websocket_) telemetry_websocket_->stop();
+  });
   invoke_shutdown("stream-admission", [this] { stream_admission_.stop(); });
   invoke_shutdown("upload-admission", [this] { upload_admission_.stop(); });
   invoke_shutdown("component-admission",
@@ -111,9 +114,6 @@ void ServerRuntime::request_shutdown() noexcept {
   invoke_shutdown("hal-admission", [this] { hal_worker_.stop_admission(); });
   invoke_shutdown("scope-worker-admission",
                   [this] { scope_worker_.stop_admission(); });
-  invoke_shutdown("position-websocket", [this] {
-    if (position_websocket_) position_websocket_->stop();
-  });
   invoke_shutdown("position-telemetry", [this] {
     if (position_telemetry_) position_telemetry_->close();
   });
@@ -178,7 +178,7 @@ void ServerRuntime::finalize() noexcept {
   hal_.reset();
   program_.reset();
   machine_.reset();
-  position_websocket_.reset();
+  telemetry_websocket_.reset();
   position_telemetry_.reset();
   hal_telemetry_.reset();
 

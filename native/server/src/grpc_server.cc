@@ -19,8 +19,8 @@
 #include "linuxcnc_grpc/callback_runtime.hpp"
 #include "linuxcnc_grpc/hal_value_telemetry.hpp"
 #include "linuxcnc_grpc/position_telemetry.hpp"
-#include "linuxcnc_grpc/position_telemetry_server.hpp"
 #include "linuxcnc_grpc/program_workspace.hpp"
+#include "linuxcnc_grpc/telemetry_websocket_server.hpp"
 
 namespace linuxcnc::server {
 namespace {
@@ -75,14 +75,14 @@ int run_grpc_server(const DaemonConfig& config) {
     auto machine = detail::make_machine_service(
         config, workspaces, position_telemetry, blocking, stream_admission);
     auto program = detail::make_program_service(config, workspaces, blocking,
-                                                parser_worker, upload_admission,
-                                                stream_admission);
+                                                upload_admission);
     auto hal = detail::make_hal_service(config, hal_worker, component_admission,
                                         stream_admission, hal_telemetry);
     auto scope = detail::make_scope_service(config, scope_worker,
                                             scope_admission, stream_admission);
-    auto position_websocket = std::make_unique<PositionTelemetryServer>(
-        config, position_telemetry, hal_telemetry);
+    auto telemetry_websocket = std::make_unique<TelemetryWebSocketServer>(
+        config, position_telemetry, hal_telemetry, workspaces, parser_worker,
+        stream_admission);
 
     ::grpc::ServerBuilder builder;
     ::grpc::ResourceQuota resource_quota;
@@ -130,7 +130,7 @@ int run_grpc_server(const DaemonConfig& config) {
 
     detail::ServerRuntime runtime(
         std::move(server), std::move(machine), std::move(program),
-        std::move(hal), std::move(scope), std::move(position_websocket),
+        std::move(hal), std::move(scope), std::move(telemetry_websocket),
         std::move(position_telemetry), std::move(hal_telemetry),
         stream_admission, upload_admission, component_admission,
         scope_admission, blocking, parser_worker, hal_worker, scope_worker);

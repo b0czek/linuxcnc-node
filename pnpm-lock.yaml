@@ -56,6 +56,9 @@ importers:
       '@linuxcnc-node/types':
         specifier: workspace:*
         version: link:../../../packages/types
+      '@linuxcnc-node/websocket-client':
+        specifier: workspace:*
+        version: link:../../../packages/websocket-client
       '@tanstack/solid-virtual':
         specifier: ^3.13.12
         version: 3.13.36(solid-js@1.9.14)
@@ -109,6 +112,22 @@ importers:
 
   packages/types:
     devDependencies:
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+
+  packages/websocket-client:
+    dependencies:
+      '@bufbuild/protobuf':
+        specifier: ^2.14.0
+        version: 2.14.0
+      '@linuxcnc-node/types':
+        specifier: workspace:*
+        version: link:../types
+    devDependencies:
+      '@bufbuild/protoc-gen-es':
+        specifier: ^2.14.0
+        version: 2.14.0(@bufbuild/protobuf@2.14.0)
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
@@ -256,6 +275,22 @@ packages:
     engines: {node: '>=14.21.3'}
     cpu: [x64]
     os: [win32]
+
+  '@bufbuild/protobuf@2.14.0':
+    resolution: {integrity: sha512-C3UGsiCwSprE2NKIIFA3hCDlpXTMCAXRZuEVp88L1GY36Y41+rYL5fryE+nOFhp4p4JPQvdV8PQ4DWgHgeTE+w==}
+
+  '@bufbuild/protoc-gen-es@2.14.0':
+    resolution: {integrity: sha512-/Rrui0BJWSRONiKGYzqWq9ivGN3+cYkmc47QWITufr7K6yDb8HfssuJUSQZeptyg/rHbHrfDzCUjzoJ2pwuafg==}
+    engines: {node: '>=22'}
+    hasBin: true
+    peerDependencies:
+      '@bufbuild/protobuf': 2.14.0
+    peerDependenciesMeta:
+      '@bufbuild/protobuf':
+        optional: true
+
+  '@bufbuild/protoplugin@2.14.0':
+    resolution: {integrity: sha512-S0TvZhVtTEkZQRj2JsXBCXiib/b0+bLQtJCcn+hj9O/usgbcgxHn4D+ii22Ao3qj0/kKxVYeo7BtAI2dMk+iig==}
 
   '@changesets/apply-release-plan@7.1.1':
     resolution: {integrity: sha512-9qPCm/rLx/xoOFXIHGB229+4GOL76S4MC+7tyOuTsR6+1jYlfFDQORdvwR5hDA6y4FL2BPt3qpbcQIS+dW85LA==}
@@ -825,6 +860,11 @@ packages:
 
   '@types/node@24.13.3':
     resolution: {integrity: sha512-Dh8vAsV36ig5wa9OX4pXvMc9D3Veibfw2wix0CUwYODLD8nkj9UsLjASr49nPg+2eKzxhBV+v7L8pXvT4e639Q==}
+
+  '@typescript/vfs@1.6.4':
+    resolution: {integrity: sha512-PJFXFS4ZJKiJ9Qiuix6Dz/OwEIqHD7Dme1UwZhTK11vR+5dqW2ACbdndWQexBzCx+CPuMe5WBYQWCsFyGlQLlQ==}
+    peerDependencies:
+      typescript: '*'
 
   acorn@8.17.0:
     resolution: {integrity: sha512-xRQbDb9BnwDafYNn6Vwl839DYVjqXYb1XVGtWAZ1kcDc6iwAL4hg3B1dZlRiuENFeO2H53gFG3in621AdERVAg==}
@@ -1510,6 +1550,11 @@ packages:
       typescript:
         optional: true
 
+  typescript@5.4.5:
+    resolution: {integrity: sha512-vcI4UpRgg81oIRUFwR0WSIHKt11nJ7SAVlYNIu+QpqeyXP+gpQJy/Z4+F0aGxSE4MqwjyXvW/TzgkLAx2AGHwQ==}
+    engines: {node: '>=14.17'}
+    hasBin: true
+
   typescript@5.9.3:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
     engines: {node: '>=14.17'}
@@ -1780,6 +1825,24 @@ snapshots:
 
   '@biomejs/cli-win32-x64@2.5.10':
     optional: true
+
+  '@bufbuild/protobuf@2.14.0': {}
+
+  '@bufbuild/protoc-gen-es@2.14.0(@bufbuild/protobuf@2.14.0)':
+    dependencies:
+      '@bufbuild/protoplugin': 2.14.0
+    optionalDependencies:
+      '@bufbuild/protobuf': 2.14.0
+    transitivePeerDependencies:
+      - supports-color
+
+  '@bufbuild/protoplugin@2.14.0':
+    dependencies:
+      '@bufbuild/protobuf': 2.14.0
+      '@typescript/vfs': 1.6.4(typescript@5.4.5)
+      typescript: 5.4.5
+    transitivePeerDependencies:
+      - supports-color
 
   '@changesets/apply-release-plan@7.1.1':
     dependencies:
@@ -2337,6 +2400,13 @@ snapshots:
   '@types/node@24.13.3':
     dependencies:
       undici-types: 7.18.2
+
+  '@typescript/vfs@1.6.4(typescript@5.4.5)':
+    dependencies:
+      debug: 4.4.3
+      typescript: 5.4.5
+    transitivePeerDependencies:
+      - supports-color
 
   acorn@8.17.0: {}
 
@@ -2978,6 +3048,8 @@ snapshots:
       - supports-color
       - tsx
       - yaml
+
+  typescript@5.4.5: {}
 
   typescript@5.9.3: {}
 

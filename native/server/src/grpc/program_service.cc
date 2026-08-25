@@ -24,8 +24,8 @@
 #include "linuxcnc_grpc/callback_runtime.hpp"
 #include "linuxcnc_grpc/daemon_config.hpp"
 #include "linuxcnc_grpc/gcode_parser.hpp"
-#include "linuxcnc_grpc/grpc_gcode_mapping.hpp"
 #include "linuxcnc_grpc/program_workspace.hpp"
+#include "linuxcnc_grpc/protobuf_gcode_mapping.hpp"
 
 namespace linuxcnc::server::detail {
 namespace {
@@ -38,17 +38,10 @@ constexpr std::size_t kMaxUploadChunk = std::size_t{16} * 1024U * 1024U;
   return {::grpc::StatusCode::INVALID_ARGUMENT, message};
 }
 
-#ifndef LINUXCNC_GRPC_HAS_RS274
-::grpc::Status unimplemented(const std::string& message) {
-  return {::grpc::StatusCode::UNIMPLEMENTED, message};
-}
-#endif
-
 using ProgramCallbackBase = ProgramService::WithCallbackMethod_CreateWorkspace<
     ProgramService::WithCallbackMethod_UploadWorkspace<
         ProgramService::WithCallbackMethod_DeleteWorkspace<
-            ProgramService::WithCallbackMethod_ParseProgram<
-                ProgramService::Service>>>>;
+            ProgramService::Service>>>;
 
 class ProgramServiceImpl final : public ProgramCallbackBase,
                                  public ManagedGrpcService {
@@ -59,16 +52,10 @@ class ProgramServiceImpl final : public ProgramCallbackBase,
   explicit ProgramServiceImpl(const DaemonConfig& config,
                               std::shared_ptr<ProgramWorkspaceStore> store,
                               BoundedExecutor& blocking,
-                              BoundedExecutor& parser_worker,
-                              AdmissionCounter& upload_admission,
-                              AdmissionCounter& stream_admission)
+                              AdmissionCounter& upload_admission)
       : store_(std::move(store)),
         blocking_(blocking),
-        parser_worker_(parser_worker),
         upload_admission_(upload_admission),
-        stream_admission_(stream_admission),
-        ini_file_(config.ini_file),
-        batch_size_(config.gcode_batch_size),
         default_ttl_(config.workspace_ttl),
         max_upload_bytes_(config.workspace_quota_bytes),
         prune_period_(
@@ -163,12 +150,6 @@ class ProgramServiceImpl final : public ProgramCallbackBase,
           }
           return ::grpc::Status::OK;
         });
-  }
-
-  ::grpc::ServerWriteReactor<ParseProgramEvent>* ParseProgram(
-      ::grpc::CallbackServerContext*,
-      const ParseProgramRequest* request) override {
-    return new ParseReactor(*this, *request);
   }
 
  private:
@@ -362,283 +343,9 @@ class ProgramServiceImpl final : public ProgramCallbackBase,
     ActiveCallbackRegistry::Registration registration_;
   };
 
-  class ParseReactor final
-      : public ::grpc::ServerWriteReactor<ParseProgramEvent> {
-#ifdef LINUXCNC_GRPC_HAS_RS274
-    static constexpr std::size_t kMaxQueuedBatches = 2;
-#endif
-
-    struct State {
-      std::mutex mutex;
-      std::condition_variable condition;
-      std::deque<ParseProgramEvent> batches;
-      std::optional<ParseProgramEvent> progress;
-      std::optional<ParseProgramEvent> terminal;
-      ::grpc::Status terminal_status = ::grpc::Status::OK;
-      bool done = false;
-      bool cancelled = false;
-    };
-
-   public:
-    ParseReactor(ProgramServiceImpl& service, ParseProgramRequest request)
-        : service_(service),
-          request_(std::move(request)),
-          admitted_(service_.stream_admission_.acquire()),
-          state_(std::make_shared<State>()),
-          gate_(std::make_shared<LifetimeGate<ParseReactor>>(this)) {
-      const std::weak_ptr<LifetimeGate<ParseReactor>> weak_gate = gate_;
-      registration_ = service_.callbacks_.register_callback([weak_gate] {
-        if (auto gate = weak_gate.lock()) {
-          gate->invoke([](ParseReactor& reactor) { reactor.shutdown(); });
-        }
-      });
-      if (!registration_) {
-        shutdown();
-        return;
-      }
-      if (!admitted_) {
-        finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
-                "stream admission limit reached"});
-        return;
-      }
-      start_parse();
-    }
-
-    void OnWriteDone(bool ok) override {
-      gate_->invoke([ok](ParseReactor& reactor) { reactor.write_done(ok); });
-    }
-
-    void OnCancel() override {
-      gate_->invoke([](ParseReactor& reactor) { reactor.cancel(); });
-    }
-
-    void OnDone() override {
-      {
-        std::lock_guard lock(state_->mutex);
-        state_->cancelled = true;
-      }
-      state_->condition.notify_all();
-      gate_->detach();
-      registration_.reset();
-      if (admitted_) service_.stream_admission_.release();
-      delete this;
-    }
-
-    void shutdown() {
-      {
-        std::lock_guard lock(state_->mutex);
-        state_->cancelled = true;
-        state_->terminal_status = {::grpc::StatusCode::UNAVAILABLE,
-                                   "server shutting down"};
-      }
-      state_->condition.notify_all();
-      finish({::grpc::StatusCode::UNAVAILABLE, "server shutting down"});
-    }
-
-   private:
-    void start_parse() {
-      const auto state = state_;
-      const auto request = request_;
-      auto* service = &service_;
-      const std::weak_ptr<LifetimeGate<ParseReactor>> weak_gate = gate_;
-      if (!service_.parser_worker_.submit([service, state, request, weak_gate] {
-            (void)service;
-            const auto wake = [weak_gate] {
-              auto gate = weak_gate.lock();
-              if (gate) {
-                gate->invoke([](ParseReactor& reactor) { reactor.pump(); });
-              }
-            };
-#ifdef LINUXCNC_GRPC_HAS_RS274
-            const auto& handle = request.entry();
-            std::filesystem::path source;
-            bool leased = false;
-            const bool resolved =
-                !handle.workspace_id().empty() &&
-                !handle.relative_path().empty() &&
-                service->store_->resolve_entry(handle.workspace_id(),
-                                               handle.relative_path(), &source);
-            if (resolved) leased = service->store_->pin(handle.workspace_id());
-            if (!resolved || !leased) {
-              {
-                std::lock_guard lock(state->mutex);
-                state->terminal_status =
-                    invalid("program workspace entry is missing or unsafe");
-                state->done = true;
-              }
-              wake();
-              return;
-            }
-            try {
-              gcode::ParseOptions options;
-              options.ini_path = service->ini_file_.string();
-              options.program_prefix =
-                  (service->store_->root() / handle.workspace_id()).string();
-              options.batch_size = service->batch_size_;
-              options.is_cancelled = [state] {
-                std::lock_guard lock(state->mutex);
-                return state->cancelled;
-              };
-              options.on_progress =
-                  [state, wake](const gcode::ParseProgress& progress) {
-                    ParseProgramEvent event;
-                    auto* encoded = event.mutable_progress();
-                    encoded->set_bytes_read(progress.bytesRead);
-                    encoded->set_total_bytes(progress.totalBytes);
-                    encoded->set_percent(static_cast<std::uint32_t>(
-                        std::clamp(progress.percent, 0.0, 100.0)));
-                    encoded->set_operation_count(progress.operationCount);
-                    {
-                      std::lock_guard lock(state->mutex);
-                      if (state->cancelled) return;
-                      state->progress = std::move(event);
-                    }
-                    wake();
-                  };
-              options.on_batch = [state, wake](gcode::OperationBatch&& batch) {
-                if (batch.empty()) return true;
-                ParseProgramEvent event;
-                auto* encoded = event.mutable_batch();
-                for (const auto& operation : batch) {
-                  encode_gcode_operation(operation, encoded->add_operations());
-                }
-                {
-                  std::unique_lock lock(state->mutex);
-                  state->condition.wait(lock, [state] {
-                    return state->cancelled ||
-                           state->batches.size() < kMaxQueuedBatches;
-                  });
-                  if (state->cancelled) return false;
-                  state->batches.push_back(std::move(event));
-                }
-                wake();
-                return true;
-              };
-              const auto result =
-                  service->parser_.parse_file(source.string(), options);
-              std::lock_guard lock(state->mutex);
-              if (result.cancelled || state->cancelled) {
-                state->terminal_status = {::grpc::StatusCode::CANCELLED,
-                                          "G-code parse cancelled"};
-              } else {
-                ParseProgramEvent final_event;
-                auto* summary = final_event.mutable_summary();
-                encode_gcode_extents(result.extents,
-                                     summary->mutable_extents());
-                summary->set_operation_count(result.operationCount);
-                state->terminal = std::move(final_event);
-              }
-              state->done = true;
-            } catch (const std::exception& error) {
-              std::lock_guard lock(state->mutex);
-              ParseProgramEvent event;
-              event.mutable_error()->set_type(NML_MESSAGE_TYPE_NML_ERROR);
-              event.mutable_error()->set_message(error.what());
-              state->terminal = std::move(event);
-              state->done = true;
-            }
-            if (leased) service->store_->unpin(handle.workspace_id());
-#else
-            {
-              std::lock_guard lock(state->mutex);
-              state->terminal_status =
-                  unimplemented("rs274 parser adapter is not linked");
-              state->done = true;
-            }
-#endif
-            wake();
-          })) {
-        finish(
-            {::grpc::StatusCode::RESOURCE_EXHAUSTED, "parser queue is full"});
-      }
-    }
-
-    void pump() {
-      if (writing_ || gate_->state() != LifetimeGate<ParseReactor>::State::Open)
-        return;
-      ::grpc::Status done_status;
-      bool done = false;
-      {
-        std::lock_guard lock(state_->mutex);
-        if (!state_->batches.empty()) {
-          message_ = std::move(state_->batches.front());
-          state_->batches.pop_front();
-          writing_batch_ = true;
-        } else if (state_->progress) {
-          message_ = std::move(state_->progress).value_or(ParseProgramEvent{});
-          state_->progress.reset();
-          writing_batch_ = false;
-        } else if (state_->terminal) {
-          message_ = std::move(state_->terminal).value_or(ParseProgramEvent{});
-          state_->terminal.reset();
-          writing_batch_ = false;
-          terminal_write_ = true;
-        } else if (state_->done) {
-          done = true;
-          done_status = state_->terminal_status;
-        } else {
-          return;
-        }
-      }
-      state_->condition.notify_all();
-      if (done) {
-        finish(done_status);
-        return;
-      }
-      writing_ = true;
-      StartWrite(&message_);
-    }
-
-    void write_done(bool ok) {
-      writing_ = false;
-      if (!ok) {
-        cancel();
-        return;
-      }
-      if (terminal_write_) {
-        terminal_write_ = false;
-        finish(::grpc::Status::OK);
-        return;
-      }
-      writing_batch_ = false;
-      pump();
-    }
-
-    void cancel() {
-      {
-        std::lock_guard lock(state_->mutex);
-        state_->cancelled = true;
-      }
-      state_->condition.notify_all();
-      finish({::grpc::StatusCode::CANCELLED, "G-code parse cancelled"});
-    }
-
-    void finish(::grpc::Status status) {
-      gate_->finish([&](ParseReactor& reactor) { reactor.Finish(status); });
-    }
-
-    ProgramServiceImpl& service_;
-    ParseProgramRequest request_;
-    bool admitted_ = false;
-    bool writing_ = false;
-    bool writing_batch_ = false;
-    bool terminal_write_ = false;
-    ParseProgramEvent message_;
-    std::shared_ptr<State> state_;
-    std::shared_ptr<LifetimeGate<ParseReactor>> gate_;
-    ActiveCallbackRegistry::Registration registration_;
-  };
-
   std::shared_ptr<ProgramWorkspaceStore> store_;
   BoundedExecutor& blocking_;
-  BoundedExecutor& parser_worker_;
   AdmissionCounter& upload_admission_;
-  AdmissionCounter& stream_admission_;
-  const std::filesystem::path ini_file_;
-  [[maybe_unused]] const std::size_t batch_size_;
-#ifdef LINUXCNC_GRPC_HAS_RS274
-  gcode::SerializedRs274Parser parser_;
-#endif
   const std::chrono::seconds default_ttl_;
   const std::size_t max_upload_bytes_;
   const std::chrono::seconds prune_period_;
@@ -653,11 +360,9 @@ class ProgramServiceImpl final : public ProgramCallbackBase,
 
 std::unique_ptr<ManagedGrpcService> make_program_service(
     const DaemonConfig& config, std::shared_ptr<ProgramWorkspaceStore> store,
-    BoundedExecutor& blocking, BoundedExecutor& parser_worker,
-    AdmissionCounter& upload_admission, AdmissionCounter& stream_admission) {
-  return std::make_unique<ProgramServiceImpl>(
-      config, std::move(store), blocking, parser_worker, upload_admission,
-      stream_admission);
+    BoundedExecutor& blocking, AdmissionCounter& upload_admission) {
+  return std::make_unique<ProgramServiceImpl>(config, std::move(store),
+                                              blocking, upload_admission);
 }
 
 }  // namespace linuxcnc::server::detail

@@ -11,6 +11,7 @@ const linuxCncSchemas = [
   "program.proto",
   "hal.proto",
   "scope.proto",
+  "websocket.proto",
   "linuxcnc.proto",
 ];
 const files = [

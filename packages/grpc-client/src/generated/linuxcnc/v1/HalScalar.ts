@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/common.proto
+// Original file: proto/linuxcnc/v1/hal.proto
 
 import type { HalType as _linuxcnc_v1_HalType, HalType__Output as _linuxcnc_v1_HalType__Output } from '../../linuxcnc/v1/HalType';
 import type { Long } from '@grpc/proto-loader';

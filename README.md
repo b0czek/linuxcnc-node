@@ -3,8 +3,8 @@
 LinuxCNC Node is an open-source C++ and TypeScript monorepo for building
 applications on top of LinuxCNC. Its architecture is one standalone
 `linuxcnc-grpc-server` beside one patched LinuxCNC instance, a versioned raw
-gRPC client, transport-independent TypeScript domain types, and a direct binary
-WebSocket data plane for position and selected HAL value telemetry. See the
+gRPC client, transport-independent TypeScript domain types, and a protobuf
+WebSocket data plane for position, selected HAL values, and G-code preview. See the
 [native architecture](./docs/native-grpc-architecture.md).
 
 > **Compatibility:** Starting with v3, these packages are purpose-built for
@@ -22,6 +22,8 @@ WebSocket data plane for position and selected HAL value telemetry. See the
   message types, without convenience wrappers. [README](./packages/grpc-client/README.md)
 - **`packages/types`**: Transport-independent constants and domain models used
   by consumers. [README](./packages/types/README.md)
+- **`packages/websocket-client`**: Browser-safe renderer client for the three
+  route-specific protobuf WebSocket streams.
 - **`apps/eden/hal-inspector`**: Eden HAL and scope inspector using the raw
   gRPC client.
 - **`linuxcnc-patches`**: Maintained LinuxCNC patch series and pinned upstream

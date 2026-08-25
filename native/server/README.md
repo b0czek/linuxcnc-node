@@ -21,7 +21,7 @@ client-component cleanup, and exclusive scope ownership. The harness refuses
 to start when another LinuxCNC/HAL runtime exists and reclaims only the runtime
 and NML resources it created.
 
-## Telemetry WebSocket
+## Protobuf WebSocket data plane
 
 Position-history configuration and clearing remain on `MachineService` through
 `ConfigurePositionHistory` and `ClearPositionHistory`. Telemetry is published
@@ -32,33 +32,19 @@ and `--mtls` secure only the gRPC control plane. A non-loopback telemetry bind
 requires `--unsafe-non-loopback`.
 
 The application protocol is server-to-client only. Client data messages close
-the connection with WebSocket policy error 1008. Each connection begins with a
-replacement frame, followed by deltas. A clear, reconfiguration, generation
-change, or retention rollover produces another replacement.
+the connection with WebSocket policy error 1008. Every binary WebSocket
+message contains exactly one protobuf message from
+`proto/linuxcnc/v1/websocket.proto`; the route determines its concrete type:
 
-Every message is one binary frame. Multi-byte fields and payload doubles are
-little-endian:
+- `/v1/position-history` uses `PositionHistoryFrame`.
+- `/v1/hal-values/{token}` uses `HalValueFrame`.
+- `/v1/program-preview?workspace_id=…&relative_path=…` uses
+  `ProgramPreviewEvent`.
 
-| Offset | Size | Value |
-| ---: | ---: | --- |
-| 0 | 4 | ASCII `LCPH` |
-| 4 | 1 | version, currently `2` |
-| 5 | 1 | kind: `1` replacement, `2` delta |
-| 6 | 2 | point stride, currently `10` |
-| 8 | 8 | generation (`uint64`) |
-| 16 | 8 | first sequence (`uint64`) |
-| 24 | 8 | next sequence (`uint64`) |
-| 32 | 4 | payload value count (`uint32`) |
-| 36 | 4 | tail points to remove before applying a delta (`uint32`) |
-| 40 | `value_count * 8` | packed Float64 position values |
-
-In a browser, set `socket.binaryType = "arraybuffer"`, validate the magic,
-version, stride, and exact frame length with `DataView`, then create a
-`Float64Array(buffer, 40, valueCount)` on little-endian hosts. Kind 1 replaces
-the preview's accumulated history and always has a zero replacement count.
-For kind 2, remove `replace_count` points from the accumulated tail before
-appending the payload. Sequence and generation are 64-bit values and should
-be read with `DataView.getBigUint64(..., true)`.
+There is no custom header or top-level envelope. Position connections begin
+with a replacement followed by deltas. A clear, reconfiguration, generation
+change, or retention rollover produces another replacement. Values retain the
+stable ten-double X, Y, Z, A, B, C, U, V, W, motion-type layout.
 
 HAL value telemetry uses the same listener. Create and update a subscription
 with `HalService.CreateValueSubscription` and `UpdateValueSubscription`, then
@@ -67,11 +53,9 @@ changes preserve the socket and advance its revision; the first frame for each
 revision is a complete replacement. `DeleteValueSubscription` and WebSocket
 disconnects release the subscription.
 
-HAL frames have a 32-byte header containing ASCII `LCHV`, version `1`, frame
-kind, 16-byte entry stride, configuration revision, sequence, and entry count.
-Each entry contains a `uint32` slot, a `HalType` byte, and an eight-byte typed
-payload. Type zero means unavailable. Multi-byte fields are little-endian;
-`s64` and `u64` must be decoded as integers rather than JavaScript numbers.
+HAL frames contain slot/value entries. An absent `HalScalar` marks a slot as
+temporarily unavailable; `s64`, `u64`, revisions, and sequences remain exact
+64-bit integers.
 Position history keeps its acquisition cadence while coalescing mutations into
 50 ms delivery windows for viewers. Slow consumers receive coalesced
 latest-state deltas rather than every sampled transition. Client WebSocket
@@ -96,8 +80,8 @@ development tools are available, configure with
 
 ## Native code quality
 
-Formatting and static analysis are pinned to Clang 18. Install
-`clang-format-18`, `clang-tidy-18`, and `run-clang-tidy-18`, then run the
+Formatting and static analysis are pinned to Clang 21. Install
+`clang-format-21`, `clang-tidy-21`, and `run-clang-tidy-21`, then run the
 formatting workflow from the repository root:
 
 ```sh
@@ -117,7 +101,7 @@ cmake -S . -B build/native-grpc \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
   -DCMAKE_BUILD_TYPE=Debug
 cmake --build build/native-grpc --parallel
-pnpm lint:native -- build/native-grpc
+pnpm lint:native build/native-grpc
 ctest --test-dir build/native-grpc --output-on-failure
 ```
 
@@ -139,11 +123,10 @@ Docker health check inherits the same client credentials as the container.
 Use `--tls-server-name=NAME` or `LINUXCNC_GRPC_TLS_SERVER_NAME` when the
 certificate identity differs from the health-check endpoint.
 
-## Program preview gRPC stream
+## Program preview WebSocket stream
 
-`ProgramService.ParseProgram` is the only public program-preview stream. It is
-a finite, server-streaming RPC; program previews are not published through the
-position-history WebSocket. A successful stream contains zero or more
+Program preview is a finite WebSocket stream for any safe uploaded workspace
+entry, whether or not LinuxCNC has loaded it. A successful stream contains zero or more
 coalesced `progress` events and ordered, nonempty `batch` events, followed by
 exactly one terminal `summary`. The summary carries the authoritative extents
 and total operation count. An `error` event is terminal for an interpreter
@@ -158,5 +141,5 @@ batches are never coalesced or discarded.
 
 Clients should append `batch.operations` as events arrive and use the summary
 to finalize camera fitting or other whole-program state. Cancelling or closing
-the RPC stops interpretation at the next interpreter-step boundary, releases
+the WebSocket stops interpretation at the next interpreter-step boundary, releases
 the workspace lease, and does not emit a success summary.

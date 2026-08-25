@@ -47,7 +47,7 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
   if (setenv("INI_FILE_NAME", options.ini_path.c_str(), 1) != 0)
     throw std::runtime_error("failed to set LinuxCNC INI_FILE_NAME");
 
-  struct stat file_stat {};
+  struct stat file_stat{};
   if (stat(filepath.c_str(), &file_stat) != 0)
     throw std::runtime_error("G-code file not found: " + filepath);
   if (!S_ISREG(file_stat.st_mode))

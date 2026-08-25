@@ -7,6 +7,11 @@ import type {
   ScopeCapture,
   ScopeStatus,
 } from "@linuxcnc-node/types";
+import {
+  type HalValueFrame,
+  openHalValues,
+  type SocketHandle,
+} from "@linuxcnc-node/websocket-client";
 import { createVirtualizer } from "@tanstack/solid-virtual";
 import {
   FaSolidBars,
@@ -42,10 +47,6 @@ import type {
   TopologySnapshot,
 } from "../../shared/protocol";
 import { BrowseHeader } from "./BrowseHeader";
-import {
-  decodeHalTelemetryFrame,
-  type HalTelemetryFrame,
-} from "./hal-telemetry";
 import { InspectorSidebar } from "./InspectorSidebar";
 import { initLocale, t } from "./i18n";
 import {
@@ -114,13 +115,13 @@ export const HalInspector: Component = () => {
   let preferenceSaveTimer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
   let listElement: HTMLDivElement | null = null;
-  let valueSocket: WebSocket | null = null;
+  let valueSocket: SocketHandle | null = null;
   let socketGeneration = 0;
   let subscriptionRequest = 0;
   let activeValueRevision = 0;
   let activeSlots = new Map<number, HalValueSlot>();
   const slotMaps = new Map<number, Map<number, HalValueSlot>>();
-  const pendingFrames = new Map<number, HalTelemetryFrame[]>();
+  const pendingFrames = new Map<number, HalValueFrame[]>();
   let telemetryRetryMs = 250;
 
   const categoryCount = (item: Category) => {
@@ -344,34 +345,32 @@ export const HalInspector: Component = () => {
         previous.every((ref, index) => key(ref) === key(next[index])),
     },
   );
-  const expectedType = (type: HalValueSlot["type"]): number =>
-    ({ bit: 1, float: 2, s32: 3, u32: 4, s64: 5, u64: 6 })[type];
-
-  const applyTelemetryFrame = (frame: HalTelemetryFrame): void => {
-    const slots = slotMaps.get(frame.revision);
+  const applyTelemetryFrame = (frame: HalValueFrame): void => {
+    const revision = Number(frame.revision);
+    if (!Number.isSafeInteger(revision))
+      throw new Error("HAL telemetry revision exceeds the safe UI range");
+    const slots = slotMaps.get(revision);
     if (
       !slots ||
-      (frame.kind === "delta" && activeValueRevision !== frame.revision)
+      (frame.kind === "delta" && activeValueRevision !== revision)
     ) {
-      const queued = pendingFrames.get(frame.revision) ?? [];
+      const queued = pendingFrames.get(revision) ?? [];
       queued.push(frame);
       if (queued.length > 32) queued.splice(0, queued.length - 32);
-      pendingFrames.set(frame.revision, queued);
+      pendingFrames.set(revision, queued);
       return;
     }
-    if (frame.revision < activeValueRevision) return;
+    if (revision < activeValueRevision) return;
     if (frame.kind === "replacement") {
       if (frame.entries.length !== slots.size)
         throw new Error("HAL telemetry replacement omitted subscription slots");
-      activeValueRevision = frame.revision;
+      activeValueRevision = revision;
     }
     const updates: Array<{ ref: HalItemRef; value?: HalValue }> = [];
     for (const entry of frame.entries) {
       const slot = slots.get(entry.slot);
       if (!slot)
         throw new Error(`HAL telemetry referenced unknown slot ${entry.slot}`);
-      if (entry.type !== 0 && entry.type !== expectedType(slot.type))
-        throw new Error(`HAL telemetry type changed for '${slot.ref.name}'`);
       updates.push({ ref: slot.ref, value: entry.value });
     }
     setValues((current) => {
@@ -412,33 +411,31 @@ export const HalInspector: Component = () => {
     if (!descriptor.websocketUrl) return;
     const generation = ++socketGeneration;
     valueSocket?.close();
-    const socket = new WebSocket(descriptor.websocketUrl);
-    valueSocket = socket;
-    socket.binaryType = "arraybuffer";
-    socket.onmessage = (event) => {
-      if (
-        generation !== socketGeneration ||
-        !(event.data instanceof ArrayBuffer)
-      )
-        return;
-      try {
-        applyTelemetryFrame(decodeHalTelemetryFrame(event.data));
-        telemetryRetryMs = 250;
-      } catch (failure) {
-        setError(String(failure));
-        socket.close();
-      }
-    };
-    socket.onclose = () => {
-      if (generation !== socketGeneration || disposed || !pageVisible()) return;
-      valueSocket = null;
-      const delay = telemetryRetryMs;
-      telemetryRetryMs = Math.min(telemetryRetryMs * 2, 5000);
-      setTimeout(() => {
-        if (!disposed && generation === socketGeneration)
-          setTelemetryRetry((x) => x + 1);
-      }, delay);
-    };
+    const socketUrl = new URL(descriptor.websocketUrl);
+    valueSocket = openHalValues(socketUrl, socketUrl.pathname, {
+      onFrame: (frame) => {
+        if (generation !== socketGeneration) return;
+        try {
+          applyTelemetryFrame(frame);
+          telemetryRetryMs = 250;
+        } catch (failure) {
+          setError(String(failure));
+          valueSocket?.close();
+        }
+      },
+      onError: (failure) => setError(failure.message),
+      onClose: () => {
+        if (generation !== socketGeneration || disposed || !pageVisible())
+          return;
+        valueSocket = null;
+        const delay = telemetryRetryMs;
+        telemetryRetryMs = Math.min(telemetryRetryMs * 2, 5000);
+        setTimeout(() => {
+          if (!disposed && generation === socketGeneration)
+            setTelemetryRetry((x) => x + 1);
+        }, delay);
+      },
+    });
   };
 
   createEffect(() => {

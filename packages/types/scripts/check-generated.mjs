@@ -7,8 +7,14 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "../../..");
 const protoDirectory = join(root, "proto/linuxcnc/v1");
-const protoFiles = ["common.proto", "machine.proto", "program.proto", "hal.proto", "scope.proto"];
-const protoPath = join(protoDirectory, "linuxcnc.proto");
+const protoFiles = [
+  "common.proto",
+  "machine.proto",
+  "program.proto",
+  "hal.proto",
+  "scope.proto",
+  "websocket.proto",
+];
 const generatedPath = join(here, "../src/generated/enums.ts");
 const generatedDomainPath = join(here, "../src/generated/domain.ts");
 const proto = protoFiles

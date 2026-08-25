@@ -12,6 +12,7 @@ const required = [
   "linuxcnc/v1/program.proto",
   "linuxcnc/v1/hal.proto",
   "linuxcnc/v1/scope.proto",
+  "linuxcnc/v1/websocket.proto",
   "linuxcnc/v1/linuxcnc.proto",
   "grpc/health/v1/health.proto",
   "google/protobuf/empty.proto",

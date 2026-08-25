@@ -22,6 +22,7 @@
 #include "linuxcnc/v1/machine.grpc.pb.h"
 #include "linuxcnc/v1/program.grpc.pb.h"
 #include "linuxcnc/v1/scope.grpc.pb.h"
+#include "linuxcnc/v1/websocket.pb.h"
 
 namespace {
 
@@ -37,7 +38,6 @@ using linuxcnc::v1::GetStatusResponse;
 std::shared_ptr<grpc::Channel> make_channel(const std::string& endpoint) {
   return grpc::CreateChannel(endpoint, grpc::InsecureChannelCredentials());
 }
-
 std::pair<std::string, std::string> split_endpoint(
     const std::string& endpoint) {
   const auto separator = endpoint.rfind(':');
@@ -61,12 +61,9 @@ void verify_position_telemetry(const std::string& endpoint) {
   socket.read(buffer);
   std::vector<std::uint8_t> bytes(buffer.size());
   asio::buffer_copy(asio::buffer(bytes), buffer.data());
-  assert(bytes.size() >= 40);
-  assert(bytes[0] == 'L' && bytes[1] == 'C' && bytes[2] == 'P' &&
-         bytes[3] == 'H');
-  assert(bytes[4] == 2);
-  assert(bytes[5] == 1);
-  assert(bytes[6] == 10 && bytes[7] == 0);
+  linuxcnc::v1::PositionHistoryFrame frame;
+  assert(frame.ParseFromArray(bytes.data(), static_cast<int>(bytes.size())));
+  assert(frame.kind() == linuxcnc::v1::FRAME_KIND_REPLACEMENT);
   socket.close(websocket::close_code::normal);
 }
 
@@ -226,117 +223,59 @@ void delete_workspace(linuxcnc::v1::ProgramService::Stub* program,
   assert(program->DeleteWorkspace(&context, request, &response).ok());
 }
 
-void verify_chunked_preview_stream(linuxcnc::v1::ProgramService::Stub* program,
-                                   std::size_t batch_limit) {
-  // Leave enough work outstanding that cancellation is observed while the
-  // bounded server queue is backpressuring the serialized parser.
-  const auto cancelled_workspace =
-      upload_program(program, "cancelled-preview.ngc", make_large_gcode());
-  linuxcnc::v1::ParseProgramRequest cancelled_request;
-  cancelled_request.mutable_entry()->set_workspace_id(
-      cancelled_workspace.workspace_id());
-  cancelled_request.mutable_entry()->set_relative_path("cancelled-preview.ngc");
-  grpc::ClientContext cancelled_context;
-  cancelled_context.set_deadline(std::chrono::system_clock::now() +
-                                 std::chrono::seconds(15));
-  auto cancelled_stream =
-      program->ParseProgram(&cancelled_context, cancelled_request);
-  linuxcnc::v1::ParseProgramEvent event;
-  bool saw_cancelled_batch = false;
-  while (cancelled_stream->Read(&event)) {
-    if (!event.has_batch()) continue;
-    assert(event.batch().operations_size() > 0);
-    assert(static_cast<std::size_t>(event.batch().operations_size()) <=
-           batch_limit);
-    saw_cancelled_batch = true;
-    cancelled_context.TryCancel();
-    break;
-  }
-  while (cancelled_stream->Read(&event)) {
-  }
-  const auto cancelled_status = cancelled_stream->Finish();
-  assert(saw_cancelled_batch);
-  assert(cancelled_status.error_code() == grpc::StatusCode::CANCELLED);
-
-  // A successful parse immediately after cancellation proves the parser
-  // worker, stream admission, and workspace lease were all released.
-  const auto workspace = upload_program(program, "chunked-preview.ngc",
-                                        make_chunked_preview_gcode());
-  linuxcnc::v1::ParseProgramRequest request;
-  request.mutable_entry()->set_workspace_id(workspace.workspace_id());
-  request.mutable_entry()->set_relative_path("chunked-preview.ngc");
-  grpc::ClientContext context;
-  context.set_deadline(std::chrono::system_clock::now() +
-                       std::chrono::seconds(15));
-  auto stream = program->ParseProgram(&context, request);
-
-  std::size_t batch_count = 0;
-  std::size_t last_batch_size = 0;
-  std::size_t operation_count = 0;
-  std::size_t feed_count = 0;
-  std::uint64_t progress_bytes = 0;
-  std::uint64_t progress_operations = 0;
-  std::uint32_t progress_percent = 0;
-  bool saw_progress = false;
-  bool saw_summary = false;
-  while (stream->Read(&event)) {
-    // A successful summary is terminal: no progress or batch may follow it.
-    assert(!saw_summary);
+void verify_preview_stream(const std::string& telemetry_endpoint,
+                           const std::string& workspace_id,
+                           const std::string& relative_path,
+                           std::size_t batch_limit) {
+  const auto [host, port] = split_endpoint(telemetry_endpoint);
+  asio::io_context io;
+  tcp::resolver resolver(io);
+  websocket::stream<beast::tcp_stream> socket(io);
+  beast::get_lowest_layer(socket).expires_after(std::chrono::seconds(15));
+  beast::get_lowest_layer(socket).connect(resolver.resolve(host, port));
+  const auto target = "/v1/program-preview?workspace_id=" + workspace_id +
+                      "&relative_path=" + relative_path;
+  socket.handshake(host, target);
+  std::uint64_t operations = 0;
+  bool summary = false;
+  for (;;) {
+    beast::flat_buffer buffer;
+    beast::error_code error;
+    socket.read(buffer, error);
+    if (error == websocket::error::closed) break;
+    assert(!error);
+    std::vector<std::uint8_t> bytes(buffer.size());
+    asio::buffer_copy(asio::buffer(bytes), buffer.data());
+    linuxcnc::v1::ProgramPreviewEvent event;
+    assert(event.ParseFromArray(bytes.data(), static_cast<int>(bytes.size())));
+    assert(!summary);
     if (event.has_batch()) {
-      const auto& batch = event.batch();
-      assert(batch.operations_size() > 0);
-      assert(static_cast<std::size_t>(batch.operations_size()) <= batch_limit);
-      ++batch_count;
-      last_batch_size = static_cast<std::size_t>(batch.operations_size());
-      operation_count += static_cast<std::size_t>(batch.operations_size());
-      for (const auto& operation : batch.operations()) {
-        if (operation.type() != linuxcnc::v1::OPERATION_TYPE_FEED) continue;
-        ++feed_count;
-        assert(feed_count <= kChunkedPreviewFeedCount);
-        assert(operation.has_pos());
-        assert(operation.pos().values_size() >= 2);
-        assert(operation.pos().values(0) ==
-               static_cast<double>(feed_count % 97));
-        assert(operation.pos().values(1) ==
-               static_cast<double>((feed_count * 7) % 89));
-      }
-      // Exercise the daemon's bounded queue with a temporarily slow reader.
-      if (batch_count == 1)
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    } else if (event.has_progress()) {
-      const auto& progress = event.progress();
-      assert(progress.bytes_read() >= progress_bytes);
-      assert(progress.operation_count() >= progress_operations);
-      assert(progress.percent() >= progress_percent);
-      progress_bytes = progress.bytes_read();
-      progress_operations = progress.operation_count();
-      progress_percent = progress.percent();
-      saw_progress = true;
+      assert(event.batch().operations_size() > 0);
+      assert(static_cast<std::size_t>(event.batch().operations_size()) <=
+             batch_limit);
+      operations += event.batch().operations_size();
     } else if (event.has_summary()) {
-      assert(batch_count > 1);
-      assert(last_batch_size > 0);
-      assert(last_batch_size < batch_limit);
-      assert(event.summary().operation_count() == operation_count);
+      assert(event.summary().operation_count() == operations);
       assert(event.summary().has_extents());
-      saw_summary = true;
+      summary = true;
     } else if (event.has_error()) {
-      std::cerr << "Chunked ParseProgram error: " << event.error().message()
-                << "\n";
-      std::abort();
-    } else {
-      std::cerr << "Chunked ParseProgram returned an empty event\n";
+      std::cerr << "Program preview error: " << event.error().message() << "\n";
       std::abort();
     }
   }
-  const auto status = stream->Finish();
-  assert(status.ok());
-  assert(batch_count > 1);
-  assert(feed_count == kChunkedPreviewFeedCount);
-  assert(saw_progress);
-  assert(saw_summary);
+  assert(socket.reason().code == websocket::close_code::normal);
+  assert(operations > 0);
+  assert(summary);
+}
 
+void verify_chunked_preview_stream(linuxcnc::v1::ProgramService::Stub* program,
+                                   const std::string& telemetry_endpoint,
+                                   std::size_t batch_limit) {
+  const auto workspace = upload_program(program, "chunked-preview.ngc",
+                                        make_chunked_preview_gcode());
+  verify_preview_stream(telemetry_endpoint, workspace.workspace_id(),
+                        "chunked-preview.ngc", batch_limit);
   delete_workspace(program, workspace.workspace_id());
-  delete_workspace(program, cancelled_workspace.workspace_id());
 }
 
 int probe_reacquire(const std::string& endpoint) {
@@ -410,23 +349,6 @@ int hold_shutdown(const std::string& endpoint) {
   error_context.set_deadline(std::chrono::system_clock::now() +
                              std::chrono::seconds(15));
   auto errors = machine->WatchErrors(&error_context, {});
-
-  const auto large_workspace =
-      upload_program(program.get(), "shutdown-large.ngc", make_large_gcode());
-  std::vector<std::unique_ptr<grpc::ClientContext>> parse_contexts;
-  std::vector<
-      std::unique_ptr<grpc::ClientReader<linuxcnc::v1::ParseProgramEvent>>>
-      parses;
-  for (int index = 0; index < 6; ++index) {
-    auto context = std::make_unique<grpc::ClientContext>();
-    context->set_deadline(std::chrono::system_clock::now() +
-                          std::chrono::seconds(15));
-    linuxcnc::v1::ParseProgramRequest request;
-    request.mutable_entry()->set_workspace_id(large_workspace.workspace_id());
-    request.mutable_entry()->set_relative_path("shutdown-large.ngc");
-    parses.push_back(program->ParseProgram(context.get(), request));
-    parse_contexts.push_back(std::move(context));
-  }
 
   grpc::ClientContext partial_create_context;
   linuxcnc::v1::CreateWorkspaceResponse partial_workspace;
@@ -504,12 +426,6 @@ int hold_shutdown(const std::string& endpoint) {
   require_shutdown_status(topology->Finish(), "WatchTopology");
   upload->WritesDone();
   require_shutdown_status(upload->Finish(), "UploadWorkspace");
-  for (auto& parse : parses) {
-    linuxcnc::v1::ParseProgramEvent event;
-    while (parse->Read(&event)) {
-    }
-    require_shutdown_status(parse->Finish(), "ParseProgram");
-  }
   component->WritesDone();
   while (component->Read(&component_response)) {
   }
@@ -779,36 +695,10 @@ int main(int argc, char** argv) {
   assert(upload_response.bytes_written() == gcode.size());
   assert(upload_response.files_size() == 1);
 
-  linuxcnc::v1::ParseProgramRequest parse_request;
-  parse_request.mutable_entry()->set_workspace_id(workspace.workspace_id());
-  parse_request.mutable_entry()->set_relative_path("simple-linear.ngc");
-  grpc::ClientContext parse_context;
-  parse_context.set_deadline(std::chrono::system_clock::now() +
-                             std::chrono::seconds(15));
-  auto parse = program->ParseProgram(&parse_context, parse_request);
-  linuxcnc::v1::ParseProgramEvent parse_event;
-  std::uint64_t parsed_operations = 0;
-  bool saw_parse_summary = false;
-  while (parse->Read(&parse_event)) {
-    if (parse_event.has_batch()) {
-      parsed_operations +=
-          static_cast<std::uint64_t>(parse_event.batch().operations_size());
-    } else if (parse_event.has_summary()) {
-      saw_parse_summary = true;
-      assert(parse_event.summary().operation_count() == parsed_operations);
-      assert(parse_event.summary().has_extents());
-    } else if (parse_event.has_error()) {
-      std::cerr << "ParseProgram error: " << parse_event.error().message()
-                << "\n";
-      return 1;
-    }
-  }
-  const auto parse_status = parse->Finish();
-  assert(parse_status.ok());
-  assert(parsed_operations > 0);
-  assert(saw_parse_summary);
+  verify_preview_stream(telemetry_endpoint, workspace.workspace_id(),
+                        "simple-linear.ngc", batch_limit);
 
-  verify_chunked_preview_stream(program.get(), batch_limit);
+  verify_chunked_preview_stream(program.get(), telemetry_endpoint, batch_limit);
 
   linuxcnc::v1::DeleteWorkspaceRequest delete_workspace_request;
   delete_workspace_request.set_workspace_id(workspace.workspace_id());

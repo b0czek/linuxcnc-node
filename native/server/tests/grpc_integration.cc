@@ -16,20 +16,12 @@
 #include "linuxcnc/v1/machine.grpc.pb.h"
 #include "linuxcnc/v1/program.grpc.pb.h"
 #include "linuxcnc/v1/scope.grpc.pb.h"
+#include "linuxcnc/v1/websocket.pb.h"
 
 namespace asio = boost::asio;
 namespace beast = boost::beast;
 namespace websocket = beast::websocket;
 using tcp = asio::ip::tcp;
-
-std::uint64_t read_u64_le(const std::vector<std::uint8_t>& bytes,
-                          std::size_t offset) {
-  std::uint64_t value = 0;
-  for (unsigned index = 0; index < 8; ++index) {
-    value |= static_cast<std::uint64_t>(bytes[offset + index]) << (index * 8U);
-  }
-  return value;
-}
 
 std::pair<std::string, std::string> split_endpoint(
     const std::string& endpoint) {
@@ -37,18 +29,16 @@ std::pair<std::string, std::string> split_endpoint(
   return {endpoint.substr(0, separator), endpoint.substr(separator + 1)};
 }
 
-std::vector<std::uint8_t> read_telemetry_frame(
+linuxcnc::v1::PositionHistoryFrame read_telemetry_frame(
     websocket::stream<beast::tcp_stream>& socket) {
   beast::flat_buffer buffer;
   socket.read(buffer);
   std::vector<std::uint8_t> bytes(buffer.size());
   asio::buffer_copy(asio::buffer(bytes), buffer.data());
-  assert(bytes.size() >= 40);
-  assert(bytes[0] == 'L' && bytes[1] == 'C' && bytes[2] == 'P' &&
-         bytes[3] == 'H');
-  assert(bytes[4] == 2 && bytes[5] == 1);
-  assert(bytes[6] == 10 && bytes[7] == 0);
-  return bytes;
+  linuxcnc::v1::PositionHistoryFrame frame;
+  assert(frame.ParseFromArray(bytes.data(), static_cast<int>(bytes.size())));
+  assert(frame.kind() == linuxcnc::v1::FRAME_KIND_REPLACEMENT);
+  return frame;
 }
 
 std::vector<std::uint8_t> read_raw_frame(
@@ -157,7 +147,7 @@ int main(int argc, char** argv) {
       resolver.resolve(telemetry_host, telemetry_port));
   telemetry.handshake(telemetry_host, "/v1/position-history");
   const auto initial_frame = read_telemetry_frame(telemetry);
-  const auto initial_generation = read_u64_le(initial_frame, 8);
+  const auto initial_generation = initial_frame.generation();
   grpc::ClientContext context;
   linuxcnc::v1::GetStatusResponse status;
   const auto status_result = machine->GetStatus(&context, {}, &status);
@@ -182,7 +172,7 @@ int main(int argc, char** argv) {
   const auto configured_frame = read_telemetry_frame(telemetry);
   assert(std::chrono::steady_clock::now() - delivery_started >=
          std::chrono::milliseconds(40));
-  assert(read_u64_le(configured_frame, 8) == initial_generation + 2);
+  assert(configured_frame.generation() == initial_generation + 2);
   grpc::ClientContext oversized_context;
   config.set_capacity(100001);
   const auto oversized =
@@ -198,7 +188,7 @@ int main(int argc, char** argv) {
   grpc::ClientContext clear_context;
   assert(machine->ClearPositionHistory(&clear_context, empty, &empty).ok());
   const auto cleared_frame = read_telemetry_frame(telemetry);
-  assert(read_u64_le(cleared_frame, 8) != read_u64_le(configured_frame, 8));
+  assert(cleared_frame.generation() != configured_frame.generation());
   telemetry.text(true);
   telemetry.write(asio::buffer("forbidden", 9));
   beast::flat_buffer rejected;
@@ -242,11 +232,14 @@ int main(int argc, char** argv) {
   beast::get_lowest_layer(hal_telemetry)
       .connect(resolver.resolve(telemetry_host, telemetry_port));
   hal_telemetry.handshake(telemetry_host, value_subscription.websocket_path());
-  const auto hal_replacement = read_raw_frame(hal_telemetry);
-  assert(hal_replacement.size() == 48);
-  assert(hal_replacement[0] == 'L' && hal_replacement[1] == 'C' &&
-         hal_replacement[2] == 'H' && hal_replacement[3] == 'V');
-  assert(hal_replacement[4] == 1 && hal_replacement[5] == 1);
+  const auto hal_replacement_bytes = read_raw_frame(hal_telemetry);
+  linuxcnc::v1::HalValueFrame hal_replacement;
+  assert(hal_replacement.ParseFromArray(
+      hal_replacement_bytes.data(),
+      static_cast<int>(hal_replacement_bytes.size())));
+  assert(hal_replacement.kind() == linuxcnc::v1::FRAME_KIND_REPLACEMENT);
+  assert(hal_replacement.revision() == 1);
+  assert(hal_replacement.entries_size() == 1);
   grpc::ClientContext write_context;
   linuxcnc::v1::HalWrite write;
   auto* write_value = write.add_writes();
@@ -255,8 +248,13 @@ int main(int argc, char** argv) {
   write_value->mutable_value()->set_bit(true);
   linuxcnc::v1::HalWriteResponse write_response;
   assert(hal->Write(&write_context, write, &write_response).ok());
-  const auto hal_delta = read_raw_frame(hal_telemetry);
-  assert(hal_delta.size() == 48 && hal_delta[5] == 2);
+  const auto hal_delta_bytes = read_raw_frame(hal_telemetry);
+  linuxcnc::v1::HalValueFrame hal_delta;
+  assert(hal_delta.ParseFromArray(hal_delta_bytes.data(),
+                                  static_cast<int>(hal_delta_bytes.size())));
+  assert(hal_delta.kind() == linuxcnc::v1::FRAME_KIND_DELTA);
+  assert(hal_delta.entries_size() == 1);
+  assert(hal_delta.entries(0).value().bit());
   grpc::ClientContext update_subscription_context;
   linuxcnc::v1::UpdateHalValueSubscriptionRequest update_subscription;
   update_subscription.set_subscription_id(value_subscription.subscription_id());
@@ -268,8 +266,14 @@ int main(int argc, char** argv) {
                                       &updated_subscription)
              .ok());
   assert(updated_subscription.revision() == 2);
-  const auto empty_replacement = read_raw_frame(hal_telemetry);
-  assert(empty_replacement.size() == 32 && empty_replacement[5] == 1);
+  const auto empty_replacement_bytes = read_raw_frame(hal_telemetry);
+  linuxcnc::v1::HalValueFrame empty_replacement;
+  assert(empty_replacement.ParseFromArray(
+      empty_replacement_bytes.data(),
+      static_cast<int>(empty_replacement_bytes.size())));
+  assert(empty_replacement.kind() == linuxcnc::v1::FRAME_KIND_REPLACEMENT);
+  assert(empty_replacement.revision() == 2);
+  assert(empty_replacement.entries_size() == 0);
   grpc::ClientContext future_topology_context;
   future_topology_context.set_deadline(std::chrono::system_clock::now() +
                                        std::chrono::seconds(2));

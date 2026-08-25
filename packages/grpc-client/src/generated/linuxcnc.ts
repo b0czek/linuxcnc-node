@@ -55,6 +55,8 @@ import type { HalServiceClient as _linuxcnc_v1_HalServiceClient, HalServiceDefin
 import type { HalSignalInfo as _linuxcnc_v1_HalSignalInfo, HalSignalInfo__Output as _linuxcnc_v1_HalSignalInfo__Output } from './linuxcnc/v1/HalSignalInfo';
 import type { HalThreadInfo as _linuxcnc_v1_HalThreadInfo, HalThreadInfo__Output as _linuxcnc_v1_HalThreadInfo__Output } from './linuxcnc/v1/HalThreadInfo';
 import type { HalTopology as _linuxcnc_v1_HalTopology, HalTopology__Output as _linuxcnc_v1_HalTopology__Output } from './linuxcnc/v1/HalTopology';
+import type { HalValueFrame as _linuxcnc_v1_HalValueFrame, HalValueFrame__Output as _linuxcnc_v1_HalValueFrame__Output } from './linuxcnc/v1/HalValueFrame';
+import type { HalValueFrameEntry as _linuxcnc_v1_HalValueFrameEntry, HalValueFrameEntry__Output as _linuxcnc_v1_HalValueFrameEntry__Output } from './linuxcnc/v1/HalValueFrameEntry';
 import type { HalValueSubscription as _linuxcnc_v1_HalValueSubscription, HalValueSubscription__Output as _linuxcnc_v1_HalValueSubscription__Output } from './linuxcnc/v1/HalValueSubscription';
 import type { HalValueSubscriptionSlot as _linuxcnc_v1_HalValueSubscriptionSlot, HalValueSubscriptionSlot__Output as _linuxcnc_v1_HalValueSubscriptionSlot__Output } from './linuxcnc/v1/HalValueSubscriptionSlot';
 import type { HalWrite as _linuxcnc_v1_HalWrite, HalWrite__Output as _linuxcnc_v1_HalWrite__Output } from './linuxcnc/v1/HalWrite';
@@ -85,16 +87,17 @@ import type { NurbsG6Data as _linuxcnc_v1_NurbsG6Data, NurbsG6Data__Output as _l
 import type { OffsetData as _linuxcnc_v1_OffsetData, OffsetData__Output as _linuxcnc_v1_OffsetData__Output } from './linuxcnc/v1/OffsetData';
 import type { PackedChannel as _linuxcnc_v1_PackedChannel, PackedChannel__Output as _linuxcnc_v1_PackedChannel__Output } from './linuxcnc/v1/PackedChannel';
 import type { ParseBatch as _linuxcnc_v1_ParseBatch, ParseBatch__Output as _linuxcnc_v1_ParseBatch__Output } from './linuxcnc/v1/ParseBatch';
-import type { ParseProgramEvent as _linuxcnc_v1_ParseProgramEvent, ParseProgramEvent__Output as _linuxcnc_v1_ParseProgramEvent__Output } from './linuxcnc/v1/ParseProgramEvent';
-import type { ParseProgramRequest as _linuxcnc_v1_ParseProgramRequest, ParseProgramRequest__Output as _linuxcnc_v1_ParseProgramRequest__Output } from './linuxcnc/v1/ParseProgramRequest';
 import type { ParseProgress as _linuxcnc_v1_ParseProgress, ParseProgress__Output as _linuxcnc_v1_ParseProgress__Output } from './linuxcnc/v1/ParseProgress';
 import type { ParseSummary as _linuxcnc_v1_ParseSummary, ParseSummary__Output as _linuxcnc_v1_ParseSummary__Output } from './linuxcnc/v1/ParseSummary';
 import type { PlaneChangeData as _linuxcnc_v1_PlaneChangeData, PlaneChangeData__Output as _linuxcnc_v1_PlaneChangeData__Output } from './linuxcnc/v1/PlaneChangeData';
 import type { Position as _linuxcnc_v1_Position, Position__Output as _linuxcnc_v1_Position__Output } from './linuxcnc/v1/Position';
 import type { PositionHistoryConfig as _linuxcnc_v1_PositionHistoryConfig, PositionHistoryConfig__Output as _linuxcnc_v1_PositionHistoryConfig__Output } from './linuxcnc/v1/PositionHistoryConfig';
+import type { PositionHistoryFrame as _linuxcnc_v1_PositionHistoryFrame, PositionHistoryFrame__Output as _linuxcnc_v1_PositionHistoryFrame__Output } from './linuxcnc/v1/PositionHistoryFrame';
 import type { ProbeData as _linuxcnc_v1_ProbeData, ProbeData__Output as _linuxcnc_v1_ProbeData__Output } from './linuxcnc/v1/ProbeData';
 import type { ProgramHandle as _linuxcnc_v1_ProgramHandle, ProgramHandle__Output as _linuxcnc_v1_ProgramHandle__Output } from './linuxcnc/v1/ProgramHandle';
 import type { ProgramOpen as _linuxcnc_v1_ProgramOpen, ProgramOpen__Output as _linuxcnc_v1_ProgramOpen__Output } from './linuxcnc/v1/ProgramOpen';
+import type { ProgramPreviewError as _linuxcnc_v1_ProgramPreviewError, ProgramPreviewError__Output as _linuxcnc_v1_ProgramPreviewError__Output } from './linuxcnc/v1/ProgramPreviewError';
+import type { ProgramPreviewEvent as _linuxcnc_v1_ProgramPreviewEvent, ProgramPreviewEvent__Output as _linuxcnc_v1_ProgramPreviewEvent__Output } from './linuxcnc/v1/ProgramPreviewEvent';
 import type { ProgramServiceClient as _linuxcnc_v1_ProgramServiceClient, ProgramServiceDefinition as _linuxcnc_v1_ProgramServiceDefinition } from './linuxcnc/v1/ProgramService';
 import type { RigidTapData as _linuxcnc_v1_RigidTapData, RigidTapData__Output as _linuxcnc_v1_RigidTapData__Output } from './linuxcnc/v1/RigidTapData';
 import type { RotationData as _linuxcnc_v1_RotationData, RotationData__Output as _linuxcnc_v1_RotationData__Output } from './linuxcnc/v1/RotationData';
@@ -192,6 +195,7 @@ export interface ProtoGrpcType {
       Extents: MessageTypeDefinition<_linuxcnc_v1_Extents, _linuxcnc_v1_Extents__Output>
       FeedRateData: MessageTypeDefinition<_linuxcnc_v1_FeedRateData, _linuxcnc_v1_FeedRateData__Output>
       FileChunk: MessageTypeDefinition<_linuxcnc_v1_FileChunk, _linuxcnc_v1_FileChunk__Output>
+      FrameKind: EnumTypeDefinition
       G5xOffsetData: MessageTypeDefinition<_linuxcnc_v1_G5xOffsetData, _linuxcnc_v1_G5xOffsetData__Output>
       GCodeOperation: MessageTypeDefinition<_linuxcnc_v1_GCodeOperation, _linuxcnc_v1_GCodeOperation__Output>
       GetHalTopologyRequest: MessageTypeDefinition<_linuxcnc_v1_GetHalTopologyRequest, _linuxcnc_v1_GetHalTopologyRequest__Output>
@@ -218,6 +222,8 @@ export interface ProtoGrpcType {
       HalThreadInfo: MessageTypeDefinition<_linuxcnc_v1_HalThreadInfo, _linuxcnc_v1_HalThreadInfo__Output>
       HalTopology: MessageTypeDefinition<_linuxcnc_v1_HalTopology, _linuxcnc_v1_HalTopology__Output>
       HalType: EnumTypeDefinition
+      HalValueFrame: MessageTypeDefinition<_linuxcnc_v1_HalValueFrame, _linuxcnc_v1_HalValueFrame__Output>
+      HalValueFrameEntry: MessageTypeDefinition<_linuxcnc_v1_HalValueFrameEntry, _linuxcnc_v1_HalValueFrameEntry__Output>
       HalValueSubscription: MessageTypeDefinition<_linuxcnc_v1_HalValueSubscription, _linuxcnc_v1_HalValueSubscription__Output>
       HalValueSubscriptionSlot: MessageTypeDefinition<_linuxcnc_v1_HalValueSubscriptionSlot, _linuxcnc_v1_HalValueSubscriptionSlot__Output>
       HalWrite: MessageTypeDefinition<_linuxcnc_v1_HalWrite, _linuxcnc_v1_HalWrite__Output>
@@ -255,17 +261,19 @@ export interface ProtoGrpcType {
       OrientState: EnumTypeDefinition
       PackedChannel: MessageTypeDefinition<_linuxcnc_v1_PackedChannel, _linuxcnc_v1_PackedChannel__Output>
       ParseBatch: MessageTypeDefinition<_linuxcnc_v1_ParseBatch, _linuxcnc_v1_ParseBatch__Output>
-      ParseProgramEvent: MessageTypeDefinition<_linuxcnc_v1_ParseProgramEvent, _linuxcnc_v1_ParseProgramEvent__Output>
-      ParseProgramRequest: MessageTypeDefinition<_linuxcnc_v1_ParseProgramRequest, _linuxcnc_v1_ParseProgramRequest__Output>
       ParseProgress: MessageTypeDefinition<_linuxcnc_v1_ParseProgress, _linuxcnc_v1_ParseProgress__Output>
       ParseSummary: MessageTypeDefinition<_linuxcnc_v1_ParseSummary, _linuxcnc_v1_ParseSummary__Output>
       Plane: EnumTypeDefinition
       PlaneChangeData: MessageTypeDefinition<_linuxcnc_v1_PlaneChangeData, _linuxcnc_v1_PlaneChangeData__Output>
       Position: MessageTypeDefinition<_linuxcnc_v1_Position, _linuxcnc_v1_Position__Output>
       PositionHistoryConfig: MessageTypeDefinition<_linuxcnc_v1_PositionHistoryConfig, _linuxcnc_v1_PositionHistoryConfig__Output>
+      PositionHistoryFrame: MessageTypeDefinition<_linuxcnc_v1_PositionHistoryFrame, _linuxcnc_v1_PositionHistoryFrame__Output>
       ProbeData: MessageTypeDefinition<_linuxcnc_v1_ProbeData, _linuxcnc_v1_ProbeData__Output>
       ProgramHandle: MessageTypeDefinition<_linuxcnc_v1_ProgramHandle, _linuxcnc_v1_ProgramHandle__Output>
       ProgramOpen: MessageTypeDefinition<_linuxcnc_v1_ProgramOpen, _linuxcnc_v1_ProgramOpen__Output>
+      ProgramPreviewError: MessageTypeDefinition<_linuxcnc_v1_ProgramPreviewError, _linuxcnc_v1_ProgramPreviewError__Output>
+      ProgramPreviewErrorCode: EnumTypeDefinition
+      ProgramPreviewEvent: MessageTypeDefinition<_linuxcnc_v1_ProgramPreviewEvent, _linuxcnc_v1_ProgramPreviewEvent__Output>
       ProgramService: SubtypeConstructor<typeof grpc.Client, _linuxcnc_v1_ProgramServiceClient> & { service: _linuxcnc_v1_ProgramServiceDefinition }
       ProgramUnits: EnumTypeDefinition
       RcsStatus: EnumTypeDefinition

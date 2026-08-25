@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/program.proto
+// Original file: proto/linuxcnc/v1/websocket.proto
 
 import type { Long } from '@grpc/proto-loader';
 

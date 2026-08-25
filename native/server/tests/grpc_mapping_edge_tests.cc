@@ -5,8 +5,8 @@
 #include <variant>
 #include <vector>
 
-#include "linuxcnc_grpc/grpc_gcode_mapping.hpp"
 #include "linuxcnc_grpc/grpc_hal_mapping.hpp"
+#include "linuxcnc_grpc/protobuf_gcode_mapping.hpp"
 
 using namespace linuxcnc::server;
 

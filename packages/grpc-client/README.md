@@ -19,18 +19,8 @@ application schema filename.
 
 HAL value consumers create and mutate subscriptions with the raw `HalService`
 methods, then attach the returned path to the daemon's read-only telemetry
-WebSocket. This package exposes the gRPC control contract only; consumers
-decode the versioned `LCHV` frames at their renderer boundary.
+WebSocket. This package exposes the gRPC control contract only; renderers use
+`@linuxcnc-node/websocket-client` for protobuf frame decoding.
 
-## Streaming program previews
-
-Use `clients.program.parseProgram(...)` as a readable server stream. Append
-every `event.batch.operations` array immediately instead of waiting for the
-terminal summary; progress events may be coalesced, while operation batches
-are ordered and never dropped. A successful stream ends with exactly one
-summary containing authoritative extents and the total operation count.
-
-Call `stream.cancel()` when a preview is superseded or its consumer closes.
-The daemon then cancels interpretation and releases the workspace lease. The
-high-frequency position-history feed remains a separate WebSocket and should
-not be used for program-preview operations.
+Program workspaces remain on `ProgramService`; previews are delivered only by
+the protobuf WebSocket data plane and are not part of this package's gRPC API.

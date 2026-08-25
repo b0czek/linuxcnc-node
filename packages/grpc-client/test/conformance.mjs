@@ -55,6 +55,7 @@ try {
     "program.proto",
     "hal.proto",
     "scope.proto",
+    "websocket.proto",
   ]) {
     copyFileSync(
       join(import.meta.dirname, "../proto/linuxcnc/v1", file),
@@ -101,6 +102,10 @@ const packageDefinition = protoLoader.loadSync(
   },
 );
 const loaded = grpc.loadPackageDefinition(packageDefinition);
+assert.equal(loaded.linuxcnc.v1.ProgramService.service.parseProgram, undefined);
+assert.ok(loaded.linuxcnc.v1.PositionHistoryFrame);
+assert.ok(loaded.linuxcnc.v1.HalValueFrame);
+assert.ok(loaded.linuxcnc.v1.ProgramPreviewEvent);
 const scalar = loaded.linuxcnc.v1.HalScalar;
 const statDelta = loaded.linuxcnc.v1.LinuxCNCStatDelta;
 const emptyDelta = statDelta.deserialize(Buffer.alloc(0));

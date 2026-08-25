@@ -22,10 +22,8 @@ set(LINUXCNC_GRPC_DOMAIN_SOURCES
     src/daemon_config.cc
     src/hal_repository.cc
     src/hal_value_telemetry.cc
-    src/hal_value_telemetry_wire.cc
     src/position_history.cc
     src/position_telemetry.cc
-    src/position_telemetry_wire.cc
     src/program_workspace.cc
     src/scope_manager.cc
     src/status_hub.cc
@@ -137,7 +135,7 @@ if(LINUXCNC_GRPC_ENABLE_NML AND
             "${CMAKE_DL_LIBS}")
         message(STATUS "LinuxCNC rs274 parser enabled from ${LINUXCNC_ROOT}")
     else()
-        message(STATUS "LinuxCNC rs274 dependencies not found; ParseProgram will be unavailable")
+        message(STATUS "LinuxCNC rs274 dependencies not found; program preview will be unavailable")
     endif()
 endif()
 
@@ -196,6 +194,7 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
         "${LINUXCNC_GRPC_PROTO_ROOT}/linuxcnc/v1/program.proto"
         "${LINUXCNC_GRPC_PROTO_ROOT}/linuxcnc/v1/hal.proto"
         "${LINUXCNC_GRPC_PROTO_ROOT}/linuxcnc/v1/scope.proto"
+        "${LINUXCNC_GRPC_PROTO_ROOT}/linuxcnc/v1/websocket.proto"
         "${LINUXCNC_GRPC_PROTO_ROOT}/linuxcnc/v1/linuxcnc.proto")
     set(LINUXCNC_GRPC_HEALTH_PROTO_FILE "${LINUXCNC_GRPC_PROTO_ROOT}/grpc/health/v1/health.proto")
     set(LINUXCNC_GRPC_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
@@ -210,6 +209,8 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
         "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/hal.grpc.pb.cc"
         "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/scope.pb.cc"
         "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/scope.grpc.pb.cc"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/websocket.pb.cc"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/websocket.grpc.pb.cc"
         "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/linuxcnc.pb.cc"
         "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/linuxcnc.grpc.pb.cc"
         "${LINUXCNC_GRPC_GENERATED_DIR}/grpc/health/v1/health.pb.cc"
@@ -225,6 +226,8 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
         "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/hal.grpc.pb.h"
         "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/scope.pb.h"
         "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/scope.grpc.pb.h"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/websocket.pb.h"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/websocket.grpc.pb.h"
         "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/linuxcnc.pb.h"
         "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/linuxcnc.grpc.pb.h"
         "${LINUXCNC_GRPC_GENERATED_DIR}/grpc/health/v1/health.pb.h"
@@ -249,7 +252,7 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
         target_link_libraries(linuxcnc-grpc-proto PUBLIC gRPC::grpc++_reflection)
     endif()
     add_library(linuxcnc-grpc-wire STATIC
-        src/grpc_gcode_mapping.cc
+        src/protobuf_gcode_mapping.cc
         src/grpc_hal_mapping.cc)
     target_link_libraries(linuxcnc-grpc-wire PUBLIC
         linuxcnc-grpc-domain linuxcnc-grpc-proto)
@@ -272,7 +275,7 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
         list(APPEND LINUXCNC_GRPC_SERVER_SOURCES src/grpc/scope_service_manager.cc)
     endif()
     target_sources(linuxcnc-grpc-server PRIVATE ${LINUXCNC_GRPC_SERVER_SOURCES})
-    target_sources(linuxcnc-grpc-server PRIVATE src/position_telemetry_server.cc)
+    target_sources(linuxcnc-grpc-server PRIVATE src/telemetry_websocket_server.cc)
     target_compile_definitions(linuxcnc-grpc-server PRIVATE LINUXCNC_GRPC_BUILD_WIRE=1)
     target_compile_definitions(linuxcnc-grpc-server PRIVATE BOOST_ERROR_CODE_HEADER_ONLY=1)
     target_include_directories(linuxcnc-grpc-server PRIVATE ${Boost_INCLUDE_DIRS})
@@ -314,11 +317,11 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
                 SKIP_RETURN_CODE 77
                 TIMEOUT 120)
         endif()
-        add_executable(linuxcnc-grpc-gcode-mapping-tests tests/grpc_gcode_mapping_tests.cc)
-        target_compile_features(linuxcnc-grpc-gcode-mapping-tests PRIVATE cxx_std_17)
-        target_link_libraries(linuxcnc-grpc-gcode-mapping-tests PRIVATE linuxcnc-grpc-wire)
-        add_test(NAME linuxcnc-grpc-gcode-mapping-tests
-                 COMMAND linuxcnc-grpc-gcode-mapping-tests)
+        add_executable(linuxcnc-protobuf-gcode-mapping-tests tests/protobuf_gcode_mapping_tests.cc)
+        target_compile_features(linuxcnc-protobuf-gcode-mapping-tests PRIVATE cxx_std_17)
+        target_link_libraries(linuxcnc-protobuf-gcode-mapping-tests PRIVATE linuxcnc-grpc-wire)
+        add_test(NAME linuxcnc-protobuf-gcode-mapping-tests
+                 COMMAND linuxcnc-protobuf-gcode-mapping-tests)
         add_executable(linuxcnc-grpc-mapping-edge-tests
             tests/grpc_mapping_edge_tests.cc)
         target_compile_features(linuxcnc-grpc-mapping-edge-tests PRIVATE cxx_std_17)

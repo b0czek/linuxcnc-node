@@ -40,8 +40,7 @@ std::string opaque_workspace_id() {
   return id;
 }
 
-bool has_generated_suffix(const std::string& value,
-                          const std::string& prefix) {
+bool has_generated_suffix(const std::string& value, const std::string& prefix) {
   if (value.compare(0, prefix.size(), prefix) != 0 ||
       value.size() == prefix.size())
     return false;
@@ -82,17 +81,20 @@ void reconcile_active_program_directory(const fs::path& active_directory) {
     // A crash after active -> previous but before staging -> active leaves the
     // last known-good program only in the backup directory.
     fs::rename(previous_directories.back(), active_directory, error);
-    if (error) throw std::system_error(error, "restore active program directory");
+    if (error)
+      throw std::system_error(error, "restore active program directory");
     previous_directories.pop_back();
   }
 
   for (const auto& orphan : staging_directories) {
     fs::remove_all(orphan, error);
-    if (error) throw std::system_error(error, "remove staging program directory");
+    if (error)
+      throw std::system_error(error, "remove staging program directory");
   }
   for (const auto& orphan : previous_directories) {
     fs::remove_all(orphan, error);
-    if (error) throw std::system_error(error, "remove previous program directory");
+    if (error)
+      throw std::system_error(error, "remove previous program directory");
   }
 }
 

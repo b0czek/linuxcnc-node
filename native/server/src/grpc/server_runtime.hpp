@@ -15,7 +15,7 @@ class AdmissionCounter;
 class BoundedExecutor;
 class PositionTelemetry;
 class HalValueTelemetry;
-class PositionTelemetryServer;
+class TelemetryWebSocketServer;
 
 namespace detail {
 
@@ -33,7 +33,7 @@ class ServerRuntime {
                 std::unique_ptr<ManagedGrpcService> program,
                 std::unique_ptr<ManagedGrpcService> hal,
                 std::unique_ptr<ManagedGrpcService> scope,
-                std::unique_ptr<PositionTelemetryServer> position_websocket,
+                std::unique_ptr<TelemetryWebSocketServer> telemetry_websocket,
                 std::shared_ptr<PositionTelemetry> position_telemetry,
                 std::shared_ptr<HalValueTelemetry> hal_telemetry,
                 AdmissionCounter& stream_admission,
@@ -79,7 +79,7 @@ class ServerRuntime {
   std::unique_ptr<ManagedGrpcService> program_;
   std::unique_ptr<ManagedGrpcService> hal_;
   std::unique_ptr<ManagedGrpcService> scope_;
-  std::unique_ptr<PositionTelemetryServer> position_websocket_;
+  std::unique_ptr<TelemetryWebSocketServer> telemetry_websocket_;
   std::shared_ptr<PositionTelemetry> position_telemetry_;
   std::shared_ptr<HalValueTelemetry> hal_telemetry_;
 

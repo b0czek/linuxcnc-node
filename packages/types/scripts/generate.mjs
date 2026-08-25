@@ -7,7 +7,13 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "../../..");
 const protoDirectory = join(root, "proto/linuxcnc/v1");
-const protoFiles = ["common.proto", "machine.proto", "program.proto", "hal.proto", "scope.proto"];
+const protoFiles = [
+  "common.proto",
+  "machine.proto",
+  "program.proto",
+  "hal.proto",
+  "scope.proto",
+];
 const proto = join(protoDirectory, "linuxcnc.proto");
 const outputFlag = process.argv.indexOf("--output");
 if (outputFlag >= 0 && !process.argv[outputFlag + 1]) {
