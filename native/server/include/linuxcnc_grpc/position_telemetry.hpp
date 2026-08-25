@@ -1,10 +1,10 @@
 #pragma once
 
-#include "linuxcnc_grpc/callback_runtime.hpp"
-#include "linuxcnc_grpc/position_history.hpp"
-
 #include <cstddef>
 #include <cstdint>
+
+#include "linuxcnc_grpc/callback_runtime.hpp"
+#include "linuxcnc_grpc/position_history.hpp"
 
 namespace linuxcnc::server {
 

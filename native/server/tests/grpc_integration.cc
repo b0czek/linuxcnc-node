@@ -1,18 +1,18 @@
-#include "linuxcnc/v1/linuxcnc.grpc.pb.h"
-
-#include <grpcpp/grpcpp.h>
 #include <google/protobuf/empty.pb.h>
+#include <grpcpp/grpcpp.h>
+
 #include <boost/asio/connect.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/websocket.hpp>
-
 #include <cassert>
+#include <chrono>
 #include <memory>
 #include <string>
-#include <chrono>
 #include <thread>
 #include <vector>
+
+#include "linuxcnc/v1/linuxcnc.grpc.pb.h"
 
 namespace asio = boost::asio;
 namespace beast = boost::beast;
@@ -28,7 +28,8 @@ std::uint64_t read_u64_le(const std::vector<std::uint8_t>& bytes,
   return value;
 }
 
-std::pair<std::string, std::string> split_endpoint(const std::string& endpoint) {
+std::pair<std::string, std::string> split_endpoint(
+    const std::string& endpoint) {
   const auto separator = endpoint.rfind(':');
   return {endpoint.substr(0, separator), endpoint.substr(separator + 1)};
 }
@@ -40,7 +41,8 @@ std::vector<std::uint8_t> read_telemetry_frame(
   std::vector<std::uint8_t> bytes(buffer.size());
   asio::buffer_copy(asio::buffer(bytes), buffer.data());
   assert(bytes.size() >= 40);
-  assert(bytes[0] == 'L' && bytes[1] == 'C' && bytes[2] == 'P' && bytes[3] == 'H');
+  assert(bytes[0] == 'L' && bytes[1] == 'C' && bytes[2] == 'P' &&
+         bytes[3] == 'H');
   assert(bytes[4] == 2 && bytes[5] == 1);
   assert(bytes[6] == 10 && bytes[7] == 0);
   return bytes;
@@ -57,8 +59,8 @@ std::vector<std::uint8_t> read_raw_frame(
 
 int main(int argc, char** argv) {
   const std::string endpoint = argc > 1 ? argv[1] : "127.0.0.1:50051";
-  auto channel = grpc::CreateChannel(endpoint,
-                                    grpc::InsecureChannelCredentials());
+  auto channel =
+      grpc::CreateChannel(endpoint, grpc::InsecureChannelCredentials());
   auto machine = linuxcnc::v1::MachineService::NewStub(channel);
   if (argc > 2 && std::string(argv[2]) == "--hold-stream") {
     auto program = linuxcnc::v1::ProgramService::NewStub(channel);
@@ -70,35 +72,42 @@ int main(int argc, char** argv) {
     };
     std::vector<std::thread> holders;
     holders.emplace_back([&] {
-      grpc::ClientContext context; context.set_deadline(
-          std::chrono::system_clock::now() + std::chrono::seconds(10));
+      grpc::ClientContext context;
+      context.set_deadline(std::chrono::system_clock::now() +
+                           std::chrono::seconds(10));
       auto stream = machine->WatchErrors(&context, {});
       linuxcnc::v1::LinuxCNCError message;
-      while (stream->Read(&message)) {}
+      while (stream->Read(&message)) {
+      }
       terminal_ok(stream->Finish());
     });
     holders.emplace_back([&] {
-      grpc::ClientContext context; context.set_deadline(
-          std::chrono::system_clock::now() + std::chrono::seconds(10));
+      grpc::ClientContext context;
+      context.set_deadline(std::chrono::system_clock::now() +
+                           std::chrono::seconds(10));
       auto stream = machine->WatchStatus(&context, {});
       linuxcnc::v1::WatchStatusEvent message;
-      while (stream->Read(&message)) {}
+      while (stream->Read(&message)) {
+      }
       terminal_ok(stream->Finish());
     });
     holders.emplace_back([&] {
-      grpc::ClientContext context; context.set_deadline(
-          std::chrono::system_clock::now() + std::chrono::seconds(10));
+      grpc::ClientContext context;
+      context.set_deadline(std::chrono::system_clock::now() +
+                           std::chrono::seconds(10));
       auto stream = hal->WatchTopology(&context, {});
       linuxcnc::v1::WatchHalTopologyEvent message;
-      while (stream->Read(&message)) {}
+      while (stream->Read(&message)) {
+      }
       terminal_ok(stream->Finish());
     });
     holders.emplace_back([&] {
       grpc::ClientContext create_context;
       linuxcnc::v1::CreateWorkspaceResponse workspace;
       assert(program->CreateWorkspace(&create_context, {}, &workspace).ok());
-      grpc::ClientContext context; context.set_deadline(
-          std::chrono::system_clock::now() + std::chrono::seconds(10));
+      grpc::ClientContext context;
+      context.set_deadline(std::chrono::system_clock::now() +
+                           std::chrono::seconds(10));
       linuxcnc::v1::UploadWorkspaceResponse response;
       auto stream = program->UploadWorkspace(&context, &response);
       linuxcnc::v1::UploadWorkspaceRequest request;
@@ -110,29 +119,34 @@ int main(int argc, char** argv) {
       terminal_ok(stream->Finish());
     });
     holders.emplace_back([&] {
-      grpc::ClientContext context; context.set_deadline(
-          std::chrono::system_clock::now() + std::chrono::seconds(10));
+      grpc::ClientContext context;
+      context.set_deadline(std::chrono::system_clock::now() +
+                           std::chrono::seconds(10));
       auto stream = hal->ComponentSession(&context);
       linuxcnc::v1::ComponentSessionMessage response;
-      while (stream->Read(&response)) {}
+      while (stream->Read(&response)) {
+      }
       terminal_ok(stream->Finish());
     });
     holders.emplace_back([&] {
-      grpc::ClientContext context; context.set_deadline(
-          std::chrono::system_clock::now() + std::chrono::seconds(10));
+      grpc::ClientContext context;
+      context.set_deadline(std::chrono::system_clock::now() +
+                           std::chrono::seconds(10));
       auto stream = scope->Session(&context);
       linuxcnc::v1::ScopeSessionMessage acquire;
       acquire.mutable_acquire();
       assert(stream->Write(acquire));
       linuxcnc::v1::ScopeSessionMessage response;
-      while (stream->Read(&response)) {}
+      while (stream->Read(&response)) {
+      }
       terminal_ok(stream->Finish());
     });
     for (auto& holder : holders) holder.join();
     return 0;
   }
   const std::string telemetry_endpoint = argc > 2 ? argv[2] : "127.0.0.1:50052";
-  const auto [telemetry_host, telemetry_port] = split_endpoint(telemetry_endpoint);
+  const auto [telemetry_host, telemetry_port] =
+      split_endpoint(telemetry_endpoint);
   asio::io_context io;
   tcp::resolver resolver(io);
   websocket::stream<beast::tcp_stream> telemetry(io);
@@ -159,20 +173,23 @@ int main(int argc, char** argv) {
   grpc::ClientContext capacity_only_context;
   linuxcnc::v1::PositionHistoryConfig capacity_only;
   capacity_only.set_capacity(64);
-  assert(machine->ConfigurePositionHistory(
-      &capacity_only_context, capacity_only, &empty).ok());
+  assert(machine
+             ->ConfigurePositionHistory(&capacity_only_context, capacity_only,
+                                        &empty)
+             .ok());
   const auto capacity_only_frame = read_telemetry_frame(telemetry);
-  assert(read_u64_le(capacity_only_frame, 8) != read_u64_le(configured_frame, 8));
+  assert(read_u64_le(capacity_only_frame, 8) !=
+         read_u64_le(configured_frame, 8));
   grpc::ClientContext oversized_context;
   config.set_capacity(100001);
-  const auto oversized = machine->ConfigurePositionHistory(
-      &oversized_context, config, &empty);
+  const auto oversized =
+      machine->ConfigurePositionHistory(&oversized_context, config, &empty);
   assert(oversized.error_code() == grpc::StatusCode::RESOURCE_EXHAUSTED);
   grpc::ClientContext slow_sample_context;
   config.set_capacity(0);
   config.set_sample_period_ms(60001);
-  const auto slow_sample = machine->ConfigurePositionHistory(
-      &slow_sample_context, config, &empty);
+  const auto slow_sample =
+      machine->ConfigurePositionHistory(&slow_sample_context, config, &empty);
   assert(slow_sample.error_code() == grpc::StatusCode::INVALID_ARGUMENT);
 
   grpc::ClientContext clear_context;
@@ -203,8 +220,9 @@ int main(int argc, char** argv) {
   create_signal.set_name("integration.telemetry");
   create_signal.set_type(linuxcnc::v1::HAL_TYPE_BIT);
   linuxcnc::v1::CreateHalSignalResponse created_signal;
-  assert(hal->CreateSignal(&create_signal_context, create_signal,
-                           &created_signal).ok());
+  assert(
+      hal->CreateSignal(&create_signal_context, create_signal, &created_signal)
+          .ok());
   grpc::ClientContext create_subscription_context;
   linuxcnc::v1::CreateHalValueSubscriptionRequest create_subscription;
   create_subscription.set_sample_period_ms(50);
@@ -213,13 +231,13 @@ int main(int argc, char** argv) {
   requested_item->set_name("integration.telemetry");
   linuxcnc::v1::HalValueSubscription value_subscription;
   assert(hal->CreateValueSubscription(&create_subscription_context,
-                                      create_subscription,
-                                      &value_subscription).ok());
+                                      create_subscription, &value_subscription)
+             .ok());
   assert(value_subscription.revision() == 1);
   assert(value_subscription.slots_size() == 1);
   websocket::stream<beast::tcp_stream> hal_telemetry(io);
-  beast::get_lowest_layer(hal_telemetry).connect(
-      resolver.resolve(telemetry_host, telemetry_port));
+  beast::get_lowest_layer(hal_telemetry)
+      .connect(resolver.resolve(telemetry_host, telemetry_port));
   hal_telemetry.handshake(telemetry_host, value_subscription.websocket_path());
   const auto hal_replacement = read_raw_frame(hal_telemetry);
   assert(hal_replacement.size() == 48);
@@ -244,20 +262,22 @@ int main(int argc, char** argv) {
   linuxcnc::v1::HalValueSubscription updated_subscription;
   assert(hal->UpdateValueSubscription(&update_subscription_context,
                                       update_subscription,
-                                      &updated_subscription).ok());
+                                      &updated_subscription)
+             .ok());
   assert(updated_subscription.revision() == 2);
   const auto empty_replacement = read_raw_frame(hal_telemetry);
   assert(empty_replacement.size() == 32 && empty_replacement[5] == 1);
   grpc::ClientContext future_topology_context;
-  future_topology_context.set_deadline(
-      std::chrono::system_clock::now() + std::chrono::seconds(2));
+  future_topology_context.set_deadline(std::chrono::system_clock::now() +
+                                       std::chrono::seconds(2));
   linuxcnc::v1::WatchHalTopologyRequest future_topology_request;
   future_topology_request.set_after_sequence(topology.sequence() + 1000);
-  auto future_topology = hal->WatchTopology(
-      &future_topology_context, future_topology_request);
+  auto future_topology =
+      hal->WatchTopology(&future_topology_context, future_topology_request);
   linuxcnc::v1::WatchHalTopologyEvent future_topology_event;
   assert(future_topology->Read(&future_topology_event));
-  assert(future_topology_event.sequence() < future_topology_request.after_sequence());
+  assert(future_topology_event.sequence() <
+         future_topology_request.after_sequence());
   future_topology_context.TryCancel();
   (void)future_topology->Finish();
   return 0;

@@ -25,7 +25,8 @@ bool ScopeManager::acquired() const {
   return !controller_id_.empty();
 }
 
-std::optional<ScopeFrame> ScopeManager::publish(std::vector<std::uint8_t> payload) {
+std::optional<ScopeFrame> ScopeManager::publish(
+    std::vector<std::uint8_t> payload) {
   std::lock_guard lock(mutex_);
   if (controller_id_.empty()) return std::nullopt;
   ScopeFrame frame{next_generation_++, std::move(payload), 0};
@@ -38,8 +39,8 @@ std::optional<ScopeFrame> ScopeManager::publish(std::vector<std::uint8_t> payloa
   return frame;
 }
 
-std::optional<ScopeFrame> ScopeManager::acknowledge(const std::string& controller_id,
-                                                    std::uint64_t generation) {
+std::optional<ScopeFrame> ScopeManager::acknowledge(
+    const std::string& controller_id, std::uint64_t generation) {
   std::lock_guard lock(mutex_);
   if (controller_id_ != controller_id || !in_flight_ ||
       in_flight_->generation != generation) {

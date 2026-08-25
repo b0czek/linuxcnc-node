@@ -28,19 +28,20 @@ class ManagedGrpcService;
 // the signal thread has joined.
 class ServerRuntime {
  public:
-  ServerRuntime(
-      std::unique_ptr<::grpc::Server> server,
-      std::unique_ptr<ManagedGrpcService> machine,
-      std::unique_ptr<ManagedGrpcService> program,
-      std::unique_ptr<ManagedGrpcService> hal,
-      std::unique_ptr<ManagedGrpcService> scope,
-      std::unique_ptr<PositionTelemetryServer> position_websocket,
-      std::shared_ptr<PositionTelemetry> position_telemetry,
-      std::shared_ptr<HalValueTelemetry> hal_telemetry,
-      AdmissionCounter& stream_admission, AdmissionCounter& upload_admission,
-      AdmissionCounter& component_admission, AdmissionCounter& scope_admission,
-      BoundedExecutor& blocking, BoundedExecutor& parser_worker,
-      BoundedExecutor& hal_worker, BoundedExecutor& scope_worker);
+  ServerRuntime(std::unique_ptr<::grpc::Server> server,
+                std::unique_ptr<ManagedGrpcService> machine,
+                std::unique_ptr<ManagedGrpcService> program,
+                std::unique_ptr<ManagedGrpcService> hal,
+                std::unique_ptr<ManagedGrpcService> scope,
+                std::unique_ptr<PositionTelemetryServer> position_websocket,
+                std::shared_ptr<PositionTelemetry> position_telemetry,
+                std::shared_ptr<HalValueTelemetry> hal_telemetry,
+                AdmissionCounter& stream_admission,
+                AdmissionCounter& upload_admission,
+                AdmissionCounter& component_admission,
+                AdmissionCounter& scope_admission, BoundedExecutor& blocking,
+                BoundedExecutor& parser_worker, BoundedExecutor& hal_worker,
+                BoundedExecutor& scope_worker);
 
   ~ServerRuntime() noexcept;
 

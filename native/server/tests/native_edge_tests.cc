@@ -1,11 +1,4 @@
-#include "linuxcnc_grpc/command_coordinator.hpp"
-#include "linuxcnc_grpc/position_history.hpp"
-#include "linuxcnc_grpc/position_telemetry_wire.hpp"
-#include "linuxcnc_grpc/hal_value_telemetry.hpp"
-#include "linuxcnc_grpc/hal_value_telemetry_wire.hpp"
-#include "linuxcnc_grpc/program_workspace.hpp"
-#include "linuxcnc_grpc/scope_manager.hpp"
-#include "linuxcnc_grpc/status_hub.hpp"
+#include <unistd.h>
 
 #include <algorithm>
 #include <array>
@@ -24,7 +17,14 @@
 #include <thread>
 #include <vector>
 
-#include <unistd.h>
+#include "linuxcnc_grpc/command_coordinator.hpp"
+#include "linuxcnc_grpc/hal_value_telemetry.hpp"
+#include "linuxcnc_grpc/hal_value_telemetry_wire.hpp"
+#include "linuxcnc_grpc/position_history.hpp"
+#include "linuxcnc_grpc/position_telemetry_wire.hpp"
+#include "linuxcnc_grpc/program_workspace.hpp"
+#include "linuxcnc_grpc/scope_manager.hpp"
+#include "linuxcnc_grpc/status_hub.hpp"
 
 namespace fs = std::filesystem;
 using namespace linuxcnc::server;
@@ -91,12 +91,14 @@ void command_queue_bounds_and_wait_test() {
   assert(third.sequence() == 3);
 
   CommandResult result;
-  assert(!first.wait_for(CommandWaitPolicy::Accepted, std::chrono::milliseconds(1),
-                         &result));
+  assert(!first.wait_for(CommandWaitPolicy::Accepted,
+                         std::chrono::milliseconds(1), &result));
   assert(result.state == CommandState::Queued);
   first_action.open();
-  assert(first.wait_for(CommandWaitPolicy::Accepted, std::chrono::seconds(1), &result));
-  assert(result.state == CommandState::Accepted || result.state == CommandState::Completed);
+  assert(first.wait_for(CommandWaitPolicy::Accepted, std::chrono::seconds(1),
+                        &result));
+  assert(result.state == CommandState::Accepted ||
+         result.state == CommandState::Completed);
   assert(first.wait_for(std::chrono::seconds(1), &result));
   assert(result.state == CommandState::Completed);
   assert(second.wait_for(std::chrono::seconds(1), &result));
@@ -130,11 +132,12 @@ void command_cancellation_and_acceptance_test() {
   action.wait_for_arrival();
 
   CommandResult result;
-  assert(ticket.wait_for(CommandWaitPolicy::Accepted, std::chrono::seconds(1), &result));
+  assert(ticket.wait_for(CommandWaitPolicy::Accepted, std::chrono::seconds(1),
+                         &result));
   assert(result.state == CommandState::Accepted);
   assert(cancellation_seen.load());
-  assert(!ticket.wait_for(CommandWaitPolicy::Completed, std::chrono::milliseconds(1),
-                          &result));
+  assert(!ticket.wait_for(CommandWaitPolicy::Completed,
+                          std::chrono::milliseconds(1), &result));
   assert(result.state == CommandState::Accepted);
 
   // Cancellation belongs to the waiting RPC; it must not remove queued work.
@@ -171,7 +174,8 @@ void command_cancellation_before_worker_start_test() {
 
 void command_failure_wait_test() {
   CommandCoordinator coordinator(1);
-  const auto ticket = coordinator.submit([] { throw std::runtime_error("synthetic failure"); });
+  const auto ticket =
+      coordinator.submit([] { throw std::runtime_error("synthetic failure"); });
   CommandResult result;
   assert(ticket.wait_for(std::chrono::seconds(1), &result));
   assert(result.state == CommandState::Failed);
@@ -182,7 +186,8 @@ void command_failure_wait_test() {
 
 void status_replay_rollover_test() {
   StatusHub hub(2);
-  assert(hub.publish({StatusField{1, std::int32_t{10}}, StatusField{2, std::string("cold")}}) == 1);
+  assert(hub.publish({StatusField{1, std::int32_t{10}},
+                      StatusField{2, std::string("cold")}}) == 1);
   assert(hub.publish({StatusField{1, std::int32_t{11}}}) == 2);
   assert(hub.publish({StatusField{3, true}}) == 3);
 
@@ -191,7 +196,8 @@ void status_replay_rollover_test() {
   assert(replay_from_one.deltas.size() == 2);
   assert(replay_from_one.deltas[0].sequence == 2);
   assert(replay_from_one.deltas[1].sequence == 3);
-  assert(std::get<std::int32_t>(replay_from_one.deltas[0].fields[0].value) == 11);
+  assert(std::get<std::int32_t>(replay_from_one.deltas[0].fields[0].value) ==
+         11);
 
   const auto replay_from_two = hub.replay_after(2);
   assert(!replay_from_two.snapshot_required);
@@ -271,7 +277,8 @@ void position_cursor_generation_and_replacement_test() {
   assert(cleared.generation != configured.generation);
   assert(cleared.first_sequence == cleared.next_sequence);
   assert(cleared.packed.empty());
-  assert(history.since(history.next_sequence(), 0, cleared.generation).packed.empty());
+  assert(history.since(history.next_sequence(), 0, cleared.generation)
+             .packed.empty());
 
   PositionHistory non_finite_history(8);
   auto finite = position(1.0);
@@ -343,10 +350,11 @@ void position_telemetry_wire_test() {
   batch.next_sequence = 14;
   batch.replace_count = 1;
   batch.packed = {1.25, -2.5};
-  const auto frame = encode_position_telemetry_frame(
-      batch, PositionTelemetryFrameKind::Delta);
+  const auto frame =
+      encode_position_telemetry_frame(batch, PositionTelemetryFrameKind::Delta);
   assert(frame.size() == kPositionTelemetryHeaderSize + 2 * sizeof(double));
-  assert(frame[0] == 'L' && frame[1] == 'C' && frame[2] == 'P' && frame[3] == 'H');
+  assert(frame[0] == 'L' && frame[1] == 'C' && frame[2] == 'P' &&
+         frame[3] == 'H');
   assert(frame[4] == 2);
   assert(frame[5] == 2);
   assert(frame[6] == 10 && frame[7] == 0);
@@ -382,14 +390,16 @@ void hal_value_telemetry_test() {
                      HalTelemetryValue{std::uint64_t{0xffffffffffffffffULL}}});
   const auto snapshot = telemetry.snapshot(created->subscription_id);
   assert(snapshot && snapshot->sampled && snapshot->sequence == 1);
-  const auto frame = encode_hal_telemetry_frame(
-      *snapshot, HalTelemetryFrameKind::Replacement);
+  const auto frame =
+      encode_hal_telemetry_frame(*snapshot, HalTelemetryFrameKind::Replacement);
   assert(frame.size() == kHalTelemetryHeaderSize + 2 * kHalTelemetryEntrySize);
-  assert(frame[0] == 'L' && frame[1] == 'C' && frame[2] == 'H' && frame[3] == 'V');
+  assert(frame[0] == 'L' && frame[1] == 'C' && frame[2] == 'H' &&
+         frame[3] == 'V');
   assert(frame[4] == 1 && frame[5] == 1 && frame[6] == 16);
   assert(frame[36] == static_cast<std::uint8_t>(HalTelemetryType::Bit));
   assert(frame[52] == static_cast<std::uint8_t>(HalTelemetryType::U64));
-  for (std::size_t index = 56; index < 64; ++index) assert(frame[index] == 0xff);
+  for (std::size_t index = 56; index < 64; ++index)
+    assert(frame[index] == 0xff);
 
   std::vector<HalTelemetryResolvedItem> changed{
       items[0],
@@ -409,17 +419,20 @@ std::vector<std::uint8_t> bytes(std::string value) {
 
 std::string read_file(const fs::path& path) {
   std::ifstream input(path, std::ios::binary);
-  return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+  return {std::istreambuf_iterator<char>(input),
+          std::istreambuf_iterator<char>()};
 }
 
 void workspace_traversal_quota_ttl_and_materialization_test() {
-  const auto base = fs::temp_directory_path() /
-                    ("linuxcnc-grpc-native-edge-tests-" + std::to_string(::getpid()));
+  const auto base =
+      fs::temp_directory_path() /
+      ("linuxcnc-grpc-native-edge-tests-" + std::to_string(::getpid()));
   std::error_code error;
   fs::remove_all(base, error);
 
   {
-    ProgramWorkspaceStore store(base / "quota-workspaces", base / "quota-active",
+    ProgramWorkspaceStore store(base / "quota-workspaces",
+                                base / "quota-active",
                                 WorkspaceLimits{8, 10, std::chrono::hours(24)});
     const auto first = store.create();
     assert(store.write_file(first, "one.ngc", bytes("1234")));
@@ -443,8 +456,9 @@ void workspace_traversal_quota_ttl_and_materialization_test() {
   }
 
   {
-    ProgramWorkspaceStore store(base / "workspace", base / "active",
-                                WorkspaceLimits{1024, 2048, std::chrono::hours(24)});
+    ProgramWorkspaceStore store(
+        base / "workspace", base / "active",
+        WorkspaceLimits{1024, 2048, std::chrono::hours(24)});
     const auto id = store.create();
     assert(store.write_file(id, ".upload-2", bytes("user data")));
     assert(store.write_file(id, "program/main.ngc", bytes("G0 X1\n")));
@@ -464,7 +478,8 @@ void workspace_traversal_quota_ttl_and_materialization_test() {
     assert(store.materialize(id, "program/main.ngc", &materialized));
     assert(materialized == store.active_directory() / "program/main.ngc");
     assert(read_file(materialized) == "G0 X1\n");
-    assert(read_file(store.active_directory() / "program/main.tbl") == "tool companion\n");
+    assert(read_file(store.active_directory() / "program/main.tbl") ==
+           "tool companion\n");
     assert(read_file(store.active_directory() / "subdir/notes.txt") == "notes");
     assert(!fs::exists(store.active_directory() / "stale"));
 
@@ -482,19 +497,22 @@ void workspace_traversal_quota_ttl_and_materialization_test() {
     assert(!store.resolve_entry(id, "linked.txt", &resolved));
     assert(!store.write_file(id, "linked/evil.ngc", bytes("evil")));
     assert(!store.materialize(id, "linked.txt"));
-    assert(read_file(store.active_directory() / "program/main.ngc") == "G0 X1\n");
+    assert(read_file(store.active_directory() / "program/main.ngc") ==
+           "G0 X1\n");
     assert(store.write_file(id, "unsafe.sh", bytes("#!/bin/sh\n")));
     fs::permissions(store.root() / id / "unsafe.sh", fs::perms::owner_exec,
                     fs::perm_options::add, error);
     assert(!error);
     assert(!store.materialize(id, "program/main.ngc"));
-    assert(read_file(store.active_directory() / "program/main.ngc") == "G0 X1\n");
+    assert(read_file(store.active_directory() / "program/main.ngc") ==
+           "G0 X1\n");
     assert(store.erase(id));
   }
 
   {
-    ProgramWorkspaceStore store(base / "ttl-workspaces", base / "ttl-active",
-                                WorkspaceLimits{1024, 2048, std::chrono::hours(24)});
+    ProgramWorkspaceStore store(
+        base / "ttl-workspaces", base / "ttl-active",
+        WorkspaceLimits{1024, 2048, std::chrono::hours(24)});
     const auto expired = store.create(std::chrono::seconds(-1));
     assert(store.prune_expired() == 1);
     assert(!store.erase(expired));

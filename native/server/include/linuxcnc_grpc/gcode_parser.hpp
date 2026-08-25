@@ -1,11 +1,11 @@
 #pragma once
 
-#include "linuxcnc_grpc/gcode_operation_types.hpp"
-
 #include <cstddef>
 #include <functional>
 #include <memory>
 #include <string>
+
+#include "linuxcnc_grpc/gcode_operation_types.hpp"
 
 class InterpBase;
 

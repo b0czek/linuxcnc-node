@@ -147,7 +147,8 @@ void encode_hal_topology(const HalAdapterTopology& source,
     encoded->set_running(thread.running);
     if (thread.runtime) encoded->set_runtime(*thread.runtime);
     encoded->set_max_runtime(thread.max_runtime);
-    for (const auto& function : thread.functions) encoded->add_functions(function);
+    for (const auto& function : thread.functions)
+      encoded->add_functions(function);
   }
   for (const auto& pin : source.pins) {
     auto* encoded = target->add_pins();

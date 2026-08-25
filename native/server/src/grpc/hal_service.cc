@@ -1,7 +1,7 @@
-#include "grpc/hal_service_impl.hpp"
-
 #include <memory>
 #include <utility>
+
+#include "grpc/hal_service_impl.hpp"
 
 namespace linuxcnc::server::detail {
 

@@ -6,8 +6,8 @@
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
-#include <mutex>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -23,7 +23,16 @@ constexpr std::size_t kScopeChannelCount = 16;
 constexpr auto kScopePollPeriod = std::chrono::milliseconds(20);
 constexpr auto kScopeHeartbeatPeriod = std::chrono::milliseconds(100);
 
-enum class ScopeState { Idle, Init, PreTrigger, TriggerWait, PostTrigger, Done, Reset, Invalid };
+enum class ScopeState {
+  Idle,
+  Init,
+  PreTrigger,
+  TriggerWait,
+  PostTrigger,
+  Done,
+  Reset,
+  Invalid
+};
 enum class ScopeRunMode { Run, Single, Roll };
 enum class ScopeSourceKind { Pin, Param, Signal };
 enum class ScopeFrameKind { Capture, Roll };
@@ -62,7 +71,8 @@ struct ScopeStatus {
   std::int64_t sample_period_ns = 0;
 };
 
-using ScopeChannelSamples = std::array<std::optional<std::vector<double>>, kScopeChannelCount>;
+using ScopeChannelSamples =
+    std::array<std::optional<std::vector<double>>, kScopeChannelCount>;
 
 struct ScopeCapture {
   ScopeChannelSamples channels;

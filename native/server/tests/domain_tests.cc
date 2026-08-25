@@ -1,3 +1,11 @@
+#include <atomic>
+#include <cassert>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <thread>
+#include <vector>
+
 #include "linuxcnc_grpc/callback_runtime.hpp"
 #include "linuxcnc_grpc/command_coordinator.hpp"
 #include "linuxcnc_grpc/daemon_config.hpp"
@@ -8,22 +16,16 @@
 #include "linuxcnc_grpc/scope_manager.hpp"
 #include "linuxcnc_grpc/status_hub.hpp"
 
-#include <cassert>
-#include <atomic>
-#include <chrono>
-#include <filesystem>
-#include <fstream>
-#include <thread>
-#include <vector>
-
 namespace fs = std::filesystem;
 using namespace linuxcnc::server;
 
 void callback_runtime_test() {
   ActiveCallbackRegistry registry;
   std::atomic<int> shutdown_calls{0};
-  auto first_registration = registry.register_callback([&] { ++shutdown_calls; });
-  auto second_registration = registry.register_callback([&] { ++shutdown_calls; });
+  auto first_registration =
+      registry.register_callback([&] { ++shutdown_calls; });
+  auto second_registration =
+      registry.register_callback([&] { ++shutdown_calls; });
   assert(first_registration && second_registration);
   assert(registry.active_count() == 2);
   first_registration.reset();
@@ -35,8 +37,11 @@ void callback_runtime_test() {
   second_registration.reset();
   assert(registry.active_count() == 0);
 
-  struct RegistryTarget { std::atomic<int> finishes{0}; } registry_target;
-  auto registry_gate = std::make_shared<LifetimeGate<RegistryTarget>>(&registry_target);
+  struct RegistryTarget {
+    std::atomic<int> finishes{0};
+  } registry_target;
+  auto registry_gate =
+      std::make_shared<LifetimeGate<RegistryTarget>>(&registry_target);
   ActiveCallbackRegistry racing_registry;
   std::atomic<int> callback_calls{0};
   std::atomic<int> cleanup_calls{0};
@@ -45,9 +50,8 @@ void callback_runtime_test() {
     const std::weak_ptr<LifetimeGate<RegistryTarget>> weak = registry_gate;
     registrations.push_back(racing_registry.register_callback([&, weak] {
       ++callback_calls;
-      if (auto gate = weak.lock()) gate->finish([](RegistryTarget& target) {
-        ++target.finishes;
-      });
+      if (auto gate = weak.lock())
+        gate->finish([](RegistryTarget& target) { ++target.finishes; });
     }));
   }
   assert(racing_registry.active_count() == registrations.size());
@@ -102,7 +106,8 @@ void callback_runtime_test() {
 
   SubscriptionHub<int> hub;
   std::vector<int> received;
-  auto subscription = hub.subscribe([&](const int& event) { received.push_back(event); });
+  auto subscription =
+      hub.subscribe([&](const int& event) { received.push_back(event); });
   hub.publish(7);
   subscription.reset();
   hub.publish(8);
@@ -126,7 +131,9 @@ void callback_runtime_test() {
   assert(coalesced && coalesced->message == 3 && coalesced->skipped == 1);
   assert(!pump.write_complete(true));
 
-  struct Target { int calls = 0; } target;
+  struct Target {
+    int calls = 0;
+  } target;
   auto gate = std::make_shared<LifetimeGate<Target>>(&target);
   assert(gate->invoke([](Target& value) { ++value.calls; }));
   assert(gate->begin_finish());
@@ -136,8 +143,11 @@ void callback_runtime_test() {
   assert(!gate->invoke([](Target& value) { ++value.calls; }));
   assert(target.calls == 1);
 
-  struct RacingTarget { std::atomic<int> finishes{0}; } racing_target;
-  auto racing_gate = std::make_shared<LifetimeGate<RacingTarget>>(&racing_target);
+  struct RacingTarget {
+    std::atomic<int> finishes{0};
+  } racing_target;
+  auto racing_gate =
+      std::make_shared<LifetimeGate<RacingTarget>>(&racing_target);
   std::atomic<bool> start_race{false};
   std::vector<std::thread> finishers;
   for (int index = 0; index < 16; ++index) {
@@ -181,10 +191,11 @@ void cleanup_reserve_saturation_test() {
 void nml_command_catalog_test() {
   static_assert(static_cast<std::size_t>(NmlCommandKind::SetRapidRate) == 50);
   // The enum is deliberately contiguous: the wire catalog has a matching
-  // static assertion in grpc/machine_service.cc, so adding a command forces both
-  // boundaries to be reviewed at compile time.
+  // static assertion in grpc/machine_service.cc, so adding a command forces
+  // both boundaries to be reviewed at compile time.
   for (std::size_t index = 0; index <= 50; ++index) {
-    assert(static_cast<std::size_t>(static_cast<NmlCommandKind>(index)) == index);
+    assert(static_cast<std::size_t>(static_cast<NmlCommandKind>(index)) ==
+           index);
   }
 }
 
@@ -199,10 +210,13 @@ void command_coordinator_test() {
   });
   while (!started.load()) std::this_thread::yield();
   CommandResult result;
-  assert(!ticket.wait_for(CommandWaitPolicy::Accepted, std::chrono::milliseconds(1), &result));
+  assert(!ticket.wait_for(CommandWaitPolicy::Accepted,
+                          std::chrono::milliseconds(1), &result));
   allow_accept = true;
-  assert(ticket.wait_for(CommandWaitPolicy::Accepted, std::chrono::seconds(1), &result));
-  assert(result.state == CommandState::Accepted || result.state == CommandState::Completed);
+  assert(ticket.wait_for(CommandWaitPolicy::Accepted, std::chrono::seconds(1),
+                         &result));
+  assert(result.state == CommandState::Accepted ||
+         result.state == CommandState::Completed);
   assert(ticket.wait_for(std::chrono::seconds(1), &result));
   assert(result.state == CommandState::Completed);
   std::atomic<int> observed{0};
@@ -256,7 +270,8 @@ void daemon_config_test() {
     std::ofstream ini(base / "machine.ini");
     ini << "[DISPLAY]\nPROGRAM_PREFIX = active\n";
   }
-  assert(validate_program_prefix(base / "machine.ini", base / "active", &error));
+  assert(
+      validate_program_prefix(base / "machine.ini", base / "active", &error));
   {
     std::ofstream certificate(base / "server.crt");
     std::ofstream private_key(base / "server.key");
@@ -303,7 +318,8 @@ void position_history_test() {
   first.coordinates[0] = 2.0;
   assert(history.append(first));
   assert(history.append(PositionSample{}));
-  assert(history.since(0).reset);  // cursor was rolled out of the bounded window
+  assert(
+      history.since(0).reset);  // cursor was rolled out of the bounded window
   const auto generation = history.snapshot().generation;
   history.clear();
   assert(history.since(history.next_sequence(), 0, generation).reset);
@@ -311,8 +327,8 @@ void position_history_test() {
 
 void hal_repository_test() {
   HalRepository repository;
-  assert(repository.add_item(HalItem{"u64", HalScalarType::U64, true, true,
-                                    std::uint64_t{0}}));
+  assert(repository.add_item(
+      HalItem{"u64", HalScalarType::U64, true, true, std::uint64_t{0}}));
   const std::uint64_t value = 0xffffffffffffffffULL;
   assert(repository.write("u64", value));
   HalValue read;
@@ -341,8 +357,9 @@ void workspace_test() {
   const auto base = fs::temp_directory_path() / "linuxcnc-grpc-domain-test";
   std::error_code error;
   fs::remove_all(base, error);
-  ProgramWorkspaceStore store(base / "workspaces", base / "active",
-                              WorkspaceLimits{1024, 2048, std::chrono::hours(24)});
+  ProgramWorkspaceStore store(
+      base / "workspaces", base / "active",
+      WorkspaceLimits{1024, 2048, std::chrono::hours(24)});
   const auto id = store.create();
   const std::vector<std::uint8_t> contents{'G', '0', ' ', 'X', '0', '\n'};
   assert(store.write_file(id, "program/main.ngc", contents));

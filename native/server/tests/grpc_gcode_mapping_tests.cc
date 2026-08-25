@@ -1,7 +1,7 @@
-#include "linuxcnc_grpc/grpc_gcode_mapping.hpp"
-
 #include <cassert>
 #include <vector>
+
+#include "linuxcnc_grpc/grpc_gcode_mapping.hpp"
 
 using namespace linuxcnc::server;
 
@@ -21,11 +21,11 @@ int main() {
   assert(encoded.arc().rotation() == -1);
 
   const std::vector<gcode::Operation> remaining{
-      gcode::TraverseOp{}, gcode::FeedOp{}, gcode::ProbeOp{},
-      gcode::RigidTapOp{}, gcode::DwellOp{}, gcode::NurbsG5Op{},
-      gcode::NurbsG6Op{}, gcode::UnitsChangeOp{}, gcode::PlaneChangeOp{},
-      gcode::G5xOffsetOp{}, gcode::G92OffsetOp{}, gcode::XYRotationOp{},
-      gcode::ToolOffsetOp{}, gcode::ToolChangeOp{}, gcode::FeedRateChangeOp{}};
+      gcode::TraverseOp{},   gcode::FeedOp{},        gcode::ProbeOp{},
+      gcode::RigidTapOp{},   gcode::DwellOp{},       gcode::NurbsG5Op{},
+      gcode::NurbsG6Op{},    gcode::UnitsChangeOp{}, gcode::PlaneChangeOp{},
+      gcode::G5xOffsetOp{},  gcode::G92OffsetOp{},   gcode::XYRotationOp{},
+      gcode::ToolOffsetOp{}, gcode::ToolChangeOp{},  gcode::FeedRateChangeOp{}};
   for (const auto& operation : remaining) {
     encode_gcode_operation(operation, &encoded);
     assert(encoded.type() != linuxcnc::v1::OPERATION_TYPE_UNSPECIFIED);

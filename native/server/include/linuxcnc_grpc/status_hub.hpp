@@ -9,8 +9,9 @@
 
 namespace linuxcnc::server {
 
-using StatusValue = std::variant<bool, std::int32_t, std::uint32_t,
-                                 std::int64_t, std::uint64_t, double, std::string>;
+using StatusValue =
+    std::variant<bool, std::int32_t, std::uint32_t, std::int64_t, std::uint64_t,
+                 double, std::string>;
 
 struct StatusField {
   std::uint32_t id = 0;

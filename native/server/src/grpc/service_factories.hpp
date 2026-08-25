@@ -1,8 +1,8 @@
 #pragma once
 
-#include "server_service.hpp"
-
 #include <memory>
+
+#include "server_service.hpp"
 
 namespace linuxcnc::server {
 
@@ -18,7 +18,8 @@ struct DaemonConfig;
 namespace linuxcnc::server::detail {
 
 std::unique_ptr<ManagedGrpcService> make_machine_service(
-    const DaemonConfig& config, std::shared_ptr<ProgramWorkspaceStore> workspaces,
+    const DaemonConfig& config,
+    std::shared_ptr<ProgramWorkspaceStore> workspaces,
     std::shared_ptr<PositionTelemetry> positions, BoundedExecutor& blocking,
     AdmissionCounter& stream_admission);
 

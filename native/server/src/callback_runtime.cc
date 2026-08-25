@@ -27,7 +27,9 @@ BoundedExecutor::BoundedExecutor(std::size_t threads, std::size_t capacity,
 
 BoundedExecutor::~BoundedExecutor() { shutdown(); }
 
-bool BoundedExecutor::submit(Task task) { return submit_impl(std::move(task), false); }
+bool BoundedExecutor::submit(Task task) {
+  return submit_impl(std::move(task), false);
+}
 
 bool BoundedExecutor::submit_cleanup(Task task) {
   return submit_impl(std::move(task), true);
@@ -39,7 +41,8 @@ bool BoundedExecutor::submit_impl(Task task, bool cleanup) {
     std::lock_guard lock(mutex_);
     if (stopping_ || (!cleanup && !accepting_)) return false;
     if (queue_.size() >= capacity_) return false;
-    if (!cleanup && ordinary_queued_ >= capacity_ - cleanup_reserve_) return false;
+    if (!cleanup && ordinary_queued_ >= capacity_ - cleanup_reserve_)
+      return false;
     queue_.push_back(Item{std::move(task), cleanup});
     if (!cleanup) ++ordinary_queued_;
   }

@@ -1,10 +1,10 @@
 #include "linuxcnc_grpc/gcode_canon_preview.hpp"
 
-#include "recordingcanon.hh"
-
 #include <algorithm>
 #include <cmath>
 #include <utility>
+
+#include "recordingcanon.hh"
 
 namespace linuxcnc::server::gcode {
 namespace {
@@ -21,20 +21,25 @@ double positive_angle(double angle) {
 bool angle_is_on_arc(double angle, double start_angle, double sweep,
                      bool clockwise) {
   constexpr double epsilon = 1e-12;
-  const double distance = clockwise
-                              ? positive_angle(start_angle - angle)
-                              : positive_angle(angle - start_angle);
+  const double distance = clockwise ? positive_angle(start_angle - angle)
+                                    : positive_angle(angle - start_angle);
   return distance <= sweep + epsilon;
 }
 
 Plane preview_plane(CANON_PLANE plane) {
   switch (plane) {
-    case CANON_PLANE::XY: return Plane::XY;
-    case CANON_PLANE::YZ: return Plane::YZ;
-    case CANON_PLANE::XZ: return Plane::XZ;
-    case CANON_PLANE::UV: return Plane::UV;
-    case CANON_PLANE::VW: return Plane::VW;
-    case CANON_PLANE::UW: return Plane::UW;
+    case CANON_PLANE::XY:
+      return Plane::XY;
+    case CANON_PLANE::YZ:
+      return Plane::YZ;
+    case CANON_PLANE::XZ:
+      return Plane::XZ;
+    case CANON_PLANE::UV:
+      return Plane::UV;
+    case CANON_PLANE::VW:
+      return Plane::VW;
+    case CANON_PLANE::UW:
+      return Plane::UW;
   }
   return Plane::XY;
 }
@@ -47,7 +52,9 @@ Position preview_position(const ParseContext& context, const EmcPose& pose) {
   return {linear_value(context, pose.tran.x),
           linear_value(context, pose.tran.y),
           linear_value(context, pose.tran.z),
-          pose.a, pose.b, pose.c,
+          pose.a,
+          pose.b,
+          pose.c,
           linear_value(context, pose.u),
           linear_value(context, pose.v),
           linear_value(context, pose.w)};
@@ -56,12 +63,30 @@ Position preview_position(const ParseContext& context, const EmcPose& pose) {
 void set_plane_end(Plane plane, double first, double second,
                    Position* position) {
   switch (plane) {
-    case Plane::XY: position->x = first; position->y = second; break;
-    case Plane::YZ: position->y = first; position->z = second; break;
-    case Plane::XZ: position->z = first; position->x = second; break;
-    case Plane::UV: position->u = first; position->v = second; break;
-    case Plane::VW: position->v = first; position->w = second; break;
-    case Plane::UW: position->u = first; position->w = second; break;
+    case Plane::XY:
+      position->x = first;
+      position->y = second;
+      break;
+    case Plane::YZ:
+      position->y = first;
+      position->z = second;
+      break;
+    case Plane::XZ:
+      position->z = first;
+      position->x = second;
+      break;
+    case Plane::UV:
+      position->u = first;
+      position->v = second;
+      break;
+    case Plane::VW:
+      position->v = first;
+      position->w = second;
+      break;
+    case Plane::UW:
+      position->u = first;
+      position->w = second;
+      break;
   }
 }
 
@@ -70,9 +95,18 @@ void update_arc_extents(ParseContext& context, const Position& start,
   double start_first;
   double start_second;
   switch (operation.plane) {
-    case Plane::XY: start_first = start.x; start_second = start.y; break;
-    case Plane::YZ: start_first = start.y; start_second = start.z; break;
-    case Plane::XZ: start_first = start.z; start_second = start.x; break;
+    case Plane::XY:
+      start_first = start.x;
+      start_second = start.y;
+      break;
+    case Plane::YZ:
+      start_first = start.y;
+      start_second = start.z;
+      break;
+    case Plane::XZ:
+      start_first = start.z;
+      start_second = start.x;
+      break;
     default:
       context.updateExtents(start);
       context.updateExtents(operation.pos);
@@ -89,15 +123,25 @@ void update_arc_extents(ParseContext& context, const Position& start,
   double end_first;
   double end_second;
   switch (operation.plane) {
-    case Plane::XY: end_first = operation.pos.x; end_second = operation.pos.y; break;
-    case Plane::YZ: end_first = operation.pos.y; end_second = operation.pos.z; break;
-    case Plane::XZ: end_first = operation.pos.z; end_second = operation.pos.x; break;
-    default: return;
+    case Plane::XY:
+      end_first = operation.pos.x;
+      end_second = operation.pos.y;
+      break;
+    case Plane::YZ:
+      end_first = operation.pos.y;
+      end_second = operation.pos.z;
+      break;
+    case Plane::XZ:
+      end_first = operation.pos.z;
+      end_second = operation.pos.x;
+      break;
+    default:
+      return;
   }
   const double start_angle = std::atan2(second_offset, first_offset);
-  const double end_angle = std::atan2(
-      end_second - operation.arcData.centerSecond,
-      end_first - operation.arcData.centerFirst);
+  const double end_angle =
+      std::atan2(end_second - operation.arcData.centerSecond,
+                 end_first - operation.arcData.centerFirst);
   const bool clockwise = operation.arcData.rotation < 0;
   double sweep = clockwise ? positive_angle(start_angle - end_angle)
                            : positive_angle(end_angle - start_angle);
@@ -151,14 +195,20 @@ void consume(ParseContext& context, const canon::ArcFeed& event) {
   const double axis_end = linear_value(context, event.axis_end_point);
   switch (operation.plane) {
     case Plane::XY:
-      operation.pos.x = first_end; operation.pos.y = second_end;
-      operation.pos.z = axis_end; break;
+      operation.pos.x = first_end;
+      operation.pos.y = second_end;
+      operation.pos.z = axis_end;
+      break;
     case Plane::YZ:
-      operation.pos.y = first_end; operation.pos.z = second_end;
-      operation.pos.x = axis_end; break;
+      operation.pos.y = first_end;
+      operation.pos.z = second_end;
+      operation.pos.x = axis_end;
+      break;
     case Plane::XZ:
-      operation.pos.z = first_end; operation.pos.x = second_end;
-      operation.pos.y = axis_end; break;
+      operation.pos.z = first_end;
+      operation.pos.x = second_end;
+      operation.pos.y = axis_end;
+      break;
     default:
       set_plane_end(operation.plane, first_end, second_end, &operation.pos);
       break;
@@ -215,9 +265,9 @@ void consume(ParseContext& context, const canon::NurbsG5Feed& event) {
   operation.nurbsData.order = event.order;
   operation.nurbsData.controlPoints.reserve(event.control_points.size());
   for (const auto& source : event.control_points)
-    operation.nurbsData.controlPoints.push_back({
-        linear_value(context, source.NURBS_X),
-        linear_value(context, source.NURBS_Y), source.NURBS_W});
+    operation.nurbsData.controlPoints.push_back(
+        {linear_value(context, source.NURBS_X),
+         linear_value(context, source.NURBS_Y), source.NURBS_W});
   operation.pos = context.currentPosition;
   if (!operation.nurbsData.controlPoints.empty()) {
     const auto& last = operation.nurbsData.controlPoints.back();
@@ -235,9 +285,10 @@ void consume(ParseContext& context, const canon::NurbsG6Feed& event) {
   operation.nurbsData.order = event.order;
   operation.nurbsData.controlPoints.reserve(event.control_points.size());
   for (const auto& source : event.control_points)
-    operation.nurbsData.controlPoints.push_back({
-        linear_value(context, source.NURBS_X),
-        linear_value(context, source.NURBS_Y), source.NURBS_R, source.NURBS_K});
+    operation.nurbsData.controlPoints.push_back(
+        {linear_value(context, source.NURBS_X),
+         linear_value(context, source.NURBS_Y), source.NURBS_R,
+         source.NURBS_K});
   operation.pos = context.currentPosition;
   if (operation.nurbsData.controlPoints.size() > event.order) {
     const auto& last = operation.nurbsData.controlPoints.back();
@@ -252,11 +303,17 @@ void consume(ParseContext& context, const canon::LengthUnits& event) {
   Units next_units = Units::MM;
   switch (event.units) {
     case CANON_UNITS_INCHES:
-      next_units = Units::INCHES; context.linearUnitScale = 25.4; break;
+      next_units = Units::INCHES;
+      context.linearUnitScale = 25.4;
+      break;
     case CANON_UNITS_MM:
-      next_units = Units::MM; context.linearUnitScale = 1.0; break;
+      next_units = Units::MM;
+      context.linearUnitScale = 1.0;
+      break;
     case CANON_UNITS_CM:
-      next_units = Units::CM; context.linearUnitScale = 10.0; break;
+      next_units = Units::CM;
+      context.linearUnitScale = 10.0;
+      break;
   }
   if (next_units == context.currentUnits) return;
   context.currentUnits = next_units;
@@ -368,7 +425,8 @@ void ParseContext::reportProgress(std::size_t bytes_read) {
 void consumeRecordingEvents(::linuxcnc::recording::Session& session,
                             ParseContext& context) {
   for (const auto& event : session.take_events())
-    std::visit([&context](const auto& value) { consume(context, value); }, event);
+    std::visit([&context](const auto& value) { consume(context, value); },
+               event);
 }
 
 }  // namespace linuxcnc::server::gcode

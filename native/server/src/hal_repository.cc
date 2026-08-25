@@ -28,13 +28,15 @@ bool HalRepository::read(const std::string& name, HalValue* value) const {
   return true;
 }
 
-std::vector<HalUpdate> HalRepository::read_many(const std::vector<std::string>& names) const {
+std::vector<HalUpdate> HalRepository::read_many(
+    const std::vector<std::string>& names) const {
   std::vector<HalUpdate> result;
   std::lock_guard lock(mutex_);
   result.reserve(names.size());
   for (const auto& name : names) {
     const auto found = items_.find(name);
-    if (found != items_.end()) result.push_back(HalUpdate{name, found->second.value});
+    if (found != items_.end())
+      result.push_back(HalUpdate{name, found->second.value});
   }
   return result;
 }
@@ -73,7 +75,9 @@ HalTopology HalRepository::topology() const {
   result.items.reserve(items_.size());
   for (const auto& [name, item] : items_) result.items.push_back(item);
   std::sort(result.items.begin(), result.items.end(),
-            [](const HalItem& left, const HalItem& right) { return left.name < right.name; });
+            [](const HalItem& left, const HalItem& right) {
+              return left.name < right.name;
+            });
   return result;
 }
 
@@ -84,12 +88,18 @@ std::uint64_t HalRepository::generation() const {
 
 bool HalRepository::same_type(HalScalarType type, const HalValue& value) {
   switch (type) {
-    case HalScalarType::Bit: return std::holds_alternative<bool>(value);
-    case HalScalarType::Float: return std::holds_alternative<double>(value);
-    case HalScalarType::S32: return std::holds_alternative<std::int32_t>(value);
-    case HalScalarType::U32: return std::holds_alternative<std::uint32_t>(value);
-    case HalScalarType::S64: return std::holds_alternative<std::int64_t>(value);
-    case HalScalarType::U64: return std::holds_alternative<std::uint64_t>(value);
+    case HalScalarType::Bit:
+      return std::holds_alternative<bool>(value);
+    case HalScalarType::Float:
+      return std::holds_alternative<double>(value);
+    case HalScalarType::S32:
+      return std::holds_alternative<std::int32_t>(value);
+    case HalScalarType::U32:
+      return std::holds_alternative<std::uint32_t>(value);
+    case HalScalarType::S64:
+      return std::holds_alternative<std::int64_t>(value);
+    case HalScalarType::U64:
+      return std::holds_alternative<std::uint64_t>(value);
   }
   return false;
 }

@@ -36,8 +36,8 @@ bool PositionHistory::append(const PositionSample& sample) {
       sample.motion_type == entries_[entries_.size() - 2].sample.motion_type &&
       collinear(sample, entries_.back().sample,
                 entries_[entries_.size() - 2].sample)) {
-    const auto replacement_root = entries_.back().replacement_root.value_or(
-        entries_.back().sequence);
+    const auto replacement_root =
+        entries_.back().replacement_root.value_or(entries_.back().sequence);
     entries_.back() = Entry{sequence, sample, replacement_root};
   } else {
     entries_.push_back(Entry{sequence, sample, std::nullopt});
@@ -51,21 +51,24 @@ PositionHistoryBatch PositionHistory::snapshot() const {
   PositionHistoryBatch result;
   result.reset = true;
   result.generation = generation_;
-  result.first_sequence = entries_.empty() ? next_sequence_ : entries_.front().sequence;
+  result.first_sequence =
+      entries_.empty() ? next_sequence_ : entries_.front().sequence;
   result.next_sequence = next_sequence_;
   result.packed.reserve(entries_.size() * kPositionStride);
-  for (const auto& entry : entries_) append_packed(entry.sample, &result.packed);
+  for (const auto& entry : entries_)
+    append_packed(entry.sample, &result.packed);
   return result;
 }
 
-PositionHistoryBatch PositionHistory::since(std::uint64_t sequence,
-                                            std::size_t max_samples,
-                                            std::uint64_t after_generation) const {
+PositionHistoryBatch PositionHistory::since(
+    std::uint64_t sequence, std::size_t max_samples,
+    std::uint64_t after_generation) const {
   std::lock_guard lock(mutex_);
   PositionHistoryBatch result;
   result.generation = generation_;
   result.next_sequence = next_sequence_;
-  const auto oldest_sequence = entries_.empty() ? next_sequence_ : entries_.front().sequence;
+  const auto oldest_sequence =
+      entries_.empty() ? next_sequence_ : entries_.front().sequence;
   result.first_sequence = oldest_sequence;
   if (entries_.empty()) {
     result.reset = (after_generation != 0 && after_generation != generation_) ||
@@ -77,21 +80,27 @@ PositionHistoryBatch PositionHistory::since(std::uint64_t sequence,
       after_generation != 0 && after_generation != generation_;
   const bool rolled = sequence < oldest_sequence;
   result.reset = generation_changed || rolled;
-  const auto first = (generation_changed || rolled) ? entries_.begin() :
-                             std::lower_bound(entries_.begin(), entries_.end(), sequence,
-                               [](const Entry& entry, std::uint64_t value) {
-                                 return entry.sequence < value;
-                               });
-  const auto count = max_samples == 0
-      ? static_cast<std::size_t>(entries_.end() - first)
-      : std::min(max_samples, static_cast<std::size_t>(entries_.end() - first));
-  result.first_sequence = first == entries_.end() ? next_sequence_ : first->sequence;
+  const auto first =
+      (generation_changed || rolled)
+          ? entries_.begin()
+          : std::lower_bound(entries_.begin(), entries_.end(), sequence,
+                             [](const Entry& entry, std::uint64_t value) {
+                               return entry.sequence < value;
+                             });
+  const auto count =
+      max_samples == 0
+          ? static_cast<std::size_t>(entries_.end() - first)
+          : std::min(max_samples,
+                     static_cast<std::size_t>(entries_.end() - first));
+  result.first_sequence =
+      first == entries_.end() ? next_sequence_ : first->sequence;
   if (!result.reset && first != entries_.end() && first->replacement_root &&
       *first->replacement_root < sequence) {
     result.replace_count = 1;
   }
   result.packed.reserve(count * kPositionStride);
-  for (auto it = first; it != first + static_cast<std::ptrdiff_t>(count); ++it) {
+  for (auto it = first; it != first + static_cast<std::ptrdiff_t>(count);
+       ++it) {
     append_packed(it->sample, &result.packed);
   }
   return result;
@@ -151,7 +160,8 @@ bool PositionHistory::collinear(const PositionSample& current,
 
 void PositionHistory::append_packed(const PositionSample& sample,
                                     std::vector<double>* packed) {
-  packed->insert(packed->end(), sample.coordinates.begin(), sample.coordinates.end());
+  packed->insert(packed->end(), sample.coordinates.begin(),
+                 sample.coordinates.end());
   packed->push_back(static_cast<double>(sample.motion_type));
 }
 

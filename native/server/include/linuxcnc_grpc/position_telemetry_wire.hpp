@@ -1,9 +1,9 @@
 #pragma once
 
-#include "linuxcnc_grpc/position_history.hpp"
-
 #include <cstdint>
 #include <vector>
+
+#include "linuxcnc_grpc/position_history.hpp"
 
 namespace linuxcnc::server {
 

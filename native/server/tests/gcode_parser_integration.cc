@@ -1,5 +1,3 @@
-#include "linuxcnc_grpc/gcode_parser.hpp"
-
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -8,6 +6,8 @@
 #include <iterator>
 #include <string>
 #include <vector>
+
+#include "linuxcnc_grpc/gcode_parser.hpp"
 
 using linuxcnc::server::gcode::ArcOp;
 using linuxcnc::server::gcode::DwellOp;
@@ -27,10 +27,9 @@ namespace {
 
 template <typename T>
 std::size_t count_operations(const std::vector<Operation>& operations) {
-  return static_cast<std::size_t>(
-      std::count_if(operations.begin(), operations.end(), [](const auto& op) {
-        return std::holds_alternative<T>(op);
-      }));
+  return static_cast<std::size_t>(std::count_if(
+      operations.begin(), operations.end(),
+      [](const auto& op) { return std::holds_alternative<T>(op); }));
 }
 
 bool nearly_equal(double actual, double expected) {
@@ -73,10 +72,9 @@ int main(int argc, char** argv) {
   preview_options.ini_path = argv[1];
   preview_options.batch_size = 3;
   preview_options.on_batch = [&](OperationBatch&& batch) {
-    preview_operations.insert(
-        preview_operations.end(),
-        std::make_move_iterator(batch.begin()),
-        std::make_move_iterator(batch.end()));
+    preview_operations.insert(preview_operations.end(),
+                              std::make_move_iterator(batch.begin()),
+                              std::make_move_iterator(batch.end()));
     return true;
   };
   const auto preview = parser.parse_file(argv[3], preview_options);
@@ -113,29 +111,28 @@ int main(int argc, char** argv) {
   ParseOptions compensated_options;
   compensated_options.ini_path = argv[1];
   compensated_options.on_batch = [&](OperationBatch&& batch) {
-    compensated_operations.insert(
-        compensated_operations.end(),
-        std::make_move_iterator(batch.begin()),
-        std::make_move_iterator(batch.end()));
+    compensated_operations.insert(compensated_operations.end(),
+                                  std::make_move_iterator(batch.begin()),
+                                  std::make_move_iterator(batch.end()));
     return true;
   };
   const auto compensated = parser.parse_file(argv[4], compensated_options);
   assert(!compensated.cancelled);
   assert(compensated.operationCount == compensated_operations.size());
-  const auto compensated_horizontal = std::find_if(
-      compensated_operations.begin(), compensated_operations.end(),
-      [](const auto& op) {
-        const auto* feed = std::get_if<FeedOp>(&op);
-        return feed && nearly_equal(feed->pos.x, 9.0) &&
-               nearly_equal(feed->pos.y, 1.0);
-      });
-  const auto compensated_vertical = std::find_if(
-      compensated_operations.begin(), compensated_operations.end(),
-      [](const auto& op) {
-        const auto* feed = std::get_if<FeedOp>(&op);
-        return feed && nearly_equal(feed->pos.x, 9.0) &&
-               nearly_equal(feed->pos.y, 10.0);
-      });
+  const auto compensated_horizontal =
+      std::find_if(compensated_operations.begin(), compensated_operations.end(),
+                   [](const auto& op) {
+                     const auto* feed = std::get_if<FeedOp>(&op);
+                     return feed && nearly_equal(feed->pos.x, 9.0) &&
+                            nearly_equal(feed->pos.y, 1.0);
+                   });
+  const auto compensated_vertical =
+      std::find_if(compensated_operations.begin(), compensated_operations.end(),
+                   [](const auto& op) {
+                     const auto* feed = std::get_if<FeedOp>(&op);
+                     return feed && nearly_equal(feed->pos.x, 9.0) &&
+                            nearly_equal(feed->pos.y, 10.0);
+                   });
   assert(compensated_horizontal != compensated_operations.end());
   assert(compensated_vertical != compensated_operations.end());
 
@@ -146,10 +143,9 @@ int main(int argc, char** argv) {
   ParseOptions remap_options;
   remap_options.ini_path = argv[1];
   remap_options.on_batch = [&](OperationBatch&& batch) {
-    remap_operations.insert(
-        remap_operations.end(),
-        std::make_move_iterator(batch.begin()),
-        std::make_move_iterator(batch.end()));
+    remap_operations.insert(remap_operations.end(),
+                            std::make_move_iterator(batch.begin()),
+                            std::make_move_iterator(batch.end()));
     return true;
   };
   const auto remapped = parser.parse_file(argv[5], remap_options);

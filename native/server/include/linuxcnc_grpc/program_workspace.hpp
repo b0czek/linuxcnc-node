@@ -27,15 +27,19 @@ class ProgramWorkspaceStore {
                         WorkspaceLimits limits = {});
 
   std::string create(std::chrono::seconds ttl = std::chrono::seconds::zero());
-  bool write_file(const std::string& workspace_id, const std::string& relative_path,
-                 const std::vector<std::uint8_t>& contents);
-  bool remove_file(const std::string& workspace_id, const std::string& relative_path);
+  bool write_file(const std::string& workspace_id,
+                  const std::string& relative_path,
+                  const std::vector<std::uint8_t>& contents);
+  bool remove_file(const std::string& workspace_id,
+                   const std::string& relative_path);
   bool erase(const std::string& workspace_id);
   bool pin(const std::string& workspace_id);
   bool unpin(const std::string& workspace_id);
-  bool resolve_entry(const std::string& workspace_id, const std::string& entry_path,
+  bool resolve_entry(const std::string& workspace_id,
+                     const std::string& entry_path,
                      std::filesystem::path* resolved_entry);
-  bool materialize(const std::string& workspace_id, const std::string& entry_path,
+  bool materialize(const std::string& workspace_id,
+                   const std::string& entry_path,
                    std::filesystem::path* materialized_entry = nullptr);
   std::size_t prune_expired();
 

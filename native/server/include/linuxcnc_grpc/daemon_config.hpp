@@ -1,9 +1,9 @@
 #pragma once
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
-#include <chrono>
 #include <string>
 
 namespace linuxcnc::server {
@@ -14,7 +14,8 @@ struct DaemonConfig {
   std::filesystem::path ini_file;
   std::filesystem::path nml_file;
   std::filesystem::path workspace_root = "/var/lib/linuxcnc-grpc/workspaces";
-  std::filesystem::path active_program_directory = "/var/lib/linuxcnc-grpc/active-program";
+  std::filesystem::path active_program_directory =
+      "/var/lib/linuxcnc-grpc/active-program";
   std::filesystem::path tls_certificate;
   std::filesystem::path tls_private_key;
   std::filesystem::path tls_client_ca;

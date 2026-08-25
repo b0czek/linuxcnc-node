@@ -4,18 +4,19 @@
 
 #include "linuxcnc_grpc/scope_controller.hpp"
 
-#include "scope_shm_abi.h"
-
-#include "config.h"
-
 #include <hal.h>
 #include <rtapi.h>
 #include <rtapi_mutex.h>
 
+#include "config.h"
+#include "scope_shm_abi.h"
+
 // Scope source lookup and thread attachment use the same private HAL lists as
 // halcmd and the legacy addon. This is the native-only implementation seam;
 // no transport or N-API types cross it.
-#include "hal_priv.h"
+#include <spawn.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <cerrno>
@@ -25,11 +26,10 @@
 #include <cstring>
 #include <limits>
 #include <memory>
-#include <spawn.h>
 #include <string_view>
-#include <sys/wait.h>
 #include <utility>
-#include <unistd.h>
+
+#include "hal_priv.h"
 
 extern char** environ;
 
@@ -39,7 +39,8 @@ namespace {
 class HalMutex final {
  public:
   HalMutex() {
-    if (!hal_data) throw ScopeControllerError("HAL is not initialized", -ENODEV);
+    if (!hal_data)
+      throw ScopeControllerError("HAL is not initialized", -ENODEV);
     rtapi_mutex_get(&hal_data->mutex);
   }
   ~HalMutex() { rtapi_mutex_give(&hal_data->mutex); }
@@ -49,14 +50,22 @@ class HalMutex final {
 
 ScopeState scope_state(linuxcnc_scope_state_t state) {
   switch (state) {
-    case LINUXCNC_SCOPE_IDLE: return ScopeState::Idle;
-    case LINUXCNC_SCOPE_INIT: return ScopeState::Init;
-    case LINUXCNC_SCOPE_PRE_TRIG: return ScopeState::PreTrigger;
-    case LINUXCNC_SCOPE_TRIG_WAIT: return ScopeState::TriggerWait;
-    case LINUXCNC_SCOPE_POST_TRIG: return ScopeState::PostTrigger;
-    case LINUXCNC_SCOPE_DONE: return ScopeState::Done;
-    case LINUXCNC_SCOPE_RESET: return ScopeState::Reset;
-    default: return ScopeState::Invalid;
+    case LINUXCNC_SCOPE_IDLE:
+      return ScopeState::Idle;
+    case LINUXCNC_SCOPE_INIT:
+      return ScopeState::Init;
+    case LINUXCNC_SCOPE_PRE_TRIG:
+      return ScopeState::PreTrigger;
+    case LINUXCNC_SCOPE_TRIG_WAIT:
+      return ScopeState::TriggerWait;
+    case LINUXCNC_SCOPE_POST_TRIG:
+      return ScopeState::PostTrigger;
+    case LINUXCNC_SCOPE_DONE:
+      return ScopeState::Done;
+    case LINUXCNC_SCOPE_RESET:
+      return ScopeState::Reset;
+    default:
+      return ScopeState::Invalid;
   }
 }
 
@@ -67,7 +76,8 @@ bool process_is_live(int pid) {
 }
 
 bool starts_with(const char* value, std::string_view prefix) {
-  return value && std::string_view(value).compare(0, prefix.size(), prefix) == 0;
+  return value &&
+         std::string_view(value).compare(0, prefix.size(), prefix) == 0;
 }
 
 bool has_scope_controller_owner() {
@@ -78,14 +88,17 @@ bool has_scope_controller_owner() {
     auto* component = static_cast<hal_comp_t*>(SHMPTR(next));
     if (std::strcmp(component->name, "halscope") == 0) return true;
     if (starts_with(component->name, "hal-inspector-scope-") &&
-        process_is_live(component->pid)) return true;
+        process_is_live(component->pid))
+      return true;
     if (starts_with(component->name, "linuxcnc-grpc-scope") &&
-        process_is_live(component->pid)) return true;
+        process_is_live(component->pid))
+      return true;
   }
   return false;
 }
 
-void* resolve_scope_source_unlocked(const ScopeSource& source, hal_type_t* type) {
+void* resolve_scope_source_unlocked(const ScopeSource& source,
+                                    hal_type_t* type) {
   if (!type) return nullptr;
   *type = HAL_TYPE_UNSPECIFIED;
   if (source.name.empty()) return nullptr;
@@ -123,9 +136,11 @@ std::string find_scope_thread_unlocked() {
        next = SHMPTR(next)->next_ptr) {
     auto* thread = static_cast<hal_thread_t*>(SHMPTR(next));
     auto* root = &thread->funct_list;
-    for (auto* entry = list_next(root); entry != root; entry = list_next(entry)) {
+    for (auto* entry = list_next(root); entry != root;
+         entry = list_next(entry)) {
       auto* function_entry = reinterpret_cast<hal_funct_entry_t*>(entry);
-      auto* function = static_cast<hal_funct_t*>(SHMPTR(function_entry->funct_ptr));
+      auto* function =
+          static_cast<hal_funct_t*>(SHMPTR(function_entry->funct_ptr));
       if (function == scope_function) return thread->name;
     }
   }
@@ -140,12 +155,11 @@ bool scope_rt_loaded() {
 int load_scope_rt(std::size_t requested_samples) {
   if (scope_rt_loaded()) return 0;
   const std::string executable = EMC2_BIN_DIR "/halcmd";
-  const std::string sample_argument = "num_samples=" + std::to_string(requested_samples);
+  const std::string sample_argument =
+      "num_samples=" + std::to_string(requested_samples);
   std::array<char*, 5> arguments{
-      const_cast<char*>(executable.c_str()),
-      const_cast<char*>("loadrt"),
-      const_cast<char*>("scope_rt"),
-      const_cast<char*>(sample_argument.c_str()),
+      const_cast<char*>(executable.c_str()), const_cast<char*>("loadrt"),
+      const_cast<char*>("scope_rt"), const_cast<char*>(sample_argument.c_str()),
       nullptr};
   pid_t child = -1;
   const int spawned = posix_spawn(&child, executable.c_str(), nullptr, nullptr,
@@ -161,25 +175,36 @@ int load_scope_rt(std::size_t requested_samples) {
 
 int source_length(hal_type_t type) {
   switch (type) {
-    case HAL_BIT: return 1;
-    case HAL_FLOAT: return sizeof(hal_float_t);
-    case HAL_S32: return sizeof(hal_s32_t);
-    case HAL_U32: return sizeof(hal_u32_t);
-    default: return 0;
+    case HAL_BIT:
+      return 1;
+    case HAL_FLOAT:
+      return sizeof(hal_float_t);
+    case HAL_S32:
+      return sizeof(hal_s32_t);
+    case HAL_U32:
+      return sizeof(hal_u32_t);
+    default:
+      return 0;
   }
 }
 
 double sample_value(const linuxcnc_scope_data_t& value, hal_type_t type) {
   switch (type) {
-    case HAL_BIT: return value.d_u8 ? 1.0 : 0.0;
-    case HAL_FLOAT: return value.d_real;
-    case HAL_S32: return value.d_s32;
-    case HAL_U32: return value.d_u32;
-    default: return 0.0;
+    case HAL_BIT:
+      return value.d_u8 ? 1.0 : 0.0;
+    case HAL_FLOAT:
+      return value.d_real;
+    case HAL_S32:
+      return value.d_s32;
+    case HAL_U32:
+      return value.d_u32;
+    default:
+      return 0.0;
   }
 }
 
-std::int64_t sample_period_ns_unlocked(const linuxcnc_scope_shm_control_t& control) {
+std::int64_t sample_period_ns_unlocked(
+    const linuxcnc_scope_shm_control_t& control) {
   if (!control.thread_name[0] || !hal_data) return 0;
   HalMutex lock;
   auto* thread = halpr_find_thread_by_name(control.thread_name);
@@ -190,10 +215,18 @@ std::int64_t sample_period_ns_unlocked(const linuxcnc_scope_shm_control_t& contr
 void set_trigger_level(linuxcnc_scope_shm_control_t* control, hal_type_t type,
                        double value) {
   switch (type) {
-    case HAL_BIT: control->trig_level.d_u8 = value != 0.0; break;
-    case HAL_S32: control->trig_level.d_s32 = static_cast<rtapi_s32>(value); break;
-    case HAL_U32: control->trig_level.d_u32 = static_cast<rtapi_u32>(value); break;
-    default: control->trig_level.d_real = value; break;
+    case HAL_BIT:
+      control->trig_level.d_u8 = value != 0.0;
+      break;
+    case HAL_S32:
+      control->trig_level.d_s32 = static_cast<rtapi_s32>(value);
+      break;
+    case HAL_U32:
+      control->trig_level.d_u32 = static_cast<rtapi_u32>(value);
+      break;
+    default:
+      control->trig_level.d_real = value;
+      break;
   }
 }
 
@@ -284,8 +317,8 @@ std::optional<ScopeFrame> ScopeFrameQueue::next(const std::string& owner) {
   return in_flight_;
 }
 
-std::optional<ScopeFrame> ScopeFrameQueue::wait_next(const std::string& owner,
-                                                     std::chrono::milliseconds timeout) {
+std::optional<ScopeFrame> ScopeFrameQueue::wait_next(
+    const std::string& owner, std::chrono::milliseconds timeout) {
   std::unique_lock lock(mutex_);
   condition_.wait_for(lock, timeout, [this, &owner] {
     return owner_ != owner || (in_flight_ && !delivered_);
@@ -295,8 +328,8 @@ std::optional<ScopeFrame> ScopeFrameQueue::wait_next(const std::string& owner,
   return in_flight_;
 }
 
-std::optional<ScopeFrame> ScopeFrameQueue::acknowledge(const std::string& owner,
-                                                       std::uint64_t generation) {
+std::optional<ScopeFrame> ScopeFrameQueue::acknowledge(
+    const std::string& owner, std::uint64_t generation) {
   std::lock_guard lock(mutex_);
   if (owner_ != owner || !in_flight_ || in_flight_->generation != generation) {
     return std::nullopt;
@@ -356,9 +389,11 @@ void ensure_attached(const LinuxCncScopeControllerState& impl) {
   }
 }
 
-void ensure_owner(const LinuxCncScopeControllerState& impl, const std::string& owner) {
+void ensure_owner(const LinuxCncScopeControllerState& impl,
+                  const std::string& owner) {
   if (owner.empty() || impl.owner != owner) {
-    throw ScopeControllerError("Scope controller is not owned by this client", -EPERM);
+    throw ScopeControllerError("Scope controller is not owned by this client",
+                               -EPERM);
   }
 }
 
@@ -385,7 +420,8 @@ ScopeCapture copy_capture_unlocked(const LinuxCncScopeControllerState& impl,
   const auto& control = *impl.control;
   const int samples = control.samples;
   const int start = control.start;
-  if (samples <= 0) throw ScopeControllerError("Scope capture is empty", -EAGAIN);
+  if (samples <= 0)
+    throw ScopeControllerError("Scope capture is empty", -EAGAIN);
   if (control.sample_len != static_cast<int>(LINUXCNC_SCOPE_CHANNELS) ||
       samples > control.rec_len || samples > control.buf_len || start < 0 ||
       start >= control.buf_len || control.rec_len <= 0) {
@@ -396,9 +432,11 @@ ScopeCapture copy_capture_unlocked(const LinuxCncScopeControllerState& impl,
   capture.trigger_index = live ? samples - 1 : control.pre_trig;
   capture.sample_period_ns = sample_period_ns_unlocked(control);
   int packed_channel = 0;
-  for (int channel = 0; channel < static_cast<int>(LINUXCNC_SCOPE_CHANNELS); ++channel) {
+  for (int channel = 0; channel < static_cast<int>(LINUXCNC_SCOPE_CHANNELS);
+       ++channel) {
     if (!control.data_len[channel]) continue;
-    auto& values = capture.channels[static_cast<std::size_t>(channel)].emplace();
+    auto& values =
+        capture.channels[static_cast<std::size_t>(channel)].emplace();
     values.resize(static_cast<std::size_t>(samples));
     for (int sample = 0; sample < samples; ++sample) {
       int cell = start + sample * control.sample_len + packed_channel;
@@ -411,8 +449,9 @@ ScopeCapture copy_capture_unlocked(const LinuxCncScopeControllerState& impl,
   return capture;
 }
 
-std::optional<ScopeCaptureDelta> copy_delta_unlocked(LinuxCncScopeControllerState& impl,
-                                                     std::chrono::steady_clock::time_point now) {
+std::optional<ScopeCaptureDelta> copy_delta_unlocked(
+    LinuxCncScopeControllerState& impl,
+    std::chrono::steady_clock::time_point now) {
   ensure_attached(impl);
   const auto& control = *impl.control;
   const int samples = control.samples;
@@ -421,26 +460,33 @@ std::optional<ScopeCaptureDelta> copy_delta_unlocked(LinuxCncScopeControllerStat
   const int capacity = control.rec_len;
   const int buffer_length = control.buf_len;
   if (samples <= 0) return std::nullopt;
-  if (sample_length != static_cast<int>(LINUXCNC_SCOPE_CHANNELS) || capacity <= 0 ||
-      samples > capacity || start < 0 || start >= buffer_length) {
+  if (sample_length != static_cast<int>(LINUXCNC_SCOPE_CHANNELS) ||
+      capacity <= 0 || samples > capacity || start < 0 ||
+      start >= buffer_length) {
     throw ScopeControllerError("Invalid scope delta bounds", -EPROTO);
   }
 
   const auto period = sample_period_ns_unlocked(control);
   const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
-      now - impl.delta_snapshot_at).count();
-  const bool ambiguous_wrap = impl.delta_initialized && period > 0 &&
+                           now - impl.delta_snapshot_at)
+                           .count();
+  const bool ambiguous_wrap =
+      impl.delta_initialized && period > 0 &&
       elapsed >= static_cast<std::int64_t>(capacity) * period;
 
-  bool reset = !impl.delta_initialized || sample_length != impl.delta_sample_len ||
+  bool reset = !impl.delta_initialized ||
+               sample_length != impl.delta_sample_len ||
                samples < impl.delta_samples || ambiguous_wrap;
   int count = reset ? samples : 0;
   if (!reset && samples > impl.delta_samples) {
     count = samples - impl.delta_samples;
   } else if (!reset && start != impl.delta_start) {
-    const int cells = (start - impl.delta_start + buffer_length) % buffer_length;
-    if (cells % sample_length != 0) reset = true;
-    else count = cells / sample_length;
+    const int cells =
+        (start - impl.delta_start + buffer_length) % buffer_length;
+    if (cells % sample_length != 0)
+      reset = true;
+    else
+      count = cells / sample_length;
   }
   if (reset) count = samples;
   if (count > samples || count >= capacity) {
@@ -454,8 +500,9 @@ std::optional<ScopeCaptureDelta> copy_delta_unlocked(LinuxCncScopeControllerStat
   impl.delta_sample_len = sample_length;
   impl.delta_snapshot_at = now;
   if (count == 0) return std::nullopt;
-  impl.delta_sequence = reset ? static_cast<std::uint64_t>(samples)
-                              : impl.delta_sequence + static_cast<std::uint64_t>(count);
+  impl.delta_sequence =
+      reset ? static_cast<std::uint64_t>(samples)
+            : impl.delta_sequence + static_cast<std::uint64_t>(count);
 
   ScopeCaptureDelta delta;
   delta.samples = count;
@@ -465,7 +512,8 @@ std::optional<ScopeCaptureDelta> copy_delta_unlocked(LinuxCncScopeControllerStat
   delta.reset = reset;
   const int first = samples - count;
   int packed_channel = 0;
-  for (int channel = 0; channel < static_cast<int>(LINUXCNC_SCOPE_CHANNELS); ++channel) {
+  for (int channel = 0; channel < static_cast<int>(LINUXCNC_SCOPE_CHANNELS);
+       ++channel) {
     if (!control.data_len[channel]) continue;
     auto& values = delta.channels[static_cast<std::size_t>(channel)].emplace();
     values.resize(static_cast<std::size_t>(count));
@@ -482,7 +530,8 @@ std::optional<ScopeCaptureDelta> copy_delta_unlocked(LinuxCncScopeControllerStat
 
 void poll_once(LinuxCncScopeControllerState& impl) {
   std::lock_guard state_lock(impl.state_mutex);
-  if (!impl.polling.load(std::memory_order_relaxed) || impl.owner.empty()) return;
+  if (!impl.polling.load(std::memory_order_relaxed) || impl.owner.empty())
+    return;
   ensure_attached(impl);
   const auto now = std::chrono::steady_clock::now();
   if (impl.heartbeat_at.time_since_epoch().count() == 0 ||
@@ -504,8 +553,9 @@ void poll_once(LinuxCncScopeControllerState& impl) {
       }
       return;
     }
-    if (impl.running && (impl.run_mode == ScopeRunMode::Run ||
-                         impl.run_mode == ScopeRunMode::Single) &&
+    if (impl.running &&
+        (impl.run_mode == ScopeRunMode::Run ||
+         impl.run_mode == ScopeRunMode::Single) &&
         impl.control->state == LINUXCNC_SCOPE_DONE) {
       const auto capture = copy_capture_unlocked(impl, false);
       ScopeFrame frame;
@@ -548,12 +598,14 @@ void teardown(LinuxCncScopeControllerState& impl) noexcept {
   if (impl.control) {
     impl.control->state = LINUXCNC_SCOPE_RESET;
     impl.control->force_trig = 0;
-    for (int i = 0; i < 250 && impl.control->state != LINUXCNC_SCOPE_IDLE; ++i) {
+    for (int i = 0; i < 250 && impl.control->state != LINUXCNC_SCOPE_IDLE;
+         ++i) {
       usleep(1000);
     }
     if (impl.control->state != LINUXCNC_SCOPE_IDLE) {
       const std::string thread = impl.control->thread_name;
-      if (!thread.empty()) hal_del_funct_from_thread("scope.sample", thread.c_str());
+      if (!thread.empty())
+        hal_del_funct_from_thread("scope.sample", thread.c_str());
       impl.control->curr = 0;
       impl.control->start = 0;
       impl.control->samples = 0;
@@ -574,37 +626,40 @@ void teardown(LinuxCncScopeControllerState& impl) noexcept {
 }  // namespace
 
 LinuxCncScopeController::LinuxCncScopeController(
-    std::string component_name,
-    std::chrono::milliseconds poll_period,
-    std::chrono::milliseconds heartbeat_period,
-    std::size_t requested_samples)
+    std::string component_name, std::chrono::milliseconds poll_period,
+    std::chrono::milliseconds heartbeat_period, std::size_t requested_samples)
     : impl_(std::make_unique<LinuxCncScopeControllerState>()) {
   if (component_name.empty() || component_name.size() > HAL_NAME_LEN) {
     throw ScopeControllerError("invalid scope component name", -EINVAL);
   }
   if (poll_period <= std::chrono::milliseconds::zero() ||
       heartbeat_period <= std::chrono::milliseconds::zero()) {
-    throw ScopeControllerError("scope polling periods must be positive", -EINVAL);
+    throw ScopeControllerError("scope polling periods must be positive",
+                               -EINVAL);
   }
   if (requested_samples < 1000 || requested_samples > 1000000) {
-    throw ScopeControllerError("scope sample count is outside LinuxCNC bounds", -ERANGE);
+    throw ScopeControllerError("scope sample count is outside LinuxCNC bounds",
+                               -ERANGE);
   }
   impl_->component_name = std::move(component_name);
   impl_->poll_period = poll_period;
   impl_->heartbeat_period = heartbeat_period;
   if (has_scope_controller_owner()) {
-    throw ScopeControllerError("another scope controller is already active", -EBUSY);
+    throw ScopeControllerError("another scope controller is already active",
+                               -EBUSY);
   }
   impl_->component_id = hal_init(impl_->component_name.c_str());
   if (impl_->component_id <= 0) {
-    throw ScopeControllerError("hal_init failed for scope controller", impl_->component_id);
+    throw ScopeControllerError("hal_init failed for scope controller",
+                               impl_->component_id);
   }
   if (const int loaded = load_scope_rt(requested_samples); loaded != 0) {
     teardown(*impl_);
     throw ScopeControllerError("unable to load LinuxCNC scope_rt", loaded);
   }
-  impl_->shared_memory_id = rtapi_shmem_new(
-      LINUXCNC_SCOPE_SHM_KEY, impl_->component_id, sizeof(linuxcnc_scope_shm_control_t));
+  impl_->shared_memory_id =
+      rtapi_shmem_new(LINUXCNC_SCOPE_SHM_KEY, impl_->component_id,
+                      sizeof(linuxcnc_scope_shm_control_t));
   if (impl_->shared_memory_id < 0) {
     const int error = impl_->shared_memory_id;
     teardown(*impl_);
@@ -623,7 +678,8 @@ LinuxCncScopeController::LinuxCncScopeController(
           header + static_cast<unsigned long>(impl_->control->buf_len) *
                        sizeof(linuxcnc_scope_data_t)) {
     teardown(*impl_);
-    throw ScopeControllerError("invalid or incompatible scope_rt shared-memory ABI", -EPROTO);
+    throw ScopeControllerError(
+        "invalid or incompatible scope_rt shared-memory ABI", -EPROTO);
   }
   impl_->buffer = reinterpret_cast<linuxcnc_scope_data_t*>(
       static_cast<char*>(base) + header);
@@ -676,20 +732,24 @@ bool LinuxCncScopeController::acquired() const {
 }
 
 ScopeStatus LinuxCncScopeController::status() const {
-  if (!impl_) throw ScopeControllerError("Scope controller is disposed", -ENODEV);
+  if (!impl_)
+    throw ScopeControllerError("Scope controller is disposed", -ENODEV);
   std::lock_guard lock(impl_->state_mutex);
   return status_unlocked(*impl_);
 }
 
 void LinuxCncScopeController::configure(const std::string& owner,
                                         const ScopeConfig& config) {
-  if (!impl_) throw ScopeControllerError("Scope controller is disposed", -ENODEV);
+  if (!impl_)
+    throw ScopeControllerError("Scope controller is disposed", -ENODEV);
   std::lock_guard state_lock(impl_->state_mutex);
   ensure_attached(*impl_);
   ensure_owner(*impl_, owner);
   if (config.thread_name.empty() || config.thread_name.size() > HAL_NAME_LEN ||
-      config.trigger_channel < 0 || config.trigger_channel > static_cast<int>(kScopeChannelCount)) {
-    throw ScopeControllerError("invalid scope thread or trigger channel", -EINVAL);
+      config.trigger_channel < 0 ||
+      config.trigger_channel > static_cast<int>(kScopeChannelCount)) {
+    throw ScopeControllerError("invalid scope thread or trigger channel",
+                               -EINVAL);
   }
 
   std::array<int, kScopeChannelCount> offsets{};
@@ -709,7 +769,8 @@ void LinuxCncScopeController::configure(const std::string& owner,
       void* data = resolve_scope_source_unlocked(channel.source, &type);
       const int length = source_length(type);
       if (!data || length == 0) {
-        throw ScopeControllerError("invalid or unsupported scope source", -EINVAL);
+        throw ScopeControllerError("invalid or unsupported scope source",
+                                   -EINVAL);
       }
       offsets[index] = hal_shmoff(data);
       types[index] = type;
@@ -717,27 +778,34 @@ void LinuxCncScopeController::configure(const std::string& owner,
     }
     attached_thread = find_scope_thread_unlocked();
   }
-  if (period <= 0) throw ScopeControllerError("scope thread is unavailable", -ENOENT);
-  const auto max_multiplier = static_cast<int>(std::min<long>(
-      1000, 1000000000L / period));
+  if (period <= 0)
+    throw ScopeControllerError("scope thread is unavailable", -ENOENT);
+  const auto max_multiplier =
+      static_cast<int>(std::min<long>(1000, 1000000000L / period));
   if (config.multiplier < 1 || config.multiplier > max_multiplier) {
-    throw ScopeControllerError("scope multiplier is outside the thread range", -ERANGE);
+    throw ScopeControllerError("scope multiplier is outside the thread range",
+                               -ERANGE);
   }
   if (config.trigger_channel > 0 &&
-      !config.channels[static_cast<std::size_t>(config.trigger_channel - 1)].enabled) {
+      !config.channels[static_cast<std::size_t>(config.trigger_channel - 1)]
+           .enabled) {
     throw ScopeControllerError("trigger channel is not enabled", -EINVAL);
   }
-  const auto trigger_type = config.trigger_channel > 0
-      ? types[static_cast<std::size_t>(config.trigger_channel - 1)] : HAL_FLOAT;
+  const auto trigger_type =
+      config.trigger_channel > 0
+          ? types[static_cast<std::size_t>(config.trigger_channel - 1)]
+          : HAL_FLOAT;
   validate_trigger_level(trigger_type, config.trigger_level);
 
   if (impl_->control->state != LINUXCNC_SCOPE_IDLE) {
     impl_->control->state = LINUXCNC_SCOPE_RESET;
-    for (int i = 0; i < 250 && impl_->control->state != LINUXCNC_SCOPE_IDLE; ++i) {
+    for (int i = 0; i < 250 && impl_->control->state != LINUXCNC_SCOPE_IDLE;
+         ++i) {
       usleep(1000);
     }
     if (impl_->control->state != LINUXCNC_SCOPE_IDLE) {
-      if (!attached_thread.empty()) hal_del_funct_from_thread("scope.sample", attached_thread.c_str());
+      if (!attached_thread.empty())
+        hal_del_funct_from_thread("scope.sample", attached_thread.c_str());
       impl_->control->curr = 0;
       impl_->control->start = 0;
       impl_->control->samples = 0;
@@ -748,21 +816,27 @@ void LinuxCncScopeController::configure(const std::string& owner,
   }
   if (attached_thread != config.thread_name) {
     if (!attached_thread.empty()) {
-      if (const int result = hal_del_funct_from_thread("scope.sample", attached_thread.c_str());
+      if (const int result = hal_del_funct_from_thread("scope.sample",
+                                                       attached_thread.c_str());
           result != 0) {
-        throw ScopeControllerError("unable to unlink scope.sample from old thread", result);
+        throw ScopeControllerError(
+            "unable to unlink scope.sample from old thread", result);
       }
     }
-    if (const int result = hal_add_funct_to_thread("scope.sample", config.thread_name.c_str(), -1);
+    if (const int result = hal_add_funct_to_thread(
+            "scope.sample", config.thread_name.c_str(), -1);
         result != 0) {
-      throw ScopeControllerError("unable to link scope.sample to scope thread", result);
+      throw ScopeControllerError("unable to link scope.sample to scope thread",
+                                 result);
     }
   }
 
-  std::strncpy(impl_->control->thread_name, config.thread_name.c_str(), HAL_NAME_LEN);
+  std::strncpy(impl_->control->thread_name, config.thread_name.c_str(),
+               HAL_NAME_LEN);
   impl_->control->thread_name[HAL_NAME_LEN] = '\0';
   impl_->control->sample_len = static_cast<int>(kScopeChannelCount);
-  impl_->control->rec_len = impl_->control->buf_len / static_cast<int>(kScopeChannelCount);
+  impl_->control->rec_len =
+      impl_->control->buf_len / static_cast<int>(kScopeChannelCount);
   if (impl_->control->rec_len <= 0) {
     throw ScopeControllerError("scope buffer cannot hold one sample", -EPROTO);
   }
@@ -787,11 +861,13 @@ void LinuxCncScopeController::configure(const std::string& owner,
 }
 
 void LinuxCncScopeController::run(const std::string& owner, ScopeRunMode mode) {
-  if (!impl_) throw ScopeControllerError("Scope controller is disposed", -ENODEV);
+  if (!impl_)
+    throw ScopeControllerError("Scope controller is disposed", -ENODEV);
   std::lock_guard lock(impl_->state_mutex);
   ensure_attached(*impl_);
   ensure_owner(*impl_, owner);
-  if (!impl_->configured) throw ScopeControllerError("scope is not configured", -EINVAL);
+  if (!impl_->configured)
+    throw ScopeControllerError("scope is not configured", -EINVAL);
   if (impl_->control->state != LINUXCNC_SCOPE_IDLE &&
       impl_->control->state != LINUXCNC_SCOPE_DONE) {
     throw ScopeControllerError("scope is already acquiring", -EBUSY);
@@ -810,7 +886,8 @@ void LinuxCncScopeController::run(const std::string& owner, ScopeRunMode mode) {
 }
 
 void LinuxCncScopeController::stop(const std::string& owner) {
-  if (!impl_) throw ScopeControllerError("Scope controller is disposed", -ENODEV);
+  if (!impl_)
+    throw ScopeControllerError("Scope controller is disposed", -ENODEV);
   std::lock_guard lock(impl_->state_mutex);
   ensure_attached(*impl_);
   ensure_owner(*impl_, owner);
@@ -822,14 +899,16 @@ void LinuxCncScopeController::stop(const std::string& owner) {
 }
 
 void LinuxCncScopeController::trigger(const std::string& owner) {
-  if (!impl_) throw ScopeControllerError("Scope controller is disposed", -ENODEV);
+  if (!impl_)
+    throw ScopeControllerError("Scope controller is disposed", -ENODEV);
   std::lock_guard lock(impl_->state_mutex);
   ensure_attached(*impl_);
   ensure_owner(*impl_, owner);
   impl_->control->force_trig = 1;
 }
 
-std::optional<ScopeFrame> LinuxCncScopeController::next_frame(const std::string& owner) {
+std::optional<ScopeFrame> LinuxCncScopeController::next_frame(
+    const std::string& owner) {
   if (!impl_) return std::nullopt;
   return impl_->frames.next(owner);
 }
@@ -850,7 +929,8 @@ std::uint64_t LinuxCncScopeController::skipped_frames() const {
   return impl_ ? impl_->frames.skipped_frames() : 0;
 }
 
-void LinuxCncScopeController::set_frame_listener(std::function<void()> listener) {
+void LinuxCncScopeController::set_frame_listener(
+    std::function<void()> listener) {
   if (impl_) impl_->frames.set_listener(std::move(listener));
 }
 
@@ -858,7 +938,8 @@ void LinuxCncScopeController::start_polling() {
   if (!impl_) return;
   bool expected = false;
   if (!impl_->polling.compare_exchange_strong(expected, true,
-                                               std::memory_order_relaxed)) return;
+                                              std::memory_order_relaxed))
+    return;
   impl_->poll_thread = std::thread([impl = impl_.get()] { poll_loop(*impl); });
 }
 

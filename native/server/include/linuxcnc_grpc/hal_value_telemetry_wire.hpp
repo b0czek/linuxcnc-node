@@ -1,10 +1,10 @@
 #pragma once
 
-#include "linuxcnc_grpc/hal_value_telemetry.hpp"
-
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+
+#include "linuxcnc_grpc/hal_value_telemetry.hpp"
 
 namespace linuxcnc::server {
 

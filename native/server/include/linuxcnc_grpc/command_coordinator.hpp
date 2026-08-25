@@ -72,7 +72,8 @@ class CommandTicket {
     std::vector<PendingObserver> observers;
   };
 
-  explicit CommandTicket(std::shared_ptr<State> state) : state_(std::move(state)) {}
+  explicit CommandTicket(std::shared_ptr<State> state)
+      : state_(std::move(state)) {}
   friend class CommandCoordinator;
   std::shared_ptr<State> state_;
 };

@@ -1,10 +1,3 @@
-#include "grpc/scope_service_impl.hpp"
-
-#include "linuxcnc_grpc/callback_runtime.hpp"
-#include "linuxcnc_grpc/daemon_config.hpp"
-#include "linuxcnc_grpc/scope_controller.hpp"
-#include "linuxcnc/v1/linuxcnc.grpc.pb.h"
-
 #include <grpcpp/grpcpp.h>
 
 #include <algorithm>
@@ -18,6 +11,12 @@
 #include <string>
 #include <utility>
 #include <vector>
+
+#include "grpc/scope_service_impl.hpp"
+#include "linuxcnc/v1/linuxcnc.grpc.pb.h"
+#include "linuxcnc_grpc/callback_runtime.hpp"
+#include "linuxcnc_grpc/daemon_config.hpp"
+#include "linuxcnc_grpc/scope_controller.hpp"
 
 namespace linuxcnc::server::detail {
 namespace {
@@ -46,7 +45,8 @@ ScopeRuntimeState encode_scope_state(ScopeState state) {
   return SCOPE_RUNTIME_STATE_INVALID;
 }
 
-void encode_scope_status(const ScopeStatus& source, std::uint64_t skipped_frames,
+void encode_scope_status(const ScopeStatus& source,
+                         std::uint64_t skipped_frames,
                          linuxcnc::v1::ScopeStatus* target) {
   target->set_state(encode_scope_state(source.state));
   target->set_buffer_length(
@@ -55,22 +55,22 @@ void encode_scope_status(const ScopeStatus& source, std::uint64_t skipped_frames
       static_cast<std::uint32_t>(std::max(0, source.record_length)));
   target->set_sample_length(
       static_cast<std::uint32_t>(std::max(0, source.sample_length)));
-  target->set_samples(
-      static_cast<std::uint32_t>(std::max(0, source.samples)));
+  target->set_samples(static_cast<std::uint32_t>(std::max(0, source.samples)));
   target->set_start(static_cast<std::uint32_t>(std::max(0, source.start)));
   target->set_multiplier(
       static_cast<std::uint32_t>(std::max(0, source.multiplier)));
   target->set_watchdog(
       static_cast<std::uint32_t>(std::max(0, source.watchdog)));
   target->set_thread_name(source.thread_name);
-  target->set_sample_period_ns(
-      static_cast<std::uint64_t>(std::max<std::int64_t>(0, source.sample_period_ns)));
+  target->set_sample_period_ns(static_cast<std::uint64_t>(
+      std::max<std::int64_t>(0, source.sample_period_ns)));
   target->set_skipped_frames(skipped_frames);
 }
 
 template <typename Source>
-void encode_scope_channels(const Source& source,
-                           google::protobuf::RepeatedPtrField<PackedChannel>* target) {
+void encode_scope_channels(
+    const Source& source,
+    google::protobuf::RepeatedPtrField<PackedChannel>* target) {
   for (std::size_t index = 0; index < source.channels.size(); ++index) {
     auto* channel = target->Add();
     channel->set_index(static_cast<std::uint32_t>(index));
@@ -88,7 +88,8 @@ void encode_scope_frame(const ScopeFrame& source, ScopeSessionMessage* target) {
     const auto& capture = std::get<ScopeCapture>(source.payload);
     auto* encoded = target->mutable_capture();
     encode_scope_channels(capture, encoded->mutable_channels());
-    encoded->set_samples(static_cast<std::uint32_t>(std::max(0, capture.samples)));
+    encoded->set_samples(
+        static_cast<std::uint32_t>(std::max(0, capture.samples)));
     encoded->set_trigger_index(
         static_cast<std::uint32_t>(std::max(0, capture.trigger_index)));
     encoded->set_sample_period_ns(static_cast<std::uint64_t>(
@@ -99,8 +100,10 @@ void encode_scope_frame(const ScopeFrame& source, ScopeSessionMessage* target) {
     const auto& delta = std::get<ScopeCaptureDelta>(source.payload);
     auto* encoded = target->mutable_roll();
     encode_scope_channels(delta, encoded->mutable_channels());
-    encoded->set_samples(static_cast<std::uint32_t>(std::max(0, delta.samples)));
-    encoded->set_capacity(static_cast<std::uint32_t>(std::max(0, delta.capacity)));
+    encoded->set_samples(
+        static_cast<std::uint32_t>(std::max(0, delta.samples)));
+    encoded->set_capacity(
+        static_cast<std::uint32_t>(std::max(0, delta.capacity)));
     encoded->set_sequence(delta.sequence);
     encoded->set_sample_period_ns(static_cast<std::uint64_t>(
         std::max<std::int64_t>(0, delta.sample_period_ns)));
@@ -111,13 +114,13 @@ void encode_scope_frame(const ScopeFrame& source, ScopeSessionMessage* target) {
 }
 
 ::grpc::Status scope_error(const ScopeControllerError& error) {
-  const auto code =
-      error.code() == -EBUSY ? ::grpc::StatusCode::RESOURCE_EXHAUSTED
-      : (error.code() == -EINVAL || error.code() == -ERANGE)
-          ? ::grpc::StatusCode::INVALID_ARGUMENT
-      : (error.code() == -ENOENT || error.code() == -ENODEV)
-          ? ::grpc::StatusCode::UNAVAILABLE
-          : ::grpc::StatusCode::FAILED_PRECONDITION;
+  const auto code = error.code() == -EBUSY
+                        ? ::grpc::StatusCode::RESOURCE_EXHAUSTED
+                    : (error.code() == -EINVAL || error.code() == -ERANGE)
+                        ? ::grpc::StatusCode::INVALID_ARGUMENT
+                    : (error.code() == -ENOENT || error.code() == -ENODEV)
+                        ? ::grpc::StatusCode::UNAVAILABLE
+                        : ::grpc::StatusCode::FAILED_PRECONDITION;
   return {code, error.what()};
 }
 
@@ -128,11 +131,13 @@ class ScopeServiceImpl final : public ScopeService::CallbackService,
     LinuxCncScopeController* controller = nullptr;
     std::atomic<bool> cleanup_started{false};
   };
+
  public:
   ::grpc::Service* service() noexcept override { return this; }
 
   ScopeServiceImpl(const DaemonConfig& config, BoundedExecutor& worker,
-                   AdmissionCounter& admission, AdmissionCounter& stream_admission)
+                   AdmissionCounter& admission,
+                   AdmissionCounter& stream_admission)
       : worker_(worker),
         admission_(admission),
         stream_admission_(stream_admission),
@@ -144,24 +149,25 @@ class ScopeServiceImpl final : public ScopeService::CallbackService,
 
   ::grpc::ServerBidiReactor<ScopeSessionMessage, ScopeSessionMessage>* Session(
       ::grpc::CallbackServerContext* context) override {
-    return new SessionReactor(*this, context->peer() + "#" +
-                                      std::to_string(++session_sequence_));
+    return new SessionReactor(
+        *this, context->peer() + "#" + std::to_string(++session_sequence_));
   }
 
  private:
   class SessionReactor final
-      : public ::grpc::ServerBidiReactor<ScopeSessionMessage, ScopeSessionMessage> {
+      : public ::grpc::ServerBidiReactor<ScopeSessionMessage,
+                                         ScopeSessionMessage> {
    public:
     SessionReactor(ScopeServiceImpl& service, std::string owner)
-        : service_(service), admitted_(service_.admission_.acquire()),
+        : service_(service),
+          admitted_(service_.admission_.acquire()),
           stream_admitted_(service_.stream_admission_.acquire()),
           state_(std::make_shared<SessionState>()),
           gate_(std::make_shared<LifetimeGate<SessionReactor>>(this)) {
       const std::weak_ptr<LifetimeGate<SessionReactor>> weak = gate_;
       registration_ = service_.callbacks_.register_callback([weak] {
-        if (auto gate = weak.lock()) gate->invoke([](SessionReactor& reactor) {
-          reactor.shutdown();
-        });
+        if (auto gate = weak.lock())
+          gate->invoke([](SessionReactor& reactor) { reactor.shutdown(); });
       });
       if (!registration_) {
         shutdown();
@@ -178,9 +184,11 @@ class ScopeServiceImpl final : public ScopeService::CallbackService,
             ::grpc::Status status;
             try {
               if (!service->controller_) {
-                service->controller_ = std::make_unique<LinuxCncScopeController>(
-                    "linuxcnc-grpc-scope", service->poll_period_,
-                    service->heartbeat_period_, service->requested_samples_);
+                service->controller_ =
+                    std::make_unique<LinuxCncScopeController>(
+                        "linuxcnc-grpc-scope", service->poll_period_,
+                        service->heartbeat_period_,
+                        service->requested_samples_);
               }
               state->controller = service->controller_.get();
               if (!state->controller->acquire(state->owner)) {
@@ -199,9 +207,7 @@ class ScopeServiceImpl final : public ScopeService::CallbackService,
                 state->controller->set_frame_listener([weak] {
                   if (auto listener_gate = weak.lock()) {
                     listener_gate->invoke(
-                        [](SessionReactor& value) {
-                          value.frame_dirty();
-                        });
+                        [](SessionReactor& value) { value.frame_dirty(); });
                   }
                 });
                 reactor.acquired_ = true;
@@ -214,18 +220,15 @@ class ScopeServiceImpl final : public ScopeService::CallbackService,
       }
     }
     void OnReadDone(bool ok) override {
-      gate_->invoke([ok](SessionReactor& reactor) {
-        reactor.read_done(ok);
-      });
+      gate_->invoke([ok](SessionReactor& reactor) { reactor.read_done(ok); });
     }
     void OnWriteDone(bool ok) override {
-      gate_->invoke([ok](SessionReactor& reactor) {
-        reactor.write_done(ok);
-      });
+      gate_->invoke([ok](SessionReactor& reactor) { reactor.write_done(ok); });
     }
     void OnCancel() override {
       gate_->invoke([](SessionReactor& reactor) {
-        reactor.finish({::grpc::StatusCode::CANCELLED, "scope session cancelled"});
+        reactor.finish(
+            {::grpc::StatusCode::CANCELLED, "scope session cancelled"});
       });
     }
     void OnDone() override {
@@ -239,6 +242,7 @@ class ScopeServiceImpl final : public ScopeService::CallbackService,
       request_cleanup();
       finish({::grpc::StatusCode::UNAVAILABLE, "server shutting down"});
     }
+
    private:
     static ScopeConfig decode_config(
         const linuxcnc::v1::ScopeAcquisitionConfig& wire) {
@@ -253,7 +257,8 @@ class ScopeServiceImpl final : public ScopeService::CallbackService,
       std::array<bool, kScopeChannelCount> assigned{};
       for (const auto& channel : wire.channels()) {
         if (channel.index() >= kScopeChannelCount || assigned[channel.index()])
-          throw ScopeControllerError("invalid or duplicate scope channel index", -EINVAL);
+          throw ScopeControllerError("invalid or duplicate scope channel index",
+                                     -EINVAL);
         assigned[channel.index()] = true;
         auto& target = config.channels[channel.index()];
         target.enabled = channel.enabled();
@@ -261,7 +266,8 @@ class ScopeServiceImpl final : public ScopeService::CallbackService,
           continue;
         }
         if (channel.item().name().empty()) {
-          throw ScopeControllerError("enabled scope channel requires a HAL item", -EINVAL);
+          throw ScopeControllerError(
+              "enabled scope channel requires a HAL item", -EINVAL);
         }
         target.source.name = channel.item().name();
         switch (channel.item().kind()) {
@@ -275,8 +281,8 @@ class ScopeServiceImpl final : public ScopeService::CallbackService,
             target.source.kind = ScopeSourceKind::Signal;
             break;
           default:
-            throw ScopeControllerError(
-                "unsupported scope HAL item kind", -EINVAL);
+            throw ScopeControllerError("unsupported scope HAL item kind",
+                                       -EINVAL);
         }
       }
       return config;
@@ -291,7 +297,8 @@ class ScopeServiceImpl final : public ScopeService::CallbackService,
       read_paused_ = true;
       const auto state = state_;
       const std::weak_ptr<LifetimeGate<SessionReactor>> weak = gate_;
-      if (!service_.worker_.submit([state, weak, request = std::move(request)]() mutable {
+      if (!service_.worker_.submit([state, weak,
+                                    request = std::move(request)]() mutable {
             ::grpc::Status status;
             std::optional<ScopeSessionMessage> response;
             try {
@@ -301,7 +308,8 @@ class ScopeServiceImpl final : public ScopeService::CallbackService,
                   break;
                 case ScopeSessionMessage::kConfigure:
                   controller->configure(
-                      state->owner, decode_config(request.configure().config()));
+                      state->owner,
+                      decode_config(request.configure().config()));
                   break;
                 case ScopeSessionMessage::kRun: {
                   ScopeRunMode mode;
@@ -316,8 +324,8 @@ class ScopeServiceImpl final : public ScopeService::CallbackService,
                       mode = ScopeRunMode::Roll;
                       break;
                     default:
-                      throw ScopeControllerError(
-                          "scope run mode is required", -EINVAL);
+                      throw ScopeControllerError("scope run mode is required",
+                                                 -EINVAL);
                   }
                   controller->run(state->owner, mode);
                   break;
@@ -343,7 +351,8 @@ class ScopeServiceImpl final : public ScopeService::CallbackService,
               }
               if (request.message_case() != ScopeSessionMessage::kAck) {
                 ScopeSessionMessage message;
-                encode_scope_status(controller->status(), controller->skipped_frames(),
+                encode_scope_status(controller->status(),
+                                    controller->skipped_frames(),
                                     message.mutable_status());
                 response = std::move(message);
               }
@@ -487,8 +496,8 @@ class ScopeServiceImpl final : public ScopeService::CallbackService,
 std::unique_ptr<ManagedGrpcService> make_scope_service_impl(
     const DaemonConfig& config, BoundedExecutor& worker,
     AdmissionCounter& admission, AdmissionCounter& stream_admission) {
-  return std::make_unique<ScopeServiceImpl>(
-      config, worker, admission, stream_admission);
+  return std::make_unique<ScopeServiceImpl>(config, worker, admission,
+                                            stream_admission);
 }
 
 }  // namespace linuxcnc::server::detail

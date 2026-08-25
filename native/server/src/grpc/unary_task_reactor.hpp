@@ -1,12 +1,12 @@
 #pragma once
 
-#include "linuxcnc_grpc/callback_runtime.hpp"
-
 #include <grpcpp/grpcpp.h>
 
 #include <functional>
 #include <memory>
 #include <utility>
+
+#include "linuxcnc_grpc/callback_runtime.hpp"
 
 namespace linuxcnc::server::detail {
 
@@ -16,8 +16,8 @@ namespace linuxcnc::server::detail {
 template <typename Response>
 class UnaryTaskReactor final : public ::grpc::ServerUnaryReactor {
  public:
-  using Task = std::function<::grpc::Status(
-      const CancellationToken&, Response*)>;
+  using Task =
+      std::function<::grpc::Status(const CancellationToken&, Response*)>;
 
   UnaryTaskReactor(BoundedExecutor& executor, ActiveCallbackRegistry& registry,
                    Response* response, Task task)
@@ -25,33 +25,33 @@ class UnaryTaskReactor final : public ::grpc::ServerUnaryReactor {
         gate_(std::make_shared<LifetimeGate<UnaryTaskReactor>>(this)) {
     const std::weak_ptr<LifetimeGate<UnaryTaskReactor>> weak_gate = gate_;
     registration_ = registry.register_callback([weak_gate] {
-      if (auto gate = weak_gate.lock()) gate->invoke([](UnaryTaskReactor& reactor) {
-        reactor.shutdown();
-      });
+      if (auto gate = weak_gate.lock())
+        gate->invoke([](UnaryTaskReactor& reactor) { reactor.shutdown(); });
     });
     if (!registration_) {
       shutdown();
       return;
     }
-    if (!executor.submit([weak_gate, task = std::move(task), token = token_]() mutable {
-          auto gate = weak_gate.lock();
-          if (!gate) return;
-          ::grpc::Status status;
-          Response response;
-          try {
-            status = task(*token, &response);
-          } catch (const std::exception& error) {
-            status = {::grpc::StatusCode::INTERNAL, error.what()};
-          } catch (...) {
-            status = {::grpc::StatusCode::INTERNAL, "native worker failed"};
-          }
-          if (token->cancelled()) {
-            status = {::grpc::StatusCode::CANCELLED, "RPC cancelled"};
-          }
-          gate->invoke([&](UnaryTaskReactor& reactor) {
-            reactor.complete(std::move(status), std::move(response));
-          });
-        })) {
+    if (!executor.submit(
+            [weak_gate, task = std::move(task), token = token_]() mutable {
+              auto gate = weak_gate.lock();
+              if (!gate) return;
+              ::grpc::Status status;
+              Response response;
+              try {
+                status = task(*token, &response);
+              } catch (const std::exception& error) {
+                status = {::grpc::StatusCode::INTERNAL, error.what()};
+              } catch (...) {
+                status = {::grpc::StatusCode::INTERNAL, "native worker failed"};
+              }
+              if (token->cancelled()) {
+                status = {::grpc::StatusCode::CANCELLED, "RPC cancelled"};
+              }
+              gate->invoke([&](UnaryTaskReactor& reactor) {
+                reactor.complete(std::move(status), std::move(response));
+              });
+            })) {
       finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
               "blocking work queue is full"});
     }

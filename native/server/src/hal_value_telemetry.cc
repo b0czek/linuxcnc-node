@@ -35,7 +35,8 @@ std::string HalValueTelemetry::token() {
   for (auto& byte : bytes) byte = static_cast<unsigned char>(random());
   std::ostringstream output;
   output << std::hex << std::setfill('0');
-  for (const auto byte : bytes) output << std::setw(2) << static_cast<unsigned>(byte);
+  for (const auto byte : bytes)
+    output << std::setw(2) << static_cast<unsigned>(byte);
   return output.str();
 }
 
@@ -48,11 +49,11 @@ HalTelemetryDescriptor HalValueTelemetry::describe(const State& state) const {
           state.attachment_token.empty()
               ? std::string{}
               : "/v1/hal-values/" + state.attachment_token,
-          state.revision,
-          state.sample_period, state.bindings};
+          state.revision, state.sample_period, state.bindings};
 }
 
-void HalValueTelemetry::expire_locked(std::chrono::steady_clock::time_point now) {
+void HalValueTelemetry::expire_locked(
+    std::chrono::steady_clock::time_point now) {
   for (auto iterator = states_.begin(); iterator != states_.end();) {
     const auto& state = iterator->second;
     if (!state->attached && now >= state->expires) {
@@ -73,8 +74,10 @@ std::optional<HalTelemetryDescriptor> HalValueTelemetry::create(
   expire_locked(std::chrono::steady_clock::now());
   if (states_.size() >= capacity_) return std::nullopt;
   auto state = std::make_shared<State>();
-  do state->id = token(); while (states_.count(state->id));
-  do state->attachment_token = token(); while (tokens_.count(state->attachment_token));
+  do state->id = token();
+  while (states_.count(state->id));
+  do state->attachment_token = token();
+  while (tokens_.count(state->attachment_token));
   state->sample_period = sample_period;
   state->expires = std::chrono::steady_clock::now() + attachment_ttl_;
   state->next_due = std::chrono::steady_clock::now();
@@ -112,7 +115,8 @@ std::optional<HalTelemetryDescriptor> HalValueTelemetry::update(
         bindings.push_back(state->bindings[prior->second]);
         values.push_back(state->values[prior->second]);
       } else {
-        bindings.push_back({state->next_slot++, std::move(item.item), item.type});
+        bindings.push_back(
+            {state->next_slot++, std::move(item.item), item.type});
         values.emplace_back();
       }
     }
@@ -133,17 +137,20 @@ std::optional<HalTelemetryDescriptor> HalValueTelemetry::descriptor(
     const std::string& subscription_id) const {
   std::lock_guard lock(mutex_);
   const auto found = states_.find(subscription_id);
-  return found == states_.end() ? std::nullopt
-                               : std::optional<HalTelemetryDescriptor>(describe(*found->second));
+  return found == states_.end()
+             ? std::nullopt
+             : std::optional<HalTelemetryDescriptor>(describe(*found->second));
 }
 
-std::optional<std::string> HalValueTelemetry::claim(const std::string& token_value) {
+std::optional<std::string> HalValueTelemetry::claim(
+    const std::string& token_value) {
   std::lock_guard lock(mutex_);
   expire_locked(std::chrono::steady_clock::now());
   const auto token_found = tokens_.find(token_value);
   if (closed_ || token_found == tokens_.end()) return std::nullopt;
   const auto state_found = states_.find(token_found->second);
-  if (state_found == states_.end() || state_found->second->attached) return std::nullopt;
+  if (state_found == states_.end() || state_found->second->attached)
+    return std::nullopt;
   auto state = state_found->second;
   state->attached = true;
   state->attachment_token.clear();
@@ -188,7 +195,8 @@ std::vector<HalTelemetryDueSample> HalValueTelemetry::due(
   std::lock_guard lock(mutex_);
   expire_locked(now);
   for (auto& [id, state] : states_) {
-    if (!state->attached || state->bindings.empty() || now < state->next_due) continue;
+    if (!state->attached || state->bindings.empty() || now < state->next_due)
+      continue;
     state->next_due = now + state->sample_period;
     result.push_back({id, state->revision, state->bindings});
   }
@@ -204,7 +212,8 @@ void HalValueTelemetry::publish(
     std::lock_guard lock(mutex_);
     const auto found = states_.find(subscription_id);
     if (found == states_.end() || found->second->revision != revision ||
-        found->second->values.size() != values.size()) return;
+        found->second->values.size() != values.size())
+      return;
     state = found->second;
     changed = !state->sampled || state->values != values;
     if (!changed) return;
@@ -230,8 +239,9 @@ HalValueTelemetry::Subscription HalValueTelemetry::subscribe(
     SubscriptionHub<std::uint64_t>::Callback callback) {
   std::lock_guard lock(mutex_);
   const auto found = states_.find(subscription_id);
-  return found == states_.end() ? Subscription{}
-                               : found->second->wakes.subscribe(std::move(callback));
+  return found == states_.end()
+             ? Subscription{}
+             : found->second->wakes.subscribe(std::move(callback));
 }
 
 }  // namespace linuxcnc::server

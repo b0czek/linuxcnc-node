@@ -1,15 +1,3 @@
-#include "grpc/service_factories.hpp"
-
-#include "machine_status_codec.hpp"
-#include "unary_task_reactor.hpp"
-#include "linuxcnc_grpc/callback_runtime.hpp"
-#include "linuxcnc_grpc/command_coordinator.hpp"
-#include "linuxcnc_grpc/daemon_config.hpp"
-#include "linuxcnc_grpc/nml_adapter.hpp"
-#include "linuxcnc_grpc/position_telemetry.hpp"
-#include "linuxcnc_grpc/program_workspace.hpp"
-
-#include "linuxcnc/v1/linuxcnc.grpc.pb.h"
 #include <google/protobuf/empty.pb.h>
 #include <grpcpp/grpcpp.h>
 
@@ -31,6 +19,17 @@
 #include <utility>
 #include <vector>
 
+#include "grpc/service_factories.hpp"
+#include "linuxcnc/v1/linuxcnc.grpc.pb.h"
+#include "linuxcnc_grpc/callback_runtime.hpp"
+#include "linuxcnc_grpc/command_coordinator.hpp"
+#include "linuxcnc_grpc/daemon_config.hpp"
+#include "linuxcnc_grpc/nml_adapter.hpp"
+#include "linuxcnc_grpc/position_telemetry.hpp"
+#include "linuxcnc_grpc/program_workspace.hpp"
+#include "machine_status_codec.hpp"
+#include "unary_task_reactor.hpp"
+
 namespace linuxcnc::server::detail {
 namespace {
 
@@ -44,48 +43,50 @@ constexpr std::uint32_t kMaxPositionSamplePeriodMs = 60'000;
 
 class CommandTaskReactor final : public ::grpc::ServerUnaryReactor {
  public:
-  using Submit = std::function<::grpc::Status(
-      const std::shared_ptr<CancellationToken>&, CommandTicket*, CommandWaitPolicy*)>;
+  using Submit =
+      std::function<::grpc::Status(const std::shared_ptr<CancellationToken>&,
+                                   CommandTicket*, CommandWaitPolicy*)>;
 
-  CommandTaskReactor(BoundedExecutor& executor, ActiveCallbackRegistry& registry,
+  CommandTaskReactor(BoundedExecutor& executor,
+                     ActiveCallbackRegistry& registry,
                      ExecuteCommandResponse* response, Submit submit)
       : response_(response),
         gate_(std::make_shared<LifetimeGate<CommandTaskReactor>>(this)) {
     const std::weak_ptr<LifetimeGate<CommandTaskReactor>> weak_gate = gate_;
     registration_ = registry.register_callback([weak_gate] {
-      if (auto gate = weak_gate.lock()) gate->invoke([](CommandTaskReactor& reactor) {
-        reactor.shutdown();
-      });
+      if (auto gate = weak_gate.lock())
+        gate->invoke([](CommandTaskReactor& reactor) { reactor.shutdown(); });
     });
     if (!registration_) {
       shutdown();
       return;
     }
-    if (!executor.submit([weak_gate, submit = std::move(submit), token = token_]() mutable {
-          CommandTicket ticket;
-          CommandWaitPolicy policy = CommandWaitPolicy::Completed;
-          ::grpc::Status status;
-          try {
-            status = submit(token, &ticket, &policy);
-          } catch (const std::exception& error) {
-            status = {::grpc::StatusCode::INTERNAL, error.what()};
-          }
-          auto gate = weak_gate.lock();
-          if (!gate) return;
-          if (!status.ok()) {
-            gate->invoke([&](CommandTaskReactor& reactor) {
-              reactor.finish(std::move(status));
-            });
-            return;
-          }
-          ticket.observe(policy, [weak_gate](const CommandResult& result) {
-            auto observed_gate = weak_gate.lock();
-            if (!observed_gate) return;
-            observed_gate->invoke([&](CommandTaskReactor& reactor) {
-              reactor.complete(result);
-            });
-          });
-        })) {
+    if (!executor.submit(
+            [weak_gate, submit = std::move(submit), token = token_]() mutable {
+              CommandTicket ticket;
+              CommandWaitPolicy policy = CommandWaitPolicy::Completed;
+              ::grpc::Status status;
+              try {
+                status = submit(token, &ticket, &policy);
+              } catch (const std::exception& error) {
+                status = {::grpc::StatusCode::INTERNAL, error.what()};
+              }
+              auto gate = weak_gate.lock();
+              if (!gate) return;
+              if (!status.ok()) {
+                gate->invoke([&](CommandTaskReactor& reactor) {
+                  reactor.finish(std::move(status));
+                });
+                return;
+              }
+              ticket.observe(policy, [weak_gate](const CommandResult& result) {
+                auto observed_gate = weak_gate.lock();
+                if (!observed_gate) return;
+                observed_gate->invoke([&](CommandTaskReactor& reactor) {
+                  reactor.complete(result);
+                });
+              });
+            })) {
       finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
               "blocking work queue is full"});
     }
@@ -112,19 +113,20 @@ class CommandTaskReactor final : public ::grpc::ServerUnaryReactor {
  private:
   void complete(const CommandResult& result) {
     gate_->finish([&](CommandTaskReactor& reactor) {
-    reactor.response_->set_command_sequence(result.sequence);
-    if (result.state == CommandState::Failed) {
-      reactor.response_->set_status(RCS_STATUS_ERROR);
-      reactor.response_->mutable_error()->set_type(NML_MESSAGE_TYPE_NML_ERROR);
-      reactor.response_->mutable_error()->set_sequence(
-          static_cast<std::int64_t>(result.sequence));
-      reactor.response_->mutable_error()->set_message(result.error);
-    } else if (result.state == CommandState::Accepted) {
-      reactor.response_->set_status(RCS_STATUS_EXEC);
-    } else {
-      reactor.response_->set_status(RCS_STATUS_DONE);
-    }
-    reactor.Finish(::grpc::Status::OK);
+      reactor.response_->set_command_sequence(result.sequence);
+      if (result.state == CommandState::Failed) {
+        reactor.response_->set_status(RCS_STATUS_ERROR);
+        reactor.response_->mutable_error()->set_type(
+            NML_MESSAGE_TYPE_NML_ERROR);
+        reactor.response_->mutable_error()->set_sequence(
+            static_cast<std::int64_t>(result.sequence));
+        reactor.response_->mutable_error()->set_message(result.error);
+      } else if (result.state == CommandState::Accepted) {
+        reactor.response_->set_status(RCS_STATUS_EXEC);
+      } else {
+        reactor.response_->set_status(RCS_STATUS_DONE);
+      }
+      reactor.Finish(::grpc::Status::OK);
     });
   }
 
@@ -133,18 +135,20 @@ class CommandTaskReactor final : public ::grpc::ServerUnaryReactor {
   }
 
   ExecuteCommandResponse* response_;
-  std::shared_ptr<CancellationToken> token_ = std::make_shared<CancellationToken>();
+  std::shared_ptr<CancellationToken> token_ =
+      std::make_shared<CancellationToken>();
   std::shared_ptr<LifetimeGate<CommandTaskReactor>> gate_;
   ActiveCallbackRegistry::Registration registration_;
 };
 
-using MachineCallbackBase = ::linuxcnc::v1::MachineService::WithCallbackMethod_GetStatus<
-    MachineService::WithCallbackMethod_ExecuteCommand<
-        MachineService::WithCallbackMethod_WatchErrors<
-            MachineService::WithCallbackMethod_WatchStatus<
-                MachineService::WithCallbackMethod_ConfigurePositionHistory<
-                    MachineService::WithCallbackMethod_ClearPositionHistory<
-                        MachineService::Service>>>>>>;
+using MachineCallbackBase =
+    ::linuxcnc::v1::MachineService::WithCallbackMethod_GetStatus<
+        MachineService::WithCallbackMethod_ExecuteCommand<
+            MachineService::WithCallbackMethod_WatchErrors<
+                MachineService::WithCallbackMethod_WatchStatus<
+                    MachineService::WithCallbackMethod_ConfigurePositionHistory<
+                        MachineService::WithCallbackMethod_ClearPositionHistory<
+                            MachineService::Service>>>>>>;
 
 class MachineServiceImpl final : public MachineCallbackBase,
                                  public ManagedGrpcService {
@@ -178,18 +182,18 @@ class MachineServiceImpl final : public MachineCallbackBase,
         blocking_(blocking),
         stream_admission_(stream_admission),
         workspaces_(std::move(workspaces)),
-        workspace_activation_(std::make_shared<WorkspaceActivation>(workspaces_)),
+        workspace_activation_(
+            std::make_shared<WorkspaceActivation>(workspaces_)),
         positions_(std::move(positions)),
         status_period_(config.status_period),
         error_period_(config.error_period),
         position_period_(config.position_period),
-        replay_capacity_(std::max<std::size_t>(1, config.status_replay_capacity)),
+        replay_capacity_(
+            std::max<std::size_t>(1, config.status_replay_capacity)),
         stopping_(false),
         position_poller_([this] { poll_positions(); }) {}
 
-  ~MachineServiceImpl() override {
-    shutdown();
-  }
+  ~MachineServiceImpl() override { shutdown(); }
 
   ::grpc::Service* service() noexcept override {
     return static_cast<MachineCallbackBase*>(this);
@@ -205,13 +209,15 @@ class MachineServiceImpl final : public MachineCallbackBase,
   }
 
   ::grpc::ServerUnaryReactor* GetStatus(::grpc::CallbackServerContext*,
-                                     const GetStatusRequest*,
-                                     GetStatusResponse* response) override {
+                                        const GetStatusRequest*,
+                                        GetStatusResponse* response) override {
     return new detail::UnaryTaskReactor<GetStatusResponse>(
-        blocking_, callbacks_, response, [this](const CancellationToken& cancelled,
-                                    GetStatusResponse* task_response) {
+        blocking_, callbacks_, response,
+        [this](const CancellationToken& cancelled,
+               GetStatusResponse* task_response) {
           if (cancelled.cancelled()) {
-            return ::grpc::Status(::grpc::StatusCode::CANCELLED, "RPC cancelled");
+            return ::grpc::Status(::grpc::StatusCode::CANCELLED,
+                                  "RPC cancelled");
           }
           return get_status(task_response);
         });
@@ -220,15 +226,17 @@ class MachineServiceImpl final : public MachineCallbackBase,
   ::grpc::Status get_status(GetStatusResponse* response) {
     NmlStatusSnapshot snapshot;
     std::uint64_t sequence = 0;
-    if (!read_status(&snapshot, &sequence)) return {::grpc::StatusCode::UNAVAILABLE,
-                                         "LinuxCNC NML status channel is unavailable"};
+    if (!read_status(&snapshot, &sequence))
+      return {::grpc::StatusCode::UNAVAILABLE,
+              "LinuxCNC NML status channel is unavailable"};
     response->set_sequence(sequence);
     fill_status(snapshot, response->mutable_status());
     return ::grpc::Status::OK;
   }
 
   ::grpc::ServerWriteReactor<WatchStatusEvent>* WatchStatus(
-      ::grpc::CallbackServerContext*, const WatchStatusRequest* request) override {
+      ::grpc::CallbackServerContext*,
+      const WatchStatusRequest* request) override {
     return new StatusReactor(*this, request->after_sequence());
   }
 
@@ -239,49 +247,59 @@ class MachineServiceImpl final : public MachineCallbackBase,
     return new CommandTaskReactor(
         blocking_, callbacks_, response,
         [this, owned_request = std::move(owned_request)](
-                        const std::shared_ptr<CancellationToken>& cancelled,
-                        CommandTicket* ticket,
-                        CommandWaitPolicy* policy) {
+            const std::shared_ptr<CancellationToken>& cancelled,
+            CommandTicket* ticket, CommandWaitPolicy* policy) {
           return submit_command(cancelled, owned_request.get(), ticket, policy);
         });
   }
 
-  ::grpc::Status submit_command(const std::shared_ptr<CancellationToken>& cancelled,
-                              const ExecuteCommandRequest* request,
-                              CommandTicket* ticket,
-                              CommandWaitPolicy* policy) {
+  ::grpc::Status submit_command(
+      const std::shared_ptr<CancellationToken>& cancelled,
+      const ExecuteCommandRequest* request, CommandTicket* ticket,
+      CommandWaitPolicy* policy) {
     NmlCommand command;
     switch (request->command_case()) {
       case ExecuteCommandRequest::kSetTaskMode:
         command.kind = NmlCommandKind::SetTaskMode;
-        command.integer = static_cast<std::int32_t>(request->set_task_mode().mode());
+        command.integer =
+            static_cast<std::int32_t>(request->set_task_mode().mode());
         break;
       case ExecuteCommandRequest::kSetState:
         command.kind = NmlCommandKind::SetTaskState;
-        command.integer = static_cast<std::int32_t>(request->set_state().state());
+        command.integer =
+            static_cast<std::int32_t>(request->set_state().state());
         break;
-      case ExecuteCommandRequest::kTaskPlanSynch: command.kind = NmlCommandKind::TaskPlanSynch; break;
-      case ExecuteCommandRequest::kResetInterpreter: command.kind = NmlCommandKind::ResetInterpreter; break;
+      case ExecuteCommandRequest::kTaskPlanSynch:
+        command.kind = NmlCommandKind::TaskPlanSynch;
+        break;
+      case ExecuteCommandRequest::kResetInterpreter:
+        command.kind = NmlCommandKind::ResetInterpreter;
+        break;
       case ExecuteCommandRequest::kProgramOpen:
         command.kind = NmlCommandKind::ProgramOpen;
-        if (!workspaces_ || request->program_open().entry().workspace_id().empty())
+        if (!workspaces_ ||
+            request->program_open().entry().workspace_id().empty())
           return Invalid("program_open requires a workspace handle");
         {
           const auto workspace = request->program_open().entry().workspace_id();
-          const auto relative_path = request->program_open().entry().relative_path();
+          const auto relative_path =
+              request->program_open().entry().relative_path();
           std::filesystem::path resolved_entry;
-          if (!workspaces_->resolve_entry(workspace, relative_path, &resolved_entry)) {
+          if (!workspaces_->resolve_entry(workspace, relative_path,
+                                          &resolved_entry)) {
             return Invalid("program workspace entry is missing or unsafe");
           }
           if (!workspaces_->pin(workspace)) {
             return Invalid("program workspace became unavailable");
           }
-          auto lease = std::make_shared<PendingWorkspaceLease>(workspaces_, workspace);
+          auto lease =
+              std::make_shared<PendingWorkspaceLease>(workspaces_, workspace);
           command.prepare = [store = workspaces_, workspace, relative_path,
                              lease](NmlCommand& prepared) {
             std::filesystem::path materialized;
             if (!store->materialize(workspace, relative_path, &materialized)) {
-              throw std::runtime_error("program workspace entry became unavailable or unsafe");
+              throw std::runtime_error(
+                  "program workspace entry became unavailable or unsafe");
             }
             prepared.path = materialized.string();
           };
@@ -310,13 +328,27 @@ class MachineServiceImpl final : public MachineCallbackBase,
         command.kind = NmlCommandKind::Run;
         command.integer = request->run_program().start_line();
         break;
-      case ExecuteCommandRequest::kPauseProgram: command.kind = NmlCommandKind::Pause; break;
-      case ExecuteCommandRequest::kResumeProgram: command.kind = NmlCommandKind::Resume; break;
-      case ExecuteCommandRequest::kStepProgram: command.kind = NmlCommandKind::Step; break;
-      case ExecuteCommandRequest::kReverseProgram: command.kind = NmlCommandKind::Reverse; break;
-      case ExecuteCommandRequest::kForwardProgram: command.kind = NmlCommandKind::Forward; break;
-      case ExecuteCommandRequest::kStop: command.kind = NmlCommandKind::Stop; break;
-      case ExecuteCommandRequest::kAbortTask: command.kind = NmlCommandKind::AbortTask; break;
+      case ExecuteCommandRequest::kPauseProgram:
+        command.kind = NmlCommandKind::Pause;
+        break;
+      case ExecuteCommandRequest::kResumeProgram:
+        command.kind = NmlCommandKind::Resume;
+        break;
+      case ExecuteCommandRequest::kStepProgram:
+        command.kind = NmlCommandKind::Step;
+        break;
+      case ExecuteCommandRequest::kReverseProgram:
+        command.kind = NmlCommandKind::Reverse;
+        break;
+      case ExecuteCommandRequest::kForwardProgram:
+        command.kind = NmlCommandKind::Forward;
+        break;
+      case ExecuteCommandRequest::kStop:
+        command.kind = NmlCommandKind::Stop;
+        break;
+      case ExecuteCommandRequest::kAbortTask:
+        command.kind = NmlCommandKind::AbortTask;
+        break;
       case ExecuteCommandRequest::kSetOptionalStop:
         command.kind = NmlCommandKind::SetOptionalStop;
         command.boolean = request->set_optional_stop().enable();
@@ -331,7 +363,8 @@ class MachineServiceImpl final : public MachineCallbackBase,
         break;
       case ExecuteCommandRequest::kSetTrajMode:
         command.kind = NmlCommandKind::SetTrajMode;
-        command.integer = static_cast<std::int32_t>(request->set_traj_mode().mode());
+        command.integer =
+            static_cast<std::int32_t>(request->set_traj_mode().mode());
         break;
       case ExecuteCommandRequest::kSetMaxVelocity:
         command.kind = NmlCommandKind::SetMaxVelocity;
@@ -349,9 +382,12 @@ class MachineServiceImpl final : public MachineCallbackBase,
         command.kind = NmlCommandKind::SetSpindleOverride;
         command.number = request->set_spindle_override().scale();
         command.integer = request->set_spindle_override().has_spindle_index()
-            ? request->set_spindle_override().spindle_index() : 0;
+                              ? request->set_spindle_override().spindle_index()
+                              : 0;
         break;
-      case ExecuteCommandRequest::kOverrideLimits: command.kind = NmlCommandKind::OverrideLimits; break;
+      case ExecuteCommandRequest::kOverrideLimits:
+        command.kind = NmlCommandKind::OverrideLimits;
+        break;
       case ExecuteCommandRequest::kTeleopEnable:
         command.kind = NmlCommandKind::TeleopEnable;
         command.boolean = request->teleop_enable().enable();
@@ -363,8 +399,10 @@ class MachineServiceImpl final : public MachineCallbackBase,
       case ExecuteCommandRequest::kSetSpindleOverrideEnable:
         command.kind = NmlCommandKind::SetSpindleOverrideEnable;
         command.boolean = request->set_spindle_override_enable().enable();
-        command.integer = request->set_spindle_override_enable().has_spindle_index()
-            ? request->set_spindle_override_enable().spindle_index() : 0;
+        command.integer =
+            request->set_spindle_override_enable().has_spindle_index()
+                ? request->set_spindle_override_enable().spindle_index()
+                : 0;
         break;
       case ExecuteCommandRequest::kSetFeedHoldEnable:
         command.kind = NmlCommandKind::SetFeedHoldEnable;
@@ -414,7 +452,8 @@ class MachineServiceImpl final : public MachineCallbackBase,
         command.kind = NmlCommandKind::SpindleOn;
         command.number = request->spindle_on().speed();
         command.integer = request->spindle_on().has_spindle_index()
-            ? request->spindle_on().spindle_index() : 0;
+                              ? request->spindle_on().spindle_index()
+                              : 0;
         command.boolean = !request->spindle_on().has_wait_for_speed() ||
                           request->spindle_on().wait_for_speed();
         break;
@@ -433,7 +472,8 @@ class MachineServiceImpl final : public MachineCallbackBase,
       case ExecuteCommandRequest::kSpindleBrake:
         command.kind = NmlCommandKind::SpindleBrake;
         command.integer = request->spindle_brake().has_spindle_index()
-            ? request->spindle_brake().spindle_index() : 0;
+                              ? request->spindle_brake().spindle_index()
+                              : 0;
         command.boolean = request->spindle_brake().engage();
         break;
       case ExecuteCommandRequest::kSetMist:
@@ -444,7 +484,9 @@ class MachineServiceImpl final : public MachineCallbackBase,
         command.kind = NmlCommandKind::SetFlood;
         command.boolean = request->set_flood().enable();
         break;
-      case ExecuteCommandRequest::kLoadToolTable: command.kind = NmlCommandKind::LoadToolTable; break;
+      case ExecuteCommandRequest::kLoadToolTable:
+        command.kind = NmlCommandKind::LoadToolTable;
+        break;
       case ExecuteCommandRequest::kSetTool: {
         command.kind = NmlCommandKind::SetTool;
         const auto& source = request->set_tool().tool();
@@ -463,12 +505,18 @@ class MachineServiceImpl final : public MachineCallbackBase,
         command.tool.orientation = source.orientation();
         command.tool.has_comment = source.has_comment();
         command.tool.comment = source.comment();
-        command.tool.offset_values = std::min<int>(source.offset().values_size(), 9);
-        for (int index = 0; index < source.offset().values_size() && index < 9; ++index)
-          command.tool.offset.values[static_cast<std::size_t>(index)] = source.offset().values(index);
-        command.tool.wear_offset_values = std::min<int>(source.wear_offset().values_size(), 9);
-        for (int index = 0; index < source.wear_offset().values_size() && index < 9; ++index)
-          command.tool.wear_offset.values[static_cast<std::size_t>(index)] = source.wear_offset().values(index);
+        command.tool.offset_values =
+            std::min<int>(source.offset().values_size(), 9);
+        for (int index = 0; index < source.offset().values_size() && index < 9;
+             ++index)
+          command.tool.offset.values[static_cast<std::size_t>(index)] =
+              source.offset().values(index);
+        command.tool.wear_offset_values =
+            std::min<int>(source.wear_offset().values_size(), 9);
+        for (int index = 0;
+             index < source.wear_offset().values_size() && index < 9; ++index)
+          command.tool.wear_offset.values[static_cast<std::size_t>(index)] =
+              source.wear_offset().values(index);
         break;
       }
       case ExecuteCommandRequest::kDeleteTool:
@@ -477,7 +525,8 @@ class MachineServiceImpl final : public MachineCallbackBase,
         break;
       case ExecuteCommandRequest::kSetDigitalOutput:
         if (request->set_digital_output().index() < 0 ||
-            request->set_digital_output().index() >= NmlAdapter::kDigitalOutputLimit) {
+            request->set_digital_output().index() >=
+                NmlAdapter::kDigitalOutputLimit) {
           return Invalid("digital output index is out of range");
         }
         command.kind = NmlCommandKind::SetDigitalOutput;
@@ -486,7 +535,8 @@ class MachineServiceImpl final : public MachineCallbackBase,
         break;
       case ExecuteCommandRequest::kSetAnalogOutput:
         if (request->set_analog_output().index() < 0 ||
-            request->set_analog_output().index() >= NmlAdapter::kAnalogOutputLimit) {
+            request->set_analog_output().index() >=
+                NmlAdapter::kAnalogOutputLimit) {
           return Invalid("analog output index is out of range");
         }
         command.kind = NmlCommandKind::SetAnalogOutput;
@@ -512,20 +562,22 @@ class MachineServiceImpl final : public MachineCallbackBase,
       default:
         return Invalid("execute_command requires a supported command oneof");
     }
-    if (!nml_.connect()) return {::grpc::StatusCode::UNAVAILABLE,
-                                 "LinuxCNC NML command channel is unavailable"};
+    if (!nml_.connect())
+      return {::grpc::StatusCode::UNAVAILABLE,
+              "LinuxCNC NML command channel is unavailable"};
     try {
-      *ticket = nml_.submit(std::move(command), [cancelled] {
-        return cancelled->cancelled();
-      });
+      *ticket = nml_.submit(std::move(command),
+                            [cancelled] { return cancelled->cancelled(); });
     } catch (const std::exception& error) {
       const auto message = std::string(error.what());
       const auto code = message.find("queue is full") != std::string::npos
-          ? ::grpc::StatusCode::RESOURCE_EXHAUSTED : ::grpc::StatusCode::INTERNAL;
+                            ? ::grpc::StatusCode::RESOURCE_EXHAUSTED
+                            : ::grpc::StatusCode::INTERNAL;
       return {code, message};
     }
     *policy = request->wait_policy() == WAIT_POLICY_ACCEPTED
-        ? CommandWaitPolicy::Accepted : CommandWaitPolicy::Completed;
+                  ? CommandWaitPolicy::Accepted
+                  : CommandWaitPolicy::Completed;
     return ::grpc::Status::OK;
   }
 
@@ -539,10 +591,12 @@ class MachineServiceImpl final : public MachineCallbackBase,
       google::protobuf::Empty* response) override {
     auto owned_request = std::make_shared<PositionHistoryConfig>(*request);
     return new detail::UnaryTaskReactor<google::protobuf::Empty>(
-        blocking_, callbacks_, response, [this, owned_request = std::move(owned_request)](
+        blocking_, callbacks_, response,
+        [this, owned_request = std::move(owned_request)](
             const CancellationToken& cancelled, google::protobuf::Empty*) {
           if (cancelled.cancelled()) {
-            return ::grpc::Status(::grpc::StatusCode::CANCELLED, "RPC cancelled");
+            return ::grpc::Status(::grpc::StatusCode::CANCELLED,
+                                  "RPC cancelled");
           }
           return configure_position(*owned_request);
         });
@@ -563,7 +617,8 @@ class MachineServiceImpl final : public MachineCallbackBase,
       std::lock_guard lock(position_mutex_);
       if (request.has_enabled()) position_enabled_ = request.enabled();
       if (request.sample_period_ms() > 0) {
-        position_period_ = std::chrono::milliseconds(request.sample_period_ms());
+        position_period_ =
+            std::chrono::milliseconds(request.sample_period_ms());
       }
       ++position_config_generation_;
     }
@@ -576,10 +631,11 @@ class MachineServiceImpl final : public MachineCallbackBase,
       ::grpc::CallbackServerContext*, const google::protobuf::Empty*,
       google::protobuf::Empty* response) override {
     return new detail::UnaryTaskReactor<google::protobuf::Empty>(
-        blocking_, callbacks_, response, [this](const CancellationToken& cancelled,
-                                   google::protobuf::Empty*) {
+        blocking_, callbacks_, response,
+        [this](const CancellationToken& cancelled, google::protobuf::Empty*) {
           if (cancelled.cancelled()) {
-            return ::grpc::Status(::grpc::StatusCode::CANCELLED, "RPC cancelled");
+            return ::grpc::Status(::grpc::StatusCode::CANCELLED,
+                                  "RPC cancelled");
           }
           positions_->clear();
           return ::grpc::Status::OK;
@@ -587,28 +643,35 @@ class MachineServiceImpl final : public MachineCallbackBase,
   }
 
  private:
-  class StatusReactor final : public ::grpc::ServerWriteReactor<WatchStatusEvent> {
+  class StatusReactor final
+      : public ::grpc::ServerWriteReactor<WatchStatusEvent> {
    public:
     StatusReactor(MachineServiceImpl& service, std::uint64_t after)
-        : service_(service), after_(after),
+        : service_(service),
+          after_(after),
           admitted_(service_.stream_admission_.acquire()),
           gate_(std::make_shared<LifetimeGate<StatusReactor>>(this)) {
       const std::weak_ptr<LifetimeGate<StatusReactor>> weak_gate = gate_;
       registration_ = service_.callbacks_.register_callback([weak_gate] {
-        if (auto gate = weak_gate.lock()) gate->invoke([](StatusReactor& reactor) {
-          reactor.shutdown();
-        });
+        if (auto gate = weak_gate.lock())
+          gate->invoke([](StatusReactor& reactor) { reactor.shutdown(); });
       });
-      if (!registration_) { shutdown(); return; }
+      if (!registration_) {
+        shutdown();
+        return;
+      }
       if (!admitted_) {
         finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
                 "stream admission limit reached"});
         return;
       }
-      subscription_ = service_.status_wakes_.subscribe([weak_gate](const std::uint64_t&) {
-        auto gate = weak_gate.lock();
-        if (gate) gate->invoke([](StatusReactor& reactor) { reactor.schedule_wake(); });
-      });
+      subscription_ =
+          service_.status_wakes_.subscribe([weak_gate](const std::uint64_t&) {
+            auto gate = weak_gate.lock();
+            if (gate)
+              gate->invoke(
+                  [](StatusReactor& reactor) { reactor.schedule_wake(); });
+          });
       schedule_wake();
     }
 
@@ -619,7 +682,8 @@ class MachineServiceImpl final : public MachineCallbackBase,
     void OnCancel() override {
       gate_->invoke([](StatusReactor& reactor) {
         reactor.subscription_.reset();
-        reactor.finish({::grpc::StatusCode::CANCELLED, "status stream cancelled"});
+        reactor.finish(
+            {::grpc::StatusCode::CANCELLED, "status stream cancelled"});
       });
     }
 
@@ -650,14 +714,16 @@ class MachineServiceImpl final : public MachineCallbackBase,
     }
     void schedule_wake() {
       if (gate_->state() != LifetimeGate<StatusReactor>::State::Open ||
-          wake_scheduled_.exchange(true)) return;
+          wake_scheduled_.exchange(true))
+        return;
       const std::weak_ptr<LifetimeGate<StatusReactor>> weak_gate = gate_;
       if (!service_.blocking_.submit([weak_gate] {
             auto gate = weak_gate.lock();
-            if (gate) gate->invoke([](StatusReactor& reactor) {
-              reactor.wake_scheduled_.store(false);
-              reactor.wake();
-            });
+            if (gate)
+              gate->invoke([](StatusReactor& reactor) {
+                reactor.wake_scheduled_.store(false);
+                reactor.wake();
+              });
           })) {
         wake_scheduled_.store(false);
         finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
@@ -666,7 +732,9 @@ class MachineServiceImpl final : public MachineCallbackBase,
     }
 
     void wake() {
-      if (writing_ || gate_->state() != LifetimeGate<StatusReactor>::State::Open) return;
+      if (writing_ ||
+          gate_->state() != LifetimeGate<StatusReactor>::State::Open)
+        return;
       auto selection = service_.select_status_history(
           initial_written_ ? cursor_ : after_, !initial_written_);
       if (selection.entries.empty()) {
@@ -699,7 +767,8 @@ class MachineServiceImpl final : public MachineCallbackBase,
           message_.set_sequence(latest.sequence);
           fill_status(latest.snapshot, message_.mutable_snapshot());
         } else {
-          auto delta = make_status_delta(previous_, latest.snapshot, latest.sequence);
+          auto delta =
+              make_status_delta(previous_, latest.snapshot, latest.sequence);
           if (!delta) return;
           message_.set_sequence(latest.sequence);
           *message_.mutable_delta() = std::move(*delta);
@@ -742,21 +811,25 @@ class MachineServiceImpl final : public MachineCallbackBase,
           gate_(std::make_shared<LifetimeGate<ErrorReactor>>(this)) {
       const std::weak_ptr<LifetimeGate<ErrorReactor>> weak_gate = gate_;
       registration_ = service_.callbacks_.register_callback([weak_gate] {
-        if (auto gate = weak_gate.lock()) gate->invoke([](ErrorReactor& reactor) {
-          reactor.shutdown();
-        });
+        if (auto gate = weak_gate.lock())
+          gate->invoke([](ErrorReactor& reactor) { reactor.shutdown(); });
       });
-      if (!registration_) { shutdown(); return; }
+      if (!registration_) {
+        shutdown();
+        return;
+      }
       if (!admitted_) {
         finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
                 "stream admission limit reached"});
         return;
       }
       cursor_ = service_.errors_.next_sequence() - 1;
-      subscription_ = service_.error_wakes_.subscribe([weak_gate](const std::uint64_t&) {
-        auto gate = weak_gate.lock();
-        if (gate) gate->invoke([](ErrorReactor& reactor) { reactor.wake(); });
-      });
+      subscription_ =
+          service_.error_wakes_.subscribe([weak_gate](const std::uint64_t&) {
+            auto gate = weak_gate.lock();
+            if (gate)
+              gate->invoke([](ErrorReactor& reactor) { reactor.wake(); });
+          });
       wake();
     }
 
@@ -767,7 +840,8 @@ class MachineServiceImpl final : public MachineCallbackBase,
     void OnCancel() override {
       gate_->invoke([](ErrorReactor& reactor) {
         reactor.subscription_.reset();
-        reactor.finish({::grpc::StatusCode::CANCELLED, "error stream cancelled"});
+        reactor.finish(
+            {::grpc::StatusCode::CANCELLED, "error stream cancelled"});
       });
     }
 
@@ -795,7 +869,8 @@ class MachineServiceImpl final : public MachineCallbackBase,
       wake();
     }
     void wake() {
-      if (writing_ || gate_->state() != LifetimeGate<ErrorReactor>::State::Open) return;
+      if (writing_ || gate_->state() != LifetimeGate<ErrorReactor>::State::Open)
+        return;
       const auto available = service_.errors_.after(cursor_);
       if (available.behind) {
         finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
@@ -856,7 +931,8 @@ class MachineServiceImpl final : public MachineCallbackBase,
     std::lock_guard lock(status_mutex_);
     StatusHistorySelection selection;
     if (history_.empty()) return selection;
-    const auto found = std::find_if(history_.begin(), history_.end(),
+    const auto found = std::find_if(
+        history_.begin(), history_.end(),
         [anchor](const auto& entry) { return entry.sequence == anchor; });
     selection.anchor_retained = found != history_.end();
     if (include_replay && anchor != 0 && selection.anchor_retained) {
@@ -890,8 +966,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
           if (status_due) observe_status(snapshot);
           if (position_due) {
             PositionSample sample;
-            for (std::size_t index = 0;
-                 index < sample.coordinates.size();
+            for (std::size_t index = 0; index < sample.coordinates.size();
                  ++index) {
               sample.coordinates[index] =
                   snapshot.motion_stat.traj.position.values[index] -
@@ -943,7 +1018,8 @@ class MachineServiceImpl final : public MachineCallbackBase,
     std::unique_lock lock(status_mutex_);
     if (!have_latest_) {
       sequence_ = fresh.echo_serial_number > 0
-          ? static_cast<std::uint64_t>(fresh.echo_serial_number) : 1;
+                      ? static_cast<std::uint64_t>(fresh.echo_serial_number)
+                      : 1;
       latest_ = fresh;
       have_latest_ = true;
       history_.push_back(StatusHistoryEntry{sequence_, latest_});
@@ -992,9 +1068,9 @@ std::unique_ptr<ManagedGrpcService> make_machine_service(
     std::shared_ptr<ProgramWorkspaceStore> workspaces,
     std::shared_ptr<PositionTelemetry> positions, BoundedExecutor& blocking,
     AdmissionCounter& stream_admission) {
-  return std::make_unique<MachineServiceImpl>(
-      config, std::move(workspaces), std::move(positions), blocking,
-      stream_admission);
+  return std::make_unique<MachineServiceImpl>(config, std::move(workspaces),
+                                              std::move(positions), blocking,
+                                              stream_admission);
 }
 
 }  // namespace linuxcnc::server::detail

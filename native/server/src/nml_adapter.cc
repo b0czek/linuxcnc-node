@@ -1,28 +1,30 @@
 #include "linuxcnc_grpc/nml_adapter.hpp"
 
-#include <stdexcept>
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <mutex>
+#include <stdexcept>
 #include <thread>
 #include <utility>
-#include <algorithm>
 
 #ifdef LINUXCNC_GRPC_HAS_NML
 #include "cms.hh"
 #include "emc.hh"
 #include "emc_nml.hh"
+#include "inifile.h"
 #include "nml.hh"
 #include "nml_oi.hh"
 #include "rcs.hh"
 #include "timer.hh"
 #include "tooldata.hh"
-#include "inifile.h"
 
-static_assert(linuxcnc::server::NmlAdapter::kDigitalOutputLimit == EMCMOT_MAX_DIO);
-static_assert(linuxcnc::server::NmlAdapter::kAnalogOutputLimit == EMCMOT_MAX_AIO);
+static_assert(linuxcnc::server::NmlAdapter::kDigitalOutputLimit ==
+              EMCMOT_MAX_DIO);
+static_assert(linuxcnc::server::NmlAdapter::kAnalogOutputLimit ==
+              EMCMOT_MAX_AIO);
 #endif
 
 namespace linuxcnc::server {
@@ -31,31 +33,49 @@ namespace linuxcnc::server {
 namespace {
 EmcPose to_emc_pose(const NmlPose& pose) {
   EmcPose result{};
-  result.tran.x = pose.values[0]; result.tran.y = pose.values[1]; result.tran.z = pose.values[2];
-  result.a = pose.values[3]; result.b = pose.values[4]; result.c = pose.values[5];
-  result.u = pose.values[6]; result.v = pose.values[7]; result.w = pose.values[8];
+  result.tran.x = pose.values[0];
+  result.tran.y = pose.values[1];
+  result.tran.z = pose.values[2];
+  result.a = pose.values[3];
+  result.b = pose.values[4];
+  result.c = pose.values[5];
+  result.u = pose.values[6];
+  result.v = pose.values[7];
+  result.w = pose.values[8];
   return result;
 }
 
 NmlPose from_emc_pose(const EmcPose& pose) {
   NmlPose result;
   result.values = {pose.tran.x, pose.tran.y, pose.tran.z, pose.a, pose.b,
-                   pose.c, pose.u, pose.v, pose.w};
+                   pose.c,      pose.u,      pose.v,      pose.w};
   return result;
 }
 
 NmlJointStatus from_joint(const EMC_JOINT_STAT& source) {
   NmlJointStatus result;
-  result.joint_type = source.jointType; result.units = source.units;
-  result.backlash = source.backlash; result.min_position_limit = source.minPositionLimit;
-  result.max_position_limit = source.maxPositionLimit; result.min_ferror = source.minFerror;
-  result.max_ferror = source.maxFerror; result.ferror_current = source.ferrorCurrent;
-  result.ferror_high_mark = source.ferrorHighMark; result.output = source.output;
-  result.input = source.input; result.velocity = source.velocity; result.in_position = source.inpos;
-  result.homing = source.homing; result.homed = source.homed; result.fault = source.fault;
-  result.enabled = source.enabled; result.min_soft_limit = source.minSoftLimit;
-  result.max_soft_limit = source.maxSoftLimit; result.min_hard_limit = source.minHardLimit;
-  result.max_hard_limit = source.maxHardLimit; result.override_limits = source.overrideLimits;
+  result.joint_type = source.jointType;
+  result.units = source.units;
+  result.backlash = source.backlash;
+  result.min_position_limit = source.minPositionLimit;
+  result.max_position_limit = source.maxPositionLimit;
+  result.min_ferror = source.minFerror;
+  result.max_ferror = source.maxFerror;
+  result.ferror_current = source.ferrorCurrent;
+  result.ferror_high_mark = source.ferrorHighMark;
+  result.output = source.output;
+  result.input = source.input;
+  result.velocity = source.velocity;
+  result.in_position = source.inpos;
+  result.homing = source.homing;
+  result.homed = source.homed;
+  result.fault = source.fault;
+  result.enabled = source.enabled;
+  result.min_soft_limit = source.minSoftLimit;
+  result.max_soft_limit = source.maxSoftLimit;
+  result.min_hard_limit = source.minHardLimit;
+  result.max_hard_limit = source.maxHardLimit;
+  result.override_limits = source.overrideLimits;
   return result;
 }
 
@@ -65,24 +85,34 @@ NmlAxisStatus from_axis(const EMC_AXIS_STAT& source) {
 
 NmlSpindleStatus from_spindle(const EMC_SPINDLE_STAT& source) {
   NmlSpindleStatus result;
-  result.speed = source.speed; result.feedback = source.feedback;
-  result.override_scale = source.spindle_scale; result.css_maximum = source.css_maximum;
-  result.css_factor = source.css_factor; result.direction = source.direction;
-  result.brake = source.brake; result.increasing = source.increasing;
-  result.enabled = source.enabled; result.orient_state = source.orient_state;
-  result.orient_fault = source.orient_fault; result.spindle_override_enabled = source.spindle_override_enabled;
+  result.speed = source.speed;
+  result.feedback = source.feedback;
+  result.override_scale = source.spindle_scale;
+  result.css_maximum = source.css_maximum;
+  result.css_factor = source.css_factor;
+  result.direction = source.direction;
+  result.brake = source.brake;
+  result.increasing = source.increasing;
+  result.enabled = source.enabled;
+  result.orient_state = source.orient_state;
+  result.orient_fault = source.orient_fault;
+  result.spindle_override_enabled = source.spindle_override_enabled;
   result.homed = source.homed;
   return result;
 }
 
 void fill_tool(const CANON_TOOL_TABLE& source, NmlToolEntry* result) {
-  result->tool_no = source.toolno; result->pocket_no = source.pocketno;
-  result->offset = from_emc_pose(source.offset); result->wear_offset = from_emc_pose(source.wear_offset);
-  result->diameter = source.diameter; result->front_angle = source.frontangle;
-  result->back_angle = source.backangle; result->orientation = source.orientation;
+  result->tool_no = source.toolno;
+  result->pocket_no = source.pocketno;
+  result->offset = from_emc_pose(source.offset);
+  result->wear_offset = from_emc_pose(source.wear_offset);
+  result->diameter = source.diameter;
+  result->front_angle = source.frontangle;
+  result->back_angle = source.backangle;
+  result->orientation = source.orientation;
   result->comment = source.comment;
 }
-}
+}  // namespace
 #endif
 
 struct NmlAdapter::Impl {
@@ -101,7 +131,8 @@ struct NmlAdapter::Impl {
   std::string tool_table_filename;
 
   bool wait_for_serial(int serial) {
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    const auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(5);
     while (std::chrono::steady_clock::now() < deadline) {
       {
         std::lock_guard lock(mutex);
@@ -118,7 +149,8 @@ struct NmlAdapter::Impl {
       }
       esleep(0.01);
     }
-    throw std::runtime_error("timed out waiting for LinuxCNC command completion");
+    throw std::runtime_error(
+        "timed out waiting for LinuxCNC command completion");
   }
 
   bool ensure_tool_mmap_unlocked() {
@@ -162,8 +194,8 @@ struct NmlAdapter::Impl {
     }
     if (source->has_wear_offset) {
       auto values = from_emc_pose(entry.wear_offset);
-      std::copy_n(source->wear_offset.values.begin(), source->wear_offset_values,
-                  values.values.begin());
+      std::copy_n(source->wear_offset.values.begin(),
+                  source->wear_offset_values, values.values.begin());
       entry.wear_offset = to_emc_pose(values);
     }
     if (source->has_diameter) entry.diameter = source->diameter;
@@ -171,11 +203,13 @@ struct NmlAdapter::Impl {
     if (source->has_back_angle) entry.backangle = source->back_angle;
     if (source->has_orientation) entry.orientation = source->orientation;
     if (source->has_comment) {
-      std::strncpy(entry.comment, source->comment.c_str(), sizeof(entry.comment) - 1);
+      std::strncpy(entry.comment, source->comment.c_str(),
+                   sizeof(entry.comment) - 1);
       entry.comment[sizeof(entry.comment) - 1] = '\0';
     }
     if (tooldata_put(entry, index) == IDX_FAIL) return std::nullopt;
-    if (!tool_table_filename.empty()) (void)tooldata_save(tool_table_filename.c_str());
+    if (!tool_table_filename.empty())
+      (void)tooldata_save(tool_table_filename.c_str());
     fill_tool(entry, source);
     return index;
   }
@@ -185,10 +219,14 @@ struct NmlAdapter::Impl {
     const auto* value = static_cast<const EMC_STAT*>(status->get_address());
     if (!value || value->task.ini_filename[0] == '\0') return;
     char filename[LINELEN] = {};
-    if (iniFindString(value->task.ini_filename, "TOOL_TABLE", "EMCIO",
-                      filename, sizeof(filename)) != 0 || filename[0] == '\0') return;
+    if (iniFindString(value->task.ini_filename, "TOOL_TABLE", "EMCIO", filename,
+                      sizeof(filename)) != 0 ||
+        filename[0] == '\0')
+      return;
     std::filesystem::path path(filename);
-    if (path.is_relative()) path = std::filesystem::path(value->task.ini_filename).parent_path() / path;
+    if (path.is_relative())
+      path =
+          std::filesystem::path(value->task.ini_filename).parent_path() / path;
     std::lock_guard lock(tool_mutex);
     tool_table_filename = std::filesystem::absolute(path).string();
   }
@@ -209,13 +247,14 @@ bool NmlAdapter::connect() {
   std::lock_guard lock(impl_->mutex);
   if (impl_->connected) return true;
   if (impl_->nml_file.empty()) return false;
-  impl_->command = std::make_unique<RCS_CMD_CHANNEL>(emcFormat, "emcCommand", "xemc",
-                                                      impl_->nml_file.c_str());
-  impl_->status = std::make_unique<RCS_STAT_CHANNEL>(emcFormat, "emcStatus", "xemc",
-                                                      impl_->nml_file.c_str());
+  impl_->command = std::make_unique<RCS_CMD_CHANNEL>(
+      emcFormat, "emcCommand", "xemc", impl_->nml_file.c_str());
+  impl_->status = std::make_unique<RCS_STAT_CHANNEL>(
+      emcFormat, "emcStatus", "xemc", impl_->nml_file.c_str());
   impl_->errors = std::make_unique<NML>(emcFormat, "emcError", "xemc",
                                         impl_->nml_file.c_str());
-  impl_->connected = impl_->command->valid() && impl_->status->valid() && impl_->errors->valid();
+  impl_->connected = impl_->command->valid() && impl_->status->valid() &&
+                     impl_->errors->valid();
   if (impl_->connected) impl_->read_tool_table_path();
   if (!impl_->connected) {
     impl_->command.reset();
@@ -279,60 +318,108 @@ bool NmlAdapter::poll_status(NmlStatusSnapshot* snapshot) {
                                status->motion.traj.actualPosition.v,
                                status->motion.traj.actualPosition.w};
   auto& task = snapshot->task_stat;
-  task.mode = snapshot->task_mode; task.state = snapshot->task_state;
-  task.exec_state = snapshot->exec_state; task.interp_state = snapshot->interp_state;
-  task.stop_state = snapshot->stop_state; task.call_level = status->task.callLevel;
-  task.motion_line = status->task.motionLine; task.current_line = status->task.currentLine;
-  task.read_line = status->task.readLine; task.optional_stop_state = status->task.optional_stop_state;
-  task.block_delete_state = status->task.block_delete_state; task.input_timeout = status->task.input_timeout;
-  task.file = status->task.file; task.command = status->task.command; task.ini_filename = status->task.ini_filename;
-  task.g5x_offset = from_emc_pose(status->task.g5x_offset); task.g5x_index = status->task.g5x_index;
-  task.g5x_offsets.clear(); task.g5x_rotations.clear();
-  for (const auto& pose : status->task.g5x_offsets) task.g5x_offsets.push_back(from_emc_pose(pose));
-  for (const auto rotation : status->task.g5x_rotations) task.g5x_rotations.push_back(rotation);
-  task.g92_offset = from_emc_pose(status->task.g92_offset); task.g28_position = from_emc_pose(status->task.g28_position);
-  task.g30_position = from_emc_pose(status->task.g30_position); task.rotation_xy = status->task.rotation_xy;
+  task.mode = snapshot->task_mode;
+  task.state = snapshot->task_state;
+  task.exec_state = snapshot->exec_state;
+  task.interp_state = snapshot->interp_state;
+  task.stop_state = snapshot->stop_state;
+  task.call_level = status->task.callLevel;
+  task.motion_line = status->task.motionLine;
+  task.current_line = status->task.currentLine;
+  task.read_line = status->task.readLine;
+  task.optional_stop_state = status->task.optional_stop_state;
+  task.block_delete_state = status->task.block_delete_state;
+  task.input_timeout = status->task.input_timeout;
+  task.file = status->task.file;
+  task.command = status->task.command;
+  task.ini_filename = status->task.ini_filename;
+  task.g5x_offset = from_emc_pose(status->task.g5x_offset);
+  task.g5x_index = status->task.g5x_index;
+  task.g5x_offsets.clear();
+  task.g5x_rotations.clear();
+  for (const auto& pose : status->task.g5x_offsets)
+    task.g5x_offsets.push_back(from_emc_pose(pose));
+  for (const auto rotation : status->task.g5x_rotations)
+    task.g5x_rotations.push_back(rotation);
+  task.g92_offset = from_emc_pose(status->task.g92_offset);
+  task.g28_position = from_emc_pose(status->task.g28_position);
+  task.g30_position = from_emc_pose(status->task.g30_position);
+  task.rotation_xy = status->task.rotation_xy;
   task.tool_offset = from_emc_pose(status->task.toolOffset);
-  task.active_g_codes.assign(std::begin(status->task.activeGCodes), std::end(status->task.activeGCodes));
-  task.active_m_codes.assign(std::begin(status->task.activeMCodes), std::end(status->task.activeMCodes));
-  task.active_settings.assign(std::begin(status->task.activeSettings), std::end(status->task.activeSettings));
+  task.active_g_codes.assign(std::begin(status->task.activeGCodes),
+                             std::end(status->task.activeGCodes));
+  task.active_m_codes.assign(std::begin(status->task.activeMCodes),
+                             std::end(status->task.activeMCodes));
+  task.active_settings.assign(std::begin(status->task.activeSettings),
+                              std::end(status->task.activeSettings));
   task.program_units = static_cast<std::int32_t>(status->task.programUnits);
-  task.interpreter_error_code = status->task.interpreter_errcode; task.task_paused = status->task.task_paused;
-  task.delay_left = status->task.delayLeft; task.queued_mdi_commands = status->task.queuedMDIcommands;
+  task.interpreter_error_code = status->task.interpreter_errcode;
+  task.task_paused = status->task.task_paused;
+  task.delay_left = status->task.delayLeft;
+  task.queued_mdi_commands = status->task.queuedMDIcommands;
 
   auto& motion = snapshot->motion_stat;
   const auto& source_traj = status->motion.traj;
   auto& traj = motion.traj;
-  traj.linear_units = source_traj.linearUnits; traj.angular_units = source_traj.angularUnits;
-  traj.cycle_time = source_traj.cycleTime; traj.joints = source_traj.joints; traj.spindles = source_traj.spindles;
+  traj.linear_units = source_traj.linearUnits;
+  traj.angular_units = source_traj.angularUnits;
+  traj.cycle_time = source_traj.cycleTime;
+  traj.joints = source_traj.joints;
+  traj.spindles = source_traj.spindles;
   traj.available_axes.clear();
   for (int index = 0; index < 9; ++index)
-    if (source_traj.axis_mask & (1 << index)) traj.available_axes.push_back(index);
-  traj.mode = static_cast<std::int32_t>(source_traj.mode); traj.enabled = source_traj.enabled;
-  traj.in_position = source_traj.inpos; traj.queue = source_traj.queue; traj.active_queue = source_traj.activeQueue;
-  traj.queue_full = source_traj.queueFull; traj.id = source_traj.id; traj.paused = source_traj.paused;
-  traj.single_stepping = source_traj.single_stepping; traj.feed_rate_override = source_traj.scale;
-  traj.rapid_rate_override = source_traj.rapid_scale; traj.position = from_emc_pose(source_traj.position);
-  traj.actual_position = from_emc_pose(source_traj.actualPosition); traj.acceleration = source_traj.acceleration;
-  traj.max_velocity = source_traj.maxVelocity; traj.max_acceleration = source_traj.maxAcceleration;
-  traj.probed_position = from_emc_pose(source_traj.probedPosition); traj.probe_tripped = source_traj.probe_tripped;
-  traj.probing = source_traj.probing; traj.probe_val = source_traj.probeval;
-  traj.kinematics_type = source_traj.kinematics_type; traj.motion_type = source_traj.motion_type;
-  traj.distance_to_go = source_traj.distance_to_go; traj.dtg = from_emc_pose(source_traj.dtg);
-  traj.current_velocity = source_traj.current_vel; traj.feed_override_enabled = source_traj.feed_override_enabled;
-  traj.adaptive_feed_enabled = source_traj.adaptive_feed_enabled; traj.feed_hold_enabled = source_traj.feed_hold_enabled;
-  motion.joints.clear(); motion.axes.clear(); motion.spindles.clear();
-  for (const auto& joint : status->motion.joint) motion.joints.push_back(from_joint(joint));
-  for (const auto& axis : status->motion.axis) motion.axes.push_back(from_axis(axis));
-  for (const auto& spindle : status->motion.spindle) motion.spindles.push_back(from_spindle(spindle));
-  motion.digital_input.assign(std::begin(status->motion.synch_di), std::end(status->motion.synch_di));
-  motion.digital_output.assign(std::begin(status->motion.synch_do), std::end(status->motion.synch_do));
-  motion.analog_input.assign(std::begin(status->motion.analog_input), std::end(status->motion.analog_input));
-  motion.analog_output.assign(std::begin(status->motion.analog_output), std::end(status->motion.analog_output));
+    if (source_traj.axis_mask & (1 << index))
+      traj.available_axes.push_back(index);
+  traj.mode = static_cast<std::int32_t>(source_traj.mode);
+  traj.enabled = source_traj.enabled;
+  traj.in_position = source_traj.inpos;
+  traj.queue = source_traj.queue;
+  traj.active_queue = source_traj.activeQueue;
+  traj.queue_full = source_traj.queueFull;
+  traj.id = source_traj.id;
+  traj.paused = source_traj.paused;
+  traj.single_stepping = source_traj.single_stepping;
+  traj.feed_rate_override = source_traj.scale;
+  traj.rapid_rate_override = source_traj.rapid_scale;
+  traj.position = from_emc_pose(source_traj.position);
+  traj.actual_position = from_emc_pose(source_traj.actualPosition);
+  traj.acceleration = source_traj.acceleration;
+  traj.max_velocity = source_traj.maxVelocity;
+  traj.max_acceleration = source_traj.maxAcceleration;
+  traj.probed_position = from_emc_pose(source_traj.probedPosition);
+  traj.probe_tripped = source_traj.probe_tripped;
+  traj.probing = source_traj.probing;
+  traj.probe_val = source_traj.probeval;
+  traj.kinematics_type = source_traj.kinematics_type;
+  traj.motion_type = source_traj.motion_type;
+  traj.distance_to_go = source_traj.distance_to_go;
+  traj.dtg = from_emc_pose(source_traj.dtg);
+  traj.current_velocity = source_traj.current_vel;
+  traj.feed_override_enabled = source_traj.feed_override_enabled;
+  traj.adaptive_feed_enabled = source_traj.adaptive_feed_enabled;
+  traj.feed_hold_enabled = source_traj.feed_hold_enabled;
+  motion.joints.clear();
+  motion.axes.clear();
+  motion.spindles.clear();
+  for (const auto& joint : status->motion.joint)
+    motion.joints.push_back(from_joint(joint));
+  for (const auto& axis : status->motion.axis)
+    motion.axes.push_back(from_axis(axis));
+  for (const auto& spindle : status->motion.spindle)
+    motion.spindles.push_back(from_spindle(spindle));
+  motion.digital_input.assign(std::begin(status->motion.synch_di),
+                              std::end(status->motion.synch_di));
+  motion.digital_output.assign(std::begin(status->motion.synch_do),
+                               std::end(status->motion.synch_do));
+  motion.analog_input.assign(std::begin(status->motion.analog_input),
+                             std::end(status->motion.analog_input));
+  motion.analog_output.assign(std::begin(status->motion.analog_output),
+                              std::end(status->motion.analog_output));
   snapshot->io_stat.pocket_prepped = status->io.tool.pocketPrepped;
   snapshot->io_stat.tool_in_spindle = status->io.tool.toolInSpindle;
   snapshot->io_stat.tool_from_pocket = status->io.tool.toolFromPocket;
-  snapshot->io_stat.mist = status->io.coolant.mist; snapshot->io_stat.flood = status->io.coolant.flood;
+  snapshot->io_stat.mist = status->io.coolant.mist;
+  snapshot->io_stat.flood = status->io.coolant.flood;
   snapshot->io_stat.estop = status->io.aux.estop;
   snapshot->tool_table.clear();
   std::lock_guard tool_lock(impl_->tool_mutex);
@@ -364,13 +451,45 @@ std::optional<NmlErrorEvent> NmlAdapter::poll_error() {
   result.type = static_cast<std::int32_t>(type);
   char message[LINELEN] = {};
   switch (type) {
-    case EMC_OPERATOR_ERROR_TYPE: std::strncpy(message, static_cast<EMC_OPERATOR_ERROR*>(impl_->errors->get_address())->error, sizeof(message) - 1); break;
-    case EMC_OPERATOR_TEXT_TYPE: std::strncpy(message, static_cast<EMC_OPERATOR_TEXT*>(impl_->errors->get_address())->text, sizeof(message) - 1); break;
-    case EMC_OPERATOR_DISPLAY_TYPE: std::strncpy(message, static_cast<EMC_OPERATOR_DISPLAY*>(impl_->errors->get_address())->display, sizeof(message) - 1); break;
-    case NML_ERROR_TYPE: std::strncpy(message, static_cast<NML_ERROR*>(impl_->errors->get_address())->error, sizeof(message) - 1); break;
-    case NML_TEXT_TYPE: std::strncpy(message, static_cast<NML_TEXT*>(impl_->errors->get_address())->text, sizeof(message) - 1); break;
-    case NML_DISPLAY_TYPE: std::strncpy(message, static_cast<NML_DISPLAY*>(impl_->errors->get_address())->display, sizeof(message) - 1); break;
-    default: std::snprintf(message, sizeof(message), "NML message type %d", static_cast<int>(type)); break;
+    case EMC_OPERATOR_ERROR_TYPE:
+      std::strncpy(
+          message,
+          static_cast<EMC_OPERATOR_ERROR*>(impl_->errors->get_address())->error,
+          sizeof(message) - 1);
+      break;
+    case EMC_OPERATOR_TEXT_TYPE:
+      std::strncpy(
+          message,
+          static_cast<EMC_OPERATOR_TEXT*>(impl_->errors->get_address())->text,
+          sizeof(message) - 1);
+      break;
+    case EMC_OPERATOR_DISPLAY_TYPE:
+      std::strncpy(
+          message,
+          static_cast<EMC_OPERATOR_DISPLAY*>(impl_->errors->get_address())
+              ->display,
+          sizeof(message) - 1);
+      break;
+    case NML_ERROR_TYPE:
+      std::strncpy(message,
+                   static_cast<NML_ERROR*>(impl_->errors->get_address())->error,
+                   sizeof(message) - 1);
+      break;
+    case NML_TEXT_TYPE:
+      std::strncpy(message,
+                   static_cast<NML_TEXT*>(impl_->errors->get_address())->text,
+                   sizeof(message) - 1);
+      break;
+    case NML_DISPLAY_TYPE:
+      std::strncpy(
+          message,
+          static_cast<NML_DISPLAY*>(impl_->errors->get_address())->display,
+          sizeof(message) - 1);
+      break;
+    default:
+      std::snprintf(message, sizeof(message), "NML message type %d",
+                    static_cast<int>(type));
+      break;
   }
   result.message = message;
   return result;
@@ -379,7 +498,8 @@ std::optional<NmlErrorEvent> NmlAdapter::poll_error() {
 #endif
 }
 
-CommandTicket NmlAdapter::submit(NmlCommand command, std::function<bool()> cancelled) {
+CommandTicket NmlAdapter::submit(NmlCommand command,
+                                 std::function<bool()> cancelled) {
 #ifdef LINUXCNC_GRPC_HAS_NML
   return impl_->commands.submit_with_context(
       [this, command = std::move(command)](CommandContext& context) mutable {
@@ -387,9 +507,11 @@ CommandTicket NmlAdapter::submit(NmlCommand command, std::function<bool()> cance
         // LinuxCNC and can be dropped safely. After the first NML write below,
         // cancellation no longer participates in command completion.
         if (context.cancelled && context.cancelled()) {
-          throw std::runtime_error("command cancelled before LinuxCNC acceptance");
+          throw std::runtime_error(
+              "command cancelled before LinuxCNC acceptance");
         }
-        if (!connect()) throw std::runtime_error("LinuxCNC NML channels are unavailable");
+        if (!connect())
+          throw std::runtime_error("LinuxCNC NML channels are unavailable");
         if (command.kind != NmlCommandKind::ProgramOpen && command.prepare) {
           command.prepare(command);
         }
@@ -408,33 +530,55 @@ CommandTicket NmlAdapter::submit(NmlCommand command, std::function<bool()> cance
             message = std::move(value);
             break;
           }
-          case NmlCommandKind::TaskPlanSynch: message = std::make_unique<EMC_TASK_PLAN_SYNCH>(); break;
-          case NmlCommandKind::ResetInterpreter: message = std::make_unique<EMC_TASK_PLAN_INIT>(); break;
+          case NmlCommandKind::TaskPlanSynch:
+            message = std::make_unique<EMC_TASK_PLAN_SYNCH>();
+            break;
+          case NmlCommandKind::ResetInterpreter:
+            message = std::make_unique<EMC_TASK_PLAN_INIT>();
+            break;
           case NmlCommandKind::ProgramOpen: {
             auto close = std::make_unique<EMC_TASK_PLAN_CLOSE>();
             {
               std::lock_guard lock(impl_->mutex);
               if (impl_->command->write(close.get()) != 0)
-                throw std::runtime_error("failed to close the previous LinuxCNC program");
+                throw std::runtime_error(
+                    "failed to close the previous LinuxCNC program");
             }
             impl_->wait_for_serial(close->serial_number);
             if (command.prepare) command.prepare(command);
             auto value = std::make_unique<EMC_TASK_PLAN_OPEN>();
             if (command.path.size() >= sizeof(value->file))
               throw std::runtime_error("program path too long");
-            std::strncpy(value->file, command.path.c_str(), sizeof(value->file) - 1);
+            std::strncpy(value->file, command.path.c_str(),
+                         sizeof(value->file) - 1);
             value->file[sizeof(value->file) - 1] = '\0';
             message = std::move(value);
             break;
           }
-          case NmlCommandKind::ProgramClose: message = std::make_unique<EMC_TASK_PLAN_CLOSE>(); break;
-          case NmlCommandKind::Stop: message = std::make_unique<EMC_TASK_STOP>(); break;
-          case NmlCommandKind::Pause: message = std::make_unique<EMC_TASK_PLAN_PAUSE>(); break;
-          case NmlCommandKind::Resume: message = std::make_unique<EMC_TASK_PLAN_RESUME>(); break;
-          case NmlCommandKind::Step: message = std::make_unique<EMC_TASK_PLAN_STEP>(); break;
-          case NmlCommandKind::Reverse: message = std::make_unique<EMC_TASK_PLAN_REVERSE>(); break;
-          case NmlCommandKind::Forward: message = std::make_unique<EMC_TASK_PLAN_FORWARD>(); break;
-          case NmlCommandKind::AbortTask: message = std::make_unique<EMC_TASK_ABORT>(); break;
+          case NmlCommandKind::ProgramClose:
+            message = std::make_unique<EMC_TASK_PLAN_CLOSE>();
+            break;
+          case NmlCommandKind::Stop:
+            message = std::make_unique<EMC_TASK_STOP>();
+            break;
+          case NmlCommandKind::Pause:
+            message = std::make_unique<EMC_TASK_PLAN_PAUSE>();
+            break;
+          case NmlCommandKind::Resume:
+            message = std::make_unique<EMC_TASK_PLAN_RESUME>();
+            break;
+          case NmlCommandKind::Step:
+            message = std::make_unique<EMC_TASK_PLAN_STEP>();
+            break;
+          case NmlCommandKind::Reverse:
+            message = std::make_unique<EMC_TASK_PLAN_REVERSE>();
+            break;
+          case NmlCommandKind::Forward:
+            message = std::make_unique<EMC_TASK_PLAN_FORWARD>();
+            break;
+          case NmlCommandKind::AbortTask:
+            message = std::make_unique<EMC_TASK_ABORT>();
+            break;
           case NmlCommandKind::SetOptionalStop: {
             auto value = std::make_unique<EMC_TASK_PLAN_SET_OPTIONAL_STOP>();
             value->state = command.boolean;
@@ -455,8 +599,10 @@ CommandTicket NmlAdapter::submit(NmlCommand command, std::function<bool()> cance
           }
           case NmlCommandKind::Mdi: {
             auto value = std::make_unique<EMC_TASK_PLAN_EXECUTE>();
-            if (command.text.size() >= sizeof(value->command)) throw std::runtime_error("MDI command too long");
-            std::strncpy(value->command, command.text.c_str(), sizeof(value->command) - 1);
+            if (command.text.size() >= sizeof(value->command))
+              throw std::runtime_error("MDI command too long");
+            std::strncpy(value->command, command.text.c_str(),
+                         sizeof(value->command) - 1);
             message = std::move(value);
             break;
           }
@@ -616,12 +762,16 @@ CommandTicket NmlAdapter::submit(NmlCommand command, std::function<bool()> cance
             }
             break;
           case NmlCommandKind::SetMist:
-            if (command.boolean) message = std::make_unique<EMC_COOLANT_MIST_ON>();
-            else message = std::make_unique<EMC_COOLANT_MIST_OFF>();
+            if (command.boolean)
+              message = std::make_unique<EMC_COOLANT_MIST_ON>();
+            else
+              message = std::make_unique<EMC_COOLANT_MIST_OFF>();
             break;
           case NmlCommandKind::SetFlood:
-            if (command.boolean) message = std::make_unique<EMC_COOLANT_FLOOD_ON>();
-            else message = std::make_unique<EMC_COOLANT_FLOOD_OFF>();
+            if (command.boolean)
+              message = std::make_unique<EMC_COOLANT_FLOOD_ON>();
+            else
+              message = std::make_unique<EMC_COOLANT_FLOOD_OFF>();
             break;
           case NmlCommandKind::LoadToolTable: {
             auto value = std::make_unique<EMC_TOOL_LOAD_TOOL_TABLE>();
@@ -654,12 +804,15 @@ CommandTicket NmlAdapter::submit(NmlCommand command, std::function<bool()> cance
             if (!impl_->ensure_tool_mmap_unlocked())
               throw std::runtime_error("LinuxCNC tool table is unavailable");
             const auto index = tooldata_find_index_for_tool(command.integer);
-            if (index < 0) throw std::runtime_error("tool is not present in the tool table");
+            if (index < 0)
+              throw std::runtime_error("tool is not present in the tool table");
             if (tooldata_put(tooldata_entry_init(), index) == IDX_FAIL)
-              throw std::runtime_error("failed to delete tool from LinuxCNC tool table");
+              throw std::runtime_error(
+                  "failed to delete tool from LinuxCNC tool table");
             if (impl_->tool_table_filename.empty() ||
                 tooldata_save(impl_->tool_table_filename.c_str()) != 0) {
-              throw std::runtime_error("failed to save LinuxCNC tool table after deletion");
+              throw std::runtime_error(
+                  "failed to save LinuxCNC tool table after deletion");
             }
             direct_tool_mutation = true;
             break;
@@ -667,7 +820,8 @@ CommandTicket NmlAdapter::submit(NmlCommand command, std::function<bool()> cance
           case NmlCommandKind::SetDigitalOutput: {
             if (command.integer < 0 ||
                 command.integer >= NmlAdapter::kDigitalOutputLimit) {
-              throw std::invalid_argument("digital output index is out of range");
+              throw std::invalid_argument(
+                  "digital output index is out of range");
             }
             auto value = std::make_unique<EMC_MOTION_SET_DOUT>();
             value->index = static_cast<unsigned char>(command.integer);
@@ -679,7 +833,8 @@ CommandTicket NmlAdapter::submit(NmlCommand command, std::function<bool()> cance
           case NmlCommandKind::SetAnalogOutput: {
             if (command.integer < 0 ||
                 command.integer >= NmlAdapter::kAnalogOutputLimit) {
-              throw std::invalid_argument("analog output index is out of range");
+              throw std::invalid_argument(
+                  "analog output index is out of range");
             }
             auto value = std::make_unique<EMC_MOTION_SET_AOUT>();
             value->index = static_cast<unsigned char>(command.integer);
@@ -696,22 +851,28 @@ CommandTicket NmlAdapter::submit(NmlCommand command, std::function<bool()> cance
           }
           case NmlCommandKind::SendOperatorError: {
             auto value = std::make_unique<EMC_OPERATOR_ERROR>();
-            if (command.text.size() >= sizeof(value->error)) throw std::runtime_error("operator message too long");
-            std::strncpy(value->error, command.text.c_str(), sizeof(value->error) - 1);
+            if (command.text.size() >= sizeof(value->error))
+              throw std::runtime_error("operator message too long");
+            std::strncpy(value->error, command.text.c_str(),
+                         sizeof(value->error) - 1);
             message = std::move(value);
             break;
           }
           case NmlCommandKind::SendOperatorText: {
             auto value = std::make_unique<EMC_OPERATOR_TEXT>();
-            if (command.text.size() >= sizeof(value->text)) throw std::runtime_error("operator message too long");
-            std::strncpy(value->text, command.text.c_str(), sizeof(value->text) - 1);
+            if (command.text.size() >= sizeof(value->text))
+              throw std::runtime_error("operator message too long");
+            std::strncpy(value->text, command.text.c_str(),
+                         sizeof(value->text) - 1);
             message = std::move(value);
             break;
           }
           case NmlCommandKind::SendOperatorDisplay: {
             auto value = std::make_unique<EMC_OPERATOR_DISPLAY>();
-            if (command.text.size() >= sizeof(value->display)) throw std::runtime_error("operator message too long");
-            std::strncpy(value->display, command.text.c_str(), sizeof(value->display) - 1);
+            if (command.text.size() >= sizeof(value->display))
+              throw std::runtime_error("operator message too long");
+            std::strncpy(value->display, command.text.c_str(),
+                         sizeof(value->display) - 1);
             message = std::move(value);
             break;
           }

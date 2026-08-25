@@ -1,10 +1,3 @@
-#include "grpc/scope_service_impl.hpp"
-
-#include "linuxcnc_grpc/callback_runtime.hpp"
-#include "linuxcnc_grpc/daemon_config.hpp"
-#include "linuxcnc_grpc/scope_manager.hpp"
-#include "linuxcnc/v1/linuxcnc.grpc.pb.h"
-
 #include <grpcpp/grpcpp.h>
 
 #include <atomic>
@@ -12,6 +5,12 @@
 #include <memory>
 #include <string>
 #include <utility>
+
+#include "grpc/scope_service_impl.hpp"
+#include "linuxcnc/v1/linuxcnc.grpc.pb.h"
+#include "linuxcnc_grpc/callback_runtime.hpp"
+#include "linuxcnc_grpc/daemon_config.hpp"
+#include "linuxcnc_grpc/scope_manager.hpp"
 
 namespace linuxcnc::server::detail {
 namespace {
@@ -24,8 +23,11 @@ class ScopeServiceImpl final : public ScopeService::CallbackService,
   ::grpc::Service* service() noexcept override { return this; }
 
   ScopeServiceImpl(const DaemonConfig&, BoundedExecutor& worker,
-                   AdmissionCounter& admission, AdmissionCounter& stream_admission)
-      : worker_(worker), admission_(admission), stream_admission_(stream_admission) {}
+                   AdmissionCounter& admission,
+                   AdmissionCounter& stream_admission)
+      : worker_(worker),
+        admission_(admission),
+        stream_admission_(stream_admission) {}
 
   void shutdown() override { callbacks_.shutdown(); }
 
@@ -36,24 +38,26 @@ class ScopeServiceImpl final : public ScopeService::CallbackService,
 
  private:
   class SessionReactor final
-      : public ::grpc::ServerBidiReactor<ScopeSessionMessage, ScopeSessionMessage> {
+      : public ::grpc::ServerBidiReactor<ScopeSessionMessage,
+                                         ScopeSessionMessage> {
    public:
     SessionReactor(ScopeServiceImpl& service, std::string owner)
-        : service_(service), owner_(std::move(owner)),
+        : service_(service),
+          owner_(std::move(owner)),
           admitted_(service_.admission_.acquire()),
           stream_admitted_(service_.stream_admission_.acquire()),
           gate_(std::make_shared<LifetimeGate<SessionReactor>>(this)) {
       const std::weak_ptr<LifetimeGate<SessionReactor>> weak_gate = gate_;
       registration_ = service_.callbacks_.register_callback([weak_gate] {
-        if (auto gate = weak_gate.lock()) gate->invoke([](SessionReactor& reactor) {
-          reactor.shutdown();
-        });
+        if (auto gate = weak_gate.lock())
+          gate->invoke([](SessionReactor& reactor) { reactor.shutdown(); });
       });
       if (!registration_) {
         shutdown();
         return;
       }
-      if (!admitted_ || !stream_admitted_ || !service_.manager_.acquire(owner_)) {
+      if (!admitted_ || !stream_admitted_ ||
+          !service_.manager_.acquire(owner_)) {
         finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
                 "scope controller already connected"});
         return;
@@ -62,20 +66,21 @@ class ScopeServiceImpl final : public ScopeService::CallbackService,
       StartRead(&request_);
     }
     void OnReadDone(bool ok) override {
-      gate_->invoke([ok](SessionReactor& reactor) {
-        reactor.read_done(ok);
-      });
+      gate_->invoke([ok](SessionReactor& reactor) { reactor.read_done(ok); });
     }
     void OnWriteDone(bool ok) override {
       gate_->invoke([ok](SessionReactor& reactor) {
         reactor.writing_ = false;
-        if (!ok) reactor.finish(::grpc::Status::OK);
-        else reactor.StartRead(&reactor.request_);
+        if (!ok)
+          reactor.finish(::grpc::Status::OK);
+        else
+          reactor.StartRead(&reactor.request_);
       });
     }
     void OnCancel() override {
       gate_->invoke([](SessionReactor& reactor) {
-        reactor.finish({::grpc::StatusCode::CANCELLED, "scope session cancelled"});
+        reactor.finish(
+            {::grpc::StatusCode::CANCELLED, "scope session cancelled"});
       });
     }
     void OnDone() override {
@@ -90,6 +95,7 @@ class ScopeServiceImpl final : public ScopeService::CallbackService,
       cleanup();
       finish({::grpc::StatusCode::UNAVAILABLE, "server shutting down"});
     }
+
    private:
     void read_done(bool ok) {
       if (!ok) {
@@ -99,14 +105,15 @@ class ScopeServiceImpl final : public ScopeService::CallbackService,
       auto request = request_;
       request_.Clear();
       const std::weak_ptr<LifetimeGate<SessionReactor>> weak_gate = gate_;
-      if (!service_.worker_.submit([weak_gate, request = std::move(request)]() mutable {
-            auto gate = weak_gate.lock();
-            if (gate) {
-              gate->invoke([&](SessionReactor& reactor) {
-                reactor.consume(request);
-              });
-            }
-          })) {
+      if (!service_.worker_.submit(
+              [weak_gate, request = std::move(request)]() mutable {
+                auto gate = weak_gate.lock();
+                if (gate) {
+                  gate->invoke([&](SessionReactor& reactor) {
+                    reactor.consume(request);
+                  });
+                }
+              })) {
         finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
                 "scope work queue is full"});
       }
@@ -116,7 +123,8 @@ class ScopeServiceImpl final : public ScopeService::CallbackService,
       if (request.message_case() == ScopeSessionMessage::kAcquire) {
         response_.mutable_status()->set_state(SCOPE_RUNTIME_STATE_IDLE);
       } else if (request.message_case() == ScopeSessionMessage::kAck) {
-        const auto next = service_.manager_.acknowledge(owner_, request.ack().generation());
+        const auto next =
+            service_.manager_.acknowledge(owner_, request.ack().generation());
         if (!next) {
           StartRead(&request_);
           return;
@@ -136,7 +144,8 @@ class ScopeServiceImpl final : public ScopeService::CallbackService,
       StartWrite(&response_);
     }
     void cleanup() {
-      if (acquired_ && !cleaned_.exchange(true)) service_.manager_.release(owner_);
+      if (acquired_ && !cleaned_.exchange(true))
+        service_.manager_.release(owner_);
     }
     void finish(::grpc::Status status) {
       gate_->finish([&](SessionReactor& reactor) {
@@ -168,8 +177,8 @@ class ScopeServiceImpl final : public ScopeService::CallbackService,
 std::unique_ptr<ManagedGrpcService> make_scope_service_impl(
     const DaemonConfig& config, BoundedExecutor& worker,
     AdmissionCounter& admission, AdmissionCounter& stream_admission) {
-  return std::make_unique<ScopeServiceImpl>(
-      config, worker, admission, stream_admission);
+  return std::make_unique<ScopeServiceImpl>(config, worker, admission,
+                                            stream_admission);
 }
 
 }  // namespace linuxcnc::server::detail

@@ -57,7 +57,8 @@ void encode_gcode_operation(const gcode::Operation& source,
         } else if constexpr (std::is_same_v<T, gcode::RigidTapOp>) {
           target->set_line_number(operation.lineNumber);
           encode_position3(operation.pos, target->mutable_pos());
-          encode_position3(operation.pos, target->mutable_rigid_tap()->mutable_pos());
+          encode_position3(operation.pos,
+                           target->mutable_rigid_tap()->mutable_pos());
           target->mutable_rigid_tap()->set_scale(operation.scale);
         } else if constexpr (std::is_same_v<T, gcode::DwellOp>) {
           encode_gcode_position(operation.pos, target->mutable_pos());
@@ -105,8 +106,9 @@ void encode_gcode_operation(const gcode::Operation& source,
         } else if constexpr (std::is_same_v<T, gcode::XYRotationOp>) {
           target->mutable_xy_rotation()->set_rotation(operation.rotation);
         } else if constexpr (std::is_same_v<T, gcode::ToolOffsetOp>) {
-          encode_gcode_position(operation.offset,
-                                target->mutable_tool_offset()->mutable_offset());
+          encode_gcode_position(
+              operation.offset,
+              target->mutable_tool_offset()->mutable_offset());
         } else if constexpr (std::is_same_v<T, gcode::ToolChangeOp>) {
           target->mutable_tool_change()->set_tool_number(operation.toolNumber);
         } else if constexpr (std::is_same_v<T, gcode::FeedRateChangeOp>) {

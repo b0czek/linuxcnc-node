@@ -1,15 +1,15 @@
 #pragma once
 
-#include "linuxcnc_grpc/command_coordinator.hpp"
-
-#include <cstdint>
-#include <cstddef>
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
 #include <string>
 #include <vector>
+
+#include "linuxcnc_grpc/command_coordinator.hpp"
 
 namespace linuxcnc::server {
 
@@ -67,8 +67,9 @@ enum class NmlCommandKind {
   SetRapidRate,
 };
 
-static_assert(static_cast<std::size_t>(NmlCommandKind::SetRapidRate) == 50,
-              "adding an NML command requires updating the gRPC command catalog");
+static_assert(
+    static_cast<std::size_t>(NmlCommandKind::SetRapidRate) == 50,
+    "adding an NML command requires updating the gRPC command catalog");
 
 struct NmlPose {
   std::array<double, 9> values{};
@@ -303,7 +304,8 @@ class NmlAdapter {
   void disconnect();
   bool poll_status(NmlStatusSnapshot* snapshot);
   std::optional<NmlErrorEvent> poll_error();
-  CommandTicket submit(NmlCommand command, std::function<bool()> cancelled = {});
+  CommandTicket submit(NmlCommand command,
+                       std::function<bool()> cancelled = {});
 
  private:
   struct Impl;

@@ -1,7 +1,7 @@
 #include "linuxcnc_grpc/daemon_config.hpp"
 
-#include <charconv>
 #include <cctype>
+#include <charconv>
 #include <fstream>
 #include <sstream>
 
@@ -15,14 +15,16 @@ bool parse_size(const std::string& value, std::size_t* result) {
   return parsed.ec == std::errc{} && parsed.ptr == last;
 }
 
-bool parse_milliseconds(const std::string& value, std::chrono::milliseconds* result) {
+bool parse_milliseconds(const std::string& value,
+                        std::chrono::milliseconds* result) {
   std::size_t parsed = 0;
   if (!parse_size(value, &parsed)) return false;
   *result = std::chrono::milliseconds(parsed);
   return true;
 }
 
-bool option_value(const std::string& argument, const char* option, std::string* value) {
+bool option_value(const std::string& argument, const char* option,
+                  std::string* value) {
   const std::string prefix = std::string(option) + "=";
   if (argument.rfind(prefix, 0) != 0) return false;
   *value = argument.substr(prefix.size());
@@ -33,20 +35,27 @@ std::string endpoint_host(const std::string& endpoint) {
   if (endpoint.empty()) return {};
   if (endpoint.front() == '[') {
     const auto end = endpoint.find(']');
-    return end == std::string::npos ? std::string{} : endpoint.substr(1, end - 1);
+    return end == std::string::npos ? std::string{}
+                                    : endpoint.substr(1, end - 1);
   }
   const auto separator = endpoint.rfind(':');
-  return separator == std::string::npos ? endpoint : endpoint.substr(0, separator);
+  return separator == std::string::npos ? endpoint
+                                        : endpoint.substr(0, separator);
 }
 
 std::string trim(std::string value) {
-  while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front()))) value.erase(value.begin());
-  while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back()))) value.pop_back();
+  while (!value.empty() &&
+         std::isspace(static_cast<unsigned char>(value.front())))
+    value.erase(value.begin());
+  while (!value.empty() &&
+         std::isspace(static_cast<unsigned char>(value.back())))
+    value.pop_back();
   return value;
 }
 
 bool loopback_host(const std::string& host) {
-  return host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]";
+  return host == "localhost" || host == "127.0.0.1" || host == "::1" ||
+         host == "[::1]";
 }
 
 }  // namespace
@@ -56,8 +65,8 @@ bool validate_config(const DaemonConfig& config, std::string* error) {
     if (error) *error = message;
     return false;
   };
-  const auto valid_endpoint = [&](const std::string& endpoint,
-                                  const char* name, bool tls_protected) {
+  const auto valid_endpoint = [&](const std::string& endpoint, const char* name,
+                                  bool tls_protected) {
     const auto separator = endpoint.rfind(':');
     if (separator == std::string::npos || separator == 0 ||
         separator + 1 == endpoint.size()) {
@@ -66,37 +75,43 @@ bool validate_config(const DaemonConfig& config, std::string* error) {
     }
     if (!tls_protected && !config.unsafe_non_loopback &&
         !loopback_host(endpoint_host(endpoint))) {
-      if (error) *error = std::string(name) +
-          " on a non-loopback host requires --unsafe-non-loopback";
+      if (error)
+        *error = std::string(name) +
+                 " on a non-loopback host requires --unsafe-non-loopback";
       return false;
     }
     return true;
   };
   if (!valid_endpoint(config.endpoint, "endpoint", config.tls) ||
-      !valid_endpoint(config.telemetry_endpoint,
-                      "telemetry endpoint", false)) return false;
+      !valid_endpoint(config.telemetry_endpoint, "telemetry endpoint", false))
+    return false;
   if (config.endpoint == config.telemetry_endpoint) {
     return fail("gRPC and telemetry endpoints must differ");
   }
   if (config.mtls && !config.tls) return fail("mTLS requires TLS");
-  if (config.tls && (config.tls_certificate.empty() || config.tls_private_key.empty())) {
+  if (config.tls &&
+      (config.tls_certificate.empty() || config.tls_private_key.empty())) {
     return fail("TLS requires --tls-certificate and --tls-private-key");
   }
-  if (config.mtls && config.tls_client_ca.empty()) return fail("mTLS requires --tls-client-ca");
-  if (config.tls && (!std::filesystem::is_regular_file(config.tls_certificate) ||
-                     !std::filesystem::is_regular_file(config.tls_private_key))) {
+  if (config.mtls && config.tls_client_ca.empty())
+    return fail("mTLS requires --tls-client-ca");
+  if (config.tls &&
+      (!std::filesystem::is_regular_file(config.tls_certificate) ||
+       !std::filesystem::is_regular_file(config.tls_private_key))) {
     return fail("TLS certificate and private key must be regular files");
   }
   if (config.mtls && !std::filesystem::is_regular_file(config.tls_client_ca)) {
     return fail("mTLS client CA must be a regular file");
   }
-  if (!config.nml_file.empty() && !std::filesystem::is_regular_file(config.nml_file)) {
+  if (!config.nml_file.empty() &&
+      !std::filesystem::is_regular_file(config.nml_file)) {
     return fail("NML configuration must be a regular file");
   }
   if (config.workspace_quota_bytes == 0 || config.total_quota_bytes == 0) {
     return fail("workspace quotas must be non-zero");
   }
-  if (config.command_queue_capacity == 0) return fail("command queue capacity must be non-zero");
+  if (config.command_queue_capacity == 0)
+    return fail("command queue capacity must be non-zero");
   if (config.status_replay_capacity == 0 || config.gcode_batch_size == 0) {
     return fail("status replay and G-code batch capacities must be non-zero");
   }
@@ -134,7 +149,9 @@ bool validate_program_prefix(const std::filesystem::path& ini_file,
     if (line.empty()) continue;
     if (line.front() == '[' && line.back() == ']') {
       auto section = trim(line.substr(1, line.size() - 2));
-      for (char& character : section) character = static_cast<char>(std::toupper(static_cast<unsigned char>(character)));
+      for (char& character : section)
+        character = static_cast<char>(
+            std::toupper(static_cast<unsigned char>(character)));
       display_section = section == "DISPLAY";
       continue;
     }
@@ -142,19 +159,26 @@ bool validate_program_prefix(const std::filesystem::path& ini_file,
     const auto equals = line.find('=');
     if (equals == std::string::npos) continue;
     auto key = trim(line.substr(0, equals));
-    for (char& character : key) character = static_cast<char>(std::toupper(static_cast<unsigned char>(character)));
+    for (char& character : key)
+      character = static_cast<char>(
+          std::toupper(static_cast<unsigned char>(character)));
     if (key == "PROGRAM_PREFIX") {
       configured_prefix = trim(line.substr(equals + 1));
       break;
     }
   }
-  if (configured_prefix.empty()) return fail("[DISPLAY] PROGRAM_PREFIX is missing from LinuxCNC INI");
+  if (configured_prefix.empty())
+    return fail("[DISPLAY] PROGRAM_PREFIX is missing from LinuxCNC INI");
   std::filesystem::path configured_path(configured_prefix);
-  if (configured_path.is_relative()) configured_path = ini_file.parent_path() / configured_path;
-  const auto configured = std::filesystem::weakly_canonical(std::filesystem::absolute(configured_path));
-  const auto expected = std::filesystem::weakly_canonical(std::filesystem::absolute(active_directory));
+  if (configured_path.is_relative())
+    configured_path = ini_file.parent_path() / configured_path;
+  const auto configured = std::filesystem::weakly_canonical(
+      std::filesystem::absolute(configured_path));
+  const auto expected = std::filesystem::weakly_canonical(
+      std::filesystem::absolute(active_directory));
   if (configured != expected) {
-    return fail("LinuxCNC PROGRAM_PREFIX does not match active program directory");
+    return fail(
+        "LinuxCNC PROGRAM_PREFIX does not match active program directory");
   }
   return true;
 }
@@ -172,23 +196,42 @@ bool parse_config(int argc, char* argv[], DaemonConfig* config, bool* show_help,
       if (show_help) *show_help = true;
       continue;
     }
-    if (argument == "--tls") { config->tls = true; continue; }
-    if (argument == "--mtls") { config->mtls = true; continue; }
-    if (argument == "--reflection") { config->reflection = true; continue; }
-    if (argument == "--unsafe-non-loopback") { config->unsafe_non_loopback = true; continue; }
+    if (argument == "--tls") {
+      config->tls = true;
+      continue;
+    }
+    if (argument == "--mtls") {
+      config->mtls = true;
+      continue;
+    }
+    if (argument == "--reflection") {
+      config->reflection = true;
+      continue;
+    }
+    if (argument == "--unsafe-non-loopback") {
+      config->unsafe_non_loopback = true;
+      continue;
+    }
 
     std::string value;
-    if (option_value(argument, "--endpoint", &value)) config->endpoint = value;
+    if (option_value(argument, "--endpoint", &value))
+      config->endpoint = value;
     else if (option_value(argument, "--telemetry-endpoint", &value)) {
       config->telemetry_endpoint = value;
-    }
-    else if (option_value(argument, "--ini", &value)) config->ini_file = value;
-    else if (option_value(argument, "--nml", &value)) config->nml_file = value;
-    else if (option_value(argument, "--workspace-root", &value)) config->workspace_root = value;
-    else if (option_value(argument, "--active-program-directory", &value)) config->active_program_directory = value;
-    else if (option_value(argument, "--tls-certificate", &value)) config->tls_certificate = value;
-    else if (option_value(argument, "--tls-private-key", &value)) config->tls_private_key = value;
-    else if (option_value(argument, "--tls-client-ca", &value)) config->tls_client_ca = value;
+    } else if (option_value(argument, "--ini", &value))
+      config->ini_file = value;
+    else if (option_value(argument, "--nml", &value))
+      config->nml_file = value;
+    else if (option_value(argument, "--workspace-root", &value))
+      config->workspace_root = value;
+    else if (option_value(argument, "--active-program-directory", &value))
+      config->active_program_directory = value;
+    else if (option_value(argument, "--tls-certificate", &value))
+      config->tls_certificate = value;
+    else if (option_value(argument, "--tls-private-key", &value))
+      config->tls_private_key = value;
+    else if (option_value(argument, "--tls-client-ca", &value))
+      config->tls_client_ca = value;
     else if (option_value(argument, "--workspace-quota", &value)) {
       if (!parse_size(value, &config->workspace_quota_bytes)) {
         if (error) *error = "invalid --workspace-quota";
@@ -270,11 +313,13 @@ std::string config_help() {
          "  --telemetry-endpoint=HOST:PORT         (default 127.0.0.1:50052)\n"
          "  --ini=PATH --nml=PATH\n"
          "  --workspace-root=PATH --active-program-directory=PATH\n"
-         "  --workspace-quota=BYTES --total-quota=BYTES --workspace-ttl-seconds=N\n"
+         "  --workspace-quota=BYTES --total-quota=BYTES "
+         "--workspace-ttl-seconds=N\n"
          "  --command-queue-capacity=N\n"
          "  --tls --tls-certificate=PATH --tls-private-key=PATH (gRPC only)\n"
          "  --mtls --tls-client-ca=PATH --reflection (gRPC only)\n"
-         "  --status-period-ms=50 --error-period-ms=100 --position-period-ms=10\n"
+         "  --status-period-ms=50 --error-period-ms=100 "
+         "--position-period-ms=10\n"
          "  --topology-period-ms=2000 --scope-samples=32000\n"
          "  --scope-period-ms=20 --scope-heartbeat-ms=100\n"
          "  --unsafe-non-loopback\n";

@@ -152,7 +152,8 @@ class ActiveCallbackRegistry {
       if (state_->shutting_down) return;
       state_->shutting_down = true;
       callbacks.reserve(state_->callbacks.size());
-      for (const auto& entry : state_->callbacks) callbacks.push_back(entry.second);
+      for (const auto& entry : state_->callbacks)
+        callbacks.push_back(entry.second);
     }
     for (const auto& callback : callbacks) callback();
   }
@@ -179,7 +180,8 @@ class SequencedRing {
   };
 
   explicit SequencedRing(std::size_t capacity) : capacity_(capacity) {
-    if (capacity == 0) throw std::invalid_argument("ring capacity must be positive");
+    if (capacity == 0)
+      throw std::invalid_argument("ring capacity must be positive");
   }
 
   std::uint64_t publish(Event event) {
@@ -193,7 +195,8 @@ class SequencedRing {
   ReadResult after(std::uint64_t sequence) const {
     std::lock_guard lock(mutex_);
     ReadResult result;
-    if (!entries_.empty() && sequence != 0 && sequence + 1 < entries_.front().sequence) {
+    if (!entries_.empty() && sequence != 0 &&
+        sequence + 1 < entries_.front().sequence) {
       result.behind = true;
       return result;
     }
@@ -295,7 +298,6 @@ class SubscriptionHub {
   };
 
  public:
-
   class Subscription {
    public:
     Subscription() = default;
@@ -346,7 +348,8 @@ class SubscriptionHub {
       std::lock_guard lock(state_->mutex);
       if (state_->closed) return;
       callbacks.reserve(state_->callbacks.size());
-      for (const auto& entry : state_->callbacks) callbacks.push_back(entry.second);
+      for (const auto& entry : state_->callbacks)
+        callbacks.push_back(entry.second);
     }
     for (const auto& callback : callbacks) callback(event);
   }
@@ -393,7 +396,9 @@ class LifetimeGate {
     return true;
   }
 
-  bool begin_finish() { return finish([](Reactor&) {}); }
+  bool begin_finish() {
+    return finish([](Reactor&) {});
+  }
 
   void detach() {
     std::lock_guard lock(mutex_);

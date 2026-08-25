@@ -15,7 +15,8 @@ bool CommandTicket::wait_for(std::chrono::milliseconds timeout,
   return wait_for(CommandWaitPolicy::Completed, timeout, result);
 }
 
-bool CommandTicket::wait_for(CommandWaitPolicy policy, std::chrono::milliseconds timeout,
+bool CommandTicket::wait_for(CommandWaitPolicy policy,
+                             std::chrono::milliseconds timeout,
                              CommandResult* result) const {
   if (!state_) return false;
   std::unique_lock lock(state_->mutex);
@@ -63,7 +64,8 @@ bool CommandTicket::observe(CommandWaitPolicy policy, Observer observer) const {
 }
 
 CommandCoordinator::CommandCoordinator(std::size_t capacity)
-    : capacity_(capacity == 0 ? 1 : capacity), worker_(&CommandCoordinator::run, this) {}
+    : capacity_(capacity == 0 ? 1 : capacity),
+      worker_(&CommandCoordinator::run, this) {}
 
 CommandCoordinator::~CommandCoordinator() { shutdown(); }
 
@@ -73,7 +75,8 @@ CommandTicket CommandCoordinator::submit(CommandAction action) {
   auto state = std::make_shared<CommandTicket::State>();
   std::unique_lock lock(mutex_);
   if (stopping_) throw std::runtime_error("command coordinator is stopped");
-  if (queue_.size() >= capacity_) throw std::runtime_error("command queue is full");
+  if (queue_.size() >= capacity_)
+    throw std::runtime_error("command queue is full");
   const auto sequence = next_sequence_++;
   state->result.sequence = sequence;
   queue_.push_back(Item{sequence, std::move(action), {}, state});
@@ -82,24 +85,30 @@ CommandTicket CommandCoordinator::submit(CommandAction action) {
   return CommandTicket(std::move(state));
 }
 
-CommandTicket CommandCoordinator::submit_with_context(ContextCommandAction action) {
+CommandTicket CommandCoordinator::submit_with_context(
+    ContextCommandAction action) {
   return submit_with_context(std::move(action), {});
 }
 
-CommandTicket CommandCoordinator::submit_with_context(ContextCommandAction action,
-                                                      std::function<bool()> cancelled) {
+CommandTicket CommandCoordinator::submit_with_context(
+    ContextCommandAction action, std::function<bool()> cancelled) {
   if (!action) throw std::invalid_argument("command action must not be empty");
   auto state = std::make_shared<CommandTicket::State>();
   std::unique_lock lock(mutex_);
   if (stopping_) throw std::runtime_error("command coordinator is stopped");
-  if (queue_.size() >= capacity_) throw std::runtime_error("command queue is full");
+  if (queue_.size() >= capacity_)
+    throw std::runtime_error("command queue is full");
   const auto sequence = next_sequence_++;
   state->result.sequence = sequence;
-  queue_.push_back(Item{sequence, {}, [action = std::move(action),
-                                      cancelled = std::move(cancelled)](CommandContext& context) {
-    context.cancelled = cancelled;
-    action(context);
-  }, state});
+  queue_.push_back(
+      Item{sequence,
+           {},
+           [action = std::move(action),
+            cancelled = std::move(cancelled)](CommandContext& context) {
+             context.cancelled = cancelled;
+             action(context);
+           },
+           state});
   lock.unlock();
   condition_.notify_one();
   return CommandTicket(std::move(state));
@@ -169,8 +178,8 @@ void CommandCoordinator::transition(
     snapshot = state->result;
     auto observer = state->observers.begin();
     while (observer != state->observers.end()) {
-      const bool terminal = result == CommandState::Completed ||
-                            result == CommandState::Failed;
+      const bool terminal =
+          result == CommandState::Completed || result == CommandState::Failed;
       if (terminal || (observer->policy == CommandWaitPolicy::Accepted &&
                        result == CommandState::Accepted)) {
         ready.push_back(std::move(observer->callback));

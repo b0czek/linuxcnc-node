@@ -1,10 +1,9 @@
 #pragma once
 
-#include "linuxcnc_grpc/hal_adapter.hpp"
+#include <optional>
 
 #include "linuxcnc/v1/linuxcnc.pb.h"
-
-#include <optional>
+#include "linuxcnc_grpc/hal_adapter.hpp"
 
 namespace linuxcnc::server {
 

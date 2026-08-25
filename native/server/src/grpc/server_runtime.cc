@@ -1,19 +1,19 @@
 #include "grpc/server_runtime.hpp"
 
-#include "grpc/server_service.hpp"
-#include "linuxcnc_grpc/callback_runtime.hpp"
-#include "linuxcnc_grpc/position_telemetry.hpp"
-#include "linuxcnc_grpc/position_telemetry_server.hpp"
-#include "linuxcnc_grpc/hal_value_telemetry.hpp"
-
 #include <grpcpp/grpcpp.h>
+#include <pthread.h>
 
 #include <chrono>
 #include <exception>
 #include <iostream>
-#include <pthread.h>
 #include <stdexcept>
 #include <utility>
+
+#include "grpc/server_service.hpp"
+#include "linuxcnc_grpc/callback_runtime.hpp"
+#include "linuxcnc_grpc/hal_value_telemetry.hpp"
+#include "linuxcnc_grpc/position_telemetry.hpp"
+#include "linuxcnc_grpc/position_telemetry_server.hpp"
 
 namespace linuxcnc::server::detail {
 namespace {
@@ -105,8 +105,7 @@ void ServerRuntime::request_shutdown() noexcept {
   invoke_shutdown("component-admission",
                   [this] { component_admission_.stop(); });
   invoke_shutdown("scope-admission", [this] { scope_admission_.stop(); });
-  invoke_shutdown("blocking-admission",
-                  [this] { blocking_.stop_admission(); });
+  invoke_shutdown("blocking-admission", [this] { blocking_.stop_admission(); });
   invoke_shutdown("parser-admission",
                   [this] { parser_worker_.stop_admission(); });
   invoke_shutdown("hal-admission", [this] { hal_worker_.stop_admission(); });

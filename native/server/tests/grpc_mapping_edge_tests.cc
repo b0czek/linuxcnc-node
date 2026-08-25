@@ -1,12 +1,12 @@
-#include "linuxcnc_grpc/grpc_gcode_mapping.hpp"
-#include "linuxcnc_grpc/grpc_hal_mapping.hpp"
-
 #include <cassert>
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <variant>
 #include <vector>
+
+#include "linuxcnc_grpc/grpc_gcode_mapping.hpp"
+#include "linuxcnc_grpc/grpc_hal_mapping.hpp"
 
 using namespace linuxcnc::server;
 
@@ -33,7 +33,8 @@ void gcode_mapping_all_variants_test() {
   encode_gcode_operation(traverse, &encoded);
   assert(encoded.type() == linuxcnc::v1::OPERATION_TYPE_TRAVERSE);
   assert(encoded.line_number() == 11);
-  assert_position(encoded.pos(), {1.0, -2.0, 3.0, -4.0, 5.0, -6.0, 7.0, -8.0, 9.0});
+  assert_position(encoded.pos(),
+                  {1.0, -2.0, 3.0, -4.0, 5.0, -6.0, 7.0, -8.0, 9.0});
   assert(encoded.data_case() == linuxcnc::v1::GCodeOperation::DATA_NOT_SET);
 
   gcode::FeedOp feed;
@@ -42,7 +43,8 @@ void gcode_mapping_all_variants_test() {
   encode_gcode_operation(feed, &encoded);
   assert(encoded.type() == linuxcnc::v1::OPERATION_TYPE_FEED);
   assert(encoded.line_number() == 12);
-  assert_position(encoded.pos(), {1.0, -2.0, 3.0, -4.0, 5.0, -6.0, 7.0, -8.0, 9.0});
+  assert_position(encoded.pos(),
+                  {1.0, -2.0, 3.0, -4.0, 5.0, -6.0, 7.0, -8.0, 9.0});
 
   gcode::ArcOp arc;
   arc.lineNumber = 13;
@@ -142,14 +144,16 @@ void gcode_mapping_all_variants_test() {
   assert(encoded.type() == linuxcnc::v1::OPERATION_TYPE_G5X_OFFSET);
   assert(encoded.data_case() == linuxcnc::v1::GCodeOperation::kG5XOffset);
   assert(encoded.g5x_offset().origin() == -7);
-  assert_position(encoded.g5x_offset().offset(), {1.0, -2.0, 3.0, -4.0, 5.0, -6.0, 7.0, -8.0, 9.0});
+  assert_position(encoded.g5x_offset().offset(),
+                  {1.0, -2.0, 3.0, -4.0, 5.0, -6.0, 7.0, -8.0, 9.0});
 
   gcode::G92OffsetOp g92;
   g92.offset = full_position();
   encode_gcode_operation(g92, &encoded);
   assert(encoded.type() == linuxcnc::v1::OPERATION_TYPE_G92_OFFSET);
   assert(encoded.data_case() == linuxcnc::v1::GCodeOperation::kG92Offset);
-  assert_position(encoded.g92_offset().offset(), {1.0, -2.0, 3.0, -4.0, 5.0, -6.0, 7.0, -8.0, 9.0});
+  assert_position(encoded.g92_offset().offset(),
+                  {1.0, -2.0, 3.0, -4.0, 5.0, -6.0, 7.0, -8.0, 9.0});
 
   gcode::XYRotationOp rotation;
   rotation.rotation = -45.5;
@@ -163,7 +167,8 @@ void gcode_mapping_all_variants_test() {
   encode_gcode_operation(tool_offset, &encoded);
   assert(encoded.type() == linuxcnc::v1::OPERATION_TYPE_TOOL_OFFSET);
   assert(encoded.data_case() == linuxcnc::v1::GCodeOperation::kToolOffset);
-  assert_position(encoded.tool_offset().offset(), {1.0, -2.0, 3.0, -4.0, 5.0, -6.0, 7.0, -8.0, 9.0});
+  assert_position(encoded.tool_offset().offset(),
+                  {1.0, -2.0, 3.0, -4.0, 5.0, -6.0, 7.0, -8.0, 9.0});
 
   gcode::ToolChangeOp tool_change;
   tool_change.toolNumber = -99;
@@ -204,7 +209,8 @@ void assert_hal_round_trip(const T& source, linuxcnc::v1::HalType type) {
 void hal_scalar_and_reference_mapping_test() {
   assert_hal_round_trip<bool>(true, linuxcnc::v1::HAL_TYPE_BIT);
   assert_hal_round_trip<double>(-123.5, linuxcnc::v1::HAL_TYPE_FLOAT);
-  assert_hal_round_trip<std::int32_t>(-2147483647 - 1, linuxcnc::v1::HAL_TYPE_S32);
+  assert_hal_round_trip<std::int32_t>(-2147483647 - 1,
+                                      linuxcnc::v1::HAL_TYPE_S32);
   assert_hal_round_trip<std::uint32_t>(4294967295U, linuxcnc::v1::HAL_TYPE_U32);
   assert_hal_round_trip<std::int64_t>(-9223372036854775807LL - 1,
                                       linuxcnc::v1::HAL_TYPE_S64);
@@ -213,7 +219,8 @@ void hal_scalar_and_reference_mapping_test() {
 
   linuxcnc::v1::HalScalar stale;
   encode_hal_scalar(HalAdapterValue{std::int64_t{-42}}, &stale);
-  encode_hal_scalar(HalAdapterValue{std::uint64_t{18446744073709551615ULL}}, &stale);
+  encode_hal_scalar(HalAdapterValue{std::uint64_t{18446744073709551615ULL}},
+                    &stale);
   assert(stale.value_case() == linuxcnc::v1::HalScalar::kU64);
   assert(!decode_hal_scalar([] {
     linuxcnc::v1::HalScalar invalid;
@@ -248,41 +255,58 @@ void hal_scalar_and_reference_mapping_test() {
 void hal_topology_mapping_test() {
   HalAdapterTopology topology;
   topology.components = {
-      HalAdapterComponentInfo{1, "user", HalAdapterComponentKind::User, true, 42},
-      HalAdapterComponentInfo{2, "rt", HalAdapterComponentKind::Realtime, false, std::nullopt},
-      HalAdapterComponentInfo{3, "other", HalAdapterComponentKind::Other, true, std::nullopt},
-      HalAdapterComponentInfo{4, "unknown", HalAdapterComponentKind::Unknown, false, 99}};
+      HalAdapterComponentInfo{1, "user", HalAdapterComponentKind::User, true,
+                              42},
+      HalAdapterComponentInfo{2, "rt", HalAdapterComponentKind::Realtime, false,
+                              std::nullopt},
+      HalAdapterComponentInfo{3, "other", HalAdapterComponentKind::Other, true,
+                              std::nullopt},
+      HalAdapterComponentInfo{4, "unknown", HalAdapterComponentKind::Unknown,
+                              false, 99}};
   topology.functions = {
-      HalAdapterFunctionInfo{"fn", 1, "user", true, true, 2, std::int32_t{8}, 13, true},
-      HalAdapterFunctionInfo{"fn-no-runtime", 0, {}, false, false, 0, std::nullopt, 0, false}};
+      HalAdapterFunctionInfo{"fn", 1, "user", true, true, 2, std::int32_t{8},
+                             13, true},
+      HalAdapterFunctionInfo{
+          "fn-no-runtime", 0, {}, false, false, 0, std::nullopt, 0, false}};
   topology.threads = {
-      HalAdapterThreadInfo{"servo", 1000000, 7, true, true, std::int32_t{9}, 12,
+      HalAdapterThreadInfo{"servo",
+                           1000000,
+                           7,
+                           true,
+                           true,
+                           std::int32_t{9},
+                           12,
                            {"fn", "fn-no-runtime"}},
       HalAdapterThreadInfo{"base", 0, 0, false, false, std::nullopt, 0, {}}};
   topology.pins = {
       HalAdapterPinInfo{"bit-in", HalAdapterValue{true}, HalAdapterType::Bit,
                         HalAdapterPinDirection::In, 1, std::string("sig")},
-      HalAdapterPinInfo{"u64-io", HalAdapterValue{std::uint64_t{18446744073709551615ULL}},
-                        HalAdapterType::U64, HalAdapterPinDirection::Io, 2, std::nullopt}};
+      HalAdapterPinInfo{
+          "u64-io", HalAdapterValue{std::uint64_t{18446744073709551615ULL}},
+          HalAdapterType::U64, HalAdapterPinDirection::Io, 2, std::nullopt}};
   topology.params = {
-      HalAdapterParamInfo{"s64", HalAdapterValue{std::int64_t{-9223372036854775807LL - 1}},
-                          HalAdapterType::S64, HalAdapterParamDirection::ReadOnly, 3},
+      HalAdapterParamInfo{
+          "s64", HalAdapterValue{std::int64_t{-9223372036854775807LL - 1}},
+          HalAdapterType::S64, HalAdapterParamDirection::ReadOnly, 3},
       HalAdapterParamInfo{"float", HalAdapterValue{2.25}, HalAdapterType::Float,
                           HalAdapterParamDirection::ReadWrite, 4}};
   topology.signals = {
-      HalAdapterSignalInfo{"signal", HalAdapterValue{std::uint32_t{7}}, HalAdapterType::U32,
-                           std::string("driver"), 1, 2, 3},
-      HalAdapterSignalInfo{"un-driven", HalAdapterValue{std::int32_t{-6}}, HalAdapterType::S32,
-                           std::nullopt, 0, 0, 0}};
+      HalAdapterSignalInfo{"signal", HalAdapterValue{std::uint32_t{7}},
+                           HalAdapterType::U32, std::string("driver"), 1, 2, 3},
+      HalAdapterSignalInfo{"un-driven", HalAdapterValue{std::int32_t{-6}},
+                           HalAdapterType::S32, std::nullopt, 0, 0, 0}};
 
   linuxcnc::v1::HalTopology encoded;
   encoded.add_components()->set_name("stale");
   encode_hal_topology(topology, &encoded);
   assert(encoded.components_size() == 4);
   assert(encoded.components(0).kind() == linuxcnc::v1::HAL_COMPONENT_KIND_USER);
-  assert(encoded.components(1).kind() == linuxcnc::v1::HAL_COMPONENT_KIND_REALTIME);
-  assert(encoded.components(2).kind() == linuxcnc::v1::HAL_COMPONENT_KIND_OTHER);
-  assert(encoded.components(3).kind() == linuxcnc::v1::HAL_COMPONENT_KIND_UNKNOWN);
+  assert(encoded.components(1).kind() ==
+         linuxcnc::v1::HAL_COMPONENT_KIND_REALTIME);
+  assert(encoded.components(2).kind() ==
+         linuxcnc::v1::HAL_COMPONENT_KIND_OTHER);
+  assert(encoded.components(3).kind() ==
+         linuxcnc::v1::HAL_COMPONENT_KIND_UNKNOWN);
   assert(encoded.components(0).pid() == 42);
   assert(encoded.functions_size() == 2);
   assert(encoded.functions(0).runtime() == 8.0);

@@ -1,18 +1,18 @@
 #include "linuxcnc_grpc/gcode_parser.hpp"
 
-#include "linuxcnc_grpc/gcode_canon_preview.hpp"
-
-#include "interp_base.hh"
-#include "interp_return.hh"
-#include "recordingcanon.hh"
-#include "rs274ngc_interp.hh"
-#include "tooldata.hh"
+#include <sys/stat.h>
 
 #include <algorithm>
 #include <cstdlib>
 #include <mutex>
 #include <stdexcept>
-#include <sys/stat.h>
+
+#include "interp_base.hh"
+#include "interp_return.hh"
+#include "linuxcnc_grpc/gcode_canon_preview.hpp"
+#include "recordingcanon.hh"
+#include "rs274ngc_interp.hh"
+#include "tooldata.hh"
 
 namespace linuxcnc::server::gcode {
 namespace {
@@ -67,8 +67,7 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
   bool opened = false;
 
   try {
-    if (!interpreter_)
-      interpreter_.reset(makeInterp());
+    if (!interpreter_) interpreter_.reset(makeInterp());
     if (!interpreter_)
       throw std::runtime_error("failed to create rs274 interpreter");
 
@@ -77,7 +76,8 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
     // state never leaks from a previous workspace/program.
     if (loaded_ini_path_ != options.ini_path) {
       if (interpreter_->ini_load(options.ini_path.c_str()) != 0)
-        throw std::runtime_error("failed to load INI file: " + options.ini_path);
+        throw std::runtime_error("failed to load INI file: " +
+                                 options.ini_path);
       loaded_ini_path_ = options.ini_path;
     }
     if (interpreter_->init() != 0)
@@ -85,8 +85,10 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
     if (!options.program_prefix.empty()) {
       auto* concrete = dynamic_cast<Interp*>(interpreter_.get());
       if (!concrete)
-        throw std::runtime_error("rs274 interpreter does not expose its program prefix");
-      if (options.program_prefix.size() >= sizeof(concrete->_setup.program_prefix))
+        throw std::runtime_error(
+            "rs274 interpreter does not expose its program prefix");
+      if (options.program_prefix.size() >=
+          sizeof(concrete->_setup.program_prefix))
         throw std::runtime_error("G-code program prefix is too long");
       std::copy(options.program_prefix.begin(), options.program_prefix.end(),
                 concrete->_setup.program_prefix);
@@ -117,14 +119,11 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
       // This check is deliberately before read() and after execute(). It lets
       // RPC cancellation stop the wait without undoing an already accepted
       // interpreter step.
-      if (context.cancellationRequested())
-        break;
+      if (context.cancellationRequested()) break;
 
       result = interpreter_->read();
-      if (context.cancellationRequested())
-        break;
-      if (!result_ok(result))
-        break;
+      if (context.cancellationRequested()) break;
+      if (!result_ok(result)) break;
 
       result = interpreter_->execute();
       ++line_count;
@@ -133,14 +132,11 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
         // Delivery happens after execute returns, outside canonical callback
         // code, so a gRPC adapter can enqueue work without doing network I/O
         // from the interpreter/canonical path.
-        if (!context.flushReadyBatch())
-          break;
+        if (!context.flushReadyBatch()) break;
       }
-      if (context.cancellationRequested())
-        break;
+      if (context.cancellationRequested()) break;
 
-      if (context.progressCallback &&
-          line_count % progress_interval == 0) {
+      if (context.progressCallback && line_count % progress_interval == 0) {
         std::size_t estimated_bytes =
             (context.totalBytes * line_count) /
             std::max(line_count + 100U, std::size_t{1});
@@ -164,13 +160,10 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
 
     // Flush the final partial batch only if the consumer is still connected.
     // A cancelled stream must not retain or deliver an unbounded tail.
-    if (!context.cancelled)
-      context.flushBatch();
-    if (context.progressCallback)
-      context.reportProgress(context.totalBytes);
+    if (!context.cancelled) context.flushBatch();
+    if (context.progressCallback) context.reportProgress(context.totalBytes);
   } catch (...) {
-    if (opened)
-      interpreter_->close();
+    if (opened) interpreter_->close();
     throw;
   }
 

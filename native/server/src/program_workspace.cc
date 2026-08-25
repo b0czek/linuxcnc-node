@@ -1,13 +1,14 @@
 #include "linuxcnc_grpc/program_workspace.hpp"
 
-#include <cerrno>
 #include <fcntl.h>
+#include <unistd.h>
+
+#include <cerrno>
 #include <fstream>
 #include <random>
 #include <stdexcept>
 #include <system_error>
 #include <unordered_map>
-#include <unistd.h>
 
 namespace linuxcnc::server {
 namespace fs = std::filesystem;
@@ -17,8 +18,8 @@ namespace {
 bool is_safe_regular_file(const fs::path& path) {
   const auto status = fs::symlink_status(path);
   if (!fs::is_regular_file(status)) return false;
-  constexpr auto executable = fs::perms::owner_exec | fs::perms::group_exec |
-                              fs::perms::others_exec;
+  constexpr auto executable =
+      fs::perms::owner_exec | fs::perms::group_exec | fs::perms::others_exec;
   return (status.permissions() & executable) == fs::perms::none;
 }
 
@@ -35,7 +36,8 @@ std::string opaque_workspace_id() {
 
 }  // namespace
 
-ProgramWorkspaceStore::ProgramWorkspaceStore(fs::path root, fs::path active_directory,
+ProgramWorkspaceStore::ProgramWorkspaceStore(fs::path root,
+                                             fs::path active_directory,
                                              WorkspaceLimits limits)
     : root_(fs::absolute(std::move(root))),
       active_directory_(fs::absolute(std::move(active_directory))),
@@ -69,52 +71,65 @@ std::string ProgramWorkspaceStore::create(std::chrono::seconds ttl) {
   std::error_code error;
   fs::create_directory(workspace_path(id), error);
   if (error) throw std::system_error(error, "create workspace");
-  workspaces_.emplace(id, Workspace{std::chrono::steady_clock::now(),
-                                    ttl == std::chrono::seconds::zero() ? limits_.ttl : ttl,
-                                    false});
+  workspaces_.emplace(
+      id, Workspace{std::chrono::steady_clock::now(),
+                    ttl == std::chrono::seconds::zero() ? limits_.ttl : ttl,
+                    false});
   return id;
 }
 
-bool ProgramWorkspaceStore::write_file(const std::string& workspace_id,
-                                       const std::string& relative_path,
-                                       const std::vector<std::uint8_t>& contents) {
+bool ProgramWorkspaceStore::write_file(
+    const std::string& workspace_id, const std::string& relative_path,
+    const std::vector<std::uint8_t>& contents) {
   fs::path normalized;
-  if (!valid_id(workspace_id) || !valid_relative_path(relative_path, &normalized)) return false;
+  if (!valid_id(workspace_id) ||
+      !valid_relative_path(relative_path, &normalized))
+    return false;
   std::lock_guard lock(mutex_);
   if (!workspace_exists(workspace_id)) return false;
   const auto workspace = workspace_path(workspace_id);
   const auto destination = workspace / normalized;
-  if (!within_root(destination) || has_symlink_component(destination, workspace)) return false;
+  if (!within_root(destination) ||
+      has_symlink_component(destination, workspace))
+    return false;
   const auto existing = fs::symlink_status(destination);
   if (fs::exists(existing) && !is_safe_regular_file(destination)) {
     return false;
   }
-  const auto old_size = fs::is_regular_file(existing) ? fs::file_size(destination) : 0;
+  const auto old_size =
+      fs::is_regular_file(existing) ? fs::file_size(destination) : 0;
   const auto workspace_size = directory_size(workspace);
-  if (contents.size() > limits_.max_workspace_bytes || contents.size() > limits_.max_total_bytes ||
-      workspace_size - std::min(old_size, workspace_size) > limits_.max_workspace_bytes - contents.size()) {
+  if (contents.size() > limits_.max_workspace_bytes ||
+      contents.size() > limits_.max_total_bytes ||
+      workspace_size - std::min(old_size, workspace_size) >
+          limits_.max_workspace_bytes - contents.size()) {
     return false;
   }
   const auto total = total_size_locked();
-  if (total - std::min(old_size, total) > limits_.max_total_bytes - contents.size()) return false;
+  if (total - std::min(old_size, total) >
+      limits_.max_total_bytes - contents.size())
+    return false;
 
   std::error_code error;
   fs::create_directories(destination.parent_path(), error);
-  if (error || has_symlink_component(destination.parent_path(), workspace)) return false;
+  if (error || has_symlink_component(destination.parent_path(), workspace))
+    return false;
   fs::path temporary;
   int descriptor = -1;
   for (int attempt = 0; attempt < 128; ++attempt) {
-    temporary = destination.parent_path() / (".upload-" + opaque_workspace_id());
-    descriptor = ::open(temporary.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC,
-                        S_IRUSR | S_IWUSR);
+    temporary =
+        destination.parent_path() / (".upload-" + opaque_workspace_id());
+    descriptor =
+        ::open(temporary.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC,
+               S_IRUSR | S_IWUSR);
     if (descriptor >= 0) break;
     if (errno != EEXIST) return false;
   }
   if (descriptor < 0) return false;
   std::size_t offset = 0;
   while (offset < contents.size()) {
-    const auto written = ::write(descriptor, contents.data() + offset,
-                                 contents.size() - offset);
+    const auto written =
+        ::write(descriptor, contents.data() + offset, contents.size() - offset);
     if (written < 0 && errno == EINTR) continue;
     if (written <= 0) {
       ::close(descriptor);
@@ -139,13 +154,17 @@ bool ProgramWorkspaceStore::write_file(const std::string& workspace_id,
 bool ProgramWorkspaceStore::remove_file(const std::string& workspace_id,
                                         const std::string& relative_path) {
   fs::path normalized;
-  if (!valid_id(workspace_id) || !valid_relative_path(relative_path, &normalized)) return false;
+  if (!valid_id(workspace_id) ||
+      !valid_relative_path(relative_path, &normalized))
+    return false;
   std::lock_guard lock(mutex_);
   const auto path = workspace_path(workspace_id) / normalized;
   if (!workspace_exists(workspace_id) || !within_root(path) ||
-      has_symlink_component(path, workspace_path(workspace_id))) return false;
+      has_symlink_component(path, workspace_path(workspace_id)))
+    return false;
   std::error_code error;
-  const bool removed = fs::is_regular_file(fs::symlink_status(path)) && fs::remove(path, error);
+  const bool removed =
+      fs::is_regular_file(fs::symlink_status(path)) && fs::remove(path, error);
   if (removed) touch_locked(workspace_id);
   return removed && !error;
 }
@@ -186,7 +205,8 @@ bool ProgramWorkspaceStore::resolve_entry(const std::string& workspace_id,
                                           fs::path* resolved_entry) {
   if (!resolved_entry) return false;
   fs::path entry;
-  if (!valid_id(workspace_id) || !valid_relative_path(entry_path, &entry)) return false;
+  if (!valid_id(workspace_id) || !valid_relative_path(entry_path, &entry))
+    return false;
   std::lock_guard lock(mutex_);
   const auto workspace = workspace_path(workspace_id);
   const auto source_entry = workspace / entry;
@@ -204,21 +224,26 @@ bool ProgramWorkspaceStore::materialize(const std::string& workspace_id,
                                         const std::string& entry_path,
                                         fs::path* materialized_entry) {
   fs::path entry;
-  if (!valid_id(workspace_id) || !valid_relative_path(entry_path, &entry)) return false;
+  if (!valid_id(workspace_id) || !valid_relative_path(entry_path, &entry))
+    return false;
   std::lock_guard lock(mutex_);
   const auto workspace = workspace_path(workspace_id);
   const auto source_entry = workspace / entry;
   if (!workspace_exists(workspace_id) || !is_safe_regular_file(source_entry) ||
-      has_symlink_component(source_entry, workspace)) return false;
+      has_symlink_component(source_entry, workspace))
+    return false;
   std::error_code error;
   fs::create_directories(active_directory_, error);
-  if (error || has_symlink_component(active_directory_, active_directory_.root_path())) return false;
+  if (error ||
+      has_symlink_component(active_directory_, active_directory_.root_path()))
+    return false;
   // Validate the complete tree before changing the active program. Build a
   // sibling staging directory, then swap directories with same-filesystem
   // renames so LinuxCNC never observes a partially copied workspace.
   for (const auto& source : fs::recursive_directory_iterator(workspace)) {
     if (source.is_symlink(error) || error) return false;
-    if (source.is_regular_file(error) && !is_safe_regular_file(source.path())) return false;
+    if (source.is_regular_file(error) && !is_safe_regular_file(source.path()))
+      return false;
     if (error) return false;
   }
   const auto parent = active_directory_.parent_path();
@@ -247,7 +272,9 @@ bool ProgramWorkspaceStore::materialize(const std::string& workspace_id,
       fs::create_directories(destination, error);
     } else if (source.is_regular_file(error)) {
       fs::create_directories(destination.parent_path(), error);
-      if (!error) fs::copy_file(source.path(), destination, fs::copy_options::none, error);
+      if (!error)
+        fs::copy_file(source.path(), destination, fs::copy_options::none,
+                      error);
     }
     if (error) {
       std::error_code cleanup_error;
@@ -295,29 +322,34 @@ std::size_t ProgramWorkspaceStore::prune_expired() {
 }
 
 bool ProgramWorkspaceStore::valid_id(const std::string& workspace_id) {
-  if (workspace_id.empty() || workspace_id == "." || workspace_id == "..") return false;
+  if (workspace_id.empty() || workspace_id == "." || workspace_id == "..")
+    return false;
   for (const char character : workspace_id) {
     if (!(character == '-' || character == '_' || character == '.' ||
           (character >= '0' && character <= '9') ||
           (character >= 'a' && character <= 'z') ||
-          (character >= 'A' && character <= 'Z'))) return false;
+          (character >= 'A' && character <= 'Z')))
+      return false;
   }
   return workspace_id.find("..") == std::string::npos;
 }
 
-bool ProgramWorkspaceStore::valid_relative_path(const std::string& relative_path,
-                                                fs::path* normalized) {
+bool ProgramWorkspaceStore::valid_relative_path(
+    const std::string& relative_path, fs::path* normalized) {
   if (relative_path.empty()) return false;
   fs::path path(relative_path);
-  if (path.is_absolute() || path.has_root_name() || path.has_root_directory()) return false;
+  if (path.is_absolute() || path.has_root_name() || path.has_root_directory())
+    return false;
   for (const auto& component : path) {
-    if (component == ".." || component == "." || component.empty()) return false;
+    if (component == ".." || component == "." || component.empty())
+      return false;
   }
   if (normalized) *normalized = path.lexically_normal();
   return true;
 }
 
-bool ProgramWorkspaceStore::has_symlink_component(const fs::path& path, const fs::path& stop) {
+bool ProgramWorkspaceStore::has_symlink_component(const fs::path& path,
+                                                  const fs::path& stop) {
   fs::path current = path;
   std::error_code error;
   while (!current.empty() && current != stop) {
@@ -353,11 +385,13 @@ bool ProgramWorkspaceStore::within_root(const fs::path& path) const {
   return true;
 }
 
-fs::path ProgramWorkspaceStore::workspace_path(const std::string& workspace_id) const {
+fs::path ProgramWorkspaceStore::workspace_path(
+    const std::string& workspace_id) const {
   return root_ / workspace_id;
 }
 
-bool ProgramWorkspaceStore::workspace_exists(const std::string& workspace_id) const {
+bool ProgramWorkspaceStore::workspace_exists(
+    const std::string& workspace_id) const {
   return workspaces_.find(workspace_id) != workspaces_.end() &&
          fs::is_directory(fs::symlink_status(workspace_path(workspace_id)));
 }
@@ -373,7 +407,8 @@ std::size_t ProgramWorkspaceStore::total_size_locked() const {
 
 void ProgramWorkspaceStore::touch_locked(const std::string& workspace_id) {
   const auto found = workspaces_.find(workspace_id);
-  if (found != workspaces_.end()) found->second.touched = std::chrono::steady_clock::now();
+  if (found != workspaces_.end())
+    found->second.touched = std::chrono::steady_clock::now();
 }
 
 }  // namespace linuxcnc::server

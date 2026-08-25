@@ -1,7 +1,5 @@
 #pragma once
 
-#include "linuxcnc_grpc/callback_runtime.hpp"
-
 #include <chrono>
 #include <cstdint>
 #include <memory>
@@ -12,14 +10,27 @@
 #include <variant>
 #include <vector>
 
+#include "linuxcnc_grpc/callback_runtime.hpp"
+
 namespace linuxcnc::server {
 
-enum class HalTelemetryItemKind : std::uint8_t { Pin = 1, Param = 2, Signal = 3 };
-enum class HalTelemetryType : std::uint8_t {
-  Unavailable = 0, Bit = 1, Float = 2, S32 = 3, U32 = 4, S64 = 5, U64 = 6
+enum class HalTelemetryItemKind : std::uint8_t {
+  Pin = 1,
+  Param = 2,
+  Signal = 3
 };
-using HalTelemetryValue = std::variant<bool, double, std::int32_t, std::uint32_t,
-                                       std::int64_t, std::uint64_t>;
+enum class HalTelemetryType : std::uint8_t {
+  Unavailable = 0,
+  Bit = 1,
+  Float = 2,
+  S32 = 3,
+  U32 = 4,
+  S64 = 5,
+  U64 = 6
+};
+using HalTelemetryValue =
+    std::variant<bool, double, std::int32_t, std::uint32_t, std::int64_t,
+                 std::uint64_t>;
 
 struct HalTelemetryReference {
   HalTelemetryItemKind kind = HalTelemetryItemKind::Pin;
@@ -66,7 +77,8 @@ class HalValueTelemetry {
  public:
   using Subscription = SubscriptionHub<std::uint64_t>::Subscription;
 
-  explicit HalValueTelemetry(std::size_t capacity = 128,
+  explicit HalValueTelemetry(
+      std::size_t capacity = 128,
       std::chrono::seconds attachment_ttl = std::chrono::seconds(30));
 
   std::optional<HalTelemetryDescriptor> create(

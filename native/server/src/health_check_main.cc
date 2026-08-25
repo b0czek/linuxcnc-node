@@ -1,5 +1,3 @@
-#include "grpc/health/v1/health.grpc.pb.h"
-
 #include <grpcpp/grpcpp.h>
 
 #include <chrono>
@@ -9,6 +7,8 @@
 #include <optional>
 #include <sstream>
 #include <string>
+
+#include "grpc/health/v1/health.grpc.pb.h"
 
 namespace {
 std::string environment(const char* name) {
@@ -60,14 +60,16 @@ int main(int argc, char** argv) {
       have_endpoint = true;
       continue;
     }
-    std::cerr << "linuxcnc-grpc-health-check: unknown option " << argument << '\n';
+    std::cerr << "linuxcnc-grpc-health-check: unknown option " << argument
+              << '\n';
     return 2;
   }
 
   if ((certificate_path.empty() != private_key_path.empty()) ||
       (!certificate_path.empty() && ca_path.empty())) {
-    std::cerr << "linuxcnc-grpc-health-check: client certificate and private key "
-                 "must be provided together with a TLS CA\n";
+    std::cerr
+        << "linuxcnc-grpc-health-check: client certificate and private key "
+           "must be provided together with a TLS CA\n";
     return 2;
   }
 
@@ -92,10 +94,10 @@ int main(int argc, char** argv) {
   if (!server_name.empty()) {
     channel_arguments.SetSslTargetNameOverride(server_name);
   }
-  const auto channel = grpc::CreateCustomChannel(
-      endpoint, credentials, channel_arguments);
-  if (!channel->WaitForConnected(
-          std::chrono::system_clock::now() + std::chrono::seconds(2))) {
+  const auto channel =
+      grpc::CreateCustomChannel(endpoint, credentials, channel_arguments);
+  if (!channel->WaitForConnected(std::chrono::system_clock::now() +
+                                 std::chrono::seconds(2))) {
     std::cerr << "linuxcnc-grpc-health-check: cannot connect to " << endpoint
               << '\n';
     return 1;
@@ -106,8 +108,8 @@ int main(int argc, char** argv) {
   request.set_service("");
   grpc::health::v1::HealthCheckResponse response;
   grpc::ClientContext context;
-  context.set_deadline(
-      std::chrono::system_clock::now() + std::chrono::seconds(2));
+  context.set_deadline(std::chrono::system_clock::now() +
+                       std::chrono::seconds(2));
   const auto status = health->Check(&context, request, &response);
   if (!status.ok() ||
       response.status() != grpc::health::v1::HealthCheckResponse::SERVING) {

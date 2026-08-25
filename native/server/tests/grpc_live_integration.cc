@@ -1,12 +1,9 @@
-#include "linuxcnc/v1/linuxcnc.grpc.pb.h"
-
 #include <grpcpp/grpcpp.h>
 
 #include <boost/asio/connect.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/websocket.hpp>
-
 #include <cassert>
 #include <chrono>
 #include <cstdint>
@@ -20,6 +17,8 @@
 #include <thread>
 #include <utility>
 #include <vector>
+
+#include "linuxcnc/v1/linuxcnc.grpc.pb.h"
 
 namespace {
 
@@ -70,10 +69,12 @@ void verify_position_telemetry(const std::string& endpoint) {
 
 GetStatusResponse get_status_with_retry(
     linuxcnc::v1::MachineService::Stub* machine) {
-  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(15);
   while (std::chrono::steady_clock::now() < deadline) {
     grpc::ClientContext context;
-    context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(2));
+    context.set_deadline(std::chrono::system_clock::now() +
+                         std::chrono::seconds(2));
     GetStatusResponse response;
     const auto status = machine->GetStatus(&context, {}, &response);
     if (status.ok()) return response;
@@ -85,7 +86,8 @@ GetStatusResponse get_status_with_retry(
 
 GetStatusResponse wait_for_optional_stop(
     linuxcnc::v1::MachineService::Stub* machine, bool expected) {
-  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(5);
   while (std::chrono::steady_clock::now() < deadline) {
     const auto response = get_status_with_retry(machine);
     if (response.has_status() && response.status().has_task() &&
@@ -99,13 +101,14 @@ GetStatusResponse wait_for_optional_stop(
 }
 
 ExecuteCommandResponse set_optional_stop(
-    linuxcnc::v1::MachineService::Stub* machine,
-    bool enabled, linuxcnc::v1::WaitPolicy wait_policy) {
+    linuxcnc::v1::MachineService::Stub* machine, bool enabled,
+    linuxcnc::v1::WaitPolicy wait_policy) {
   ExecuteCommandRequest request;
   request.set_wait_policy(wait_policy);
   request.mutable_set_optional_stop()->set_enable(enabled);
   grpc::ClientContext context;
-  context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(5));
+  context.set_deadline(std::chrono::system_clock::now() +
+                       std::chrono::seconds(5));
   ExecuteCommandResponse response;
   const auto status = machine->ExecuteCommand(&context, request, &response);
   if (!status.ok()) {
@@ -121,7 +124,8 @@ ExecuteCommandResponse execute_completed(
     ExecuteCommandRequest request) {
   request.set_wait_policy(linuxcnc::v1::WAIT_POLICY_COMPLETED);
   grpc::ClientContext context;
-  context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(10));
+  context.set_deadline(std::chrono::system_clock::now() +
+                       std::chrono::seconds(10));
   ExecuteCommandResponse response;
   const auto status = machine->ExecuteCommand(&context, request, &response);
   if (!status.ok()) {
@@ -136,7 +140,8 @@ void expect_command_error(linuxcnc::v1::MachineService::Stub* machine,
                           ExecuteCommandRequest request,
                           grpc::StatusCode expected) {
   grpc::ClientContext context;
-  context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(2));
+  context.set_deadline(std::chrono::system_clock::now() +
+                       std::chrono::seconds(2));
   ExecuteCommandResponse response;
   const auto status = machine->ExecuteCommand(&context, request, &response);
   assert(!status.ok());
@@ -149,14 +154,15 @@ std::string read_file(const std::string& path) {
     std::cerr << "Unable to read native G-code fixture: " << path << "\n";
     std::abort();
   }
-  return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+  return {std::istreambuf_iterator<char>(input),
+          std::istreambuf_iterator<char>()};
 }
 
 void require_shutdown_status(const grpc::Status& status, const char* name) {
   if (status.error_code() != grpc::StatusCode::UNAVAILABLE &&
       status.error_code() != grpc::StatusCode::CANCELLED) {
-    std::cerr << name << " ended with unexpected status "
-              << status.error_code() << ": " << status.error_message() << "\n";
+    std::cerr << name << " ended with unexpected status " << status.error_code()
+              << ": " << status.error_message() << "\n";
     std::abort();
   }
 }
@@ -217,23 +223,21 @@ void delete_workspace(linuxcnc::v1::ProgramService::Stub* program,
   assert(program->DeleteWorkspace(&context, request, &response).ok());
 }
 
-void verify_chunked_preview_stream(
-    linuxcnc::v1::ProgramService::Stub* program,
-    std::size_t batch_limit) {
+void verify_chunked_preview_stream(linuxcnc::v1::ProgramService::Stub* program,
+                                   std::size_t batch_limit) {
   // Leave enough work outstanding that cancellation is observed while the
   // bounded server queue is backpressuring the serialized parser.
-  const auto cancelled_workspace = upload_program(
-      program, "cancelled-preview.ngc", make_large_gcode());
+  const auto cancelled_workspace =
+      upload_program(program, "cancelled-preview.ngc", make_large_gcode());
   linuxcnc::v1::ParseProgramRequest cancelled_request;
   cancelled_request.mutable_entry()->set_workspace_id(
       cancelled_workspace.workspace_id());
-  cancelled_request.mutable_entry()->set_relative_path(
-      "cancelled-preview.ngc");
+  cancelled_request.mutable_entry()->set_relative_path("cancelled-preview.ngc");
   grpc::ClientContext cancelled_context;
-  cancelled_context.set_deadline(
-      std::chrono::system_clock::now() + std::chrono::seconds(15));
-  auto cancelled_stream = program->ParseProgram(
-      &cancelled_context, cancelled_request);
+  cancelled_context.set_deadline(std::chrono::system_clock::now() +
+                                 std::chrono::seconds(15));
+  auto cancelled_stream =
+      program->ParseProgram(&cancelled_context, cancelled_request);
   linuxcnc::v1::ParseProgramEvent event;
   bool saw_cancelled_batch = false;
   while (cancelled_stream->Read(&event)) {
@@ -245,21 +249,22 @@ void verify_chunked_preview_stream(
     cancelled_context.TryCancel();
     break;
   }
-  while (cancelled_stream->Read(&event)) {}
+  while (cancelled_stream->Read(&event)) {
+  }
   const auto cancelled_status = cancelled_stream->Finish();
   assert(saw_cancelled_batch);
   assert(cancelled_status.error_code() == grpc::StatusCode::CANCELLED);
 
   // A successful parse immediately after cancellation proves the parser
   // worker, stream admission, and workspace lease were all released.
-  const auto workspace = upload_program(
-      program, "chunked-preview.ngc", make_chunked_preview_gcode());
+  const auto workspace = upload_program(program, "chunked-preview.ngc",
+                                        make_chunked_preview_gcode());
   linuxcnc::v1::ParseProgramRequest request;
   request.mutable_entry()->set_workspace_id(workspace.workspace_id());
   request.mutable_entry()->set_relative_path("chunked-preview.ngc");
   grpc::ClientContext context;
-  context.set_deadline(
-      std::chrono::system_clock::now() + std::chrono::seconds(15));
+  context.set_deadline(std::chrono::system_clock::now() +
+                       std::chrono::seconds(15));
   auto stream = program->ParseProgram(&context, request);
 
   std::size_t batch_count = 0;
@@ -312,8 +317,8 @@ void verify_chunked_preview_stream(
       assert(event.summary().has_extents());
       saw_summary = true;
     } else if (event.has_error()) {
-      std::cerr << "Chunked ParseProgram error: "
-                << event.error().message() << "\n";
+      std::cerr << "Chunked ParseProgram error: " << event.error().message()
+                << "\n";
       std::abort();
     } else {
       std::cerr << "Chunked ParseProgram returned an empty event\n";
@@ -335,7 +340,8 @@ int probe_reacquire(const std::string& endpoint) {
   const auto channel = make_channel(endpoint);
   auto hal = linuxcnc::v1::HalService::NewStub(channel);
   auto scope = linuxcnc::v1::ScopeService::NewStub(channel);
-  (void)get_status_with_retry(linuxcnc::v1::MachineService::NewStub(channel).get());
+  (void)get_status_with_retry(
+      linuxcnc::v1::MachineService::NewStub(channel).get());
 
   grpc::ClientContext component_context;
   component_context.set_deadline(std::chrono::system_clock::now() +
@@ -355,7 +361,9 @@ int probe_reacquire(const std::string& endpoint) {
   request.Clear();
   request.mutable_ready()->set_ready(true);
   assert(component->Write(request));
-  do { assert(component->Read(&response)); } while (!response.has_metadata());
+  do {
+    assert(component->Read(&response));
+  } while (!response.has_metadata());
   assert(response.metadata().ready());
 
   grpc::ClientContext scope_context;
@@ -368,13 +376,18 @@ int probe_reacquire(const std::string& endpoint) {
   linuxcnc::v1::ScopeSessionMessage scope_response;
   assert(session->Read(&scope_response) && scope_response.has_status());
 
-  acquire.Clear(); acquire.mutable_stop();
+  acquire.Clear();
+  acquire.mutable_stop();
   assert(session->Write(acquire));
-  do { assert(session->Read(&scope_response)); } while (!scope_response.has_status());
+  do {
+    assert(session->Read(&scope_response));
+  } while (!scope_response.has_status());
   session->WritesDone();
-  while (session->Read(&scope_response)) {}
+  while (session->Read(&scope_response)) {
+  }
   assert(session->Finish().ok());
-  request.Clear(); request.mutable_close();
+  request.Clear();
+  request.mutable_close();
   assert(component->Write(request));
   component->WritesDone();
   assert(component->Finish().ok());
@@ -395,10 +408,12 @@ int hold_shutdown(const std::string& endpoint) {
                              std::chrono::seconds(15));
   auto errors = machine->WatchErrors(&error_context, {});
 
-  const auto large_workspace = upload_program(
-      program.get(), "shutdown-large.ngc", make_large_gcode());
+  const auto large_workspace =
+      upload_program(program.get(), "shutdown-large.ngc", make_large_gcode());
   std::vector<std::unique_ptr<grpc::ClientContext>> parse_contexts;
-  std::vector<std::unique_ptr<grpc::ClientReader<linuxcnc::v1::ParseProgramEvent>>> parses;
+  std::vector<
+      std::unique_ptr<grpc::ClientReader<linuxcnc::v1::ParseProgramEvent>>>
+      parses;
   for (int index = 0; index < 6; ++index) {
     auto context = std::make_unique<grpc::ClientContext>();
     context->set_deadline(std::chrono::system_clock::now() +
@@ -412,8 +427,9 @@ int hold_shutdown(const std::string& endpoint) {
 
   grpc::ClientContext partial_create_context;
   linuxcnc::v1::CreateWorkspaceResponse partial_workspace;
-  assert(program->CreateWorkspace(
-      &partial_create_context, {}, &partial_workspace).ok());
+  assert(
+      program->CreateWorkspace(&partial_create_context, {}, &partial_workspace)
+          .ok());
   grpc::ClientContext upload_context;
   upload_context.set_deadline(std::chrono::system_clock::now() +
                               std::chrono::seconds(15));
@@ -434,24 +450,28 @@ int hold_shutdown(const std::string& endpoint) {
   component_request.mutable_open()->set_prefix("grpc-shutdown-owned");
   assert(component->Write(component_request));
   linuxcnc::v1::ComponentSessionMessage component_response;
-  assert(component->Read(&component_response) && component_response.has_metadata());
+  assert(component->Read(&component_response) &&
+         component_response.has_metadata());
   component_request.Clear();
   component_request.mutable_pin()->set_name("value");
   component_request.mutable_pin()->set_type(linuxcnc::v1::HAL_TYPE_FLOAT);
   component_request.mutable_pin()->set_direction(
       linuxcnc::v1::HAL_PIN_DIRECTION_OUT);
   assert(component->Write(component_request));
-  component_request.Clear(); component_request.mutable_ready()->set_ready(true);
+  component_request.Clear();
+  component_request.mutable_ready()->set_ready(true);
   assert(component->Write(component_request));
-  do { assert(component->Read(&component_response)); }
-  while (!component_response.has_metadata());
+  do {
+    assert(component->Read(&component_response));
+  } while (!component_response.has_metadata());
   assert(component_response.metadata().ready());
 
   // Start after the owned component is fully visible so the held watch has no
   // pending mutation to encode before the daemon-shutdown race begins.
   grpc::ClientContext topology_snapshot_context;
   linuxcnc::v1::GetHalTopologyResponse topology_snapshot;
-  assert(hal->GetTopology(&topology_snapshot_context, {}, &topology_snapshot).ok());
+  assert(hal->GetTopology(&topology_snapshot_context, {}, &topology_snapshot)
+             .ok());
   grpc::ClientContext topology_context;
   topology_context.set_deadline(std::chrono::system_clock::now() +
                                 std::chrono::seconds(15));
@@ -472,23 +492,28 @@ int hold_shutdown(const std::string& endpoint) {
   std::cout << "LIVE_SHUTDOWN_READY" << std::endl;
 
   linuxcnc::v1::LinuxCNCError error;
-  while (errors->Read(&error)) {}
+  while (errors->Read(&error)) {
+  }
   require_shutdown_status(errors->Finish(), "WatchErrors");
   linuxcnc::v1::WatchHalTopologyEvent topology_event;
-  while (topology->Read(&topology_event)) {}
+  while (topology->Read(&topology_event)) {
+  }
   require_shutdown_status(topology->Finish(), "WatchTopology");
   upload->WritesDone();
   require_shutdown_status(upload->Finish(), "UploadWorkspace");
   for (auto& parse : parses) {
     linuxcnc::v1::ParseProgramEvent event;
-    while (parse->Read(&event)) {}
+    while (parse->Read(&event)) {
+    }
     require_shutdown_status(parse->Finish(), "ParseProgram");
   }
   component->WritesDone();
-  while (component->Read(&component_response)) {}
+  while (component->Read(&component_response)) {
+  }
   require_shutdown_status(component->Finish(), "ComponentSession");
   session->WritesDone();
-  while (session->Read(&scope_response)) {}
+  while (session->Read(&scope_response)) {
+  }
   require_shutdown_status(session->Finish(), "ScopeSession");
   std::cout << "LIVE_SHUTDOWN_TERMINATED" << std::endl;
   return 0;
@@ -534,22 +559,25 @@ int main(int argc, char** argv) {
   assert(baseline.status().has_task());
   assert(baseline.status().has_motion());
 
-  const auto target_optional_stop = !baseline.status().task().optional_stop_state();
-  const auto accepted = set_optional_stop(
-      machine.get(), target_optional_stop, linuxcnc::v1::WAIT_POLICY_ACCEPTED);
+  const auto target_optional_stop =
+      !baseline.status().task().optional_stop_state();
+  const auto accepted = set_optional_stop(machine.get(), target_optional_stop,
+                                          linuxcnc::v1::WAIT_POLICY_ACCEPTED);
   assert(accepted.status() == linuxcnc::v1::RCS_STATUS_EXEC ||
          accepted.status() == linuxcnc::v1::RCS_STATUS_DONE);
-  const auto completed = set_optional_stop(
-      machine.get(), target_optional_stop, linuxcnc::v1::WAIT_POLICY_COMPLETED);
+  const auto completed = set_optional_stop(machine.get(), target_optional_stop,
+                                           linuxcnc::v1::WAIT_POLICY_COMPLETED);
   assert(completed.status() == linuxcnc::v1::RCS_STATUS_DONE);
-  const auto changed = wait_for_optional_stop(machine.get(), target_optional_stop);
+  const auto changed =
+      wait_for_optional_stop(machine.get(), target_optional_stop);
   assert(changed.status().task().optional_stop_state() == target_optional_stop);
 
   // The first event is a typed replay from the baseline sequence. This
   // verifies that a status change made through the command queue is visible
   // without requiring a second full snapshot.
   grpc::ClientContext watch_context;
-  watch_context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(5));
+  watch_context.set_deadline(std::chrono::system_clock::now() +
+                             std::chrono::seconds(5));
   linuxcnc::v1::WatchStatusRequest watch_request;
   watch_request.set_after_sequence(baseline.sequence());
   auto watch = machine->WatchStatus(&watch_context, watch_request);
@@ -585,17 +613,21 @@ int main(int argc, char** argv) {
   // watcher. The old shared sleep made this update take up to 60 seconds.
   position_config.set_sample_period_ms(60000);
   grpc::ClientContext slow_position_context;
-  assert(machine->ConfigurePositionHistory(
-      &slow_position_context, position_config, &empty).ok());
+  assert(machine
+             ->ConfigurePositionHistory(&slow_position_context, position_config,
+                                        &empty)
+             .ok());
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  const auto before_slow_position_command = get_status_with_retry(machine.get());
+  const auto before_slow_position_command =
+      get_status_with_retry(machine.get());
   grpc::ClientContext independent_watch_context;
-  independent_watch_context.set_deadline(
-      std::chrono::system_clock::now() + std::chrono::seconds(2));
+  independent_watch_context.set_deadline(std::chrono::system_clock::now() +
+                                         std::chrono::seconds(2));
   linuxcnc::v1::WatchStatusRequest independent_watch_request;
-  independent_watch_request.set_after_sequence(before_slow_position_command.sequence());
-  auto independent_watch = machine->WatchStatus(
-      &independent_watch_context, independent_watch_request);
+  independent_watch_request.set_after_sequence(
+      before_slow_position_command.sequence());
+  auto independent_watch = machine->WatchStatus(&independent_watch_context,
+                                                independent_watch_request);
   const bool independent_optional_stop =
       !before_slow_position_command.status().task().optional_stop_state();
   (void)set_optional_stop(machine.get(), independent_optional_stop,
@@ -606,11 +638,14 @@ int main(int argc, char** argv) {
   (void)independent_watch->Finish();
   position_config.set_sample_period_ms(10);
   grpc::ClientContext restore_position_context;
-  assert(machine->ConfigurePositionHistory(
-      &restore_position_context, position_config, &empty).ok());
+  assert(machine
+             ->ConfigurePositionHistory(&restore_position_context,
+                                        position_config, &empty)
+             .ok());
 
   ExecuteCommandRequest reset_estop;
-  reset_estop.mutable_set_state()->set_state(linuxcnc::v1::TASK_STATE_ESTOP_RESET);
+  reset_estop.mutable_set_state()->set_state(
+      linuxcnc::v1::TASK_STATE_ESTOP_RESET);
   (void)execute_completed(machine.get(), std::move(reset_estop));
   ExecuteCommandRequest machine_on;
   machine_on.mutable_set_state()->set_state(linuxcnc::v1::TASK_STATE_ON);
@@ -625,25 +660,42 @@ int main(int argc, char** argv) {
   // Exercise one safe representative from the remaining command families.
   // The protobuf setters are the command catalog: this table deliberately
   // does not duplicate command-case numbers or names.
-  const std::pair<const char*, std::function<void(ExecuteCommandRequest&)>> commands[] = {
-      {"task", [](auto& request) { request.mutable_task_plan_synch(); }},
-      {"trajectory", [](auto& request) { request.mutable_set_feed_rate()->set_value(1.0); }},
-      {"jog", [](auto& request) {
-         request.mutable_jog_stop()->set_axis_or_joint_index(0);
-         request.mutable_jog_stop()->set_is_joint_jog(false);
-       }},
-      {"spindle", [](auto& request) { request.mutable_spindle_off()->set_spindle_index(0); }},
-      {"coolant", [](auto& request) { request.mutable_set_mist()->set_enable(false); }},
-      {"tool", [](auto& request) { request.mutable_load_tool_table(); }},
-      {"io", [](auto& request) {
-         request.mutable_set_digital_output()->set_index(0);
-         request.mutable_set_digital_output()->set_value(false);
-       }},
-      {"debug", [](auto& request) { request.mutable_set_debug_level()->set_level(0); }},
-      {"operator-message", [](auto& request) {
-         request.mutable_send_operator_text()->set_message("linuxcnc-grpc live acceptance");
-       }},
-  };
+  const std::pair<const char*, std::function<void(ExecuteCommandRequest&)>>
+      commands[] = {
+          {"task", [](auto& request) { request.mutable_task_plan_synch(); }},
+          {"trajectory",
+           [](auto& request) {
+             request.mutable_set_feed_rate()->set_value(1.0);
+           }},
+          {"jog",
+           [](auto& request) {
+             request.mutable_jog_stop()->set_axis_or_joint_index(0);
+             request.mutable_jog_stop()->set_is_joint_jog(false);
+           }},
+          {"spindle",
+           [](auto& request) {
+             request.mutable_spindle_off()->set_spindle_index(0);
+           }},
+          {"coolant",
+           [](auto& request) {
+             request.mutable_set_mist()->set_enable(false);
+           }},
+          {"tool", [](auto& request) { request.mutable_load_tool_table(); }},
+          {"io",
+           [](auto& request) {
+             request.mutable_set_digital_output()->set_index(0);
+             request.mutable_set_digital_output()->set_value(false);
+           }},
+          {"debug",
+           [](auto& request) {
+             request.mutable_set_debug_level()->set_level(0);
+           }},
+          {"operator-message",
+           [](auto& request) {
+             request.mutable_send_operator_text()->set_message(
+                 "linuxcnc-grpc live acceptance");
+           }},
+      };
   for (const auto& [family, prepare] : commands) {
     ExecuteCommandRequest request;
     prepare(request);
@@ -666,8 +718,8 @@ int main(int argc, char** argv) {
   partial_tool->mutable_wear_offset()->add_values(0.25);
   (void)execute_completed(machine.get(), std::move(partial_tool_update));
   expected_tool.mutable_wear_offset()->set_values(0, 0.25);
-  const auto tool_deadline = std::chrono::steady_clock::now() +
-                             std::chrono::seconds(5);
+  const auto tool_deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(5);
   bool tool_updated = false;
   while (std::chrono::steady_clock::now() < tool_deadline && !tool_updated) {
     const auto status = get_status_with_retry(machine.get());
@@ -678,7 +730,8 @@ int main(int argc, char** argv) {
         break;
       }
     }
-    if (!tool_updated) std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    if (!tool_updated)
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
   assert(tool_updated);
 
@@ -686,8 +739,8 @@ int main(int argc, char** argv) {
                        grpc::StatusCode::INVALID_ARGUMENT);
 
   grpc::ClientContext clear_position_context;
-  const auto clear_position_status = machine->ClearPositionHistory(
-      &clear_position_context, empty, &empty);
+  const auto clear_position_status =
+      machine->ClearPositionHistory(&clear_position_context, empty, &empty);
   assert(clear_position_status.ok());
 
   // Upload and parse a repo-owned native fixture through the real workspace
@@ -725,22 +778,23 @@ int main(int argc, char** argv) {
   parse_request.mutable_entry()->set_workspace_id(workspace.workspace_id());
   parse_request.mutable_entry()->set_relative_path("simple-linear.ngc");
   grpc::ClientContext parse_context;
-  parse_context.set_deadline(
-      std::chrono::system_clock::now() + std::chrono::seconds(15));
+  parse_context.set_deadline(std::chrono::system_clock::now() +
+                             std::chrono::seconds(15));
   auto parse = program->ParseProgram(&parse_context, parse_request);
   linuxcnc::v1::ParseProgramEvent parse_event;
   std::uint64_t parsed_operations = 0;
   bool saw_parse_summary = false;
   while (parse->Read(&parse_event)) {
     if (parse_event.has_batch()) {
-      parsed_operations += static_cast<std::uint64_t>(
-          parse_event.batch().operations_size());
+      parsed_operations +=
+          static_cast<std::uint64_t>(parse_event.batch().operations_size());
     } else if (parse_event.has_summary()) {
       saw_parse_summary = true;
       assert(parse_event.summary().operation_count() == parsed_operations);
       assert(parse_event.summary().has_extents());
     } else if (parse_event.has_error()) {
-      std::cerr << "ParseProgram error: " << parse_event.error().message() << "\n";
+      std::cerr << "ParseProgram error: " << parse_event.error().message()
+                << "\n";
       return 1;
     }
   }
@@ -761,9 +815,11 @@ int main(int argc, char** argv) {
   auto hal = linuxcnc::v1::HalService::NewStub(channel);
   grpc::ClientContext topology_context;
   linuxcnc::v1::GetHalTopologyResponse topology;
-  const auto topology_status = hal->GetTopology(&topology_context, {}, &topology);
+  const auto topology_status =
+      hal->GetTopology(&topology_context, {}, &topology);
   if (!topology_status.ok()) {
-    std::cerr << "HAL topology failed: " << topology_status.error_message() << "\n";
+    std::cerr << "HAL topology failed: " << topology_status.error_message()
+              << "\n";
     return 1;
   }
   assert(topology.sequence() != 0);
@@ -771,34 +827,36 @@ int main(int argc, char** argv) {
   assert(topology.topology().pins_size() > 0);
 
   grpc::ClientContext future_topology_context;
-  future_topology_context.set_deadline(
-      std::chrono::system_clock::now() + std::chrono::seconds(2));
+  future_topology_context.set_deadline(std::chrono::system_clock::now() +
+                                       std::chrono::seconds(2));
   linuxcnc::v1::WatchHalTopologyRequest future_topology_request;
   future_topology_request.set_after_sequence(topology.sequence() + 1000);
-  auto future_topology = hal->WatchTopology(
-      &future_topology_context, future_topology_request);
+  auto future_topology =
+      hal->WatchTopology(&future_topology_context, future_topology_request);
   linuxcnc::v1::WatchHalTopologyEvent future_topology_event;
   assert(future_topology->Read(&future_topology_event));
-  assert(future_topology_event.sequence() < future_topology_request.after_sequence());
+  assert(future_topology_event.sequence() <
+         future_topology_request.after_sequence());
   assert(future_topology_event.has_topology());
   future_topology_context.TryCancel();
   (void)future_topology->Finish();
 
   // A real HAL mutation must advance the typed topology stream.
   grpc::ClientContext topology_watch_context;
-  topology_watch_context.set_deadline(
-      std::chrono::system_clock::now() + std::chrono::seconds(5));
+  topology_watch_context.set_deadline(std::chrono::system_clock::now() +
+                                      std::chrono::seconds(5));
   linuxcnc::v1::WatchHalTopologyRequest topology_watch_request;
   topology_watch_request.set_after_sequence(topology.sequence());
-  auto topology_watch = hal->WatchTopology(
-      &topology_watch_context, topology_watch_request);
+  auto topology_watch =
+      hal->WatchTopology(&topology_watch_context, topology_watch_request);
   linuxcnc::v1::CreateHalSignalRequest watched_signal_request;
   watched_signal_request.set_name("grpc-live-topology-watch");
   watched_signal_request.set_type(linuxcnc::v1::HAL_TYPE_FLOAT);
   linuxcnc::v1::CreateHalSignalResponse watched_signal_response;
   grpc::ClientContext watched_signal_context;
   assert(hal->CreateSignal(&watched_signal_context, watched_signal_request,
-                           &watched_signal_response).ok());
+                           &watched_signal_response)
+             .ok());
   linuxcnc::v1::WatchHalTopologyEvent topology_event;
   bool saw_watched_signal = false;
   while (topology_watch->Read(&topology_event)) {
@@ -817,7 +875,8 @@ int main(int argc, char** argv) {
 
   linuxcnc::v1::GetHalWriterMetadataResponse writer_metadata;
   grpc::ClientContext writer_metadata_context;
-  assert(hal->GetWriterMetadata(&writer_metadata_context, {}, &writer_metadata).ok());
+  assert(hal->GetWriterMetadata(&writer_metadata_context, {}, &writer_metadata)
+             .ok());
   assert(writer_metadata.metadata().writer_id() == "linuxcnc-grpc-server");
   assert(writer_metadata.metadata().ready());
   linuxcnc::v1::SetHalWriterReadyRequest writer_ready;
@@ -826,16 +885,20 @@ int main(int argc, char** argv) {
   assert(hal->SetWriterReady(&writer_ready_context, writer_ready, &empty).ok());
   linuxcnc::v1::GetHalWriterMetadataResponse unready_metadata;
   grpc::ClientContext unready_metadata_context;
-  assert(hal->GetWriterMetadata(&unready_metadata_context, {}, &unready_metadata).ok());
+  assert(
+      hal->GetWriterMetadata(&unready_metadata_context, {}, &unready_metadata)
+          .ok());
   assert(!unready_metadata.metadata().ready());
   writer_ready.set_ready(true);
   grpc::ClientContext restore_writer_ready_context;
-  assert(hal->SetWriterReady(
-      &restore_writer_ready_context, writer_ready, &empty).ok());
+  assert(
+      hal->SetWriterReady(&restore_writer_ready_context, writer_ready, &empty)
+          .ok());
   linuxcnc::v1::GetHalWriterMetadataResponse restored_metadata;
   grpc::ClientContext restored_metadata_context;
-  assert(hal->GetWriterMetadata(
-      &restored_metadata_context, {}, &restored_metadata).ok());
+  assert(
+      hal->GetWriterMetadata(&restored_metadata_context, {}, &restored_metadata)
+          .ok());
   assert(restored_metadata.metadata().ready());
 
   const auto& pin = topology.topology().pins(0);
@@ -845,22 +908,24 @@ int main(int argc, char** argv) {
   item->set_name(pin.name());
   grpc::ClientContext read_context;
   linuxcnc::v1::HalReadResponse read_response;
-  const auto read_status = hal->Read(&read_context, read_request, &read_response);
+  const auto read_status =
+      hal->Read(&read_context, read_request, &read_response);
   if (!read_status.ok()) {
     std::cerr << "HAL read failed for " << pin.name() << ": "
               << read_status.error_message() << "\n";
     return 1;
   }
   assert(read_response.values_size() == 1);
-  assert(read_response.values(0).value().type() != linuxcnc::v1::HAL_TYPE_UNSPECIFIED);
+  assert(read_response.values(0).value().type() !=
+         linuxcnc::v1::HAL_TYPE_UNSPECIFIED);
 
   // Prove that both 64-bit HAL integer types survive the real HAL and
   // protobuf boundaries without a JavaScript-number-style precision loss.
   const std::int64_t signed_value = -9007199254740993LL;
   const std::uint64_t unsigned_value = 18446744073709551600ULL;
-  for (const auto& [name, type] : {
-           std::pair{"grpc-live-s64", linuxcnc::v1::HAL_TYPE_S64},
-           std::pair{"grpc-live-u64", linuxcnc::v1::HAL_TYPE_U64}}) {
+  for (const auto& [name, type] :
+       {std::pair{"grpc-live-s64", linuxcnc::v1::HAL_TYPE_S64},
+        std::pair{"grpc-live-u64", linuxcnc::v1::HAL_TYPE_U64}}) {
     linuxcnc::v1::CreateHalSignalRequest create_signal_request;
     create_signal_request.set_name(name);
     create_signal_request.set_type(type);
@@ -878,9 +943,11 @@ int main(int argc, char** argv) {
   conflicting_signal.set_type(linuxcnc::v1::HAL_TYPE_U64);
   linuxcnc::v1::CreateHalSignalResponse conflicting_signal_response;
   grpc::ClientContext conflicting_signal_context;
-  const auto conflicting_signal_status = hal->CreateSignal(
-      &conflicting_signal_context, conflicting_signal, &conflicting_signal_response);
-  assert(conflicting_signal_status.error_code() == grpc::StatusCode::INVALID_ARGUMENT);
+  const auto conflicting_signal_status =
+      hal->CreateSignal(&conflicting_signal_context, conflicting_signal,
+                        &conflicting_signal_response);
+  assert(conflicting_signal_status.error_code() ==
+         grpc::StatusCode::INVALID_ARGUMENT);
 
   linuxcnc::v1::HalWrite exact_write;
   auto* signed_write = exact_write.add_writes();
@@ -895,8 +962,8 @@ int main(int argc, char** argv) {
   unsigned_write->mutable_value()->set_u64(unsigned_value);
   linuxcnc::v1::HalWriteResponse exact_write_response;
   grpc::ClientContext exact_write_context;
-  const auto exact_write_status = hal->Write(
-      &exact_write_context, exact_write, &exact_write_response);
+  const auto exact_write_status =
+      hal->Write(&exact_write_context, exact_write, &exact_write_response);
   assert(exact_write_status.ok());
   assert(exact_write_response.values_size() == 2);
   assert(exact_write_response.values(0).value().s64() == signed_value);
@@ -904,12 +971,14 @@ int main(int argc, char** argv) {
 
   linuxcnc::v1::HalWrite invalid_batch;
   auto* valid_batch_write = invalid_batch.add_writes();
-  valid_batch_write->mutable_item()->set_kind(linuxcnc::v1::HAL_ITEM_KIND_SIGNAL);
+  valid_batch_write->mutable_item()->set_kind(
+      linuxcnc::v1::HAL_ITEM_KIND_SIGNAL);
   valid_batch_write->mutable_item()->set_name("grpc-live-s64");
   valid_batch_write->mutable_value()->set_type(linuxcnc::v1::HAL_TYPE_S64);
   valid_batch_write->mutable_value()->set_s64(signed_value + 1);
   auto* invalid_batch_write = invalid_batch.add_writes();
-  invalid_batch_write->mutable_item()->set_kind(linuxcnc::v1::HAL_ITEM_KIND_SIGNAL);
+  invalid_batch_write->mutable_item()->set_kind(
+      linuxcnc::v1::HAL_ITEM_KIND_SIGNAL);
   invalid_batch_write->mutable_item()->set_name("grpc-live-missing");
   invalid_batch_write->mutable_value()->set_type(linuxcnc::v1::HAL_TYPE_S64);
   invalid_batch_write->mutable_value()->set_s64(0);
@@ -917,7 +986,8 @@ int main(int argc, char** argv) {
   grpc::ClientContext invalid_batch_context;
   const auto invalid_batch_status = hal->Write(
       &invalid_batch_context, invalid_batch, &invalid_batch_response);
-  assert(invalid_batch_status.error_code() == grpc::StatusCode::FAILED_PRECONDITION);
+  assert(invalid_batch_status.error_code() ==
+         grpc::StatusCode::FAILED_PRECONDITION);
 
   linuxcnc::v1::HalReadRequest exact_read;
   auto* signed_read = exact_read.add_items();
@@ -928,8 +998,8 @@ int main(int argc, char** argv) {
   unsigned_read->set_name("grpc-live-u64");
   linuxcnc::v1::HalReadResponse exact_read_response;
   grpc::ClientContext exact_read_context;
-  const auto exact_read_status = hal->Read(
-      &exact_read_context, exact_read, &exact_read_response);
+  const auto exact_read_status =
+      hal->Read(&exact_read_context, exact_read, &exact_read_response);
   assert(exact_read_status.ok());
   assert(exact_read_response.values_size() == 2);
   assert(exact_read_response.values(0).value().s64() == signed_value);
@@ -937,8 +1007,8 @@ int main(int argc, char** argv) {
 
   // A disconnected client-owned component must disappear with all its pins.
   grpc::ClientContext component_context;
-  component_context.set_deadline(
-      std::chrono::system_clock::now() + std::chrono::seconds(5));
+  component_context.set_deadline(std::chrono::system_clock::now() +
+                                 std::chrono::seconds(5));
   auto component = hal->ComponentSession(&component_context);
   linuxcnc::v1::ComponentSessionMessage component_open;
   component_open.mutable_open()->set_name("grpc-live-component");
@@ -953,7 +1023,8 @@ int main(int argc, char** argv) {
   linuxcnc::v1::ComponentSessionMessage component_pin;
   component_pin.mutable_pin()->set_name("value");
   component_pin.mutable_pin()->set_type(linuxcnc::v1::HAL_TYPE_S64);
-  component_pin.mutable_pin()->set_direction(linuxcnc::v1::HAL_PIN_DIRECTION_OUT);
+  component_pin.mutable_pin()->set_direction(
+      linuxcnc::v1::HAL_PIN_DIRECTION_OUT);
   assert(component->Write(component_pin));
   linuxcnc::v1::ComponentSessionMessage component_ready;
   component_ready.mutable_ready()->set_ready(true);
@@ -992,8 +1063,8 @@ int main(int argc, char** argv) {
 
   grpc::ClientContext cleanup_topology_context;
   linuxcnc::v1::GetHalTopologyResponse cleanup_topology;
-  const auto cleanup_topology_status = hal->GetTopology(
-      &cleanup_topology_context, {}, &cleanup_topology);
+  const auto cleanup_topology_status =
+      hal->GetTopology(&cleanup_topology_context, {}, &cleanup_topology);
   assert(cleanup_topology_status.ok());
   for (const auto& item : cleanup_topology.topology().components()) {
     assert(item.name() != "grpc-live-component");
@@ -1005,8 +1076,8 @@ int main(int argc, char** argv) {
   // Cancellation, rather than an explicit Close message, owns the same HAL
   // cleanup path.
   grpc::ClientContext abrupt_context;
-  abrupt_context.set_deadline(
-      std::chrono::system_clock::now() + std::chrono::seconds(5));
+  abrupt_context.set_deadline(std::chrono::system_clock::now() +
+                              std::chrono::seconds(5));
   auto abrupt = hal->ComponentSession(&abrupt_context);
   linuxcnc::v1::ComponentSessionMessage abrupt_open;
   abrupt_open.mutable_open()->set_name("grpc-live-abrupt");
@@ -1026,15 +1097,16 @@ int main(int argc, char** argv) {
     for (const auto& item : current.topology().components()) {
       if (item.name() == "grpc-live-abrupt") abrupt_removed = false;
     }
-    if (!abrupt_removed) std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    if (!abrupt_removed)
+      std::this_thread::sleep_for(std::chrono::milliseconds(25));
   }
   assert(abrupt_removed);
 
   // Scope ownership is exclusive even when two clients share one endpoint.
   auto scope = linuxcnc::v1::ScopeService::NewStub(channel);
   grpc::ClientContext scope_context;
-  scope_context.set_deadline(
-      std::chrono::system_clock::now() + std::chrono::seconds(10));
+  scope_context.set_deadline(std::chrono::system_clock::now() +
+                             std::chrono::seconds(10));
   auto scope_session = scope->Session(&scope_context);
   linuxcnc::v1::ScopeSessionMessage scope_acquire;
   scope_acquire.mutable_acquire();
@@ -1065,32 +1137,38 @@ int main(int argc, char** argv) {
   scope_channel->mutable_item()->set_kind(linuxcnc::v1::HAL_ITEM_KIND_PIN);
   scope_channel->mutable_item()->set_name(scope_pin->name());
   assert(scope_session->Write(scope_configure));
-  do { assert(scope_session->Read(&scope_response)); }
-  while (!scope_response.has_status());
+  do {
+    assert(scope_session->Read(&scope_response));
+  } while (!scope_response.has_status());
 
   linuxcnc::v1::ScopeSessionMessage scope_run;
   scope_run.mutable_run()->set_mode(linuxcnc::v1::SCOPE_RUN_MODE_ROLL);
   assert(scope_session->Write(scope_run));
-  do { assert(scope_session->Read(&scope_response)); }
-  while (!scope_response.has_status());
+  do {
+    assert(scope_session->Read(&scope_response));
+  } while (!scope_response.has_status());
 
-  do { assert(scope_session->Read(&scope_response)); }
-  while (!scope_response.has_capture() && !scope_response.has_roll());
+  do {
+    assert(scope_session->Read(&scope_response));
+  } while (!scope_response.has_capture() && !scope_response.has_roll());
   const auto frame_generation = scope_response.has_capture()
-      ? scope_response.capture().generation() : scope_response.roll().generation();
+                                    ? scope_response.capture().generation()
+                                    : scope_response.roll().generation();
   // Leave one frame unacknowledged while several controller polls occur. The
   // controller keeps one coalesced replacement and accounts for skipped frames.
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
   linuxcnc::v1::ScopeSessionMessage scope_ack;
   scope_ack.mutable_ack()->set_generation(frame_generation);
   assert(scope_session->Write(scope_ack));
-  do { assert(scope_session->Read(&scope_response)); }
-  while (!scope_response.has_capture() && !scope_response.has_roll());
-  const auto replacement_generation = scope_response.has_capture()
-      ? scope_response.capture().generation() : scope_response.roll().generation();
-  const auto replacement_skipped = scope_response.has_capture()
-      ? scope_response.capture().skipped_frames()
-      : scope_response.roll().skipped_frames();
+  do {
+    assert(scope_session->Read(&scope_response));
+  } while (!scope_response.has_capture() && !scope_response.has_roll());
+  const auto replacement_generation =
+      scope_response.has_capture() ? scope_response.capture().generation()
+                                   : scope_response.roll().generation();
+  const auto replacement_skipped =
+      scope_response.has_capture() ? scope_response.capture().skipped_frames()
+                                   : scope_response.roll().skipped_frames();
   assert(replacement_generation > frame_generation);
   assert(replacement_skipped > 0);
   scope_ack.mutable_ack()->set_generation(replacement_generation);
@@ -1099,43 +1177,50 @@ int main(int argc, char** argv) {
   linuxcnc::v1::ScopeSessionMessage scope_trigger;
   scope_trigger.mutable_trigger();
   assert(scope_session->Write(scope_trigger));
-  do { assert(scope_session->Read(&scope_response)); }
-  while (!scope_response.has_status());
+  do {
+    assert(scope_session->Read(&scope_response));
+  } while (!scope_response.has_status());
 
   linuxcnc::v1::ScopeSessionMessage scope_stop;
   scope_stop.mutable_stop();
   assert(scope_session->Write(scope_stop));
-  do { assert(scope_session->Read(&scope_response)); }
-  while (!scope_response.has_status());
+  do {
+    assert(scope_session->Read(&scope_response));
+  } while (!scope_response.has_status());
 
   for (const auto mode : {linuxcnc::v1::SCOPE_RUN_MODE_SINGLE,
                           linuxcnc::v1::SCOPE_RUN_MODE_RUN}) {
     assert(scope_session->Write(scope_configure));
-    do { assert(scope_session->Read(&scope_response)); }
-    while (!scope_response.has_status());
+    do {
+      assert(scope_session->Read(&scope_response));
+    } while (!scope_response.has_status());
     linuxcnc::v1::ScopeSessionMessage mode_request;
     mode_request.mutable_run()->set_mode(mode);
     assert(scope_session->Write(mode_request));
-    do { assert(scope_session->Read(&scope_response)); }
-    while (!scope_response.has_status());
+    do {
+      assert(scope_session->Read(&scope_response));
+    } while (!scope_response.has_status());
     assert(scope_session->Write(scope_stop));
-    do { assert(scope_session->Read(&scope_response)); }
-    while (!scope_response.has_status());
+    do {
+      assert(scope_session->Read(&scope_response));
+    } while (!scope_response.has_status());
   }
 
   grpc::ClientContext conflicting_scope_context;
-  conflicting_scope_context.set_deadline(
-      std::chrono::system_clock::now() + std::chrono::seconds(5));
+  conflicting_scope_context.set_deadline(std::chrono::system_clock::now() +
+                                         std::chrono::seconds(5));
   auto conflicting_scope = scope->Session(&conflicting_scope_context);
   (void)conflicting_scope->Write(scope_acquire);
   conflicting_scope->WritesDone();
-  while (conflicting_scope->Read(&scope_response)) {}
+  while (conflicting_scope->Read(&scope_response)) {
+  }
   const auto conflicting_scope_status = conflicting_scope->Finish();
   assert(conflicting_scope_status.error_code() ==
          grpc::StatusCode::RESOURCE_EXHAUSTED);
 
   scope_session->WritesDone();
-  while (scope_session->Read(&scope_response)) {}
+  while (scope_session->Read(&scope_response)) {
+  }
   const auto scope_status = scope_session->Finish();
   assert(scope_status.ok());
 

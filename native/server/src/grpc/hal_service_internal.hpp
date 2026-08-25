@@ -1,15 +1,15 @@
 #pragma once
 
-#include "grpc/hal_service_impl.hpp"
-#include "grpc/unary_task_reactor.hpp"
-
-#include "linuxcnc_grpc/callback_runtime.hpp"
-#include "linuxcnc/v1/linuxcnc.grpc.pb.h"
 #include <google/protobuf/empty.pb.h>
 #include <grpcpp/grpcpp.h>
 
 #include <memory>
 #include <string>
+
+#include "grpc/hal_service_impl.hpp"
+#include "grpc/unary_task_reactor.hpp"
+#include "linuxcnc/v1/linuxcnc.grpc.pb.h"
+#include "linuxcnc_grpc/callback_runtime.hpp"
 
 namespace linuxcnc::server::detail {
 namespace {
@@ -30,33 +30,36 @@ class HalUnaryService : public HalUnaryCallbackBase {
       GetHalTopologyResponse* response) override {
     return task(request, response, &HalUnaryService::do_get_topology);
   }
-  ::grpc::ServerUnaryReactor* Read(
-      ::grpc::CallbackServerContext*, const HalReadRequest* request,
-      HalReadResponse* response) override {
+  ::grpc::ServerUnaryReactor* Read(::grpc::CallbackServerContext*,
+                                   const HalReadRequest* request,
+                                   HalReadResponse* response) override {
     return task(request, response, &HalUnaryService::do_read);
   }
-  ::grpc::ServerUnaryReactor* Write(
-      ::grpc::CallbackServerContext*, const HalWrite* request,
-      HalWriteResponse* response) override {
+  ::grpc::ServerUnaryReactor* Write(::grpc::CallbackServerContext*,
+                                    const HalWrite* request,
+                                    HalWriteResponse* response) override {
     return task(request, response, &HalUnaryService::do_write);
   }
   ::grpc::ServerUnaryReactor* CreateValueSubscription(
       ::grpc::CallbackServerContext*,
       const CreateHalValueSubscriptionRequest* request,
       HalValueSubscription* response) override {
-    return task(request, response, &HalUnaryService::do_create_value_subscription);
+    return task(request, response,
+                &HalUnaryService::do_create_value_subscription);
   }
   ::grpc::ServerUnaryReactor* UpdateValueSubscription(
       ::grpc::CallbackServerContext*,
       const UpdateHalValueSubscriptionRequest* request,
       HalValueSubscription* response) override {
-    return task(request, response, &HalUnaryService::do_update_value_subscription);
+    return task(request, response,
+                &HalUnaryService::do_update_value_subscription);
   }
   ::grpc::ServerUnaryReactor* DeleteValueSubscription(
       ::grpc::CallbackServerContext*,
       const DeleteHalValueSubscriptionRequest* request,
       google::protobuf::Empty* response) override {
-    return task(request, response, &HalUnaryService::do_delete_value_subscription);
+    return task(request, response,
+                &HalUnaryService::do_delete_value_subscription);
   }
   ::grpc::ServerUnaryReactor* CreateSignal(
       ::grpc::CallbackServerContext*, const CreateHalSignalRequest* request,
@@ -83,7 +86,8 @@ class HalUnaryService : public HalUnaryCallbackBase {
  protected:
   ActiveCallbackRegistry& callback_registry() { return callbacks_; }
   void shutdown_callbacks() { callbacks_.shutdown(); }
-  virtual ::grpc::Status do_get_topology(const GetHalTopologyRequest*, GetHalTopologyResponse*) = 0;
+  virtual ::grpc::Status do_get_topology(const GetHalTopologyRequest*,
+                                         GetHalTopologyResponse*) = 0;
   virtual ::grpc::Status do_read(const HalReadRequest*, HalReadResponse*) = 0;
   virtual ::grpc::Status do_write(const HalWrite*, HalWriteResponse*) = 0;
   virtual ::grpc::Status do_create_value_subscription(

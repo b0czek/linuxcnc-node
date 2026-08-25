@@ -1,10 +1,3 @@
-#include "grpc/hal_service_internal.hpp"
-
-#include "linuxcnc_grpc/daemon_config.hpp"
-#include "linuxcnc_grpc/grpc_hal_mapping.hpp"
-#include "linuxcnc_grpc/hal_adapter.hpp"
-#include "linuxcnc_grpc/hal_value_telemetry.hpp"
-
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -22,12 +15,19 @@
 #include <utility>
 #include <vector>
 
+#include "grpc/hal_service_internal.hpp"
+#include "linuxcnc_grpc/daemon_config.hpp"
+#include "linuxcnc_grpc/grpc_hal_mapping.hpp"
+#include "linuxcnc_grpc/hal_adapter.hpp"
+#include "linuxcnc_grpc/hal_value_telemetry.hpp"
+
 namespace linuxcnc::server::detail {
 namespace {
 
 ::grpc::Status hal_error(const HalAdapterError& error) {
-  const auto code = error.code() == -ENOENT ? ::grpc::StatusCode::NOT_FOUND
-      : error.code() == -EBUSY ? ::grpc::StatusCode::RESOURCE_EXHAUSTED
+  const auto code =
+      error.code() == -ENOENT   ? ::grpc::StatusCode::NOT_FOUND
+      : error.code() == -EBUSY  ? ::grpc::StatusCode::RESOURCE_EXHAUSTED
       : error.code() == -EINVAL ? ::grpc::StatusCode::INVALID_ARGUMENT
                                 : ::grpc::StatusCode::FAILED_PRECONDITION;
   return {code, error.what()};
@@ -54,7 +54,8 @@ void encode_subscription(const HalTelemetryDescriptor& source,
   target->set_subscription_id(source.subscription_id);
   target->set_websocket_path(source.websocket_path);
   target->set_revision(source.revision);
-  target->set_sample_period_ms(static_cast<std::uint32_t>(source.sample_period.count()));
+  target->set_sample_period_ms(
+      static_cast<std::uint32_t>(source.sample_period.count()));
   for (const auto& binding : source.bindings) {
     auto* slot = target->add_slots();
     slot->set_slot(binding.slot);
@@ -76,7 +77,8 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
                  AdmissionCounter& component_admission,
                  AdmissionCounter& stream_admission,
                  std::shared_ptr<HalValueTelemetry> telemetry)
-      : HalUnaryService(worker), worker_(worker),
+      : HalUnaryService(worker),
+        worker_(worker),
         component_admission_(component_admission),
         stream_admission_(stream_admission),
         telemetry_(std::move(telemetry)),
@@ -118,7 +120,8 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
       references.reserve(request->items_size());
       for (const auto& item : request->items()) {
         auto decoded = decode_hal_reference(item);
-        if (!decoded) return Invalid("HAL read contains an invalid item reference");
+        if (!decoded)
+          return Invalid("HAL read contains an invalid item reference");
         references.push_back(std::move(*decoded));
       }
       const auto values = adapter_.read_many(references);
@@ -146,7 +149,8 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
         auto reference = decode_hal_reference(write.item());
         auto value = decode_hal_scalar(write.value());
         if (!reference || !value) {
-          return Invalid("HAL write contains a mismatched reference or scalar oneof");
+          return Invalid(
+              "HAL write contains a mismatched reference or scalar oneof");
         }
         updates.emplace_back(std::move(*reference), std::move(*value));
       }
@@ -157,7 +161,8 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
       }
       for (std::size_t index = 0; index < updates.size(); ++index) {
         auto* encoded = response->add_values();
-        *encoded->mutable_item() = request->writes(static_cast<int>(index)).item();
+        *encoded->mutable_item() =
+            request->writes(static_cast<int>(index)).item();
         encode_hal_scalar(written[index], encoded->mutable_value());
       }
       return ::grpc::Status::OK;
@@ -174,10 +179,12 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     auto resolved = resolve_subscription_items(request->items(), nullptr);
     if (!resolved.first.ok()) return resolved.first;
     const auto period = subscription_period(request->sample_period_ms());
-    if (!period) return Invalid("HAL value sample period must be between 50 and 60000 ms");
+    if (!period)
+      return Invalid("HAL value sample period must be between 50 and 60000 ms");
     auto created = telemetry_->create(std::move(resolved.second), *period);
-    if (!created) return {::grpc::StatusCode::RESOURCE_EXHAUSTED,
-                          "HAL value subscription limit reached"};
+    if (!created)
+      return {::grpc::StatusCode::RESOURCE_EXHAUSTED,
+              "HAL value subscription limit reached"};
     encode_subscription(*created, response);
     return ::grpc::Status::OK;
   }
@@ -186,19 +193,23 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
       const UpdateHalValueSubscriptionRequest* request,
       HalValueSubscription* response) override {
     const auto current = telemetry_->descriptor(request->subscription_id());
-    if (!current) return {::grpc::StatusCode::NOT_FOUND,
-                          "HAL value subscription was not found"};
+    if (!current)
+      return {::grpc::StatusCode::NOT_FOUND,
+              "HAL value subscription was not found"};
     if (current->revision != request->expected_revision())
       return {::grpc::StatusCode::ABORTED,
               "HAL value subscription revision does not match"};
     auto resolved = resolve_subscription_items(request->items(), &*current);
     if (!resolved.first.ok()) return resolved.first;
     const auto period = subscription_period(request->sample_period_ms());
-    if (!period) return Invalid("HAL value sample period must be between 50 and 60000 ms");
+    if (!period)
+      return Invalid("HAL value sample period must be between 50 and 60000 ms");
     auto updated = telemetry_->update(request->subscription_id(),
-        request->expected_revision(), std::move(resolved.second), *period);
-    if (!updated) return {::grpc::StatusCode::ABORTED,
-                          "HAL value subscription changed concurrently"};
+                                      request->expected_revision(),
+                                      std::move(resolved.second), *period);
+    if (!updated)
+      return {::grpc::StatusCode::ABORTED,
+              "HAL value subscription changed concurrently"};
     encode_subscription(*updated, response);
     return ::grpc::Status::OK;
   }
@@ -223,12 +234,12 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
         return Invalid("HAL signal was rejected");
       }
       const auto topology = adapter_.topology();
-      const auto found = std::find_if(topology.signals.begin(), topology.signals.end(),
-                                     [&](const auto& signal) {
-                                       return signal.name == request->name();
-                                     });
+      const auto found = std::find_if(
+          topology.signals.begin(), topology.signals.end(),
+          [&](const auto& signal) { return signal.name == request->name(); });
       if (found == topology.signals.end()) {
-        return {::grpc::StatusCode::INTERNAL, "created HAL signal is not visible"};
+        return {::grpc::StatusCode::INTERNAL,
+                "created HAL signal is not visible"};
       }
       HalAdapterTopology one;
       one.signals.push_back(*found);
@@ -241,9 +252,8 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     }
   }
 
-  ::grpc::Status do_set_message_level(
-                               const SetHalMessageLevelRequest* request,
-                               google::protobuf::Empty*) override {
+  ::grpc::Status do_set_message_level(const SetHalMessageLevelRequest* request,
+                                      google::protobuf::Empty*) override {
     if (request->level() < RTAPI_MESSAGE_LEVEL_NONE ||
         request->level() > RTAPI_MESSAGE_LEVEL_ALL) {
       return Invalid("HAL message level is required");
@@ -256,15 +266,17 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     }
   }
 
-  ::grpc::Status do_get_writer_metadata(const GetHalWriterMetadataRequest*,
-                                        GetHalWriterMetadataResponse* response) override {
+  ::grpc::Status do_get_writer_metadata(
+      const GetHalWriterMetadataRequest*,
+      GetHalWriterMetadataResponse* response) override {
     response->mutable_metadata()->set_writer_id("linuxcnc-grpc-server");
-    response->mutable_metadata()->set_ready(writer_ready_.load(std::memory_order_relaxed));
+    response->mutable_metadata()->set_ready(
+        writer_ready_.load(std::memory_order_relaxed));
     return ::grpc::Status::OK;
   }
 
   ::grpc::Status do_set_writer_ready(const SetHalWriterReadyRequest* request,
-                              google::protobuf::Empty*) override {
+                                     google::protobuf::Empty*) override {
     writer_ready_.store(request->ready(), std::memory_order_relaxed);
     return ::grpc::Status::OK;
   }
@@ -288,22 +300,28 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
       const HalTelemetryDescriptor* existing) {
     if (items.size() > 1024)
       return {{::grpc::StatusCode::RESOURCE_EXHAUSTED,
-               "HAL value subscription exceeds 1024 items"}, {}};
+               "HAL value subscription exceeds 1024 items"},
+              {}};
     std::vector<HalAdapterReference> references;
     std::unordered_set<std::string> unique;
     for (const auto& item : items) {
       auto decoded = decode_hal_reference(item);
-      if (!decoded) return {Invalid("HAL value subscription contains an invalid item"), {}};
-      const auto key = std::to_string(static_cast<int>(decoded->kind)) + ":" + decoded->name;
+      if (!decoded)
+        return {Invalid("HAL value subscription contains an invalid item"), {}};
+      const auto key =
+          std::to_string(static_cast<int>(decoded->kind)) + ":" + decoded->name;
       if (!unique.insert(key).second)
-        return {Invalid("HAL value subscription contains a duplicate item"), {}};
+        return {Invalid("HAL value subscription contains a duplicate item"),
+                {}};
       references.push_back(std::move(*decoded));
     }
     const auto values = adapter_.read_many(references);
     std::unordered_map<std::string, HalTelemetryType> prior;
-    if (existing) for (const auto& binding : existing->bindings)
-      prior.emplace(std::to_string(static_cast<int>(binding.item.kind)) + ":" +
-                    binding.item.name, binding.type);
+    if (existing)
+      for (const auto& binding : existing->bindings)
+        prior.emplace(std::to_string(static_cast<int>(binding.item.kind)) +
+                          ":" + binding.item.name,
+                      binding.type);
     std::vector<HalTelemetryResolvedItem> result;
     for (std::size_t index = 0; index < references.size(); ++index) {
       const auto reference = telemetry_reference(references[index]);
@@ -311,11 +329,13 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
       if (values[index]) {
         type = static_cast<HalTelemetryType>(values[index]->index() + 1);
       } else {
-        const auto found = prior.find(std::to_string(static_cast<int>(reference.kind)) +
-                                      ":" + reference.name);
+        const auto found =
+            prior.find(std::to_string(static_cast<int>(reference.kind)) + ":" +
+                       reference.name);
         if (found == prior.end())
           return {{::grpc::StatusCode::NOT_FOUND,
-                   "HAL item '" + reference.name + "' was not found"}, {}};
+                   "HAL item '" + reference.name + "' was not found"},
+                  {}};
         type = found->second;
       }
       result.push_back({reference, type});
@@ -332,13 +352,15 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
       std::vector<std::optional<HalTelemetryValue>> published;
       published.reserve(values.size());
       for (std::size_t index = 0; index < values.size(); ++index) {
-        if (!values[index] || values[index]->index() + 1 !=
-                                  static_cast<std::size_t>(due.bindings[index].type))
+        if (!values[index] ||
+            values[index]->index() + 1 !=
+                static_cast<std::size_t>(due.bindings[index].type))
           published.emplace_back();
         else
           published.push_back(*values[index]);
       }
-      telemetry_->publish(due.subscription_id, due.revision, std::move(published));
+      telemetry_->publish(due.subscription_id, due.revision,
+                          std::move(published));
     }
   }
 
@@ -360,14 +382,14 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
       : public ::grpc::ServerWriteReactor<WatchHalTopologyEvent> {
    public:
     TopologyReactor(HalServiceImpl& service, std::uint64_t after)
-        : service_(service), after_(after),
+        : service_(service),
+          after_(after),
           admitted_(service_.stream_admission_.acquire()),
           gate_(std::make_shared<LifetimeGate<TopologyReactor>>(this)) {
       const std::weak_ptr<LifetimeGate<TopologyReactor>> weak = gate_;
       registration_ = service_.callback_registry().register_callback([weak] {
-        if (auto gate = weak.lock()) gate->invoke([](TopologyReactor& reactor) {
-          reactor.shutdown();
-        });
+        if (auto gate = weak.lock())
+          gate->invoke([](TopologyReactor& reactor) { reactor.shutdown(); });
       });
       if (!registration_) {
         shutdown();
@@ -378,18 +400,19 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
                 "stream admission limit reached"});
         return;
       }
-      subscription_ = service_.topology_wakes_.subscribe([weak](const std::uint64_t&) {
-        if (auto gate = weak.lock())
-          gate->invoke([](TopologyReactor& reactor) {
-            reactor.schedule();
+      subscription_ =
+          service_.topology_wakes_.subscribe([weak](const std::uint64_t&) {
+            if (auto gate = weak.lock())
+              gate->invoke(
+                  [](TopologyReactor& reactor) { reactor.schedule(); });
           });
-      });
       schedule();
     }
     void OnWriteDone(bool ok) override {
       gate_->invoke([ok](TopologyReactor& reactor) {
         reactor.writing_ = false;
-        if (!ok) reactor.finish(::grpc::Status::OK);
+        if (!ok)
+          reactor.finish(::grpc::Status::OK);
         else {
           reactor.after_ = reactor.writing_sequence_;
           reactor.schedule();
@@ -398,7 +421,8 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     }
     void OnCancel() override {
       gate_->invoke([](TopologyReactor& reactor) {
-        reactor.finish({::grpc::StatusCode::CANCELLED, "topology stream cancelled"});
+        reactor.finish(
+            {::grpc::StatusCode::CANCELLED, "topology stream cancelled"});
       });
     }
     void OnDone() override {
@@ -412,10 +436,12 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
       subscription_.reset();
       finish({::grpc::StatusCode::UNAVAILABLE, "server shutting down"});
     }
+
    private:
     void schedule() {
       if (writing_ || scheduled_ ||
-          gate_->state() != LifetimeGate<TopologyReactor>::State::Open) return;
+          gate_->state() != LifetimeGate<TopologyReactor>::State::Open)
+        return;
       scheduled_ = true;
       const std::weak_ptr<LifetimeGate<TopologyReactor>> weak = gate_;
       if (!service_.worker_.submit([weak, service = &service_] {
@@ -429,28 +455,28 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
             } catch (const HalAdapterError& error) {
               status = hal_error(error);
             }
-            if (auto gate = weak.lock()) gate->invoke(
-                [&](TopologyReactor& reactor) {
-                  reactor.scheduled_ = false;
-                  if (!status.ok()) {
-                    reactor.finish(status);
-                    return;
-                  }
-                  if (sequence == reactor.after_) return;
-                  reactor.message_.Clear();
-                  reactor.message_.set_sequence(sequence);
-                  *reactor.message_.mutable_topology() = std::move(topology);
-                  reactor.writing_sequence_ = sequence;
-                  reactor.writing_ = true;
-                  reactor.StartWrite(&reactor.message_);
-                });
+            if (auto gate = weak.lock())
+              gate->invoke([&](TopologyReactor& reactor) {
+                reactor.scheduled_ = false;
+                if (!status.ok()) {
+                  reactor.finish(status);
+                  return;
+                }
+                if (sequence == reactor.after_) return;
+                reactor.message_.Clear();
+                reactor.message_.set_sequence(sequence);
+                *reactor.message_.mutable_topology() = std::move(topology);
+                reactor.writing_sequence_ = sequence;
+                reactor.writing_ = true;
+                reactor.StartWrite(&reactor.message_);
+              });
           })) {
         scheduled_ = false;
         finish(service_.worker_.accepting()
                    ? ::grpc::Status(::grpc::StatusCode::RESOURCE_EXHAUSTED,
-                                  "HAL runtime queue is full")
+                                    "HAL runtime queue is full")
                    : ::grpc::Status(::grpc::StatusCode::UNAVAILABLE,
-                                  "server shutting down"));
+                                    "server shutting down"));
       }
     }
     void finish(::grpc::Status status) {
@@ -470,18 +496,18 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
 
   class ComponentReactor final
       : public ::grpc::ServerBidiReactor<ComponentSessionMessage,
-                                       ComponentSessionMessage> {
+                                         ComponentSessionMessage> {
    public:
     explicit ComponentReactor(HalServiceImpl& service)
-        : service_(service), admitted_(service_.component_admission_.acquire()),
+        : service_(service),
+          admitted_(service_.component_admission_.acquire()),
           stream_admitted_(service_.stream_admission_.acquire()),
           state_(std::make_shared<ComponentState>()),
           gate_(std::make_shared<LifetimeGate<ComponentReactor>>(this)) {
       const std::weak_ptr<LifetimeGate<ComponentReactor>> weak = gate_;
       registration_ = service_.callback_registry().register_callback([weak] {
-        if (auto gate = weak.lock()) gate->invoke([](ComponentReactor& reactor) {
-          reactor.shutdown();
-        });
+        if (auto gate = weak.lock())
+          gate->invoke([](ComponentReactor& reactor) { reactor.shutdown(); });
       });
       if (!registration_) {
         shutdown();
@@ -496,9 +522,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
       StartRead(&request_);
     }
     void OnReadDone(bool ok) override {
-      gate_->invoke([ok](ComponentReactor& reactor) {
-        reactor.read_done(ok);
-      });
+      gate_->invoke([ok](ComponentReactor& reactor) { reactor.read_done(ok); });
     }
     void OnWriteDone(bool ok) override {
       gate_->invoke([ok](ComponentReactor& reactor) {
@@ -520,7 +544,8 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     }
     void OnCancel() override {
       gate_->invoke([](ComponentReactor& reactor) {
-        reactor.finish({::grpc::StatusCode::CANCELLED, "component session cancelled"});
+        reactor.finish(
+            {::grpc::StatusCode::CANCELLED, "component session cancelled"});
       });
     }
     void OnDone() override {
@@ -543,6 +568,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
       writing_ = true;
       StartWrite(&response_);
     }
+
    private:
     void read_done(bool ok) {
       if (!ok) {
@@ -564,25 +590,27 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
             } catch (const HalAdapterError& error) {
               status = hal_error(error);
             }
-            if (auto gate = weak.lock()) gate->invoke([&](ComponentReactor& reactor) {
-              if (!status.ok()) {
-                reactor.finish(status);
-                return;
-              }
-              if (close) {
-                reactor.finish(::grpc::Status::OK);
-                return;
-              }
-              if (response) {
-                reactor.read_paused_ = true;
-                reactor.offer_delta(std::move(*response));
-              } else {
-                reactor.read_paused_ = false;
-                reactor.StartRead(&reactor.request_);
-              }
-            });
+            if (auto gate = weak.lock())
+              gate->invoke([&](ComponentReactor& reactor) {
+                if (!status.ok()) {
+                  reactor.finish(status);
+                  return;
+                }
+                if (close) {
+                  reactor.finish(::grpc::Status::OK);
+                  return;
+                }
+                if (response) {
+                  reactor.read_paused_ = true;
+                  reactor.offer_delta(std::move(*response));
+                } else {
+                  reactor.read_paused_ = false;
+                  reactor.StartRead(&reactor.request_);
+                }
+              });
           })) {
-        finish({::grpc::StatusCode::RESOURCE_EXHAUSTED, "HAL runtime queue is full"});
+        finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
+                "HAL runtime queue is full"});
       }
     }
     void request_cleanup() {
@@ -633,7 +661,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
           throw HalAdapterError("component is already open", -EBUSY);
         }
         state.component = adapter_.open_component(request.open().name(),
-                                                   request.open().prefix());
+                                                  request.open().prefix());
         ComponentSessionMessage message;
         message.mutable_metadata()->set_writer_id(state.component->name());
         message.mutable_metadata()->set_ready(false);
@@ -642,8 +670,8 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
       }
       case ComponentSessionMessage::kPin: {
         if (!state.component) {
-          throw HalAdapterError(
-              "open a component before creating pins", -EINVAL);
+          throw HalAdapterError("open a component before creating pins",
+                                -EINVAL);
         }
         const auto type = decode_hal_type(request.pin().type());
         if (!type) throw HalAdapterError("invalid component pin type", -EINVAL);
@@ -663,17 +691,20 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
         }
         if (!state.component->add_pin(request.pin().name(), *type, direction))
           throw HalAdapterError("component pin was rejected", -EINVAL);
-        state.items.push_back({request.pin().name(), HAL_ITEM_KIND_PIN,
-            state.component->prefix() + "." + request.pin().name(), std::nullopt});
+        state.items.push_back(
+            {request.pin().name(), HAL_ITEM_KIND_PIN,
+             state.component->prefix() + "." + request.pin().name(),
+             std::nullopt});
         return;
       }
       case ComponentSessionMessage::kParameter: {
         if (!state.component) {
-          throw HalAdapterError(
-              "open a component before creating parameters", -EINVAL);
+          throw HalAdapterError("open a component before creating parameters",
+                                -EINVAL);
         }
         const auto type = decode_hal_type(request.parameter().type());
-        if (!type) throw HalAdapterError("invalid component parameter type", -EINVAL);
+        if (!type)
+          throw HalAdapterError("invalid component parameter type", -EINVAL);
         HalAdapterParamDirection direction;
         switch (request.parameter().direction()) {
           case HAL_PARAM_DIRECTION_RO:
@@ -683,13 +714,16 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
             direction = HalAdapterParamDirection::ReadWrite;
             break;
           default:
-            throw HalAdapterError(
-                "invalid component parameter direction", -EINVAL);
+            throw HalAdapterError("invalid component parameter direction",
+                                  -EINVAL);
         }
-        if (!state.component->add_param(request.parameter().name(), *type, direction))
+        if (!state.component->add_param(request.parameter().name(), *type,
+                                        direction))
           throw HalAdapterError("component parameter was rejected", -EINVAL);
-        state.items.push_back({request.parameter().name(), HAL_ITEM_KIND_PARAM,
-            state.component->prefix() + "." + request.parameter().name(), std::nullopt});
+        state.items.push_back(
+            {request.parameter().name(), HAL_ITEM_KIND_PARAM,
+             state.component->prefix() + "." + request.parameter().name(),
+             std::nullopt});
         return;
       }
       case ComponentSessionMessage::kReady: {
@@ -713,7 +747,8 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
           throw HalAdapterError("component is not open", -EINVAL);
         }
         auto value = decode_hal_scalar(request.value().value());
-        if (!value) throw HalAdapterError("component value oneof is invalid", -EINVAL);
+        if (!value)
+          throw HalAdapterError("component value oneof is invalid", -EINVAL);
         auto name = request.value().item().name();
         const auto prefix = state.component->prefix() + ".";
         if (name.rfind(prefix, 0) == 0) name.erase(0, prefix.size());
@@ -735,14 +770,18 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     {
       std::lock_guard lock(components_mutex_);
       components_.erase(std::remove_if(components_.begin(), components_.end(),
-          [](const ComponentRegistration& item) {
-            return item.state.expired() || item.gate.expired();
-          }), components_.end());
+                                       [](const ComponentRegistration& item) {
+                                         return item.state.expired() ||
+                                                item.gate.expired();
+                                       }),
+                        components_.end());
       registrations = components_;
     }
     for (const auto& registration : registrations) {
       auto state = registration.state.lock();
-      if (!state || !state->component || !state->ready || state->cleanup_started.load()) continue;
+      if (!state || !state->component || !state->ready ||
+          state->cleanup_started.load())
+        continue;
       ComponentSessionMessage message;
       auto* delta = message.mutable_delta();
       for (auto& item : state->items) {
@@ -757,9 +796,10 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
       if (delta->values_size() == 0) continue;
       delta->set_sequence(++state->sequence);
       if (auto gate = registration.gate.lock())
-        gate->invoke([message = std::move(message)](ComponentReactor& reactor) mutable {
-          reactor.offer_delta(std::move(message));
-        });
+        gate->invoke(
+            [message = std::move(message)](ComponentReactor& reactor) mutable {
+              reactor.offer_delta(std::move(message));
+            });
     }
   }
 
@@ -779,7 +819,8 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
             last_published_topology_ = snapshot.first;
             topology_wakes_.publish(snapshot.first);
           }
-        } catch (const HalAdapterError&) {}
+        } catch (const HalAdapterError&) {
+        }
       });
       std::unique_lock lock(timer_mutex_);
       timer_condition_.wait_for(lock, std::chrono::milliseconds(50),
@@ -792,7 +833,8 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     encode_hal_topology(adapter_.topology(), &current);
     auto structural = current;
     for (auto& pin : *structural.mutable_pins()) pin.clear_value();
-    for (auto& parameter : *structural.mutable_params()) parameter.clear_value();
+    for (auto& parameter : *structural.mutable_params())
+      parameter.clear_value();
     for (auto& signal : *structural.mutable_signals()) signal.clear_value();
     const auto serialized = structural.SerializeAsString();
     std::lock_guard lock(topology_mutex_);
@@ -831,12 +873,11 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
 
 std::unique_ptr<ManagedGrpcService> make_hal_service_impl(
     const DaemonConfig& config, BoundedExecutor& worker,
-    AdmissionCounter& component_admission,
-    AdmissionCounter& stream_admission,
+    AdmissionCounter& component_admission, AdmissionCounter& stream_admission,
     std::shared_ptr<HalValueTelemetry> telemetry) {
-  return std::make_unique<HalServiceImpl>(
-      config, worker, component_admission, stream_admission,
-      std::move(telemetry));
+  return std::make_unique<HalServiceImpl>(config, worker, component_admission,
+                                          stream_admission,
+                                          std::move(telemetry));
 }
 
 }  // namespace linuxcnc::server::detail
