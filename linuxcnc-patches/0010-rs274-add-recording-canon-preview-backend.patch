@@ -4,18 +4,18 @@ Date: Sun, 23 Aug 2026 22:34:37 +0200
 Subject: [PATCH] rs274: add recording canon preview backend
 
 ---
- src/emc/rs274ngc/recordingcanon.cc | 555 +++++++++++++++++++++++++++++
+ src/emc/rs274ngc/recordingcanon.cc | 565 +++++++++++++++++++++++++++++
  src/emc/rs274ngc/recordingcanon.hh | 134 +++++++
- 2 files changed, 689 insertions(+)
+ 2 files changed, 699 insertions(+)
  create mode 100644 src/emc/rs274ngc/recordingcanon.cc
  create mode 100644 src/emc/rs274ngc/recordingcanon.hh
 
 diff --git a/src/emc/rs274ngc/recordingcanon.cc b/src/emc/rs274ngc/recordingcanon.cc
 new file mode 100644
-index 0000000000..0648d4bda6
+index 0000000000..cdddfe9621
 --- /dev/null
 +++ b/src/emc/rs274ngc/recordingcanon.cc
-@@ -0,0 +1,555 @@
+@@ -0,0 +1,565 @@
 +#include "recordingcanon.hh"
 +
 +#include <algorithm>
@@ -134,6 +134,16 @@ index 0000000000..0648d4bda6
 +    }
 +}
 +
++double orthogonal_axis(const EmcPose &position, CANON_PLANE plane)
++{
++    switch (plane) {
++    case CANON_PLANE::XY: return position.tran.z;
++    case CANON_PLANE::YZ: return position.tran.x;
++    case CANON_PLANE::XZ: return position.tran.y;
++    default: return 0.0;
++    }
++}
++
 +bool valid_spindle(int spindle)
 +{
 +    return spindle >= 0 && spindle < EMCMOT_MAX_SPINDLES;
@@ -243,7 +253,7 @@ index 0000000000..0648d4bda6
 +        const auto &last = control_points.back();
 +        recording::set_plane_end(state.position, plane,
 +                                 last.NURBS_X, last.NURBS_Y,
-+                                 state.position.tran.z);
++                                 recording::orthogonal_axis(state.position, plane));
 +    }
 +}
 +
@@ -259,7 +269,7 @@ index 0000000000..0648d4bda6
 +        const auto &last = control_points.back();
 +        recording::set_plane_end(state.position, plane,
 +                                 last.NURBS_X, last.NURBS_Y,
-+                                 state.position.tran.z);
++                                 recording::orthogonal_axis(state.position, plane));
 +    }
 +}
 +
