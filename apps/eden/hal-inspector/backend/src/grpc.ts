@@ -34,6 +34,7 @@ import type {
 import { readGrpcConfig } from "./config";
 
 const EMPTY = {};
+const MAX_GRPC_MESSAGE_BYTES = 16 * 1024 * 1024 + 64 * 1024;
 const toNumber = (value: bigint | string | number | undefined, name: string): number => {
   if (value === undefined) return 0;
   const number = typeof value === "bigint" ? Number(value) : Number(value);
@@ -277,6 +278,7 @@ export async function createHalScopeClient(): Promise<HalScopeClient> {
     // config intentionally keeps credentials transport-agnostic so its parser
     // can be unit tested without constructing grpc-js objects.
     credentials: config.credentials as never,
+    channelOptions: { "grpc.max_receive_message_length": MAX_GRPC_MESSAGE_BYTES },
   });
   const hal = clients.hal;
   const scope = clients.scope;
