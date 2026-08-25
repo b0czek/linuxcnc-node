@@ -155,6 +155,7 @@ void callback_runtime_test() {
       std::make_shared<LifetimeGate<RacingTarget>>(&racing_target);
   std::atomic<bool> start_race{false};
   std::vector<std::thread> finishers;
+  finishers.reserve(16);
   for (int index = 0; index < 16; ++index) {
     finishers.emplace_back([&, racing_gate] {
       while (!start_race.load()) std::this_thread::yield();

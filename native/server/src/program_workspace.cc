@@ -23,6 +23,11 @@ bool is_safe_regular_file(const fs::path& path) {
   return (status.permissions() & executable) == fs::perms::none;
 }
 
+fs::path absolute_path(fs::path path) {
+  path = fs::absolute(path);
+  return path;
+}
+
 std::string opaque_workspace_id() {
   static constexpr char hex[] = "0123456789abcdef";
   std::random_device random;
@@ -39,8 +44,8 @@ std::string opaque_workspace_id() {
 ProgramWorkspaceStore::ProgramWorkspaceStore(fs::path root,
                                              fs::path active_directory,
                                              WorkspaceLimits limits)
-    : root_(fs::absolute(std::move(root))),
-      active_directory_(fs::absolute(std::move(active_directory))),
+    : root_(absolute_path(std::move(root))),
+      active_directory_(absolute_path(std::move(active_directory))),
       limits_(limits) {
   std::error_code error;
   fs::create_directories(root_, error);

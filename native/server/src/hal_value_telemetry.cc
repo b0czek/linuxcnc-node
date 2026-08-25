@@ -155,7 +155,7 @@ std::optional<std::string> HalValueTelemetry::claim(
   state->attached = true;
   state->attachment_token.clear();
   state->next_due = std::chrono::steady_clock::now();
-  const auto id = state->id;
+  auto id = state->id;
   tokens_.erase(token_found);
   state->wakes.publish(state->sequence);
   return id;

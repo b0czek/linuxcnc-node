@@ -48,7 +48,7 @@ bool HalRepository::write(const std::string& name, HalValue value) {
       !same_type(found->second.type, value)) {
     return false;
   }
-  found->second.value = std::move(value);
+  found->second.value = value;
   return true;
 }
 

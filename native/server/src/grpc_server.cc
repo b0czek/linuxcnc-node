@@ -125,8 +125,8 @@ int run_grpc_server(const DaemonConfig& config) {
       return 2;
     }
     std::cout << "linuxcnc-grpc-server listening on " << config.endpoint
-              << " and telemetry on ws://" << config.telemetry_endpoint
-              << std::endl;
+              << " and telemetry on ws://" << config.telemetry_endpoint << '\n'
+              << std::flush;
 
     detail::ServerRuntime runtime(
         std::move(server), std::move(machine), std::move(program),

@@ -196,6 +196,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     topology_wakes_.publish(repository_.generation());
     for (const auto& update : repository_.read_many([&] {
            std::vector<std::string> names;
+           names.reserve(updates.size());
            for (const auto& item : updates) names.push_back(item.name);
            return names;
          }())) {

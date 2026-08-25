@@ -498,8 +498,12 @@ std::optional<NmlErrorEvent> NmlAdapter::poll_error() {
 #endif
 }
 
-CommandTicket NmlAdapter::submit(NmlCommand command,
-                                 std::function<bool()> cancelled) {
+CommandTicket NmlAdapter::submit(
+    // transfers ownership of both values into an asynchronous worker.
+    // NOLINTNEXTLINE(performance-unnecessary-value-param): ownership transfer
+    NmlCommand command,
+    // NOLINTNEXTLINE(performance-unnecessary-value-param): see above.
+    std::function<bool()> cancelled) {
 #ifdef LINUXCNC_GRPC_HAS_NML
   return impl_->commands.submit_with_context(
       [this, command = std::move(command)](CommandContext& context) mutable {
