@@ -86,6 +86,7 @@ bool has_scope_controller_owner() {
   for (SHMFIELD(hal_comp_t) next = hal_data->comp_list_ptr; next;
        next = SHMPTR(next)->next_ptr) {
     auto* component = static_cast<hal_comp_t*>(SHMPTR(next));
+    if (!component) continue;
     if (std::strcmp(component->name, "halscope") == 0) return true;
     if (starts_with(component->name, "hal-inspector-scope-") &&
         process_is_live(component->pid))
@@ -107,7 +108,7 @@ void* resolve_scope_source_unlocked(const ScopeSource& source,
       auto* parameter = halpr_find_param_by_name(source.name.c_str());
       if (!parameter) return nullptr;
       *type = parameter->type;
-      return SHMPTR(parameter->data_ptr);
+      return reinterpret_cast<void*>(SHMPTR(parameter->data_ptr));
     }
     case ScopeSourceKind::Pin: {
       auto* pin = halpr_find_pin_by_name(source.name.c_str());
@@ -115,7 +116,8 @@ void* resolve_scope_source_unlocked(const ScopeSource& source,
       *type = pin->type;
       if (pin->signal) {
         auto* signal = static_cast<hal_sig_t*>(SHMPTR(pin->signal));
-        return signal ? SHMPTR(signal->data_ptr) : nullptr;
+        return signal ? reinterpret_cast<void*>(SHMPTR(signal->data_ptr))
+                      : nullptr;
       }
       return &pin->dummysig;
     }
@@ -123,7 +125,7 @@ void* resolve_scope_source_unlocked(const ScopeSource& source,
       auto* signal = halpr_find_sig_by_name(source.name.c_str());
       if (!signal) return nullptr;
       *type = signal->type;
-      return SHMPTR(signal->data_ptr);
+      return reinterpret_cast<void*>(SHMPTR(signal->data_ptr));
     }
   }
   return nullptr;
@@ -135,6 +137,7 @@ std::string find_scope_thread_unlocked() {
   for (SHMFIELD(hal_thread_t) next = hal_data->thread_list_ptr; next;
        next = SHMPTR(next)->next_ptr) {
     auto* thread = static_cast<hal_thread_t*>(SHMPTR(next));
+    if (!thread) continue;
     auto* root = &thread->funct_list;
     for (auto* entry = list_next(root); entry != root;
          entry = list_next(entry)) {
@@ -568,13 +571,11 @@ void poll_once(LinuxCncScopeControllerState& impl) {
         impl.running = false;
       }
     }
-  } catch (const ScopeControllerError&) {
-    // A reset or teardown can race one final poll tick. The owner will see
-    // the resulting status and can reconfigure; the worker must remain alive.
   } catch (const std::exception&) {
-    // Keep the bounded worker alive if a malformed shared-memory frame or an
-    // allocation failure occurs. The next status/configure call exposes the
-    // unavailable acquisition to the transport owner.
+    // Reset delta state after a teardown race, malformed shared-memory frame,
+    // or allocation failure. The worker stays alive and the next good frame is
+    // a replacement rather than an unsafe continuation.
+    impl.delta_initialized = false;
   }
 }
 

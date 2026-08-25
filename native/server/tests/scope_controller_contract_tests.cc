@@ -1,3 +1,5 @@
+#include <hal.h>
+#include <rtapi.h>
 #include <scope_shm.h>
 
 #include <cassert>

@@ -453,11 +453,13 @@ class ProgramServiceImpl final : public ProgramCallbackBase,
             const auto& handle = request.entry();
             std::filesystem::path source;
             bool leased = false;
-            if (handle.workspace_id().empty() ||
-                handle.relative_path().empty() ||
-                !service->store_->resolve_entry(
-                    handle.workspace_id(), handle.relative_path(), &source) ||
-                !(leased = service->store_->pin(handle.workspace_id()))) {
+            const bool resolved =
+                !handle.workspace_id().empty() &&
+                !handle.relative_path().empty() &&
+                service->store_->resolve_entry(handle.workspace_id(),
+                                               handle.relative_path(), &source);
+            if (resolved) leased = service->store_->pin(handle.workspace_id());
+            if (!resolved || !leased) {
               {
                 std::lock_guard lock(state->mutex);
                 state->terminal_status =

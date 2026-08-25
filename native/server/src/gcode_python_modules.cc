@@ -6,6 +6,7 @@
 
 extern "C" PyObject* PyInit_interpreter(void);
 extern "C" PyObject* PyInit_emccanon(void);
+// NOLINTNEXTLINE(bugprone-reserved-identifier): Python C API type name
 extern "C" struct _inittab builtin_modules[];
 
 extern "C" {

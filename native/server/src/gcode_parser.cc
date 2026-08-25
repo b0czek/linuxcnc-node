@@ -43,6 +43,7 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
   // interpreter configuration (including REMAP and PYTHON) is intentionally
   // discovered through INI_FILE_NAME during init(). Parsing is serialized, so
   // this process-global LinuxCNC convention cannot race another session.
+  // NOLINTNEXTLINE(concurrency-mt-unsafe): serialized external API contract
   if (setenv("INI_FILE_NAME", options.ini_path.c_str(), 1) != 0)
     throw std::runtime_error("failed to set LinuxCNC INI_FILE_NAME");
 

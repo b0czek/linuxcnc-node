@@ -75,8 +75,9 @@ void encode_scope_channels(
     auto* channel = target->Add();
     channel->set_index(static_cast<std::uint32_t>(index));
     channel->set_enabled(source.channels[index].has_value());
-    if (source.channels[index]) {
-      for (const auto value : *source.channels[index]) {
+    const auto& values = source.channels[index];
+    if (values) {
+      for (const auto value : values.value()) {
         channel->add_values(value);
       }
     }

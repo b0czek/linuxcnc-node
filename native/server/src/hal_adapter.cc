@@ -162,7 +162,7 @@ void* pin_data(hal_pin_t* pin) {
   if (!pin) return nullptr;
   if (pin->signal) {
     auto* signal = static_cast<hal_sig_t*>(SHMPTR(pin->signal));
-    return signal ? SHMPTR(signal->data_ptr) : nullptr;
+    return signal ? reinterpret_cast<void*>(SHMPTR(signal->data_ptr)) : nullptr;
   }
   return &pin->dummysig;
 }
@@ -200,13 +200,14 @@ std::optional<ResolvedItem> resolve_unlocked(
     case HalAdapterItemKind::Param: {
       resolved.param = halpr_find_param_by_name(reference.name.c_str());
       if (!resolved.param) return std::nullopt;
-      resolved.data = SHMPTR(resolved.param->data_ptr);
+      resolved.data = reinterpret_cast<void*>(SHMPTR(resolved.param->data_ptr));
       break;
     }
     case HalAdapterItemKind::Signal: {
       resolved.signal = halpr_find_sig_by_name(reference.name.c_str());
       if (!resolved.signal) return std::nullopt;
-      resolved.data = SHMPTR(resolved.signal->data_ptr);
+      resolved.data =
+          reinterpret_cast<void*>(SHMPTR(resolved.signal->data_ptr));
       break;
     }
   }
@@ -516,7 +517,8 @@ HalAdapterTopology LinuxCncHalAdapter::topology() const {
     info.direction = param_direction(parameter->dir);
     auto* owner = static_cast<hal_comp_t*>(SHMPTR(parameter->owner_ptr));
     if (owner) info.owner_id = owner->comp_id;
-    info.value = read_value(info.type, SHMPTR(parameter->data_ptr));
+    info.value = read_value(
+        info.type, reinterpret_cast<const void*>(SHMPTR(parameter->data_ptr)));
     result.params.push_back(std::move(info));
   }
   for (SHMFIELD(hal_sig_t) next = hal_data->sig_list_ptr; next;
@@ -527,7 +529,8 @@ HalAdapterTopology LinuxCncHalAdapter::topology() const {
     const auto converted = adapter_type(signal->type);
     if (!converted) continue;
     info.type = *converted;
-    info.value = read_value(info.type, SHMPTR(signal->data_ptr));
+    info.value = read_value(
+        info.type, reinterpret_cast<const void*>(SHMPTR(signal->data_ptr)));
     info.readers = signal->readers;
     info.writers = signal->writers;
     info.bidirs = signal->bidirs;

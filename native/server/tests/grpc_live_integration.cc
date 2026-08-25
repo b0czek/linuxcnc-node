@@ -169,7 +169,7 @@ void require_shutdown_status(const grpc::Status& status, const char* name) {
 
 std::string make_large_gcode() {
   std::string result{"G21 G90\n"};
-  result.reserve(2U * 1024U * 1024U);
+  result.reserve(std::size_t{2} * 1024U * 1024U);
   for (int index = 0; index < 75000; ++index) {
     result += "G1 X" + std::to_string(index % 100) + " Y" +
               std::to_string((index * 7) % 100) + " F100\n";

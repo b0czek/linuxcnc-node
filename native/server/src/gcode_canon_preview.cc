@@ -146,12 +146,10 @@ void update_arc_extents(ParseContext& context, const Position& start,
   double sweep = clockwise ? positive_angle(start_angle - end_angle)
                            : positive_angle(end_angle - start_angle);
   const int turn_count = std::abs(operation.arcData.rotation);
-  if (sweep == 0.0 && turn_count >= 1)
+  if (sweep == 0.0)
     sweep = 2.0 * pi;
   else if (turn_count >= 1)
     sweep += (turn_count - 1) * 2.0 * pi;
-  else if (sweep == 0.0)
-    sweep = 2.0 * pi;
 
   context.updateExtents(start);
   context.updateExtents(operation.pos);
@@ -396,7 +394,8 @@ bool ParseContext::flushBatch() {
     batch.reserve(count);
     for (std::size_t index = 0; index < count; ++index)
       batch.push_back(std::move(operations[index]));
-    operations.erase(operations.begin(), operations.begin() + count);
+    operations.erase(operations.begin(),
+                     operations.begin() + static_cast<std::ptrdiff_t>(count));
     if (!batchCallback(std::move(batch))) cancelled = true;
   }
   return !cancelled;
@@ -417,7 +416,9 @@ void ParseContext::reportProgress(std::size_t bytes_read) {
   ParseProgress progress;
   progress.bytesRead = bytes_read;
   progress.totalBytes = totalBytes;
-  progress.percent = (static_cast<double>(bytes_read) / totalBytes) * 100.0;
+  progress.percent =
+      (static_cast<double>(bytes_read) / static_cast<double>(totalBytes)) *
+      100.0;
   progress.operationCount = operationCount;
   progressCallback(progress);
 }

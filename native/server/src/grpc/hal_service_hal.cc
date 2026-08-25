@@ -126,13 +126,14 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
       }
       const auto values = adapter_.read_many(references);
       for (std::size_t index = 0; index < values.size(); ++index) {
-        if (!values[index]) {
+        const auto& value = values[index];
+        if (!value) {
           return {::grpc::StatusCode::NOT_FOUND,
                   "HAL item '" + references[index].name + "' was not found"};
         }
         auto* encoded = response->add_values();
         *encoded->mutable_item() = request->items(static_cast<int>(index));
-        encode_hal_scalar(*values[index], encoded->mutable_value());
+        encode_hal_scalar(value.value(), encoded->mutable_value());
       }
       return ::grpc::Status::OK;
     } catch (const HalAdapterError& error) {
@@ -152,7 +153,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
           return Invalid(
               "HAL write contains a mismatched reference or scalar oneof");
         }
-        updates.emplace_back(std::move(*reference), std::move(*value));
+        updates.emplace_back(std::move(reference.value()), value.value());
       }
       std::vector<HalAdapterValue> written;
       if (adapter_.write_many(updates, &written) != updates.size()) {
@@ -326,8 +327,9 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     for (std::size_t index = 0; index < references.size(); ++index) {
       const auto reference = telemetry_reference(references[index]);
       HalTelemetryType type = HalTelemetryType::Unavailable;
-      if (values[index]) {
-        type = static_cast<HalTelemetryType>(values[index]->index() + 1);
+      const auto& value = values[index];
+      if (value) {
+        type = static_cast<HalTelemetryType>(value->index() + 1);
       } else {
         const auto found =
             prior.find(std::to_string(static_cast<int>(reference.kind)) + ":" +
@@ -357,7 +359,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
                 static_cast<std::size_t>(due.bindings[index].type))
           published.emplace_back();
         else
-          published.push_back(*values[index]);
+          published.push_back(values[index]);
       }
       telemetry_->publish(due.subscription_id, due.revision,
                           std::move(published));
@@ -820,6 +822,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
             topology_wakes_.publish(snapshot.first);
           }
         } catch (const HalAdapterError&) {
+          last_published_topology_ = 0;
         }
       });
       std::unique_lock lock(timer_mutex_);
