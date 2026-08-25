@@ -424,6 +424,66 @@ std::string read_file(const fs::path& path) {
           std::istreambuf_iterator<char>()};
 }
 
+void workspace_restart_cleanup_test() {
+  const auto base = fs::temp_directory_path() /
+                    ("linuxcnc-grpc-workspace-restart-tests-" +
+                     std::to_string(::getpid()));
+  const auto root = base / "workspaces";
+  const auto active = base / "active-program";
+  std::error_code error;
+  fs::remove_all(base, error);
+
+  fs::create_directories(active, error);
+  assert(!error);
+  {
+    std::ofstream output(active / "current.ngc");
+    output << "current";
+  }
+  fs::create_directories(base / ".active-program.staging-7", error);
+  fs::create_directories(base / ".active-program.previous-7", error);
+  fs::create_directories(base / ".other.staging-7", error);
+  fs::create_directories(base / ".active-program.staging-not-ours", error);
+  {
+    std::ofstream output(base / ".active-program.staging-not-a-directory");
+    output << "unrelated";
+  }
+  {
+    ProgramWorkspaceStore restarted(root, active);
+    assert(read_file(restarted.active_directory() / "current.ngc") ==
+           "current");
+  }
+  assert(!fs::exists(base / ".active-program.staging-7"));
+  assert(!fs::exists(base / ".active-program.previous-7"));
+  assert(fs::is_directory(base / ".other.staging-7"));
+  assert(fs::is_directory(base / ".active-program.staging-not-ours"));
+  assert(read_file(base / ".active-program.staging-not-a-directory") ==
+         "unrelated");
+
+  fs::remove_all(active, error);
+  fs::create_directories(base / ".active-program.previous-8", error);
+  assert(!error);
+  {
+    std::ofstream output(base / ".active-program.previous-8" / "old.ngc");
+    output << "last known good";
+  }
+  fs::create_directories(base / ".active-program.staging-8", error);
+  assert(!error);
+  {
+    std::ofstream output(base / ".active-program.staging-8" / "new.ngc");
+    output << "incomplete";
+  }
+  {
+    ProgramWorkspaceStore restarted(root, active);
+    assert(read_file(restarted.active_directory() / "old.ngc") ==
+           "last known good");
+  }
+  assert(!fs::exists(base / ".active-program.previous-8"));
+  assert(!fs::exists(base / ".active-program.staging-8"));
+
+  fs::remove_all(base, error);
+  assert(!error);
+}
+
 void workspace_traversal_quota_ttl_and_materialization_test() {
   const auto base =
       fs::temp_directory_path() /
@@ -580,6 +640,7 @@ int main() {
   position_collinear_compaction_test();
   position_telemetry_wire_test();
   hal_value_telemetry_test();
+  workspace_restart_cleanup_test();
   workspace_traversal_quota_ttl_and_materialization_test();
   scope_coalescing_and_conflict_accounting_test();
   return 0;

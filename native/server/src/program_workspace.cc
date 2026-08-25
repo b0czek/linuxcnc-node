@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <system_error>
 #include <unordered_map>
+#include <vector>
 
 namespace linuxcnc::server {
 namespace fs = std::filesystem;
@@ -39,6 +40,62 @@ std::string opaque_workspace_id() {
   return id;
 }
 
+bool has_generated_suffix(const std::string& value,
+                          const std::string& prefix) {
+  if (value.compare(0, prefix.size(), prefix) != 0 ||
+      value.size() == prefix.size())
+    return false;
+  for (auto index = prefix.size(); index < value.size(); ++index) {
+    if (value[index] < '0' || value[index] > '9') return false;
+  }
+  return true;
+}
+
+void reconcile_active_program_directory(const fs::path& active_directory) {
+  const auto parent = active_directory.parent_path();
+  const auto stem = active_directory.filename().string();
+  const auto staging_prefix = "." + stem + ".staging-";
+  const auto previous_prefix = "." + stem + ".previous-";
+  std::vector<fs::path> staging_directories;
+  std::vector<fs::path> previous_directories;
+  std::error_code error;
+  for (fs::directory_iterator entries(parent, error), end;
+       !error && entries != end; entries.increment(error)) {
+    const auto& candidate = *entries;
+    const auto name = candidate.path().filename().string();
+    std::error_code status_error;
+    const auto status = candidate.symlink_status(status_error);
+    if (status_error || !fs::is_directory(status)) continue;
+    if (has_generated_suffix(name, staging_prefix)) {
+      staging_directories.push_back(candidate.path());
+    } else if (has_generated_suffix(name, previous_prefix)) {
+      previous_directories.push_back(candidate.path());
+    }
+  }
+  if (error) throw std::system_error(error, "scan active program siblings");
+
+  const auto active_status = fs::symlink_status(active_directory, error);
+  if (error && error != std::errc::no_such_file_or_directory)
+    throw std::system_error(error, "inspect active program directory");
+  error.clear();
+  if (!fs::exists(active_status) && !previous_directories.empty()) {
+    // A crash after active -> previous but before staging -> active leaves the
+    // last known-good program only in the backup directory.
+    fs::rename(previous_directories.back(), active_directory, error);
+    if (error) throw std::system_error(error, "restore active program directory");
+    previous_directories.pop_back();
+  }
+
+  for (const auto& orphan : staging_directories) {
+    fs::remove_all(orphan, error);
+    if (error) throw std::system_error(error, "remove staging program directory");
+  }
+  for (const auto& orphan : previous_directories) {
+    fs::remove_all(orphan, error);
+    if (error) throw std::system_error(error, "remove previous program directory");
+  }
+}
+
 }  // namespace
 
 ProgramWorkspaceStore::ProgramWorkspaceStore(fs::path root,
@@ -50,6 +107,14 @@ ProgramWorkspaceStore::ProgramWorkspaceStore(fs::path root,
   std::error_code error;
   fs::create_directories(root_, error);
   if (error) throw std::system_error(error, "create workspace root");
+  fs::create_directories(active_directory_.parent_path(), error);
+  if (error) throw std::system_error(error, "create active program parent");
+  if (has_symlink_component(root_, root_.root_path()) ||
+      has_symlink_component(active_directory_.parent_path(),
+                            active_directory_.root_path())) {
+    throw std::runtime_error("workspace directories may not contain symlinks");
+  }
+  reconcile_active_program_directory(active_directory_);
   fs::create_directories(active_directory_, error);
   if (error) throw std::system_error(error, "create active program directory");
   if (has_symlink_component(root_, root_.root_path()) ||
