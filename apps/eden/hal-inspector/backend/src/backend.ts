@@ -17,6 +17,11 @@ let pollIntervalMs = 100;
 let pollTimer: NodeJS.Timeout | undefined;
 let pollInFlight = false;
 let subscriptionGeneration = 0;
+let initializeTimer: NodeJS.Timeout | undefined;
+let initializeRetryMs = 250;
+let initializing = false;
+let shuttingDown = false;
+let topologyOff: (() => void) | null = null;
 let valueCursor = 0;
 let previousValues = new Map<string, HalValue>();
 let visible = true;
@@ -37,6 +42,12 @@ const ok = <T>(value: T): RpcResult<T> => ({ ok: true, value });
 const fail = <T>(code: InspectorErrorCode, error: unknown): RpcResult<T> => ({ ok: false, error: { code, message: error instanceof Error ? error.message : String(error) } });
 const defaultScopeStatus = (): ScopeStatus => ({ state: "idle", bufferLength: 0, recordLength: 0, sampleLength: 0, samples: 0, start: 0, multiplier: 1, watchdog: 0, threadName: "", samplePeriodNs: 0 });
 
+function markConnected(): void {
+  const changed = !connected;
+  connected = true;
+  startupError = "";
+  if (changed) api.send("connection/state", { connected: true });
+}
 function setRunMode(mode: ScopeRunMode): void { if (runMode !== mode) { runMode = mode; api.send("scope/run-mode", { mode }); } }
 function copyScopeConfig(config: ScopeAcquisitionConfig): ScopeAcquisitionConfig { return { ...config, channels: config.channels.map((channel) => channel ? { ...channel } : null) }; }
 function rollConfig(config: ScopeAcquisitionConfig, recordLength: number): ScopeAcquisitionConfig { return { ...copyScopeConfig(config), preTrigger: Math.max(0, recordLength - 1), triggerChannel: 0, automatic: false }; }
@@ -77,6 +88,7 @@ async function refreshTopology(send = false): Promise<TopologySnapshot> {
   if (!client) throw new Error(startupError);
   const previous = topology;
   const next = await client.getTopology();
+  markConnected();
   topologyRevision = Math.max(topologyRevision + 1, next.revision);
   topology = { ...next, revision: topologyRevision };
   const shape = (value: TopologySnapshot) => JSON.stringify({
@@ -100,6 +112,7 @@ async function pollValues(): Promise<void> {
   try {
     const values = await activeClient.read(refs);
     if (client !== activeClient || generation !== subscriptionGeneration) return;
+    markConnected();
     const changed: Array<{ ref: HalItemRef; value: HalValue }> = [];
     refs.forEach((ref, index) => { const value = values[index]; if (value === undefined) return; const key = refKey(ref); if (!Object.is(previousValues.get(key), value)) { previousValues.set(key, value); changed.push({ ref, value }); } });
     if (changed.length) api.send("values/delta", { cursor: ++valueCursor, values: changed });
@@ -160,8 +173,42 @@ api.handle("scope/force-trigger", () => queued(async () => { try { if (!scope) r
 api.on("ui/state", (state) => { visible = state.visible; scopeExpanded = state.scopeExpanded; if (visible) void pollValues(); if (visible && scopeExpanded && pendingCapture && inFlightCapture === null) { const capture = pendingCapture; pendingCapture = null; deliverCapture(capture); } if (visible && scopeExpanded && pendingRoll && inFlightCapture === null) { const batch = pendingRoll; pendingRoll = null; deliverRoll(batch); } });
 api.on("scope/capture-ack", ({ id }) => { if (inFlightCapture !== id) return; void scope?.send(scopeAck(inFlightGeneration ?? BigInt(id))).catch(() => undefined); inFlightCapture = null; inFlightGeneration = undefined; if (visible && scopeExpanded && pendingRoll) { const batch = pendingRoll; pendingRoll = null; deliverRoll(batch); } else if (visible && scopeExpanded && pendingCapture) { const capture = pendingCapture; pendingCapture = null; deliverCapture(capture); } });
 
-async function initialize(): Promise<void> { try { client = await createHalScopeClient(); topology = await client.getTopology(); client.watchTopology((next) => { topology = { ...next, revision: ++topologyRevision }; api.send("topology/changed", topology); }); restartValueTimer(); connected = true; startupError = ""; api.send("connection/state", { connected: true }); } catch (error) { connected = false; startupError = error instanceof Error ? error.message : String(error); console.error("LinuxCNC gRPC initialization failed:", error); api.send("connection/state", { connected: false, message: startupError }); } }
-function cleanup(): void { if (pollTimer) clearInterval(pollTimer); scopeOff?.(); scopeErrorOff?.(); scope?.close(); scope = null; client?.close(); client = null; }
+function scheduleInitialize(): void {
+  if (shuttingDown || initializing || initializeTimer) return;
+  initializeTimer = setTimeout(() => { initializeTimer = undefined; void initialize(); }, initializeRetryMs);
+  initializeRetryMs = Math.min(initializeRetryMs * 2, 5000);
+}
+async function initialize(): Promise<void> {
+  if (shuttingDown || initializing || connected) return;
+  initializing = true;
+  let candidate: HalScopeClient | null = null;
+  let retry = false;
+  try {
+    candidate = await createHalScopeClient();
+    const next = await candidate.getTopology();
+    topologyOff?.();
+    client?.close();
+    client = candidate;
+    candidate = null;
+    topology = next;
+    topologyRevision = Math.max(topologyRevision, next.revision);
+    topologyOff = client.watchTopology((nextTopology) => { topology = { ...nextTopology, revision: ++topologyRevision }; markConnected(); api.send("topology/changed", topology); });
+    initializeRetryMs = 250;
+    restartValueTimer();
+    markConnected();
+  } catch (error) {
+    candidate?.close();
+    connected = false;
+    startupError = error instanceof Error ? error.message : String(error);
+    console.error("LinuxCNC gRPC initialization failed:", error);
+    api.send("connection/state", { connected: false, message: startupError });
+    retry = true;
+  } finally {
+    initializing = false;
+    if (retry) scheduleInitialize();
+  }
+}
+function cleanup(): void { shuttingDown = true; if (initializeTimer) clearTimeout(initializeTimer); if (pollTimer) clearInterval(pollTimer); topologyOff?.(); topologyOff = null; scopeOff?.(); scopeErrorOff?.(); scope?.close(); scope = null; client?.close(); client = null; }
 setImmediate(() => void initialize());
 process.once("exit", cleanup);
 process.once("SIGTERM", () => { cleanup(); process.exit(0); });
