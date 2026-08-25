@@ -37,6 +37,8 @@ if [[ ! -f "${COMPILE_COMMANDS}" ]]; then
 fi
 
 exec "${RUN_CLANG_TIDY}" \
+  -clang-tidy-binary "${CLANG_TIDY}" \
+  -config-file "${REPO_ROOT}/native/server/.clang-tidy" \
   -p "${BUILD_DIR}" \
   -header-filter "${NATIVE_SOURCE_FILTER}" \
   "${NATIVE_SOURCE_FILTER}"

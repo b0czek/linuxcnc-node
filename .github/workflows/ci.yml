@@ -48,17 +48,22 @@ jobs:
 
   native-contract:
     name: Native gRPC contract
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Install C++ gRPC toolchain
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install C++ gRPC and Clang toolchains
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential \
+            clang-format-18 \
+            clang-tidy-18 \
             cmake \
             libboost-dev \
             libgrpc++-dev \
@@ -67,11 +72,23 @@ jobs:
             protobuf-compiler \
             protobuf-compiler-grpc
 
+      - name: Check native formatting
+        run: pnpm check:native:format
+
       - name: Configure
-        run: cmake -S . -B build/native-grpc -DLINUXCNC_GRPC_BUILD_WIRE=ON -DLINUXCNC_GRPC_ENABLE_NML=OFF -DCMAKE_BUILD_TYPE=Debug
+        run: |
+          cmake -S . -B build/native-grpc \
+            -DLINUXCNC_GRPC_BUILD_WIRE=ON \
+            -DLINUXCNC_GRPC_ENABLE_NML=OFF \
+            -DLINUXCNC_GRPC_BUILD_TESTS=ON \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DCMAKE_BUILD_TYPE=Debug
 
       - name: Build
         run: cmake --build build/native-grpc --parallel 2
+
+      - name: Lint native sources
+        run: pnpm lint:native -- build/native-grpc
 
       - name: Test
         run: ctest --test-dir build/native-grpc --output-on-failure
@@ -101,7 +118,7 @@ jobs:
 
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Check out repository
@@ -114,13 +131,15 @@ jobs:
           revision="$(< linuxcnc-patches/base-revision)"
           echo "revision=${revision}" >> "${GITHUB_OUTPUT}"
 
-      - name: Install native daemon build dependencies
+      - name: Install native daemon and Clang dependencies
         run: |
           set -euo pipefail
 
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential \
+            clang-format-18 \
+            clang-tidy-18 \
             cmake \
             libboost-dev \
             libgrpc++-dev \
@@ -251,10 +270,14 @@ jobs:
             -DLINUXCNC_GRPC_BUILD_WIRE=ON \
             -DLINUXCNC_GRPC_BUILD_TESTS=ON \
             -DLINUXCNC_GRPC_ENABLE_NML=ON \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
             -DCMAKE_BUILD_TYPE=Debug
 
       - name: Build native LinuxCNC daemon
         run: cmake --build build/native-grpc-linuxcnc --parallel 2
+
+      - name: Lint native LinuxCNC sources
+        run: pnpm lint:native -- build/native-grpc-linuxcnc
 
       - name: Test native LinuxCNC daemon
         shell: bash
