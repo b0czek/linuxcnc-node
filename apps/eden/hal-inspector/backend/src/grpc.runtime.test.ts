@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import test from "node:test";
 import { resolve } from "node:path";
+import test from "node:test";
 import { createLinuxCncClients } from "@linuxcnc-node/grpc-client";
 import { readGrpcConfig } from "./config";
 
@@ -21,4 +21,3 @@ test("configured protoRoot loads the packaged grpc and health clients", async ()
   assert.ok(clients.hal);
   for (const client of Object.values(clients)) client.close();
 });
-

@@ -26,4 +26,3 @@ createLinuxCncClients({ address: "127.0.0.1:50051", protoRoot })
     console.error(error);
     process.exitCode = 1;
   });
-

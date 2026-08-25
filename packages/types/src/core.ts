@@ -1,20 +1,25 @@
-import {
-  TaskMode,
-  TaskState,
+import type {
+  EmcDebug,
   ExecState,
   InterpState,
-  StopState,
-  TrajMode,
-  MotionType,
+  JointType,
   KinematicsType,
+  MotionType,
+  NmlMessageType,
+  OrientState,
   ProgramUnits,
   RcsStatus,
-  NmlMessageType,
-  JointType,
-  OrientState,
-  EmcDebug,
+  StopState,
+  TaskMode,
+  TaskState,
+  TrajMode,
 } from "./constants";
-export { POSITION_STRIDE, PositionLoggerIndex, PositionIndex } from "./generated/enums";
+
+export {
+  POSITION_STRIDE,
+  PositionIndex,
+  PositionLoggerIndex,
+} from "./generated/enums";
 
 /** Stride for position data in Float64Array: x, y, z, a, b, c, u, v, w, motionType */
 /** Axis names supported by the LinuxCNC coordinate system. */
@@ -392,7 +397,6 @@ export interface TaskStat {
 
   /** Number of queued MDI commands. */
   queuedMdiCommands: number;
-
 }
 
 /**
@@ -825,7 +829,7 @@ export type RecursivePartial<T> = {
 export type StatPropertyWatchCallback<P extends LinuxCNCStatPaths> = (
   newValue: GetPropertyType<LinuxCNCStat, P>,
   oldValue: GetPropertyType<LinuxCNCStat, P> | null,
-  propertyPath: P
+  propertyPath: P,
 ) => void;
 
 export type ErrorCallback = (error: LinuxCNCError) => void;

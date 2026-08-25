@@ -9,7 +9,7 @@ import {
   FaSolidThumbTack,
   FaSolidWaveSquare,
 } from "solid-icons/fa";
-import { For, type Component } from "solid-js";
+import { type Component, For } from "solid-js";
 import { t } from "./i18n";
 import type { Category } from "./models";
 
@@ -37,6 +37,7 @@ export const BrowseHeader: Component<BrowseHeaderProps> = (props) => (
   <div class="workspace-topbar">
     <header class="workspace-header">
       <button
+        type="button"
         class="eden-btn eden-btn-ghost menu-button"
         aria-label={t("inspector.menu")}
         title={t("inspector.menu")}
@@ -62,6 +63,7 @@ export const BrowseHeader: Component<BrowseHeaderProps> = (props) => (
         />
       </label>
       <button
+        type="button"
         class="eden-btn eden-btn-outline"
         aria-label={t("inspector.refresh")}
         title={t("inspector.refresh")}
@@ -75,6 +77,7 @@ export const BrowseHeader: Component<BrowseHeaderProps> = (props) => (
         <For each={Object.keys(categoryLabels) as Category[]}>
           {(item) => (
             <button
+              type="button"
               class={`browse-category ${props.category === item ? "active" : ""}`}
               onClick={() => props.onCategoryChange(item)}
             >

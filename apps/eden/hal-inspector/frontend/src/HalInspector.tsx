@@ -1,4 +1,12 @@
+import type { PeerConnection } from "@edenapp/types/ipc";
 import * as Dialog from "@kobalte/core/dialog";
+import type {
+  HalItemRef,
+  HalValue,
+  ScopeAcquisitionConfig,
+  ScopeCapture,
+  ScopeStatus,
+} from "@linuxcnc-node/types";
 import { createVirtualizer } from "@tanstack/solid-virtual";
 import {
   FaSolidBars,
@@ -15,8 +23,8 @@ import {
   FaSolidWaveSquare,
   FaSolidXmark,
 } from "solid-icons/fa";
-import type { PeerConnection } from "@edenapp/types/ipc";
 import {
+  type Component,
   createEffect,
   createMemo,
   createSignal,
@@ -24,29 +32,21 @@ import {
   onCleanup,
   onMount,
   Show,
-  type Component,
 } from "solid-js";
-import type {
-  HalItemRef,
-  HalValue,
-  ScopeAcquisitionConfig,
-  ScopeCapture,
-  ScopeStatus,
-} from "@linuxcnc-node/types";
 import type {
   HalInspectorProtocol,
   ScopeRollFrame,
   ScopeRunMode,
   TopologySnapshot,
 } from "../../shared/protocol";
-import { initLocale, t } from "./i18n";
 import { BrowseHeader } from "./BrowseHeader";
 import { InspectorSidebar } from "./InspectorSidebar";
+import { initLocale, t } from "./i18n";
 import {
-  DEFAULT_PREFERENCES as DEFAULTS,
-  defaultScopeDisplays,
   type ActiveTab,
   type Category,
+  DEFAULT_PREFERENCES as DEFAULTS,
+  defaultScopeDisplays,
   type Preferences,
   type Row,
   type ScopeChannelDisplay,
@@ -54,6 +54,7 @@ import {
 } from "./models";
 import { ScopePlot } from "./ScopePlot";
 import { buildTreeRows, formatInlineValue, TYPE_COLORS } from "./tree";
+
 const key = (ref: HalItemRef) => `${ref.kind}:${ref.name}`;
 const LIST_ROW_PITCH = 64;
 const LIST_OVERSCAN = 8;
@@ -76,20 +77,20 @@ export const HalInspector: Component = () => {
   const [capture, setCapture] = createSignal<ScopeCapture | null>(null);
   const [rollFrame, setRollFrame] = createSignal<ScopeRollFrame | null>(null);
   const [channels, setChannels] = createSignal<Array<HalItemRef | null>>(
-    Array(16).fill(null)
+    Array(16).fill(null),
   );
   const [intervalMs, setIntervalMs] = createSignal(100);
   const [scopeThread, setScopeThread] = createSignal("");
   const [scopeMultiplier, setScopeMultiplier] = createSignal(1);
   const [triggerMode, setTriggerMode] = createSignal<"auto" | "normal">("auto");
   const [triggerEdge, setTriggerEdge] = createSignal<"rising" | "falling">(
-    "rising"
+    "rising",
   );
   const [triggerLevel, setTriggerLevel] = createSignal(0);
   const [preTriggerRatio, setPreTriggerRatio] = createSignal(0.5);
   const [activeTriggerChannel, setActiveTriggerChannel] = createSignal(0);
   const [scopeDisplays, setScopeDisplays] = createSignal(
-    defaultScopeDisplays()
+    defaultScopeDisplays(),
   );
   const [activeScopeChannel, setActiveScopeChannel] = createSignal(0);
   const [skippedCaptures, setSkippedCaptures] = createSignal(0);
@@ -119,7 +120,7 @@ export const HalInspector: Component = () => {
           name: x.name,
           kind: "components" as const,
           subtitle: `${x.kind} · ${x.ready ? "ready" : "not ready"}`,
-        }))
+        })),
       );
     if (category() === "pins")
       rows.push(
@@ -132,7 +133,7 @@ export const HalInspector: Component = () => {
           type: x.type,
           writable: x.direction !== "out" && !x.signalName,
           subtitle: `${x.direction}${x.signalName ? ` · ${x.signalName}` : ""}`,
-        }))
+        })),
       );
     if (category() === "params")
       rows.push(
@@ -145,7 +146,7 @@ export const HalInspector: Component = () => {
           type: x.type,
           writable: x.direction === "rw",
           subtitle: x.direction,
-        }))
+        })),
       );
     if (category() === "signals")
       rows.push(
@@ -158,7 +159,7 @@ export const HalInspector: Component = () => {
           type: x.type,
           writable: x.writers === 0,
           subtitle: `${x.writers} writer · ${x.readers} reader`,
-        }))
+        })),
       );
     if (category() === "functions")
       rows.push(
@@ -167,7 +168,7 @@ export const HalInspector: Component = () => {
           name: x.name,
           kind: "functions" as const,
           subtitle: `${x.ownerName} · ${x.users} user`,
-        }))
+        })),
       );
     if (category() === "threads")
       rows.push(
@@ -178,7 +179,7 @@ export const HalInspector: Component = () => {
           subtitle: `${(x.periodNs / 1e6).toFixed(3)} ms · ${
             x.functions.length
           } functions`,
-        }))
+        })),
       );
     const query = filter().trim().toLocaleLowerCase();
     return (
@@ -191,10 +192,10 @@ export const HalInspector: Component = () => {
     () =>
       watches()
         .map((ref) => itemRowsForRef(ref))
-        .filter(Boolean) as Row[]
+        .filter(Boolean) as Row[],
   );
   const sourceRows = createMemo(() =>
-    activeTab() === "watch" ? watchRows() : itemRows()
+    activeTab() === "watch" ? watchRows() : itemRows(),
   );
   const displayedRows = createMemo<TreeRow[]>(() => {
     const rows = sourceRows();
@@ -209,7 +210,7 @@ export const HalInspector: Component = () => {
       rows,
       `browse:${category()}`,
       expandedGroups(),
-      filter().trim().length > 0
+      filter().trim().length > 0,
     );
   });
   const availableWatches = createMemo(() => {
@@ -220,8 +221,8 @@ export const HalInspector: Component = () => {
         ref.kind === "pin"
           ? data.pins
           : ref.kind === "param"
-          ? data.params
-          : data.signals;
+            ? data.params
+            : data.signals;
       return items.some((item) => item.name === ref.name);
     });
   });
@@ -267,8 +268,8 @@ export const HalInspector: Component = () => {
       ref.kind === "pin"
         ? data.pins.find((x) => x.name === ref.name)
         : ref.kind === "param"
-        ? data.params.find((x) => x.name === ref.name)
-        : data.signals.find((x) => x.name === ref.name);
+          ? data.params.find((x) => x.name === ref.name)
+          : data.signals.find((x) => x.name === ref.name);
     if (!meta)
       return {
         id: key(ref),
@@ -281,10 +282,10 @@ export const HalInspector: Component = () => {
       ref.kind === "param"
         ? "direction" in meta && meta.direction === "rw"
         : ref.kind === "pin"
-        ? "direction" in meta &&
-          meta.direction !== "out" &&
-          !("signalName" in meta && meta.signalName)
-        : "writers" in meta && meta.writers === 0;
+          ? "direction" in meta &&
+            meta.direction !== "out" &&
+            !("signalName" in meta && meta.signalName)
+          : "writers" in meta && meta.writers === 0;
     return {
       id: key(ref),
       name: ref.name,
@@ -303,7 +304,7 @@ export const HalInspector: Component = () => {
         .flatMap((row) => (row.ref ? [row.ref] : []));
       return [
         ...new Map(
-          [...availableWatches(), ...visible].map((ref) => [key(ref), ref])
+          [...availableWatches(), ...visible].map((ref) => [key(ref), ref]),
         ).values(),
       ];
     },
@@ -312,20 +313,20 @@ export const HalInspector: Component = () => {
       equals: (previous, next) =>
         previous.length === next.length &&
         previous.every((ref, index) => key(ref) === key(next[index])),
-    }
+    },
   );
   createEffect(
     () =>
       void api.request("subscriptions/set", {
         refs: subscribedRefs(),
         intervalMs: intervalMs(),
-      })
+      }),
   );
   createEffect(() =>
     api.send("ui/state", {
       visible: document.visibilityState === "visible",
       scopeExpanded: activeTab() === "scope",
-    })
+    }),
   );
 
   async function loadPreferences() {
@@ -340,7 +341,10 @@ export const HalInspector: Component = () => {
           });
       const stored = current.value ?? legacy?.value;
       if (stored) {
-        const p = JSON.parse(stored) as Omit<Partial<Preferences>, "version"> & {
+        const p = JSON.parse(stored) as Omit<
+          Partial<Preferences>,
+          "version"
+        > & {
           version?: number;
         };
         if (p.version === 1 || p.version === 2) {
@@ -349,15 +353,16 @@ export const HalInspector: Component = () => {
           if (p.drawerExpanded) setActiveTab("scope");
           const storedChannels = p.channels ?? [];
           setChannels(
-            Array.from({ length: 16 }, (_, index) =>
-              storedChannels[index] ?? null
-            )
+            Array.from(
+              { length: 16 },
+              (_, index) => storedChannels[index] ?? null,
+            ),
           );
           setScopeThread(p.threadName ?? "");
           setScopeMultiplier(Math.max(1, p.multiplier ?? 1));
           setTriggerMode(p.triggerMode ?? "auto");
           setActiveTriggerChannel(
-            Math.max(0, Math.min(15, p.triggerChannel ?? 0))
+            Math.max(0, Math.min(15, p.triggerChannel ?? 0)),
           );
           setTriggerEdge(p.triggerEdge ?? "rising");
           setTriggerLevel(p.triggerLevel ?? 0);
@@ -377,10 +382,10 @@ export const HalInspector: Component = () => {
                   ? Number(display?.offset)
                   : 0,
               };
-            })
+            }),
           );
           setActiveScopeChannel(
-            Math.max(0, Math.min(15, p.activeScopeChannel ?? 0))
+            Math.max(0, Math.min(15, p.activeScopeChannel ?? 0)),
           );
         }
       }
@@ -439,7 +444,7 @@ export const HalInspector: Component = () => {
     setWatches((current) =>
       current.some((x) => key(x) === key(ref))
         ? current.filter((x) => key(x) !== key(ref))
-        : [...current, ref]
+        : [...current, ref],
     );
   }
   function isWatched(ref: HalItemRef) {
@@ -467,7 +472,7 @@ export const HalInspector: Component = () => {
         return;
       }
       setChannels((current) =>
-        current.map((value, index) => (index === free ? ref : value))
+        current.map((value, index) => (index === free ? ref : value)),
       );
       setActiveScopeChannel(free);
     } else setActiveScopeChannel(existing);
@@ -494,7 +499,7 @@ export const HalInspector: Component = () => {
       threadName: thread.name,
       multiplier: scopeMultiplier(),
       preTrigger: Math.round(
-        (scopeStatus()?.recordLength ?? 2000) * preTriggerRatio()
+        (scopeStatus()?.recordLength ?? 2000) * preTriggerRatio(),
       ),
       triggerChannel:
         channels()[activeTriggerChannel()] != null
@@ -504,7 +509,7 @@ export const HalInspector: Component = () => {
       rising: triggerEdge() === "rising",
       automatic: triggerMode() === "auto",
       channels: channels().map((ref, index) =>
-        ref ? { ...ref, index, enabled: true } : null
+        ref ? { ...ref, index, enabled: true } : null,
       ),
     };
     const result = await api.request("scope/configure", config);
@@ -520,7 +525,7 @@ export const HalInspector: Component = () => {
   }
   function removeScopeChannel(index: number) {
     const next = channels().map((value, currentIndex) =>
-      currentIndex === index ? null : value
+      currentIndex === index ? null : value,
     );
     setChannels(next);
     if (activeScopeChannel() === index)
@@ -532,12 +537,12 @@ export const HalInspector: Component = () => {
   function updateScopeDisplay(index: number, display: ScopeChannelDisplay) {
     setScopeDisplays((current) =>
       current.map((value, currentIndex) =>
-        currentIndex === index ? display : value
-      )
+        currentIndex === index ? display : value,
+      ),
     );
   }
   async function scopeAction(
-    action: "run" | "roll" | "single" | "stop" | "force"
+    action: "run" | "roll" | "single" | "stop" | "force",
   ) {
     if (
       action !== "stop" &&
@@ -550,8 +555,8 @@ export const HalInspector: Component = () => {
       action === "stop"
         ? await api.request("scope/stop", {})
         : action === "force"
-        ? await api.request("scope/force-trigger", {})
-        : await api.request("scope/run", { mode: action });
+          ? await api.request("scope/force-trigger", {})
+          : await api.request("scope/run", { mode: action });
     if (result.ok) setScopeStatus(result.value);
     else setError(result.error.message);
   }
@@ -568,11 +573,13 @@ export const HalInspector: Component = () => {
   }
 
   function applyValueUpdates(
-    updates: Array<{ ref: HalItemRef; value: HalValue }>
+    updates: Array<{ ref: HalItemRef; value: HalValue }>,
   ) {
     setValues((current) => {
       const next = new Map(current);
-      updates.forEach(({ ref, value }) => next.set(key(ref), value));
+      updates.forEach(({ ref, value }) => {
+        next.set(key(ref), value);
+      });
       return next;
     });
     setSelected((current) => {
@@ -692,537 +699,586 @@ export const HalInspector: Component = () => {
           </section>
         }
       >
-      <div class="desktop-tree">{sidebar()}</div>
-      <Dialog.Root open={treeOpen()} onOpenChange={setTreeOpen}>
-        <Dialog.Portal>
-          <Dialog.Overlay class="eden-modal-overlay" />
-          <Dialog.Content class="mobile-tree eden-modal">
-            {" "}
-            <Dialog.Title class="sr-only">{t("inspector.menu")}</Dialog.Title>
-            {sidebar()}
-            <Dialog.CloseButton class="eden-btn eden-btn-ghost close-tree">
-              <FaSolidXmark size={18} />
-            </Dialog.CloseButton>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
-      <section class="workspace">
-        <Show when={activeTab() !== "browse"}>
-          <button
-            class="eden-btn eden-btn-ghost menu-button standalone-menu-button"
-            aria-label={t("inspector.menu")}
-            title={t("inspector.menu")}
-            onClick={() => setTreeOpen(true)}
-          >
-            <FaSolidBars size={18} />
-          </button>
-        </Show>
-        <div
-          class={`workspace-content ${
-            activeTab() !== "browse" ? "has-standalone-menu" : ""
-          }`}
-        >
-          <Show when={activeTab() === "browse"}>
-            <BrowseHeader
-              category={category()}
-              itemCount={sourceRows().length}
-              filter={filter()}
-              categoryCount={categoryCount}
-              onCategoryChange={setCategory}
-              onFilterChange={setFilter}
-              onMenuOpen={() => setTreeOpen(true)}
-              onRefresh={() => void refresh()}
-            />
-          </Show>
-          <Show when={activeTab() !== "scope"}>
-          <div class="list-detail">
-            <Show when={activeTab() === "watch" && watches().length > 0}>
-              <button
-                class="eden-btn eden-btn-sm eden-btn-ghost clear-watches"
-                aria-label={t("inspector.clearWatches")}
-                title={t("inspector.clearWatches")}
-                onClick={() => setWatches([])}
-              >
-                <FaSolidXmark size={16} />
-              </button>
-            </Show>
-            <div
-              ref={attachListElement}
-              class={`virtual-list eden-list ${activeTab() === "watch" ? "watch-list" : ""}`}
-              role="tree"
-              aria-label={activeTab()}
+        <div class="desktop-tree">{sidebar()}</div>
+        <Dialog.Root open={treeOpen()} onOpenChange={setTreeOpen}>
+          <Dialog.Portal>
+            <Dialog.Overlay class="eden-modal-overlay" />
+            <Dialog.Content class="mobile-tree eden-modal">
+              {" "}
+              <Dialog.Title class="sr-only">{t("inspector.menu")}</Dialog.Title>
+              {sidebar()}
+              <Dialog.CloseButton class="eden-btn eden-btn-ghost close-tree">
+                <FaSolidXmark size={18} />
+              </Dialog.CloseButton>
+            </Dialog.Content>
+          </Dialog.Portal>
+        </Dialog.Root>
+        <section class="workspace">
+          <Show when={activeTab() !== "browse"}>
+            <button
+              type="button"
+              class="eden-btn eden-btn-ghost menu-button standalone-menu-button"
+              aria-label={t("inspector.menu")}
+              title={t("inspector.menu")}
+              onClick={() => setTreeOpen(true)}
             >
-              <Show
-                when={displayedRows().length}
-                fallback={<div class="empty-state">{t("inspector.empty")}</div>}
-              >
+              <FaSolidBars size={18} />
+            </button>
+          </Show>
+          <div
+            class={`workspace-content ${
+              activeTab() !== "browse" ? "has-standalone-menu" : ""
+            }`}
+          >
+            <Show when={activeTab() === "browse"}>
+              <BrowseHeader
+                category={category()}
+                itemCount={sourceRows().length}
+                filter={filter()}
+                categoryCount={categoryCount}
+                onCategoryChange={setCategory}
+                onFilterChange={setFilter}
+                onMenuOpen={() => setTreeOpen(true)}
+                onRefresh={() => void refresh()}
+              />
+            </Show>
+            <Show when={activeTab() !== "scope"}>
+              <div class="list-detail">
+                <Show when={activeTab() === "watch" && watches().length > 0}>
+                  <button
+                    type="button"
+                    class="eden-btn eden-btn-sm eden-btn-ghost clear-watches"
+                    aria-label={t("inspector.clearWatches")}
+                    title={t("inspector.clearWatches")}
+                    onClick={() => setWatches([])}
+                  >
+                    <FaSolidXmark size={16} />
+                  </button>
+                </Show>
                 <div
-                  style={{
-                    height: `${virtualizer.getTotalSize()}px`,
-                    position: "relative",
-                  }}
+                  ref={attachListElement}
+                  class={`virtual-list eden-list ${activeTab() === "watch" ? "watch-list" : ""}`}
+                  role="tree"
+                  aria-label={activeTab()}
                 >
-                  <For each={virtualizer.getVirtualItems()}>
-                    {(virtualRow) => {
-                      const row = () => displayedRows()[virtualRow.index];
-                      const groupExpanded = () =>
-                        Boolean(
-                          row()?.groupKey &&
-                            (filter().trim() ||
-                              expandedGroups().has(row()!.groupKey!))
-                        );
-                      return (
-                        <article
-                          class={`hal-row ${row()?.groupKey ? "group-row" : ""} ${
-                            selected()?.id === row()?.id ? "selected" : ""
-                          }`}
-                          style={{
-                            transform: `translateY(${virtualRow.start}px)`,
-                          }}
-                          role="treeitem"
-                          aria-level={(row()?.depth ?? 0) + 1}
-                          aria-expanded={
-                            row()?.groupKey ? groupExpanded() : undefined
-                          }
-                          onClick={() => {
-                            if (row()?.groupKey) toggleGroup(row()!.groupKey!);
-                            else setSelected(row());
-                          }}
-                        >
-                          <div
-                            class="tree-leading"
-                            style={{
-                              "padding-left": `${(row()?.depth ?? 0) * 20}px`,
-                              "--tree-guide-width": `${
-                                (row()?.guideDepth ?? 0) * 20
-                              }px`,
-                            }}
-                          >
-                            <Show
-                              when={row()?.groupKey}
-                              fallback={
-                                <div
-                                  class="kind-chip"
-                                  title={row()?.type ?? row()?.kind}
-                                >
-                                  <span
-                                    class="type-dot"
-                                    style={{
-                                      "background-color":
-                                        TYPE_COLORS[row()?.type ?? ""] ??
-                                        TYPE_COLORS.default,
-                                    }}
-                                  />
-                                </div>
+                  <Show
+                    when={displayedRows().length}
+                    fallback={
+                      <div class="empty-state">{t("inspector.empty")}</div>
+                    }
+                  >
+                    <div
+                      style={{
+                        height: `${virtualizer.getTotalSize()}px`,
+                        position: "relative",
+                      }}
+                    >
+                      <For each={virtualizer.getVirtualItems()}>
+                        {(virtualRow) => {
+                          const row = () => displayedRows()[virtualRow.index];
+                          const groupExpanded = () =>
+                            Boolean(
+                              row()?.groupKey &&
+                                (filter().trim() ||
+                                  expandedGroups().has(row()!.groupKey!)),
+                            );
+                          return (
+                            <div
+                              class={`hal-row ${row()?.groupKey ? "group-row" : ""} ${
+                                selected()?.id === row()?.id ? "selected" : ""
+                              }`}
+                              style={{
+                                transform: `translateY(${virtualRow.start}px)`,
+                              }}
+                              role="treeitem"
+                              tabIndex={0}
+                              aria-level={(row()?.depth ?? 0) + 1}
+                              aria-expanded={
+                                row()?.groupKey ? groupExpanded() : undefined
                               }
-                            >
-                              <button
-                                class="group-toggle"
-                                aria-label={row()?.displayName}
-                                tabindex={-1}
-                                onClick={(event) => {
-                                  event.stopPropagation();
+                              onClick={() => {
+                                if (row()?.groupKey)
                                   toggleGroup(row()!.groupKey!);
+                                else setSelected(row());
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key !== "Enter" && event.key !== " ")
+                                  return;
+                                event.preventDefault();
+                                if (row()?.groupKey)
+                                  toggleGroup(row()!.groupKey!);
+                                else setSelected(row());
+                              }}
+                            >
+                              <div
+                                class="tree-leading"
+                                style={{
+                                  "padding-left": `${(row()?.depth ?? 0) * 20}px`,
+                                  "--tree-guide-width": `${
+                                    (row()?.guideDepth ?? 0) * 20
+                                  }px`,
                                 }}
                               >
-                                {groupExpanded() ? (
-                                  <FaSolidChevronDown size={14} />
-                                ) : (
-                                  <FaSolidChevronRight size={14} />
-                                )}
-                              </button>
-                            </Show>
-                          </div>
-                          <div class="row-main">
-                            <strong title={row()?.name}>{row()?.displayName}</strong>
-                            <span>
-                              {row()?.groupKey
-                                ? `${row()?.groupCount ?? 0} items`
-                                : row()?.subtitle}
-                            </span>
-                          </div>
-                          <Show when={row()?.ref}>
-                            <div class="value-cell">
-                              <code class="value">
-                                <span title={String(row()?.value ?? "—")}>
-                                  {formatInlineValue(row()?.value)}
-                                </span>
-                              </code>
-                              <span class="value-edit-slot">
-                                <Show when={row()?.writable}>
+                                <Show
+                                  when={row()?.groupKey}
+                                  fallback={
+                                    <div
+                                      class="kind-chip"
+                                      title={row()?.type ?? row()?.kind}
+                                    >
+                                      <span
+                                        class="type-dot"
+                                        style={{
+                                          "background-color":
+                                            TYPE_COLORS[row()?.type ?? ""] ??
+                                            TYPE_COLORS.default,
+                                        }}
+                                      />
+                                    </div>
+                                  }
+                                >
                                   <button
-                                    class="eden-btn eden-btn-outline"
-                                    aria-label={t("inspector.edit")}
-                                    title={t("inspector.edit")}
+                                    type="button"
+                                    class="group-toggle"
+                                    aria-label={row()?.displayName}
+                                    tabindex={-1}
                                     onClick={(event) => {
                                       event.stopPropagation();
-                                      setEditRef(row()!.ref!);
-                                      setEditValue(String(row()?.value ?? ""));
+                                      toggleGroup(row()!.groupKey!);
                                     }}
                                   >
-                                    <FaSolidPenToSquare size={16} />
+                                    {groupExpanded() ? (
+                                      <FaSolidChevronDown size={14} />
+                                    ) : (
+                                      <FaSolidChevronRight size={14} />
+                                    )}
                                   </button>
                                 </Show>
-                              </span>
-                            </div>
-                            <div class="row-actions">
-                              <button
-                                class="eden-btn eden-btn-ghost"
-                                aria-label={
-                                  isWatched(row()!.ref!)
-                                    ? t("inspector.removeWatch")
-                                    : t("inspector.addWatch")
-                                }
-                                title={
-                                  isWatched(row()!.ref!)
-                                    ? t("inspector.removeWatch")
-                                    : t("inspector.addWatch")
-                                }
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  toggleWatch(row()!.ref!);
-                                }}
-                              >
-                                {isWatched(row()!.ref!) ? (
-                                  <FaSolidMinus size={16} />
-                                ) : (
-                                  <FaSolidPlus size={16} />
-                                )}
-                              </button>
-                              <Show
-                                when={["bit", "float", "s32", "u32"].includes(
-                                  row()?.type ?? ""
-                                )}
-                              >
-                                <button
-                                  class="eden-btn eden-btn-ghost"
-                                  aria-label={t("inspector.inspectScope")}
-                                  title={t("inspector.inspectScope")}
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    void inspectOnScope(row()!.ref!);
-                                  }}
-                                >
-                                  <FaSolidChartLine size={16} />
-                                </button>
+                              </div>
+                              <div class="row-main">
+                                <strong title={row()?.name}>
+                                  {row()?.displayName}
+                                </strong>
+                                <span>
+                                  {row()?.groupKey
+                                    ? `${row()?.groupCount ?? 0} items`
+                                    : row()?.subtitle}
+                                </span>
+                              </div>
+                              <Show when={row()?.ref}>
+                                <div class="value-cell">
+                                  <code class="value">
+                                    <span title={String(row()?.value ?? "—")}>
+                                      {formatInlineValue(row()?.value)}
+                                    </span>
+                                  </code>
+                                  <span class="value-edit-slot">
+                                    <Show when={row()?.writable}>
+                                      <button
+                                        type="button"
+                                        class="eden-btn eden-btn-outline"
+                                        aria-label={t("inspector.edit")}
+                                        title={t("inspector.edit")}
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          setEditRef(row()!.ref!);
+                                          setEditValue(
+                                            String(row()?.value ?? ""),
+                                          );
+                                        }}
+                                      >
+                                        <FaSolidPenToSquare size={16} />
+                                      </button>
+                                    </Show>
+                                  </span>
+                                </div>
+                                <div class="row-actions">
+                                  <button
+                                    type="button"
+                                    class="eden-btn eden-btn-ghost"
+                                    aria-label={
+                                      isWatched(row()!.ref!)
+                                        ? t("inspector.removeWatch")
+                                        : t("inspector.addWatch")
+                                    }
+                                    title={
+                                      isWatched(row()!.ref!)
+                                        ? t("inspector.removeWatch")
+                                        : t("inspector.addWatch")
+                                    }
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      toggleWatch(row()!.ref!);
+                                    }}
+                                  >
+                                    {isWatched(row()!.ref!) ? (
+                                      <FaSolidMinus size={16} />
+                                    ) : (
+                                      <FaSolidPlus size={16} />
+                                    )}
+                                  </button>
+                                  <Show
+                                    when={[
+                                      "bit",
+                                      "float",
+                                      "s32",
+                                      "u32",
+                                    ].includes(row()?.type ?? "")}
+                                  >
+                                    <button
+                                      type="button"
+                                      class="eden-btn eden-btn-ghost"
+                                      aria-label={t("inspector.inspectScope")}
+                                      title={t("inspector.inspectScope")}
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        void inspectOnScope(row()!.ref!);
+                                      }}
+                                    >
+                                      <FaSolidChartLine size={16} />
+                                    </button>
+                                  </Show>
+                                </div>
                               </Show>
                             </div>
-                          </Show>
-                        </article>
-                      );
-                    }}
-                  </For>
+                          );
+                        }}
+                      </For>
+                    </div>
+                  </Show>
                 </div>
-              </Show>
-            </div>
-            <Show when={selected()}>
-              <aside class="detail-pane eden-surface-secondary">
-                <h2>{selected()!.name}</h2>
-                <dl>
-                  <dt>{t("inspector.type")}</dt>
-                  <dd>{selected()!.type ?? selected()!.kind}</dd>
-                  <dt>{t("inspector.value")}</dt>
-                  <dd>
-                    <code>{String(selected()!.value ?? "—")}</code>
-                  </dd>
-                </dl>
-              </aside>
-            </Show>
-          </div>
-          </Show>
-          <Show when={activeTab() === "scope"}>
-          <section class="scope-panel">
-            <div class="scope-body">
-              <div class="scope-toolbar">
-                <div class="scope-actions">
-                <button
-                  class={`eden-btn eden-btn-sm ${
-                    scopeRunMode() === "run"
-                      ? "eden-btn-primary"
-                      : "eden-btn-outline"
-                  }`}
-                  disabled={!channels().some(Boolean)}
-                  onClick={() => scopeAction("run")}
-                >
-                  <FaSolidPlay size={16} />
-                  <span class="btn-label">{t("inspector.run")}</span>
-                </button>
-                <button
-                  class={`eden-btn eden-btn-sm ${
-                    scopeRunMode() === "roll"
-                      ? "eden-btn-primary"
-                      : "eden-btn-outline"
-                  }`}
-                  disabled={!channels().some(Boolean)}
-                  onClick={() => scopeAction("roll")}
-                >
-                  <FaSolidWaveSquare size={16} />
-                  <span class="btn-label">{t("inspector.roll")}</span>
-                </button>
-                <button
-                  class={`eden-btn eden-btn-sm ${
-                    scopeRunMode() === "single"
-                      ? "eden-btn-primary"
-                      : "eden-btn-outline"
-                  }`}
-                  disabled={!channels().some(Boolean)}
-                  onClick={() => scopeAction("single")}
-                >
-                  <FaSolidCircleDot size={16} />
-                  <span class="btn-label">{t("inspector.single")}</span>
-                </button>
-                <button
-                  class="eden-btn eden-btn-sm eden-btn-outline"
-                  disabled={scopeRunMode() === "stop"}
-                  onClick={() => scopeAction("stop")}
-                >
-                  <FaSolidSquare size={16} />
-                  <span class="btn-label">{t("inspector.stop")}</span>
-                </button>
-                <button
-                  class="eden-btn eden-btn-sm eden-btn-ghost"
-                  disabled={scopeRunMode() === "roll"}
-                  onClick={() => scopeAction("force")}
-                >
-                  <FaSolidBolt size={16} />
-                  <span class="btn-label">{t("inspector.force")}</span>
-                </button>
-                </div>
-                <div class="scope-acquisition">
-                <label class="scope-field">
-                  <span>{t("inspector.thread")}</span>
-                  <select
-                    class="eden-input eden-input-sm"
-                    value={scopeThread()}
-                    onChange={(event) => {
-                      setScopeThread(event.currentTarget.value);
-                      void configureScope();
-                    }}
-                  >
-                    <For
-                      each={topology()?.threads.filter(
-                        (thread) => thread.running
-                      )}
-                    >
-                      {(thread) => (
-                        <option value={thread.name}>{thread.name}</option>
-                      )}
-                    </For>
-                  </select>
-                </label>
-                <label class="scope-field compact">
-                  <span>{t("inspector.multiplier")}</span>
-                  <input
-                    class="eden-input eden-input-sm"
-                    type="number"
-                    min="1"
-                    max={Math.min(
-                      1000,
-                      Math.floor(
-                        1e9 /
-                          (topology()?.threads.find(
-                            (thread) => thread.name === scopeThread()
-                          )?.periodNs ?? 1e9)
-                      )
-                    )}
-                    value={scopeMultiplier()}
-                    onChange={(event) => {
-                      setScopeMultiplier(event.currentTarget.valueAsNumber);
-                      void configureScope();
-                    }}
-                  />
-                </label>
-                </div>
-              </div>
-              <fieldset
-                class="trigger-toolbar"
-                classList={{ "roll-disabled": scopeRunMode() === "roll" }}
-                aria-label="Trigger controls"
-                disabled={scopeRunMode() === "roll"}
-              >
-                <div class="eden-btn-group">
-                  <button
-                    class={`eden-btn eden-btn-sm ${
-                      triggerMode() === "auto"
-                        ? "eden-btn-primary"
-                        : "eden-btn-outline"
-                    }`}
-                    onClick={() => {
-                      setTriggerMode("auto");
-                      void configureScope();
-                    }}
-                  >
-                    {t("inspector.auto")}
-                  </button>
-                  <button
-                    class={`eden-btn eden-btn-sm ${
-                      triggerMode() === "normal"
-                        ? "eden-btn-primary"
-                        : "eden-btn-outline"
-                    }`}
-                    onClick={() => {
-                      setTriggerMode("normal");
-                      void configureScope();
-                    }}
-                  >
-                    {t("inspector.normal")}
-                  </button>
-                </div>
-                <select
-                  class="eden-input eden-input-sm trigger-channel"
-                  aria-label="Trigger channel"
-                  value={activeTriggerChannel()}
-                  onChange={(event) => {
-                    setActiveTriggerChannel(Number(event.currentTarget.value));
-                    void configureScope();
-                  }}
-                >
-                  <For
-                    each={channels()
-                      .map((ref, index) => ({ ref, index }))
-                      .filter(({ ref }) => ref)}
-                  >
-                    {({ ref, index }) => (
-                      <option value={index}>
-                        CH {index + 1} · {ref!.name}
-                      </option>
-                    )}
-                  </For>
-                </select>
-                <select
-                  class="eden-input eden-input-sm trigger-edge"
-                  value={triggerEdge()}
-                  onChange={(event) => {
-                    setTriggerEdge(
-                      event.currentTarget.value as "rising" | "falling"
-                    );
-                    void configureScope();
-                  }}
-                >
-                  <option value="rising">{t("inspector.rising")}</option>
-                  <option value="falling">{t("inspector.falling")}</option>
-                </select>
-                <label class="scope-field compact">
-                  <span>Level</span>
-                  <input
-                    class="eden-input eden-input-sm"
-                    type="number"
-                    step="any"
-                    value={triggerLevel()}
-                    onChange={(event) => {
-                      setTriggerLevel(event.currentTarget.valueAsNumber);
-                      void configureScope();
-                    }}
-                  />
-                </label>
-                <label class="pre-trigger">
-                  <span>
-                    Pre-trigger {Math.round(preTriggerRatio() * 100)}%
-                  </span>
-                  <input
-                    type="range"
-                    min="0"
-                    max="0.9"
-                    step="0.05"
-                    value={preTriggerRatio()}
-                    onChange={(event) => {
-                      setPreTriggerRatio(event.currentTarget.valueAsNumber);
-                      void configureScope();
-                    }}
-                  />
-                </label>
-              </fieldset>
-              <div class="plot-area">
-                <ScopePlot
-                  capture={capture()}
-                  rollFrame={rollFrame()}
-                  runMode={scopeRunMode()}
-                  names={channels().map((ref) => ref?.name ?? null)}
-                  types={channels().map((ref) => {
-                    const data = topology();
-                    if (!ref || !data) return null;
-                    const items =
-                      ref.kind === "pin"
-                        ? data.pins
-                        : ref.kind === "param"
-                        ? data.params
-                        : data.signals;
-                    return items.find((item) => item.name === ref.name)?.type ?? null;
-                  })}
-                  displays={scopeDisplays()}
-                  activeChannel={activeScopeChannel()}
-                  triggerChannel={
-                    channels()[activeTriggerChannel()]
-                      ? activeTriggerChannel()
-                      : Math.max(0, channels().findIndex(Boolean))
-                  }
-                  triggerLevel={triggerLevel()}
-                  status={scopeStatus()}
-                  skippedCaptures={skippedCaptures()}
-                  onActiveChannelChange={setActiveScopeChannel}
-                  onDisplayChange={updateScopeDisplay}
-                  onTriggerLevelCommit={(value) => {
-                    setTriggerLevel(value);
-                    queueMicrotask(() => void configureScope());
-                  }}
-                  onRemoveChannel={removeScopeChannel}
-                />
-                <Show when={!channels().some(Boolean)}>
-                  <div class="plot-empty">{t("inspector.noChannels")}</div>
+                <Show when={selected()}>
+                  <aside class="detail-pane eden-surface-secondary">
+                    <h2>{selected()!.name}</h2>
+                    <dl>
+                      <dt>{t("inspector.type")}</dt>
+                      <dd>{selected()!.type ?? selected()!.kind}</dd>
+                      <dt>{t("inspector.value")}</dt>
+                      <dd>
+                        <code>{String(selected()!.value ?? "—")}</code>
+                      </dd>
+                    </dl>
+                  </aside>
                 </Show>
               </div>
-            </div>
-          </section>
-          </Show>
-        </div>
-      </section>
-      <Dialog.Root
-        open={Boolean(editRef())}
-        onOpenChange={(open) => !open && setEditRef(null)}
-      >
-        <Dialog.Portal>
-          <Dialog.Overlay class="eden-modal-overlay" />
-          <Dialog.Content class="edit-dialog eden-modal">
-            <Dialog.Title class="eden-modal-title">
-              {t("inspector.edit")}
-            </Dialog.Title>
-            <Dialog.Description class="eden-text-secondary">
-              {editRef()?.name}
-            </Dialog.Description>
-            <label>
-              {t("inspector.current")}
-              <output>
-                {String(editRef() ? values().get(key(editRef()!)) ?? "—" : "")}
-              </output>
-            </label>
-            <label>
-              {t("inspector.proposed")}
-              <input
-                class="eden-input"
-                value={editValue()}
-                onInput={(event) => setEditValue(event.currentTarget.value)}
-                autofocus
-              />
-            </label>
-            <div class="dialog-actions">
-              <Dialog.CloseButton class="eden-btn eden-btn-outline">
-                {t("inspector.cancel")}
-              </Dialog.CloseButton>
-              <button class="eden-btn eden-btn-primary" onClick={writeValue}>
-                {t("inspector.write")}
-              </button>
-            </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
-      <Show when={error()}>
-        <div class="error-toast eden-card" role="alert">
-          <span>{error()}</span>
-          <button class="eden-btn eden-btn-ghost" onClick={() => setError("")}>
-            <FaSolidXmark size={18} />
-          </button>
-        </div>
-      </Show>
+            </Show>
+            <Show when={activeTab() === "scope"}>
+              <section class="scope-panel">
+                <div class="scope-body">
+                  <div class="scope-toolbar">
+                    <div class="scope-actions">
+                      <button
+                        type="button"
+                        class={`eden-btn eden-btn-sm ${
+                          scopeRunMode() === "run"
+                            ? "eden-btn-primary"
+                            : "eden-btn-outline"
+                        }`}
+                        disabled={!channels().some(Boolean)}
+                        onClick={() => scopeAction("run")}
+                      >
+                        <FaSolidPlay size={16} />
+                        <span class="btn-label">{t("inspector.run")}</span>
+                      </button>
+                      <button
+                        type="button"
+                        class={`eden-btn eden-btn-sm ${
+                          scopeRunMode() === "roll"
+                            ? "eden-btn-primary"
+                            : "eden-btn-outline"
+                        }`}
+                        disabled={!channels().some(Boolean)}
+                        onClick={() => scopeAction("roll")}
+                      >
+                        <FaSolidWaveSquare size={16} />
+                        <span class="btn-label">{t("inspector.roll")}</span>
+                      </button>
+                      <button
+                        type="button"
+                        class={`eden-btn eden-btn-sm ${
+                          scopeRunMode() === "single"
+                            ? "eden-btn-primary"
+                            : "eden-btn-outline"
+                        }`}
+                        disabled={!channels().some(Boolean)}
+                        onClick={() => scopeAction("single")}
+                      >
+                        <FaSolidCircleDot size={16} />
+                        <span class="btn-label">{t("inspector.single")}</span>
+                      </button>
+                      <button
+                        type="button"
+                        class="eden-btn eden-btn-sm eden-btn-outline"
+                        disabled={scopeRunMode() === "stop"}
+                        onClick={() => scopeAction("stop")}
+                      >
+                        <FaSolidSquare size={16} />
+                        <span class="btn-label">{t("inspector.stop")}</span>
+                      </button>
+                      <button
+                        type="button"
+                        class="eden-btn eden-btn-sm eden-btn-ghost"
+                        disabled={scopeRunMode() === "roll"}
+                        onClick={() => scopeAction("force")}
+                      >
+                        <FaSolidBolt size={16} />
+                        <span class="btn-label">{t("inspector.force")}</span>
+                      </button>
+                    </div>
+                    <div class="scope-acquisition">
+                      <label class="scope-field">
+                        <span>{t("inspector.thread")}</span>
+                        <select
+                          class="eden-input eden-input-sm"
+                          value={scopeThread()}
+                          onChange={(event) => {
+                            setScopeThread(event.currentTarget.value);
+                            void configureScope();
+                          }}
+                        >
+                          <For
+                            each={topology()?.threads.filter(
+                              (thread) => thread.running,
+                            )}
+                          >
+                            {(thread) => (
+                              <option value={thread.name}>{thread.name}</option>
+                            )}
+                          </For>
+                        </select>
+                      </label>
+                      <label class="scope-field compact">
+                        <span>{t("inspector.multiplier")}</span>
+                        <input
+                          class="eden-input eden-input-sm"
+                          type="number"
+                          min="1"
+                          max={Math.min(
+                            1000,
+                            Math.floor(
+                              1e9 /
+                                (topology()?.threads.find(
+                                  (thread) => thread.name === scopeThread(),
+                                )?.periodNs ?? 1e9),
+                            ),
+                          )}
+                          value={scopeMultiplier()}
+                          onChange={(event) => {
+                            setScopeMultiplier(
+                              event.currentTarget.valueAsNumber,
+                            );
+                            void configureScope();
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                  <fieldset
+                    class="trigger-toolbar"
+                    classList={{ "roll-disabled": scopeRunMode() === "roll" }}
+                    aria-label="Trigger controls"
+                    disabled={scopeRunMode() === "roll"}
+                  >
+                    <div class="eden-btn-group">
+                      <button
+                        type="button"
+                        class={`eden-btn eden-btn-sm ${
+                          triggerMode() === "auto"
+                            ? "eden-btn-primary"
+                            : "eden-btn-outline"
+                        }`}
+                        onClick={() => {
+                          setTriggerMode("auto");
+                          void configureScope();
+                        }}
+                      >
+                        {t("inspector.auto")}
+                      </button>
+                      <button
+                        type="button"
+                        class={`eden-btn eden-btn-sm ${
+                          triggerMode() === "normal"
+                            ? "eden-btn-primary"
+                            : "eden-btn-outline"
+                        }`}
+                        onClick={() => {
+                          setTriggerMode("normal");
+                          void configureScope();
+                        }}
+                      >
+                        {t("inspector.normal")}
+                      </button>
+                    </div>
+                    <select
+                      class="eden-input eden-input-sm trigger-channel"
+                      aria-label="Trigger channel"
+                      value={activeTriggerChannel()}
+                      onChange={(event) => {
+                        setActiveTriggerChannel(
+                          Number(event.currentTarget.value),
+                        );
+                        void configureScope();
+                      }}
+                    >
+                      <For
+                        each={channels()
+                          .map((ref, index) => ({ ref, index }))
+                          .filter(({ ref }) => ref)}
+                      >
+                        {({ ref, index }) => (
+                          <option value={index}>
+                            CH {index + 1} · {ref!.name}
+                          </option>
+                        )}
+                      </For>
+                    </select>
+                    <select
+                      class="eden-input eden-input-sm trigger-edge"
+                      value={triggerEdge()}
+                      onChange={(event) => {
+                        setTriggerEdge(
+                          event.currentTarget.value as "rising" | "falling",
+                        );
+                        void configureScope();
+                      }}
+                    >
+                      <option value="rising">{t("inspector.rising")}</option>
+                      <option value="falling">{t("inspector.falling")}</option>
+                    </select>
+                    <label class="scope-field compact">
+                      <span>Level</span>
+                      <input
+                        class="eden-input eden-input-sm"
+                        type="number"
+                        step="any"
+                        value={triggerLevel()}
+                        onChange={(event) => {
+                          setTriggerLevel(event.currentTarget.valueAsNumber);
+                          void configureScope();
+                        }}
+                      />
+                    </label>
+                    <label class="pre-trigger">
+                      <span>
+                        Pre-trigger {Math.round(preTriggerRatio() * 100)}%
+                      </span>
+                      <input
+                        type="range"
+                        min="0"
+                        max="0.9"
+                        step="0.05"
+                        value={preTriggerRatio()}
+                        onChange={(event) => {
+                          setPreTriggerRatio(event.currentTarget.valueAsNumber);
+                          void configureScope();
+                        }}
+                      />
+                    </label>
+                  </fieldset>
+                  <div class="plot-area">
+                    <ScopePlot
+                      capture={capture()}
+                      rollFrame={rollFrame()}
+                      runMode={scopeRunMode()}
+                      names={channels().map((ref) => ref?.name ?? null)}
+                      types={channels().map((ref) => {
+                        const data = topology();
+                        if (!ref || !data) return null;
+                        const items =
+                          ref.kind === "pin"
+                            ? data.pins
+                            : ref.kind === "param"
+                              ? data.params
+                              : data.signals;
+                        return (
+                          items.find((item) => item.name === ref.name)?.type ??
+                          null
+                        );
+                      })}
+                      displays={scopeDisplays()}
+                      activeChannel={activeScopeChannel()}
+                      triggerChannel={
+                        channels()[activeTriggerChannel()]
+                          ? activeTriggerChannel()
+                          : Math.max(0, channels().findIndex(Boolean))
+                      }
+                      triggerLevel={triggerLevel()}
+                      status={scopeStatus()}
+                      skippedCaptures={skippedCaptures()}
+                      onActiveChannelChange={setActiveScopeChannel}
+                      onDisplayChange={updateScopeDisplay}
+                      onTriggerLevelCommit={(value) => {
+                        setTriggerLevel(value);
+                        queueMicrotask(() => void configureScope());
+                      }}
+                      onRemoveChannel={removeScopeChannel}
+                    />
+                    <Show when={!channels().some(Boolean)}>
+                      <div class="plot-empty">{t("inspector.noChannels")}</div>
+                    </Show>
+                  </div>
+                </div>
+              </section>
+            </Show>
+          </div>
+        </section>
+        <Dialog.Root
+          open={Boolean(editRef())}
+          onOpenChange={(open) => !open && setEditRef(null)}
+        >
+          <Dialog.Portal>
+            <Dialog.Overlay class="eden-modal-overlay" />
+            <Dialog.Content class="edit-dialog eden-modal">
+              <Dialog.Title class="eden-modal-title">
+                {t("inspector.edit")}
+              </Dialog.Title>
+              <Dialog.Description class="eden-text-secondary">
+                {editRef()?.name}
+              </Dialog.Description>
+              <label>
+                {t("inspector.current")}
+                <output>
+                  {String(
+                    editRef() ? (values().get(key(editRef()!)) ?? "—") : "",
+                  )}
+                </output>
+              </label>
+              <label>
+                {t("inspector.proposed")}
+                <input
+                  class="eden-input"
+                  value={editValue()}
+                  onInput={(event) => setEditValue(event.currentTarget.value)}
+                  autofocus
+                />
+              </label>
+              <div class="dialog-actions">
+                <Dialog.CloseButton class="eden-btn eden-btn-outline">
+                  {t("inspector.cancel")}
+                </Dialog.CloseButton>
+                <button
+                  type="button"
+                  class="eden-btn eden-btn-primary"
+                  onClick={writeValue}
+                >
+                  {t("inspector.write")}
+                </button>
+              </div>
+            </Dialog.Content>
+          </Dialog.Portal>
+        </Dialog.Root>
+        <Show when={error()}>
+          <div class="error-toast eden-card" role="alert">
+            <span>{error()}</span>
+            <button
+              type="button"
+              class="eden-btn eden-btn-ghost"
+              onClick={() => setError("")}
+            >
+              <FaSolidXmark size={18} />
+            </button>
+          </div>
+        </Show>
       </Show>
     </main>
   );

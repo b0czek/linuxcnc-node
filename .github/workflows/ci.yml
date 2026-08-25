@@ -12,6 +12,29 @@ env:
   LINUXCNC_CACHE_VERSION: v4
 
 jobs:
+  biome:
+    name: Biome format and lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Check formatting and lint
+        run: pnpm run check
+
   patch-stack:
     name: LinuxCNC patch stack tooling
     runs-on: ubuntu-latest

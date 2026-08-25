@@ -4,7 +4,11 @@
   "description": "Raw generated TypeScript contract for linuxcnc.v1 gRPC",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist/", "proto/", "README.md"],
+  "files": [
+    "dist/",
+    "proto/",
+    "README.md"
+  ],
   "scripts": {
     "prebuild": "node scripts/bundle-proto.mjs && node scripts/generate-grpc.mjs",
     "build": "tsc",

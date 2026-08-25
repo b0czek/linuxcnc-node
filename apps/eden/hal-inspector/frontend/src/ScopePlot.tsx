@@ -1,5 +1,9 @@
+// biome-ignore-all lint/a11y/noNoninteractiveElementToInteractiveRole: Selectable channel cards contain nested adjustment buttons, so they cannot themselves be buttons.
+// biome-ignore-all lint/a11y/useSemanticElements: Selectable channel cards contain nested adjustment buttons, so they cannot themselves be buttons.
+
 import type { ScopeCapture, ScopeStatus } from "@linuxcnc-node/types";
 import {
+  type Component,
   createEffect,
   createMemo,
   createSignal,
@@ -7,7 +11,6 @@ import {
   onCleanup,
   onMount,
   Show,
-  type Component,
   untrack,
 } from "solid-js";
 import {
@@ -17,13 +20,13 @@ import {
   type LineConfig,
   UnifiedLinePlot,
 } from "webgl-plot";
+import type { ScopeRollFrame, ScopeRunMode } from "../../shared/protocol";
 import { t } from "./i18n";
 import type { ScopeChannelDisplay } from "./models";
-import type { ScopeRollFrame, ScopeRunMode } from "../../shared/protocol";
 import {
+  type RollLineTransform,
   ScopeRollBuffer,
   ScopeRollRenderer,
-  type RollLineTransform,
 } from "./scope-roll";
 
 const CHANNEL_COLORS = [
@@ -89,7 +92,7 @@ function formatEngineering(value: number, unit = ""): string {
   };
   const exponent = Math.max(
     -12,
-    Math.min(12, Math.floor(Math.log10(Math.abs(value)) / 3) * 3)
+    Math.min(12, Math.floor(Math.log10(Math.abs(value)) / 3) * 3),
   );
   const scaled = value / 10 ** exponent;
   return `${Number(scaled.toPrecision(4))}${prefixes[exponent]}${unit}`;
@@ -99,7 +102,7 @@ function step125(value: number, direction: -1 | 1): number {
   const safe = Math.max(1e-12, Math.min(1e12, value || 1));
   const exponent = Math.floor(Math.log10(safe));
   const candidates = [-1, 0, 1].flatMap((shift) =>
-    [1, 2, 5].map((factor) => factor * 10 ** (exponent + shift))
+    [1, 2, 5].map((factor) => factor * 10 ** (exponent + shift)),
   );
   const sorted = [...new Set(candidates)].sort((a, b) => a - b);
   const next =
@@ -110,7 +113,9 @@ function step125(value: number, direction: -1 | 1): number {
 }
 
 function offsetStep(unitsPerDivision: number): number {
-  return Number((Math.max(1e-12, Math.abs(unitsPerDivision)) / 100).toPrecision(6));
+  return Number(
+    (Math.max(1e-12, Math.abs(unitsPerDivision)) / 100).toPrecision(6),
+  );
 }
 
 function roundOffset(value: number, unitsPerDivision: number): number {
@@ -174,7 +179,7 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
   const [cursorA, setCursorA] = createSignal(0);
   const [cursorB, setCursorB] = createSignal(0);
   const [draftTriggerLevel, setDraftTriggerLevel] = createSignal(
-    props.triggerLevel
+    props.triggerLevel,
   );
   const [webglError, setWebglError] = createSignal("");
 
@@ -185,13 +190,13 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
         name,
         type: props.types[index],
       }))
-      .filter((channel) => channel.name)
+      .filter((channel) => channel.name),
   );
   const digitalChannels = createMemo(() =>
-    activeChannels().filter((channel) => channel.type === "bit")
+    activeChannels().filter((channel) => channel.type === "bit"),
   );
   const analogChannels = createMemo(() =>
-    activeChannels().filter((channel) => channel.type !== "bit")
+    activeChannels().filter((channel) => channel.type !== "bit"),
   );
   const digitalShare = createMemo(() => {
     if (!digitalChannels().length) return 0;
@@ -202,8 +207,7 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
   const captureBounds = () => {
     if (rollBuffer.capacity && (!props.capture || props.runMode === "roll")) {
       return {
-        start:
-          -((rollBuffer.capacity - 1) * rollBuffer.samplePeriodNs) / 1e9,
+        start: -((rollBuffer.capacity - 1) * rollBuffer.samplePeriodNs) / 1e9,
         end: 0,
       };
     }
@@ -223,7 +227,7 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
     if (!lastRollBatchAt || !rollBuffer.samplePeriodNs) return 0;
     return Math.min(
       ((now - lastRollBatchAt) * 1e6) / rollBuffer.samplePeriodNs,
-      Math.max(1, 40e6 / rollBuffer.samplePeriodNs)
+      Math.max(1, 40e6 / rollBuffer.samplePeriodNs),
     );
   };
 
@@ -277,10 +281,7 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
         rollBuffer.length,
         rollPhase(now),
         rollTransforms(),
-        [
-          1 / fractionSpan,
-          (1 - startFraction - endFraction) / fractionSpan,
-        ]
+        [1 / fractionSpan, (1 - startFraction - endFraction) / fractionSpan],
       );
     } else plotter.draw();
     if (props.runMode === "roll") frame = requestAnimationFrame(drawFrame);
@@ -299,7 +300,7 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
     const fractionSpan = Math.max(1e-12, endFraction - startFraction);
     plotter?.setGlobalTransform(
       [1 / fractionSpan, 1],
-      [(1 - startFraction - endFraction) / fractionSpan, 0]
+      [(1 - startFraction - endFraction) / fractionSpan, 0],
     );
     scheduleDraw();
   };
@@ -311,10 +312,13 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
       fullSpan,
       Math.max(
         Number.EPSILON,
-        ((props.capture?.samplePeriodNs ?? 1) * 10) / 1e9
-      )
+        ((props.capture?.samplePeriodNs ?? 1) * 10) / 1e9,
+      ),
     );
-    let span = Math.max(minimumSpan, Math.min(fullSpan, requestedEnd - requestedStart));
+    const span = Math.max(
+      minimumSpan,
+      Math.min(fullSpan, requestedEnd - requestedStart),
+    );
     let start = requestedStart;
     if (start < bounds.start) start = bounds.start;
     if (start + span > bounds.end) start = bounds.end - span;
@@ -348,7 +352,7 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
       activeChannels().map((channel) => ({
         channel: channel.index,
         type: channel.type,
-      }))
+      })),
     );
     rollRenderer.sync(rollBuffer);
     return true;
@@ -389,7 +393,7 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
     }
     const digital = digitalChannels();
     const digitalByIndex = new Map(
-      digital.map((channel, index) => [channel.index, index])
+      digital.map((channel, index) => [channel.index, index]),
     );
     const share = digitalShare();
     const analogCenter = share;
@@ -460,7 +464,7 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
         plotter?.updateLineTransform(
           lineId,
           [1, scaleY],
-          [0, center - scaleY / 2]
+          [0, center - scaleY / 2],
         );
       } else {
         const display = props.displays[channel.index] ?? {
@@ -472,7 +476,7 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
         plotter?.updateLineTransform(
           lineId,
           [1, scaleY],
-          [0, share - display.offset * scaleY]
+          [0, share - display.offset * scaleY],
         );
       }
     });
@@ -495,7 +499,8 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
       offset: 0,
     };
     const analogHeight = 1 - digitalShare();
-    const normalized = (value - display.offset) / (display.unitsPerDivision * 8);
+    const normalized =
+      (value - display.offset) / (display.unitsPerDivision * 8);
     return (0.5 - normalized) * analogHeight * 100;
   };
 
@@ -512,7 +517,7 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
 
   const beginMarkerDrag = (
     event: PointerEvent,
-    nextDrag: Exclude<DragState, null>
+    nextDrag: Exclude<DragState, null>,
   ) => {
     event.preventDefault();
     event.stopPropagation();
@@ -559,7 +564,7 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
           pinch.start + pinch.centerRatio * (pinch.end - pinch.start);
         setViewport(
           center - Math.max(0, Math.min(1, centerRatio)) * span,
-          center + (1 - Math.max(0, Math.min(1, centerRatio))) * span
+          center + (1 - Math.max(0, Math.min(1, centerRatio))) * span,
         );
       }
       return;
@@ -571,7 +576,7 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
       else setCursorB(value);
     } else if (drag.kind === "trigger") {
       setDraftTriggerLevel(
-        valueAtPointerY(props.triggerChannel, event.clientY)
+        valueAtPointerY(props.triggerChannel, event.clientY),
       );
     } else if (drag.kind === "zero") {
       const display = props.displays[drag.channel];
@@ -580,13 +585,13 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
       const analogHeight = rect.height * (1 - digitalShare());
       const ratio = Math.max(
         0,
-        Math.min(1, (event.clientY - rect.top) / analogHeight)
+        Math.min(1, (event.clientY - rect.top) / analogHeight),
       );
       props.onDisplayChange(drag.channel, {
         ...display,
         offset: roundOffset(
           (ratio - 0.5) * display.unitsPerDivision * 8,
-          display.unitsPerDivision
+          display.unitsPerDivision,
         ),
       });
     } else if (drag.kind === "pan") {
@@ -609,7 +614,8 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
     event.preventDefault();
     const center = positionToTime(event.clientX);
     const ratio =
-      (center - viewStart()) / Math.max(Number.EPSILON, viewEnd() - viewStart());
+      (center - viewStart()) /
+      Math.max(Number.EPSILON, viewEnd() - viewStart());
     const factor = event.deltaY < 0 ? 0.82 : 1.22;
     const span = (viewEnd() - viewStart()) * factor;
     setViewport(center - ratio * span, center + (1 - ratio) * span);
@@ -625,8 +631,10 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
       0,
       Math.min(
         values.length - 1,
-        Math.round(time / (capture.samplePeriodNs / 1e9) + capture.triggerIndex)
-      )
+        Math.round(
+          time / (capture.samplePeriodNs / 1e9) + capture.triggerIndex,
+        ),
+      ),
     );
     return values[index];
   };
@@ -656,7 +664,7 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
           ? Math.min(
               ((performance.now() - lastRollBatchAt) * 1e6) /
                 rollBuffer.samplePeriodNs,
-              Math.max(1, 40e6 / rollBuffer.samplePeriodNs)
+              Math.max(1, 40e6 / rollBuffer.samplePeriodNs),
             )
           : 0;
     if (previousRunMode !== "roll" && mode === "roll") {
@@ -789,6 +797,8 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
               };
             return (
               <section
+                role="button"
+                tabIndex={0}
                 class={`scope-channel-card ${
                   props.activeChannel === channel.index ? "active" : ""
                 }`}
@@ -797,6 +807,11 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
                     CHANNEL_COLORS[channel.index % CHANNEL_COLORS.length],
                 }}
                 onClick={() => props.onActiveChannelChange(channel.index)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  props.onActiveChannelChange(channel.index);
+                }}
               >
                 <div class="scope-channel-title">
                   <strong>CH {channel.index + 1}</strong>
@@ -815,9 +830,7 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
                 <Show
                   when={channel.type !== "bit"}
                   fallback={
-                    <div class="scope-logic-label">
-                      {t("inspector.logic")}
-                    </div>
+                    <div class="scope-logic-label">{t("inspector.logic")}</div>
                   }
                 >
                   <div class="scope-channel-control">
@@ -831,7 +844,7 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
                             ...display(),
                             unitsPerDivision: step125(
                               display().unitsPerDivision,
-                              -1
+                              -1,
                             ),
                           });
                         }}
@@ -849,7 +862,7 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
                             ...display(),
                             unitsPerDivision: step125(
                               display().unitsPerDivision,
-                              1
+                              1,
                             ),
                           });
                         }}
@@ -865,7 +878,7 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
                       step={offsetStep(display().unitsPerDivision)}
                       value={roundOffset(
                         display().offset,
-                        display().unitsPerDivision
+                        display().unitsPerDivision,
                       )}
                       onClick={(event) => event.stopPropagation()}
                       onChange={(event) =>
@@ -873,7 +886,7 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
                           ...display(),
                           offset: roundOffset(
                             event.currentTarget.valueAsNumber,
-                            display().unitsPerDivision
+                            display().unitsPerDivision,
                           ),
                         })
                       }
@@ -889,6 +902,8 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
       <div
         ref={viewport}
         class="scope-viewport"
+        role="application"
+        aria-label={t("inspector.scope")}
         onWheel={handleWheel}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -954,13 +969,14 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
             data-state={
               props.runMode === "roll"
                 ? "roll"
-                : props.status?.state ?? "idle"
+                : (props.status?.state ?? "idle")
             }
           >
             {statusLabel().toUpperCase()}
           </strong>
           <span>
-            {formatEngineering(viewEnd() - viewStart(), "s")} {t("inspector.span")}
+            {formatEngineering(viewEnd() - viewStart(), "s")}{" "}
+            {t("inspector.span")}
           </span>
           <span>
             {formatEngineering((viewEnd() - viewStart()) / 10, "s")}/div
@@ -969,7 +985,7 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
             {props.capture
               ? `${formatEngineering(
                   1e9 / props.capture.samplePeriodNs,
-                  "Sa/s"
+                  "Sa/s",
                 )} · ${props.capture.samples} ${t("inspector.points")}`
               : "—"}
           </span>
@@ -988,7 +1004,7 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
                 <span style={{ left: `${ratio * 100}%` }}>
                   {formatEngineering(
                     viewStart() + ratio * (viewEnd() - viewStart()),
-                    "s"
+                    "s",
                   )}
                 </span>
               );
@@ -1006,7 +1022,7 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
           <div
             class="scope-trigger-time"
             style={{ left: `${timePercent(0)}%` }}
-            aria-label={t("inspector.triggerPosition")}
+            title={t("inspector.triggerPosition")}
           >
             T
           </div>
@@ -1019,14 +1035,14 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
             style={{
               top: `${markerTopForValue(
                 props.triggerChannel,
-                draftTriggerLevel()
+                draftTriggerLevel(),
               )}%`,
               "--channel-color":
-                CHANNEL_COLORS[
-                  props.triggerChannel % CHANNEL_COLORS.length
-                ],
+                CHANNEL_COLORS[props.triggerChannel % CHANNEL_COLORS.length],
             }}
-            onPointerDown={(event) => beginMarkerDrag(event, { kind: "trigger" })}
+            onPointerDown={(event) =>
+              beginMarkerDrag(event, { kind: "trigger" })
+            }
           >
             <span>T</span>
           </button>
@@ -1058,7 +1074,9 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
 
         <For each={[cursorA, cursorB] as const}>
           {(cursor, index) => (
-            <Show when={timePercent(cursor()) >= 0 && timePercent(cursor()) <= 100}>
+            <Show
+              when={timePercent(cursor()) >= 0 && timePercent(cursor()) <= 100}
+            >
               <button
                 type="button"
                 class={`scope-measure-cursor cursor-${index()}`}
@@ -1083,7 +1101,8 @@ export const ScopePlot: Component<ScopePlotProps> = (props) => {
           <span>B {formatEngineering(cursorB(), "s")}</span>
           <span>Δt {formatEngineering(cursorDelta(), "s")}</span>
           <span>
-            1/Δt {cursorDelta() ? formatEngineering(1 / cursorDelta(), "Hz") : "∞"}
+            1/Δt{" "}
+            {cursorDelta() ? formatEngineering(1 / cursorDelta(), "Hz") : "∞"}
           </span>
           <Show when={activeDelta() != null}>
             <span>Δvalue {formatEngineering(activeDelta()!)}</span>

@@ -34,21 +34,32 @@ function defaultSchemaPaths(env: NodeJS.ProcessEnv): SchemaPaths {
   const explicitPath = env.LINUXCNC_GRPC_PROTO?.trim();
   if (explicitPath) {
     const protoPath = resolve(explicitPath);
-    return { protoPath, protoRoot: explicitRoot ? resolve(explicitRoot) : rootForProtoPath(protoPath) };
+    return {
+      protoPath,
+      protoRoot: explicitRoot
+        ? resolve(explicitRoot)
+        : rootForProtoPath(protoPath),
+    };
   }
   if (explicitRoot) return { protoRoot: resolve(explicitRoot) };
 
   // The CJS backend build copies the raw client's schema beside backend.cjs;
   // prefer this deterministic packaged-app location before package metadata.
   const packaged = resolve(
-    typeof __dirname === "string" ? __dirname : resolve(process.cwd(), "backend/dist"),
+    typeof __dirname === "string"
+      ? __dirname
+      : resolve(process.cwd(), "backend/dist"),
     "proto/linuxcnc/v1/linuxcnc.proto",
   );
-  if (existsSync(packaged)) return { protoPath: packaged, protoRoot: rootForProtoPath(packaged) };
+  if (existsSync(packaged))
+    return { protoPath: packaged, protoRoot: rootForProtoPath(packaged) };
   try {
-    const packageRoot = dirname(resolvePackage("@linuxcnc-node/grpc-client/package.json"));
+    const packageRoot = dirname(
+      resolvePackage("@linuxcnc-node/grpc-client/package.json"),
+    );
     const bundled = resolve(packageRoot, "proto/linuxcnc/v1/linuxcnc.proto");
-    if (existsSync(bundled)) return { protoPath: bundled, protoRoot: rootForProtoPath(bundled) };
+    if (existsSync(bundled))
+      return { protoPath: bundled, protoRoot: rootForProtoPath(bundled) };
   } catch {
     // The package may be bundled into an Eden image without package metadata.
   }
@@ -56,7 +67,9 @@ function defaultSchemaPaths(env: NodeJS.ProcessEnv): SchemaPaths {
   // schema relative to its own runtime.  In a development checkout, accept
   // the conventional repository path as a convenience.
   const checkout = resolve(process.cwd(), "proto/linuxcnc/v1/linuxcnc.proto");
-  return existsSync(checkout) ? { protoPath: checkout, protoRoot: rootForProtoPath(checkout) } : {};
+  return existsSync(checkout)
+    ? { protoPath: checkout, protoRoot: rootForProtoPath(checkout) }
+    : {};
 }
 
 function readPem(env: NodeJS.ProcessEnv, name: string): Buffer | undefined {
@@ -71,17 +84,23 @@ function readPem(env: NodeJS.ProcessEnv, name: string): Buffer | undefined {
  * mTLS.  The returned credential is passed directly to grpc-js by the
  * backend boundary.
  */
-export function readGrpcConfig(env: NodeJS.ProcessEnv = process.env): GrpcClientConfig {
+export function readGrpcConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): GrpcClientConfig {
   const address = env.LINUXCNC_GRPC_ENDPOINT?.trim() || "127.0.0.1:50051";
   const schema = defaultSchemaPaths(env);
   const ca = readPem(env, "LINUXCNC_GRPC_TLS_CA");
   const cert = readPem(env, "LINUXCNC_GRPC_TLS_CERT");
   const key = readPem(env, "LINUXCNC_GRPC_TLS_KEY");
   if ((cert && !key) || (!cert && key)) {
-    throw new Error("LINUXCNC_GRPC_TLS_CERT and LINUXCNC_GRPC_TLS_KEY must be provided together");
+    throw new Error(
+      "LINUXCNC_GRPC_TLS_CERT and LINUXCNC_GRPC_TLS_KEY must be provided together",
+    );
   }
   if (!ca && (cert || key)) {
-    throw new Error("LINUXCNC_GRPC_TLS_CA is required when client certificates are configured");
+    throw new Error(
+      "LINUXCNC_GRPC_TLS_CA is required when client certificates are configured",
+    );
   }
   if (!ca) return { address, ...schema };
 

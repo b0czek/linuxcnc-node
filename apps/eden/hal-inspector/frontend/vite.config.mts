@@ -8,6 +8,10 @@ export default defineConfig({
   root,
   base: "./",
   plugins: [solid()],
-  build: { outDir: "dist", emptyOutDir: true, rollupOptions: { input: resolve(root, "index.html") } },
+  build: {
+    outDir: "dist",
+    emptyOutDir: true,
+    rollupOptions: { input: resolve(root, "index.html") },
+  },
   resolve: { conditions: ["development", "browser"] },
 });

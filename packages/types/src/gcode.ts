@@ -5,8 +5,8 @@
  * LinuxCNC rs274ngc interpreter.
  */
 
-import { OperationType, Plane, ProgramUnits } from "./constants";
-import { Position, Position3 } from "./core";
+import type { OperationType, Plane, ProgramUnits } from "./constants";
+import type { Position, Position3 } from "./core";
 
 export { OperationType, Plane } from "./constants";
 

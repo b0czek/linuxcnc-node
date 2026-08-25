@@ -39,11 +39,7 @@ export interface NativeCommandArguments {
   homeJoint: [jointIndex: number];
   unhomeJoint: [jointIndex: number];
   jogStop: [axisOrJointIndex: number, isJointJog: boolean];
-  jogContinuous: [
-    axisOrJointIndex: number,
-    isJointJog: boolean,
-    speed: number,
-  ];
+  jogContinuous: [axisOrJointIndex: number, isJointJog: boolean, speed: number];
   jogIncrement: [
     axisOrJointIndex: number,
     isJointJog: boolean,
@@ -73,7 +69,5 @@ export interface NativeCommandArguments {
 export type NativeCommandName = keyof NativeCommandArguments;
 
 export type NativeCommandMethods<TResult = Promise<RcsStatus>> = {
-  [K in NativeCommandName]: (
-    ...args: NativeCommandArguments[K]
-  ) => TResult;
+  [K in NativeCommandName]: (...args: NativeCommandArguments[K]) => TResult;
 };

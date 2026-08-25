@@ -9,7 +9,9 @@
   },
   "scripts": {
     "changeset": "changeset",
-    "ci": "pnpm run typecheck && pnpm test",
+    "check": "biome ci .",
+    "check:fix": "biome check --write .",
+    "ci": "pnpm run check && pnpm run typecheck && pnpm test",
     "check:contracts": "pnpm --filter @linuxcnc-node/types check:generated && pnpm --filter @linuxcnc-node/grpc-client check:generated",
     "test:contracts": "pnpm --filter @linuxcnc-node/types test:conformance && pnpm --filter @linuxcnc-node/grpc-client test:conformance",
     "test:consumers": "pnpm --filter @linuxcnc-node/hal-inspector test",
@@ -22,6 +24,7 @@
     "publish": "changeset publish"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.10",
     "@changesets/cli": "^2.27.1"
   },
   "repository": {
