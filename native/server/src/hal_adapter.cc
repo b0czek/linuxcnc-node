@@ -222,15 +222,17 @@ std::optional<ResolvedItem> resolve_unlocked(
 
 std::string full_name(const std::string& prefix, const std::string& suffix) {
   if (suffix.empty()) return {};
-  const auto result = prefix.empty() ? suffix : prefix + "." + suffix;
+  auto result = prefix.empty() ? suffix : prefix + "." + suffix;
   if (result.size() > HAL_NAME_LEN) return {};
   return result;
 }
 
 }  // namespace
 
-HalAdapterError::HalAdapterError(std::string message, int code)
-    : std::runtime_error(std::move(message)), code_(code) {}
+HalAdapterError::HalAdapterError(
+    // NOLINTNEXTLINE(performance-unnecessary-value-param): public ABI contract
+    std::string message, int code)
+    : std::runtime_error(message), code_(code) {}
 
 struct LinuxCncHalComponent::Impl {
   struct Item {

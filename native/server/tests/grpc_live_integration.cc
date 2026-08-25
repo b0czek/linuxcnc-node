@@ -137,7 +137,7 @@ ExecuteCommandResponse execute_completed(
 }
 
 void expect_command_error(linuxcnc::v1::MachineService::Stub* machine,
-                          ExecuteCommandRequest request,
+                          const ExecuteCommandRequest& request,
                           grpc::StatusCode expected) {
   grpc::ClientContext context;
   context.set_deadline(std::chrono::system_clock::now() +
@@ -391,7 +391,7 @@ int probe_reacquire(const std::string& endpoint) {
   assert(component->Write(request));
   component->WritesDone();
   assert(component->Finish().ok());
-  std::cout << "LIVE_REACQUIRE_READY" << std::endl;
+  std::cout << "LIVE_REACQUIRE_READY\n" << std::flush;
   return 0;
 }
 
@@ -489,7 +489,7 @@ int hold_shutdown(const std::string& endpoint) {
   linuxcnc::v1::ScopeSessionMessage scope_response;
   assert(session->Read(&scope_response) && scope_response.has_status());
 
-  std::cout << "LIVE_SHUTDOWN_READY" << std::endl;
+  std::cout << "LIVE_SHUTDOWN_READY\n" << std::flush;
 
   linuxcnc::v1::LinuxCNCError error;
   while (errors->Read(&error)) {
@@ -515,7 +515,7 @@ int hold_shutdown(const std::string& endpoint) {
   while (session->Read(&scope_response)) {
   }
   require_shutdown_status(session->Finish(), "ScopeSession");
-  std::cout << "LIVE_SHUTDOWN_TERMINATED" << std::endl;
+  std::cout << "LIVE_SHUTDOWN_TERMINATED\n" << std::flush;
   return 0;
 }
 

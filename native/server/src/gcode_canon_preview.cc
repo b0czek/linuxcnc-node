@@ -171,7 +171,7 @@ void consume(ParseContext& context, const canon::StraightTraverse& event) {
   operation.pos = preview_position(context, event.end);
   context.currentPosition = operation.pos;
   context.updateExtents(operation.pos);
-  context.addOperation(std::move(operation));
+  context.addOperation(operation);
 }
 
 void consume(ParseContext& context, const canon::StraightFeed& event) {
@@ -180,7 +180,7 @@ void consume(ParseContext& context, const canon::StraightFeed& event) {
   operation.pos = preview_position(context, event.end);
   context.currentPosition = operation.pos;
   context.updateExtents(operation.pos);
-  context.addOperation(std::move(operation));
+  context.addOperation(operation);
 }
 
 void consume(ParseContext& context, const canon::ArcFeed& event) {
@@ -223,7 +223,7 @@ void consume(ParseContext& context, const canon::ArcFeed& event) {
   operation.arcData.axisEndPoint = axis_end;
   update_arc_extents(context, context.currentPosition, operation);
   context.currentPosition = operation.pos;
-  context.addOperation(std::move(operation));
+  context.addOperation(operation);
 }
 
 void consume(ParseContext& context, const canon::StraightProbe& event) {
@@ -232,7 +232,7 @@ void consume(ParseContext& context, const canon::StraightProbe& event) {
   operation.pos = preview_position(context, event.end);
   context.currentPosition = operation.pos;
   context.updateExtents(operation.pos);
-  context.addOperation(std::move(operation));
+  context.addOperation(operation);
 }
 
 void consume(ParseContext& context, const canon::RigidTap& event) {
@@ -245,7 +245,7 @@ void consume(ParseContext& context, const canon::RigidTap& event) {
   context.currentPosition.x = operation.pos.x;
   context.currentPosition.y = operation.pos.y;
   context.extents.update(operation.pos.x, operation.pos.y, operation.pos.z);
-  context.addOperation(std::move(operation));
+  context.addOperation(operation);
 }
 
 void consume(ParseContext& context, const canon::Dwell& event) {
@@ -253,7 +253,7 @@ void consume(ParseContext& context, const canon::Dwell& event) {
   operation.pos = context.currentPosition;
   operation.duration = event.seconds;
   operation.plane = context.currentPlane;
-  context.addOperation(std::move(operation));
+  context.addOperation(operation);
 }
 
 void consume(ParseContext& context, const canon::NurbsG5Feed& event) {
@@ -317,7 +317,7 @@ void consume(ParseContext& context, const canon::LengthUnits& event) {
   context.currentUnits = next_units;
   UnitsChangeOp operation;
   operation.units = next_units;
-  context.addOperation(std::move(operation));
+  context.addOperation(operation);
 }
 
 void consume(ParseContext& context, const canon::Plane& event) {
@@ -326,26 +326,26 @@ void consume(ParseContext& context, const canon::Plane& event) {
   context.currentPlane = next_plane;
   PlaneChangeOp operation;
   operation.plane = next_plane;
-  context.addOperation(std::move(operation));
+  context.addOperation(operation);
 }
 
 void consume(ParseContext& context, const canon::G5xOffset& event) {
   G5xOffsetOp operation;
   operation.origin = event.index;
   operation.offset = preview_position(context, event.offset);
-  context.addOperation(std::move(operation));
+  context.addOperation(operation);
 }
 
 void consume(ParseContext& context, const canon::G92Offset& event) {
   G92OffsetOp operation;
   operation.offset = preview_position(context, event.offset);
-  context.addOperation(std::move(operation));
+  context.addOperation(operation);
 }
 
 void consume(ParseContext& context, const canon::XyRotation& event) {
   XYRotationOp operation;
   operation.rotation = event.degrees;
-  context.addOperation(std::move(operation));
+  context.addOperation(operation);
 }
 
 void consume(ParseContext& context, const canon::FeedRate& event) {
@@ -355,20 +355,20 @@ void consume(ParseContext& context, const canon::FeedRate& event) {
   context.lastFeedRate = rate;
   FeedRateChangeOp operation;
   operation.feedRate = rate;
-  context.addOperation(std::move(operation));
+  context.addOperation(operation);
 }
 
 void consume(ParseContext& context, const canon::ToolOffset& event) {
   ToolOffsetOp operation;
   operation.offset = preview_position(context, event.offset);
-  context.addOperation(std::move(operation));
+  context.addOperation(operation);
 }
 
 void consume(ParseContext& context, const canon::ToolChange& event) {
   context.selectedTool = event.tool_number;
   ToolChangeOp operation;
   operation.toolNumber = event.tool_number;
-  context.addOperation(std::move(operation));
+  context.addOperation(operation);
 }
 
 }  // namespace

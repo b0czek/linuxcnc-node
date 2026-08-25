@@ -348,6 +348,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
   void sample_telemetry() {
     for (const auto& due : telemetry_->due(std::chrono::steady_clock::now())) {
       std::vector<HalAdapterReference> references;
+      references.reserve(due.bindings.size());
       for (const auto& binding : due.bindings)
         references.push_back(adapter_reference(binding.item));
       auto values = adapter_.read_many(references);

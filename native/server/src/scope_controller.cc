@@ -249,8 +249,10 @@ void validate_trigger_level(hal_type_t type, double value) {
 
 }  // namespace
 
-ScopeControllerError::ScopeControllerError(std::string message, int code)
-    : std::runtime_error(std::move(message)), code_(code) {}
+ScopeControllerError::ScopeControllerError(
+    // NOLINTNEXTLINE(performance-unnecessary-value-param): public ABI contract
+    std::string message, int code)
+    : std::runtime_error(message), code_(code) {}
 
 bool ScopeFrameQueue::acquire(const std::string& owner) {
   if (owner.empty()) return false;
