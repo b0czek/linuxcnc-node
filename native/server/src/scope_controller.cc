@@ -12,8 +12,8 @@
 #include "scope_shm_abi.h"
 
 // Scope source lookup and thread attachment use the same private HAL lists as
-// halcmd and the legacy addon. This is the native-only implementation seam;
-// no transport or N-API types cross it.
+// halcmd. This is the native-only implementation seam; no transport
+// abstraction layer crosses it.
 #include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>

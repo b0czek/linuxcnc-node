@@ -3,7 +3,7 @@
 Raw generated TypeScript wire messages and grpc-js service clients for
 `linuxcnc.v1`.
 The package deliberately has no EventEmitter, HAL object model, property
-watchers, or native addon dependency. Use the raw generated clients directly
+watchers, or transport-layer helper abstractions. Use the raw generated clients directly
 and map their wire messages to local domain models at the application boundary.
 
 The checked-in source is generated from `proto/linuxcnc/v1/linuxcnc.proto`.

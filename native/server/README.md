@@ -4,7 +4,7 @@
 the standalone daemon: serialized command coordination, typed status replay,
 bounded position history, exact-width HAL values, secure program workspaces,
 and exclusive/coalesced scope frames. These classes do not include Node,
-N-API, protobuf, or gRPC headers.
+protobuf, or gRPC headers.
 
 With `LINUXCNC_GRPC_BUILD_WIRE=ON`, `linuxcnc-grpc-server` is a real listener:
 it registers the generated `linuxcnc.v1` Machine, Program, HAL, and Scope

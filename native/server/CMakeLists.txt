@@ -42,7 +42,7 @@ target_include_directories(linuxcnc-grpc-domain
 target_link_libraries(linuxcnc-grpc-domain PUBLIC Threads::Threads)
 target_compile_options(linuxcnc-grpc-domain PRIVATE -Wall -Wextra -Wpedantic)
 
-# The domain library intentionally has no N-API, Node, protobuf, or gRPC
+# The domain library intentionally has no protobuf, gRPC,
 # dependency.  The transport target can link the generated protobuf sources
 # when they are available without changing this boundary.  These discoveries
 # are informational today and make the target ready for the generated RPC

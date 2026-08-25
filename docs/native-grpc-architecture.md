@@ -16,7 +16,7 @@ runtime values exported by `@linuxcnc-node/types`.
 
 - `@linuxcnc-node/types` contains transport-independent domain models,
   constants, command tuple types, and typed-array layouts. It does not import
-  protobuf, gRPC, an addon, or `@linuxcnc-node/grpc-client`.
+  protobuf, gRPC, or `@linuxcnc-node/grpc-client`.
 - `@linuxcnc-node/grpc-client` contains generated wire messages and raw Node
   clients. It does not expose EventEmitter wrappers, property watchers, HAL
   objects, or machine policy.
@@ -33,8 +33,8 @@ values; clients must not coerce them through an unsafe JavaScript `number`.
 `MachineService` provides complete status, replayable typed sparse status
 deltas, a complete command oneof, operator/error events, and position-history
 configuration and clearing. Position snapshots and deltas use the daemon's
-one-way binary WebSocket stream so renderer consumers do not require a gRPC or
-IPC intermediary. A single serialized NML queue orders every command.
+one-way binary WebSocket stream so renderer consumers do not require extra
+process mediation. A single serialized NML queue orders every command.
 Cancelling an RPC only cancels the wait; it cannot undo a command LinuxCNC
 already accepted.
 
@@ -80,7 +80,7 @@ WebSocket base and defaults it to `ws://127.0.0.1:50052`.
 
 ## Operational bounds
 
-The initial polling defaults preserve the addon behavior:
+The initial polling defaults preserve existing timing behavior:
 
 | Work | Default |
 | --- | ---: |
@@ -96,9 +96,7 @@ Every subscriber queue is bounded. After synchronization, status watchers
 receive sparse typed deltas rather than repeated full snapshots. G-code
 operation batches are bounded and scope frames are coalesced for slow clients.
 
-## Cutover status
+## Current architecture
 
-The atomic cutover is complete. The legacy Node native addons, their TypeScript
-wrappers, the temporary Eden protocol declarations, and the Eden bridge have
-been removed. gRPC remains the control plane; position and selected HAL value
-telemetry flow directly from the machine daemon to renderers over WebSocket.
+gRPC is the control plane; position and selected HAL value telemetry flow
+directly from the machine daemon to renderers over WebSocket.

@@ -10,7 +10,7 @@
 
 // halpr_find_* and the linked-list roots are intentionally private LinuxCNC
 // APIs. This adapter is the one narrow native boundary that needs them to
-// reproduce halcmd/_hal topology semantics without pulling N-API into the
+// reproduce halcmd/_hal topology semantics without adding a Node binding layer.
 // daemon.
 #include <cerrno>
 #include <map>

@@ -1,6 +1,6 @@
 # Native rs274 parser integration
 
-The extracted parser is deliberately independent of Node, N-API, protobuf,
+The extracted parser is deliberately independent of Node, protobuf,
 and gRPC. Add these sources to the daemon's native target:
 
 ```text

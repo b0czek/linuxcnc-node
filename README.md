@@ -4,9 +4,8 @@ LinuxCNC Node is an open-source C++ and TypeScript monorepo for building
 applications on top of LinuxCNC. Its architecture is one standalone
 `linuxcnc-grpc-server` beside one patched LinuxCNC instance, a versioned raw
 gRPC client, transport-independent TypeScript domain types, and a direct binary
-WebSocket data plane for position and selected HAL value telemetry. The legacy Node native
-addons and Eden bridge were retired after the atomic gRPC cutover. See the
-[native architecture](./docs/grpc-cutover.md).
+WebSocket data plane for position and selected HAL value telemetry. See the
+[native architecture](./docs/native-grpc-architecture.md).
 
 > **Compatibility:** Starting with v3, these packages are purpose-built for
 > **LinuxCNC 2.10** at the pinned

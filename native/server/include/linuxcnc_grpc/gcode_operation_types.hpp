@@ -3,7 +3,7 @@
  *
  * These structures are the daemon's transport-neutral G-code domain model.
  * The gRPC adapter may map them to protobuf messages, but the parser never
- * includes protobuf, gRPC, Node, or N-API headers.
+ * includes protobuf or gRPC headers.
  */
 
 #ifndef LINUXCNC_GRPC_GCODE_OPERATION_TYPES_HPP
