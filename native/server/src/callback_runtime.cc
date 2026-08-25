@@ -108,6 +108,7 @@ void BoundedExecutor::run() {
     } catch (...) {
       // Tasks communicate failure through their result state. An exception is
       // contained so one malformed request cannot kill a daemon worker.
+      item.task = {};
     }
     {
       std::lock_guard lock(mutex_);

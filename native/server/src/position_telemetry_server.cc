@@ -215,10 +215,12 @@ class Session final : public std::enable_shared_from_this<Session> {
       release_ = {};
     }
     beast::error_code ignored;
-    beast::get_lowest_layer(websocket_)
+    // NOLINTNEXTLINE(bugprone-unused-return-value): best-effort teardown
+    (void)beast::get_lowest_layer(websocket_)
         .socket()
         .shutdown(tcp::socket::shutdown_both, ignored);
-    beast::get_lowest_layer(websocket_).socket().close(ignored);
+    // NOLINTNEXTLINE(bugprone-unused-return-value): best-effort teardown
+    (void)beast::get_lowest_layer(websocket_).socket().close(ignored);
   }
 
   websocket::stream<PlainStream> websocket_;
@@ -274,8 +276,10 @@ class PositionTelemetryServer::Impl {
     if (stopped_.exchange(true)) return;
     asio::post(io_, [this] {
       beast::error_code ignored;
-      acceptor_.cancel(ignored);
-      acceptor_.close(ignored);
+      // NOLINTNEXTLINE(bugprone-unused-return-value): best-effort teardown
+      (void)acceptor_.cancel(ignored);
+      // NOLINTNEXTLINE(bugprone-unused-return-value): best-effort teardown
+      (void)acceptor_.close(ignored);
     });
     io_.stop();
     if (thread_.joinable()) thread_.join();
@@ -288,7 +292,8 @@ class PositionTelemetryServer::Impl {
         if (active_sessions_.fetch_add(1) >= 128) {
           active_sessions_.fetch_sub(1);
           beast::error_code ignored;
-          socket.close(ignored);
+          // NOLINTNEXTLINE(bugprone-unused-return-value): rejected connection
+          (void)socket.close(ignored);
         } else {
           auto release = [this] { active_sessions_.fetch_sub(1); };
           std::make_shared<Session>(PlainStream(std::move(socket)), telemetry_,

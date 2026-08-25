@@ -243,7 +243,8 @@ class OutboundPump {
 
   Output current() const {
     std::lock_guard lock(mutex_);
-    return Output{*current_, 0};
+    if (!current_) throw std::logic_error("outbound pump has no current value");
+    return Output{current_.value(), 0};
   }
 
   // Returns the next coalesced output when another write should start.

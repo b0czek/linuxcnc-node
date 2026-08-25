@@ -242,9 +242,11 @@ void hal_scalar_and_reference_mapping_test() {
   assert(decoded_pin && decoded_pin->kind == HalAdapterItemKind::Pin);
   assert(decoded_pin->name == "motion.pin");
   reference.set_kind(linuxcnc::v1::HAL_ITEM_KIND_PARAM);
-  assert(decode_hal_reference(reference)->kind == HalAdapterItemKind::Param);
+  const auto decoded_param = decode_hal_reference(reference);
+  assert(decoded_param && decoded_param->kind == HalAdapterItemKind::Param);
   reference.set_kind(linuxcnc::v1::HAL_ITEM_KIND_SIGNAL);
-  assert(decode_hal_reference(reference)->kind == HalAdapterItemKind::Signal);
+  const auto decoded_signal = decode_hal_reference(reference);
+  assert(decoded_signal && decoded_signal->kind == HalAdapterItemKind::Signal);
   reference.set_kind(linuxcnc::v1::HAL_ITEM_KIND_UNSPECIFIED);
   assert(!decode_hal_reference(reference));
   reference.set_kind(linuxcnc::v1::HAL_ITEM_KIND_PIN);

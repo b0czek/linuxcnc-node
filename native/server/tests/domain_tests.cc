@@ -19,6 +19,11 @@
 namespace fs = std::filesystem;
 using namespace linuxcnc::server;
 
+void expect(bool condition) {
+  assert(condition);
+  (void)condition;
+}
+
 void callback_runtime_test() {
   ActiveCallbackRegistry registry;
   std::atomic<int> shutdown_calls{0};
@@ -82,16 +87,16 @@ void callback_runtime_test() {
   BoundedExecutor executor(1, 3, 1);
   std::atomic<bool> hold{true};
   std::atomic<int> completed{0};
-  assert(executor.submit([&] {
+  expect(executor.submit([&] {
     while (hold.load()) std::this_thread::yield();
     ++completed;
   }));
   while (executor.queued() != 0) std::this_thread::yield();
-  assert(executor.submit([&] { ++completed; }));
-  assert(executor.submit([&] { ++completed; }));
-  assert(!executor.submit([&] { ++completed; }));
-  assert(executor.submit_cleanup([&] { ++completed; }));
-  assert(!executor.submit_cleanup([&] { ++completed; }));
+  expect(executor.submit([&] { ++completed; }));
+  expect(executor.submit([&] { ++completed; }));
+  expect(!executor.submit([&] { ++completed; }));
+  expect(executor.submit_cleanup([&] { ++completed; }));
+  expect(!executor.submit_cleanup([&] { ++completed; }));
   hold = false;
   executor.shutdown();
   assert(completed == 4);
@@ -135,12 +140,12 @@ void callback_runtime_test() {
     int calls = 0;
   } target;
   auto gate = std::make_shared<LifetimeGate<Target>>(&target);
-  assert(gate->invoke([](Target& value) { ++value.calls; }));
+  expect(gate->invoke([](Target& value) { ++value.calls; }));
   assert(gate->begin_finish());
   assert(!gate->begin_finish());
-  assert(!gate->invoke([](Target& value) { ++value.calls; }));
+  expect(!gate->invoke([](Target& value) { ++value.calls; }));
   gate->detach();
-  assert(!gate->invoke([](Target& value) { ++value.calls; }));
+  expect(!gate->invoke([](Target& value) { ++value.calls; }));
   assert(target.calls == 1);
 
   struct RacingTarget {
@@ -173,15 +178,15 @@ void cleanup_reserve_saturation_test() {
   BoundedExecutor executor(1, 128, 16);
   std::atomic<bool> release_worker{false};
   std::atomic<int> cleaned{0};
-  assert(executor.submit([&] {
+  expect(executor.submit([&] {
     while (!release_worker.load()) std::this_thread::yield();
   }));
   while (executor.queued() != 0) std::this_thread::yield();
-  for (int index = 0; index < 112; ++index) assert(executor.submit([] {}));
+  for (int index = 0; index < 112; ++index) expect(executor.submit([] {}));
   assert(!executor.submit([] {}));
   for (int index = 0; index < 16; ++index)
-    assert(executor.submit_cleanup([&] { ++cleaned; }));
-  assert(!executor.submit_cleanup([&] { ++cleaned; }));
+    expect(executor.submit_cleanup([&] { ++cleaned; }));
+  expect(!executor.submit_cleanup([&] { ++cleaned; }));
   release_worker = true;
   executor.drain();
   assert(cleaned == 16);
@@ -220,7 +225,7 @@ void command_coordinator_test() {
   assert(ticket.wait_for(std::chrono::seconds(1), &result));
   assert(result.state == CommandState::Completed);
   std::atomic<int> observed{0};
-  assert(ticket.observe(CommandWaitPolicy::Completed,
+  expect(ticket.observe(CommandWaitPolicy::Completed,
                         [&](const CommandResult& value) {
                           assert(value.state == CommandState::Completed);
                           ++observed;

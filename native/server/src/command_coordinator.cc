@@ -53,13 +53,13 @@ bool CommandTicket::observe(CommandWaitPolicy policy, Observer observer) const {
             state_->result.state == CommandState::Completed ||
             (policy == CommandWaitPolicy::Accepted &&
              state_->result.state == CommandState::Accepted);
-    if (ready) {
-      ready_result = state_->result;
-    } else {
+    if (!ready) {
       state_->observers.push_back({policy, std::move(observer)});
+      return true;
     }
+    ready_result = state_->result;
   }
-  if (ready) observer(ready_result);
+  observer(ready_result);
   return true;
 }
 

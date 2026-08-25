@@ -86,7 +86,7 @@ int run_grpc_server(const DaemonConfig& config) {
 
     ::grpc::ServerBuilder builder;
     ::grpc::ResourceQuota resource_quota;
-    resource_quota.Resize(256U * 1024U * 1024U);
+    resource_quota.Resize(std::size_t{256} * 1024U * 1024U);
     resource_quota.SetMaxThreads(kMaxGrpcThreads);
     builder.SetResourceQuota(resource_quota);
     builder.SetMaxReceiveMessageSize(kMaxGrpcMessageBytes);

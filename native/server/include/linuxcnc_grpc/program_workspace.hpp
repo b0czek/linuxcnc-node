@@ -12,8 +12,8 @@
 namespace linuxcnc::server {
 
 struct WorkspaceLimits {
-  std::size_t max_workspace_bytes = 256U * 1024U * 1024U;
-  std::size_t max_total_bytes = 1024U * 1024U * 1024U;
+  std::size_t max_workspace_bytes = std::size_t{256} * 1024U * 1024U;
+  std::size_t max_total_bytes = std::size_t{1024} * 1024U * 1024U;
   std::chrono::seconds ttl = std::chrono::hours(24);
 };
 

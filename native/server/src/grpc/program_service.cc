@@ -32,7 +32,7 @@ namespace {
 
 using namespace linuxcnc::v1;
 
-constexpr std::size_t kMaxUploadChunk = 16U * 1024U * 1024U;
+constexpr std::size_t kMaxUploadChunk = std::size_t{16} * 1024U * 1024U;
 
 ::grpc::Status invalid(const std::string& message) {
   return {::grpc::StatusCode::INVALID_ARGUMENT, message};
@@ -364,7 +364,9 @@ class ProgramServiceImpl final : public ProgramCallbackBase,
 
   class ParseReactor final
       : public ::grpc::ServerWriteReactor<ParseProgramEvent> {
+#ifdef LINUXCNC_GRPC_HAS_RS274
     static constexpr std::size_t kMaxQueuedBatches = 2;
+#endif
 
     struct State {
       std::mutex mutex;
@@ -440,6 +442,7 @@ class ProgramServiceImpl final : public ProgramCallbackBase,
       auto* service = &service_;
       const std::weak_ptr<LifetimeGate<ParseReactor>> weak_gate = gate_;
       if (!service_.parser_worker_.submit([service, state, request, weak_gate] {
+            (void)service;
             const auto wake = [weak_gate] {
               auto gate = weak_gate.lock();
               if (gate) {
@@ -560,11 +563,11 @@ class ProgramServiceImpl final : public ProgramCallbackBase,
           state_->batches.pop_front();
           writing_batch_ = true;
         } else if (state_->progress) {
-          message_ = std::move(*state_->progress);
+          message_ = std::move(state_->progress).value_or(ParseProgramEvent{});
           state_->progress.reset();
           writing_batch_ = false;
         } else if (state_->terminal) {
-          message_ = std::move(*state_->terminal);
+          message_ = std::move(state_->terminal).value_or(ParseProgramEvent{});
           state_->terminal.reset();
           writing_batch_ = false;
           terminal_write_ = true;
@@ -630,7 +633,7 @@ class ProgramServiceImpl final : public ProgramCallbackBase,
   AdmissionCounter& upload_admission_;
   AdmissionCounter& stream_admission_;
   const std::filesystem::path ini_file_;
-  const std::size_t batch_size_;
+  [[maybe_unused]] const std::size_t batch_size_;
 #ifdef LINUXCNC_GRPC_HAS_RS274
   gcode::SerializedRs274Parser parser_;
 #endif

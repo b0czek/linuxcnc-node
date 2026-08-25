@@ -151,6 +151,8 @@ void ServerRuntime::wake_control_thread() noexcept {
   // joining the C++17 control thread cannot hang indefinitely. Both signals
   // are blocked process-wide before this thread is started and are therefore
   // consumed by sigwait rather than invoking a process signal handler.
+  // process-wide and consumed synchronously by sigwait() as a wake-up event.
+  // NOLINTNEXTLINE(bugprone-bad-signal-to-kill-thread): deliberate wake-up
   (void)pthread_kill(control_thread_.native_handle(), SIGTERM);
 }
 

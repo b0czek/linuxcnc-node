@@ -14,7 +14,8 @@ void PositionHistory::configure(std::size_t max_samples, double epsilon) {
   max_samples_ = std::max<std::size_t>(1, max_samples);
   epsilon_ = std::max(0.0, epsilon);
   if (entries_.size() > max_samples_) {
-    entries_.erase(entries_.begin(), entries_.end() - max_samples_);
+    entries_.erase(entries_.begin(),
+                   entries_.end() - static_cast<std::ptrdiff_t>(max_samples_));
   }
   ++generation_;
 }
@@ -94,8 +95,8 @@ PositionHistoryBatch PositionHistory::since(
                      static_cast<std::size_t>(entries_.end() - first));
   result.first_sequence =
       first == entries_.end() ? next_sequence_ : first->sequence;
-  if (!result.reset && first != entries_.end() && first->replacement_root &&
-      *first->replacement_root < sequence) {
+  if (!result.reset && first != entries_.end() &&
+      first->replacement_root.value_or(sequence) < sequence) {
     result.replace_count = 1;
   }
   result.packed.reserve(count * kPositionStride);

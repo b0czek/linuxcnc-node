@@ -58,11 +58,11 @@ std::vector<std::uint8_t> encode_hal_telemetry_frame(
     const auto offset =
         kHalTelemetryHeaderSize + entry * kHalTelemetryEntrySize;
     write_le<std::uint32_t>(&output, offset, snapshot.bindings[index].slot);
-    if (snapshot.values[index]) {
+    const auto& value = snapshot.values[index];
+    if (value) {
       output[offset + 4] =
           static_cast<std::uint8_t>(snapshot.bindings[index].type);
-      write_le<std::uint64_t>(&output, offset + 8,
-                              payload(*snapshot.values[index]));
+      write_le<std::uint64_t>(&output, offset + 8, payload(value.value()));
     }
   }
   return output;

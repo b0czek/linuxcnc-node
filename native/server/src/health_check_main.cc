@@ -12,6 +12,8 @@
 
 namespace {
 std::string environment(const char* name) {
+  // after startup, before this single-threaded health-check client reads it.
+  // NOLINTNEXTLINE(concurrency-mt-unsafe): immutable process environment
   const char* value = std::getenv(name);
   return value ? value : "";
 }

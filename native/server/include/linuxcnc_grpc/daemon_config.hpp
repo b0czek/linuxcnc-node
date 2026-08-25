@@ -19,8 +19,8 @@ struct DaemonConfig {
   std::filesystem::path tls_certificate;
   std::filesystem::path tls_private_key;
   std::filesystem::path tls_client_ca;
-  std::size_t workspace_quota_bytes = 256U * 1024U * 1024U;
-  std::size_t total_quota_bytes = 1024U * 1024U * 1024U;
+  std::size_t workspace_quota_bytes = std::size_t{256} * 1024U * 1024U;
+  std::size_t total_quota_bytes = std::size_t{1024} * 1024U * 1024U;
   std::chrono::seconds workspace_ttl{24 * 60 * 60};
   std::size_t command_queue_capacity = 128;
   std::size_t status_replay_capacity = 256;
