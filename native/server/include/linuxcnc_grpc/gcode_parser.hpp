@@ -17,6 +17,7 @@ namespace linuxcnc::server::gcode {
 // interpreter read/execute step.
 struct ParseOptions {
   std::string ini_path;
+  std::string program_prefix;
   std::size_t batch_size = 128;
   int progress_updates = 40;
   std::function<bool(OperationBatch&&)> on_batch;

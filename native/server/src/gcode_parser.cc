@@ -5,6 +5,7 @@
 #include "interp_base.hh"
 #include "interp_return.hh"
 #include "recordingcanon.hh"
+#include "rs274ngc_interp.hh"
 #include "tooldata.hh"
 
 #include <algorithm>
@@ -81,6 +82,16 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
     }
     if (interpreter_->init() != 0)
       throw std::runtime_error("failed to initialize rs274 interpreter");
+    if (!options.program_prefix.empty()) {
+      auto* concrete = dynamic_cast<Interp*>(interpreter_.get());
+      if (!concrete)
+        throw std::runtime_error("rs274 interpreter does not expose its program prefix");
+      if (options.program_prefix.size() >= sizeof(concrete->_setup.program_prefix))
+        throw std::runtime_error("G-code program prefix is too long");
+      std::copy(options.program_prefix.begin(), options.program_prefix.end(),
+                concrete->_setup.program_prefix);
+      concrete->_setup.program_prefix[options.program_prefix.size()] = '\0';
+    }
     consumeRecordingEvents(recording_session, context);
 
     // Tool data is optional for preview. LinuxCNC's canonical tool callbacks

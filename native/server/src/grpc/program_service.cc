@@ -452,6 +452,8 @@ class ProgramServiceImpl final : public ProgramCallbackBase, public ManagedGrpcS
             try {
               gcode::ParseOptions options;
               options.ini_path = service->ini_file_.string();
+              options.program_prefix =
+                  (service->store_->root() / handle.workspace_id()).string();
               options.batch_size = service->batch_size_;
               options.is_cancelled = [state] {
                 std::lock_guard lock(state->mutex);
