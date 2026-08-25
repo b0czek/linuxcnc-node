@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/hal.proto
 
 import type { HalWriterMetadata as _linuxcnc_v1_HalWriterMetadata, HalWriterMetadata__Output as _linuxcnc_v1_HalWriterMetadata__Output } from '../../linuxcnc/v1/HalWriterMetadata';
 

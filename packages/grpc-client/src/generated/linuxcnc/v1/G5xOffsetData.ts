@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/program.proto
 
 import type { Position as _linuxcnc_v1_Position, Position__Output as _linuxcnc_v1_Position__Output } from '../../linuxcnc/v1/Position';
 

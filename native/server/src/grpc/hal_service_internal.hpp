@@ -8,7 +8,7 @@
 
 #include "grpc/hal_service_impl.hpp"
 #include "grpc/unary_task_reactor.hpp"
-#include "linuxcnc/v1/linuxcnc.grpc.pb.h"
+#include "linuxcnc/v1/hal.grpc.pb.h"
 #include "linuxcnc_grpc/callback_runtime.hpp"
 
 namespace linuxcnc::server::detail {

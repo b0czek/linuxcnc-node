@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/machine.proto
 
 import type { LinuxCNCStat as _linuxcnc_v1_LinuxCNCStat, LinuxCNCStat__Output as _linuxcnc_v1_LinuxCNCStat__Output } from '../../linuxcnc/v1/LinuxCNCStat';
 import type { StatusReplay as _linuxcnc_v1_StatusReplay, StatusReplay__Output as _linuxcnc_v1_StatusReplay__Output } from '../../linuxcnc/v1/StatusReplay';

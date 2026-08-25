@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/common.proto
 
 export const HalType = {
   HAL_TYPE_UNSPECIFIED: 0,

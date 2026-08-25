@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "../../..");
-const proto = join(root, "proto/linuxcnc/v1/linuxcnc.proto");
+const protoDirectory = join(root, "proto/linuxcnc/v1");
+const protoFiles = ["common.proto", "machine.proto", "program.proto", "hal.proto", "scope.proto"];
+const proto = join(protoDirectory, "linuxcnc.proto");
 const outputFlag = process.argv.indexOf("--output");
 if (outputFlag >= 0 && !process.argv[outputFlag + 1]) {
   throw new Error("--output requires a file path");
@@ -25,7 +27,9 @@ const generatedDomain =
     : outputFlag >= 0
       ? join(dirname(generated), "domain.ts")
       : join(here, "../src/generated/domain.ts");
-const source = readFileSync(proto, "utf8");
+const source = protoFiles
+  .map((file) => readFileSync(join(protoDirectory, file), "utf8"))
+  .join("\n");
 const stableEnums = [
   "TaskMode",
   "TaskState",
@@ -160,7 +164,7 @@ const gcodeOperationVariants = parseOneofFields("GCodeOperation", "data");
 const halScalarVariants = parseOneofFields("HalScalar", "value");
 const packedChannelFields = domainFields.PackedChannel;
 let output =
-  "/** Generated from proto/linuxcnc/v1/linuxcnc.proto. Do not edit manually. */\n\n";
+  "/** Generated from the proto/linuxcnc/v1 schema set. Do not edit manually. */\n\n";
 for (const name of stableEnums) {
   output += `export enum ${name} {\n`;
   for (const [member, value] of parse(name))
@@ -171,7 +175,7 @@ output += `export const POSITION_STRIDE = 10;\n\nexport enum PositionLoggerIndex
 writeFileSync(generated, output);
 
 let domainOutput =
-  "/** Generated from proto/linuxcnc/v1/linuxcnc.proto. Do not edit manually. */\n\n";
+  "/** Generated from the proto/linuxcnc/v1 schema set. Do not edit manually. */\n\n";
 domainOutput += `import type {\n  AxisStat,\n  AxisName,\n  LinuxCNCError,\n  LinuxCNCStat,\n  Position,\n  Position3,\n  ToolEntry,\n} from "../core";\nimport type {\n  GCodeOperation,\n  GCodeParseResult,\n  Extents,\n} from "../gcode";\nimport type {\n  HalComponentInfo,\n  HalFunctionInfo,\n  HalParamInfo,\n  HalPinInfo,\n  HalSignalInfo,\n  HalThreadInfo,\n  HalTopology,\n  HalValue,\n  ScopeCapture,\n  ScopeCaptureDelta,\n  ScopeStatus,\n} from "../hal";\n\n`;
 domainOutput += `export type GeneratedPosition = Position;\nexport type GeneratedPosition3 = Position3;\nexport type GeneratedToolEntry = ToolEntry;\nexport type GeneratedLinuxCNCStat = LinuxCNCStat;\nexport type GeneratedLinuxCNCError = LinuxCNCError;\nexport type GeneratedAxisStat = AxisStat;\nexport type GeneratedAxisName = AxisName;\nexport type GeneratedGCodeOperation = GCodeOperation;\nexport type GeneratedGCodeParseResult = GCodeParseResult;\nexport type GeneratedExtents = Extents;\nexport type GeneratedHalValue = HalValue;\nexport type GeneratedHalComponentInfo = HalComponentInfo;\nexport type GeneratedHalFunctionInfo = HalFunctionInfo;\nexport type GeneratedHalParamInfo = HalParamInfo;\nexport type GeneratedHalPinInfo = HalPinInfo;\nexport type GeneratedHalSignalInfo = HalSignalInfo;\nexport type GeneratedHalThreadInfo = HalThreadInfo;\nexport type GeneratedHalTopology = HalTopology;\nexport type GeneratedScopeStatus = ScopeStatus;\nexport type GeneratedScopeCapture = ScopeCapture;\nexport type GeneratedScopeCaptureDelta = ScopeCaptureDelta;\n\n`;
 domainOutput += "export const PROTO_DOMAIN_FIELDS = {\n";

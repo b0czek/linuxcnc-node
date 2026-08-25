@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/machine.proto
 
 import type { TrajectoryStat as _linuxcnc_v1_TrajectoryStat, TrajectoryStat__Output as _linuxcnc_v1_TrajectoryStat__Output } from '../../linuxcnc/v1/TrajectoryStat';
 import type { JointStat as _linuxcnc_v1_JointStat, JointStat__Output as _linuxcnc_v1_JointStat__Output } from '../../linuxcnc/v1/JointStat';

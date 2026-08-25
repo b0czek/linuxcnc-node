@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/machine.proto
 
 import type { OrientState as _linuxcnc_v1_OrientState, OrientState__Output as _linuxcnc_v1_OrientState__Output } from '../../linuxcnc/v1/OrientState';
 

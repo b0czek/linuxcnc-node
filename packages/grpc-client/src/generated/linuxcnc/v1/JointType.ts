@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/machine.proto
 
 export const JointType = {
   JOINT_TYPE_UNSPECIFIED: 0,

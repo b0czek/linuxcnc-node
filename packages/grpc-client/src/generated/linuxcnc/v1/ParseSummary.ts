@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/program.proto
 
 import type { Extents as _linuxcnc_v1_Extents, Extents__Output as _linuxcnc_v1_Extents__Output } from '../../linuxcnc/v1/Extents';
 import type { Long } from '@grpc/proto-loader';

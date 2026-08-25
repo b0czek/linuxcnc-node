@@ -12,7 +12,8 @@ names remain only as deprecated source-compatibility types for downstream
 cleanup. They are not part of the v5 wire contract.
 
 `src/generated/enums.ts` and `src/generated/domain.ts` are emitted from the
-versioned `proto/linuxcnc/v1/linuxcnc.proto`. The generated domain artifact
+versioned schema set in `proto/linuxcnc/v1`; `linuxcnc.proto` is its aggregate
+entrypoint. The generated domain artifact
 records stable field names/numbers, G-code operation variants, exact HAL scalar
 variants, scope channel slot fields, and Float64Array position layouts.
 `pnpm run check:generated` regenerates both files in a temporary directory and

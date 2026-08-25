@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/hal.proto
 
 import type { HalSignalInfo as _linuxcnc_v1_HalSignalInfo, HalSignalInfo__Output as _linuxcnc_v1_HalSignalInfo__Output } from '../../linuxcnc/v1/HalSignalInfo';
 

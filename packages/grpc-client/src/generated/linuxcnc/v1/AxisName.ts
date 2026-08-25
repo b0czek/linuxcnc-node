@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/machine.proto
 
 export const AxisName = {
   AXIS_NAME_UNSPECIFIED: 0,

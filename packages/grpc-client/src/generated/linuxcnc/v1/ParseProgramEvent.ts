@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/program.proto
 
 import type { ParseProgress as _linuxcnc_v1_ParseProgress, ParseProgress__Output as _linuxcnc_v1_ParseProgress__Output } from '../../linuxcnc/v1/ParseProgress';
 import type { ParseBatch as _linuxcnc_v1_ParseBatch, ParseBatch__Output as _linuxcnc_v1_ParseBatch__Output } from '../../linuxcnc/v1/ParseBatch';

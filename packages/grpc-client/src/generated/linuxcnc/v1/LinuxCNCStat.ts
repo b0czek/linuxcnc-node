@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/machine.proto
 
 import type { RcsStatus as _linuxcnc_v1_RcsStatus, RcsStatus__Output as _linuxcnc_v1_RcsStatus__Output } from '../../linuxcnc/v1/RcsStatus';
 import type { TaskStat as _linuxcnc_v1_TaskStat, TaskStat__Output as _linuxcnc_v1_TaskStat__Output } from '../../linuxcnc/v1/TaskStat';

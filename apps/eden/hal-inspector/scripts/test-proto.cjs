@@ -4,6 +4,11 @@ const { createLinuxCncClients } = require("@linuxcnc-node/grpc-client");
 
 const protoRoot = path.resolve("backend", "dist", "proto");
 const required = [
+  "linuxcnc/v1/common.proto",
+  "linuxcnc/v1/machine.proto",
+  "linuxcnc/v1/program.proto",
+  "linuxcnc/v1/hal.proto",
+  "linuxcnc/v1/scope.proto",
   "linuxcnc/v1/linuxcnc.proto",
   "grpc/health/v1/health.proto",
   "google/protobuf/empty.proto",

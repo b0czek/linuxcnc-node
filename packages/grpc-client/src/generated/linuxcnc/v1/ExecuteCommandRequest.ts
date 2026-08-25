@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/machine.proto
 
 import type { WaitPolicy as _linuxcnc_v1_WaitPolicy, WaitPolicy__Output as _linuxcnc_v1_WaitPolicy__Output } from '../../linuxcnc/v1/WaitPolicy';
 import type { SetTaskMode as _linuxcnc_v1_SetTaskMode, SetTaskMode__Output as _linuxcnc_v1_SetTaskMode__Output } from '../../linuxcnc/v1/SetTaskMode';

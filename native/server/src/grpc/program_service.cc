@@ -20,7 +20,7 @@
 
 #include "grpc/service_factories.hpp"
 #include "grpc/unary_task_reactor.hpp"
-#include "linuxcnc/v1/linuxcnc.grpc.pb.h"
+#include "linuxcnc/v1/program.grpc.pb.h"
 #include "linuxcnc_grpc/callback_runtime.hpp"
 #include "linuxcnc_grpc/daemon_config.hpp"
 #include "linuxcnc_grpc/gcode_parser.hpp"

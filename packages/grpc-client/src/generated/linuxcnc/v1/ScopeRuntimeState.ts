@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/scope.proto
 
 export const ScopeRuntimeState = {
   SCOPE_RUNTIME_STATE_UNSPECIFIED: 0,

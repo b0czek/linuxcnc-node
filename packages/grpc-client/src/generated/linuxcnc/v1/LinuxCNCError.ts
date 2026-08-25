@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/common.proto
 
 import type { NmlMessageType as _linuxcnc_v1_NmlMessageType, NmlMessageType__Output as _linuxcnc_v1_NmlMessageType__Output } from '../../linuxcnc/v1/NmlMessageType';
 import type { Long } from '@grpc/proto-loader';

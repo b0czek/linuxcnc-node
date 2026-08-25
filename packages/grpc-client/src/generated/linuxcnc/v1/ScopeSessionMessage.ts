@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/scope.proto
 
 import type { ScopeAcquire as _linuxcnc_v1_ScopeAcquire, ScopeAcquire__Output as _linuxcnc_v1_ScopeAcquire__Output } from '../../linuxcnc/v1/ScopeAcquire';
 import type { ScopeConfigure as _linuxcnc_v1_ScopeConfigure, ScopeConfigure__Output as _linuxcnc_v1_ScopeConfigure__Output } from '../../linuxcnc/v1/ScopeConfigure';

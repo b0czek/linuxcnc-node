@@ -1,7 +1,0 @@
-syntax = "proto3";
-
-package google.protobuf;
-
-// Local copy of the standard empty message keeps linuxcnc.v1 generation
-// self-contained; it is wire-compatible with google/protobuf/empty.proto.
-message Empty {}

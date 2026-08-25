@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/program.proto
 
 
 export interface DeleteWorkspaceRequest {

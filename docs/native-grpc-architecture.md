@@ -6,7 +6,8 @@ serves the versioned `linuxcnc.v1` API. It owns the NML command, status, and
 error channels, the rs274 interpreter, HAL access, position history, scope
 shared memory, and uploaded-program workspaces.
 
-The protobuf files under `proto/linuxcnc/v1` are the wire source of truth.
+The protobuf files under `proto/linuxcnc/v1` are the wire source of truth, and
+`linuxcnc.proto` is the import-only aggregate entrypoint.
 Wire messages use typed fields and oneofs: the protocol does not use JSON,
 `google.protobuf.Any`, or string property paths. Removed fields are reserved,
 field numbers are never reused, and domain enum numbers remain equal to the

@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/hal.proto
 
 export const HalPinDirection = {
   HAL_PIN_DIRECTION_UNSPECIFIED: 0,

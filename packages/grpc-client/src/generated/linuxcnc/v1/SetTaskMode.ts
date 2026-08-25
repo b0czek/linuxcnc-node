@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/machine.proto
 
 import type { TaskMode as _linuxcnc_v1_TaskMode, TaskMode__Output as _linuxcnc_v1_TaskMode__Output } from '../../linuxcnc/v1/TaskMode';
 

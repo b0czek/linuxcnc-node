@@ -1,0 +1,137 @@
+syntax = "proto3";
+
+package linuxcnc.v1;
+
+import "google/protobuf/empty.proto";
+import "linuxcnc/v1/common.proto";
+
+enum OperationType {
+  OPERATION_TYPE_UNSPECIFIED = 0;
+  OPERATION_TYPE_TRAVERSE = 1;
+  OPERATION_TYPE_FEED = 2;
+  OPERATION_TYPE_ARC = 3;
+  OPERATION_TYPE_PROBE = 4;
+  OPERATION_TYPE_RIGID_TAP = 5;
+  OPERATION_TYPE_DWELL = 6;
+  OPERATION_TYPE_NURBS_G5 = 7;
+  OPERATION_TYPE_NURBS_G6 = 8;
+  OPERATION_TYPE_UNITS_CHANGE = 10;
+  OPERATION_TYPE_PLANE_CHANGE = 11;
+  OPERATION_TYPE_G5X_OFFSET = 12;
+  OPERATION_TYPE_G92_OFFSET = 13;
+  OPERATION_TYPE_XY_ROTATION = 14;
+  OPERATION_TYPE_TOOL_OFFSET = 15;
+  OPERATION_TYPE_TOOL_CHANGE = 16;
+  OPERATION_TYPE_FEED_RATE_CHANGE = 17;
+}
+
+enum Plane {
+  PLANE_UNSPECIFIED = 0;
+  PLANE_XY = 1;
+  PLANE_YZ = 2;
+  PLANE_XZ = 3;
+  PLANE_UV = 4;
+  PLANE_VW = 5;
+  PLANE_UW = 6;
+}
+
+message CreateWorkspaceRequest { uint64 ttl_seconds = 1; }
+
+message CreateWorkspaceResponse { string workspace_id = 1; uint64 expires_at_unix_ms = 2; }
+
+message UploadWorkspaceRequest {
+  string workspace_id = 1;
+  oneof content {
+    FileChunk file = 2;
+    bool finish = 3;
+  }
+}
+
+message FileChunk {
+  string relative_path = 1;
+  bytes data = 2;
+  bool eof = 3;
+}
+
+message UploadWorkspaceResponse { uint64 bytes_written = 1; repeated string files = 2; }
+
+message DeleteWorkspaceRequest { string workspace_id = 1; }
+
+message ParseProgramRequest { ProgramHandle entry = 1; }
+
+message ParseProgress { uint64 bytes_read = 1; uint64 total_bytes = 2; uint32 percent = 3; uint64 operation_count = 4; }
+
+message Extents { Position min = 1; Position max = 2; }
+
+message GCodeOperation {
+  OperationType type = 1;
+  int32 line_number = 2;
+  Position pos = 3;
+  oneof data {
+    ArcData arc = 4;
+    ProbeData probe = 5;
+    RigidTapData rigid_tap = 6;
+    DwellData dwell = 7;
+    NurbsG5Data nurbs_g5 = 8;
+    NurbsG6Data nurbs_g6 = 9;
+    UnitsChangeData units_change = 10;
+    PlaneChangeData plane_change = 11;
+    G5xOffsetData g5x_offset = 12;
+    OffsetData g92_offset = 13;
+    RotationData xy_rotation = 14;
+    OffsetData tool_offset = 15;
+    ToolChangeData tool_change = 16;
+    FeedRateData feed_rate_change = 17;
+  }
+}
+
+message ArcData { Plane plane = 1; double center_first = 2; double center_second = 3; double rotation = 4; double axis_end_point = 5; }
+
+message ProbeData {}
+
+message RigidTapData { Position pos = 1; double scale = 2; }
+
+message DwellData { double duration = 1; Plane plane = 2; }
+
+message NurbsG5Data { Plane plane = 1; int32 order = 2; repeated ControlPointG5 control_points = 3; }
+
+message ControlPointG5 { double x = 1; double y = 2; double weight = 3; }
+
+message NurbsG6Data { Plane plane = 1; int32 order = 2; repeated ControlPointG6 control_points = 3; }
+
+message ControlPointG6 { double x = 1; double y = 2; double r = 3; double k = 4; }
+
+message UnitsChangeData { ProgramUnits units = 1; }
+
+message PlaneChangeData { Plane plane = 1; }
+
+message G5xOffsetData { int32 origin = 1; Position offset = 2; }
+
+message OffsetData { Position offset = 1; }
+
+message RotationData { double rotation = 1; }
+
+message ToolChangeData { int32 tool_number = 1; ToolEntry tool = 2; }
+
+message FeedRateData { double feed_rate = 1; }
+
+message ParseBatch { repeated GCodeOperation operations = 1; }
+
+message ParseSummary { Extents extents = 1; uint64 operation_count = 2; }
+
+message ParseProgramEvent {
+  oneof event {
+    ParseProgress progress = 1;
+    ParseBatch batch = 2;
+    ParseSummary summary = 3;
+    LinuxCNCError error = 4;
+  }
+}
+
+service ProgramService {
+  rpc CreateWorkspace(CreateWorkspaceRequest) returns (CreateWorkspaceResponse);
+  rpc UploadWorkspace(stream UploadWorkspaceRequest) returns (UploadWorkspaceResponse);
+  rpc DeleteWorkspace(DeleteWorkspaceRequest) returns (google.protobuf.Empty);
+  rpc ParseProgram(ParseProgramRequest) returns (stream ParseProgramEvent);
+}
+

@@ -1,4 +1,4 @@
-/** Generated from proto/linuxcnc/v1/linuxcnc.proto. Do not edit manually. */
+/** Generated from the proto/linuxcnc/v1 schema set. Do not edit manually. */
 
 export enum TaskMode {
   MANUAL = 1,

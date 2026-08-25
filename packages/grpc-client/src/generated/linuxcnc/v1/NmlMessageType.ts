@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/common.proto
 
 export const NmlMessageType = {
   NML_MESSAGE_TYPE_UNSPECIFIED: 0,

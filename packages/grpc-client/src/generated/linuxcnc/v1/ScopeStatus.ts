@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/scope.proto
 
 import type { ScopeRuntimeState as _linuxcnc_v1_ScopeRuntimeState, ScopeRuntimeState__Output as _linuxcnc_v1_ScopeRuntimeState__Output } from '../../linuxcnc/v1/ScopeRuntimeState';
 import type { Long } from '@grpc/proto-loader';

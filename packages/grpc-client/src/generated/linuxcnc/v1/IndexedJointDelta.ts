@@ -1,9 +1,9 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/machine.proto
 
 import type { JointStat as _linuxcnc_v1_JointStat, JointStat__Output as _linuxcnc_v1_JointStat__Output } from '../../linuxcnc/v1/JointStat';
 
 /**
- * Status deltas are typed and indexed.  There is deliberately no property
+ * Status deltas are typed and indexed. There is deliberately no property
  * path, JSON, Any, or generic map in this contract.
  */
 export interface IndexedJointDelta {
@@ -12,7 +12,7 @@ export interface IndexedJointDelta {
 }
 
 /**
- * Status deltas are typed and indexed.  There is deliberately no property
+ * Status deltas are typed and indexed. There is deliberately no property
  * path, JSON, Any, or generic map in this contract.
  */
 export interface IndexedJointDelta__Output {

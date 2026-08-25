@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/scope.proto
 
 export const ScopeRunMode = {
   SCOPE_RUN_MODE_UNSPECIFIED: 0,

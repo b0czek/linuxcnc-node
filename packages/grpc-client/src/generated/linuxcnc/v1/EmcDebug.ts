@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/machine.proto
 
 export const EmcDebug = {
   EMC_DEBUG_UNSPECIFIED: 0,

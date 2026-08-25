@@ -6,10 +6,14 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "../../..");
-const protoPath = join(root, "proto/linuxcnc/v1/linuxcnc.proto");
+const protoDirectory = join(root, "proto/linuxcnc/v1");
+const protoFiles = ["common.proto", "machine.proto", "program.proto", "hal.proto", "scope.proto"];
+const protoPath = join(protoDirectory, "linuxcnc.proto");
 const generatedPath = join(here, "../src/generated/enums.ts");
 const generatedDomainPath = join(here, "../src/generated/domain.ts");
-const proto = readFileSync(protoPath, "utf8");
+const proto = protoFiles
+  .map((file) => readFileSync(join(protoDirectory, file), "utf8"))
+  .join("\n");
 const generated = readFileSync(generatedPath, "utf8");
 
 // Regenerate into an isolated temporary directory and compare bytes. This catches

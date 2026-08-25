@@ -49,6 +49,18 @@ try {
   mkdirSync(join(customRoot, "linuxcnc/v1"), { recursive: true });
   mkdirSync(join(customRoot, "google/protobuf"), { recursive: true });
   mkdirSync(join(customRoot, "grpc/health/v1"), { recursive: true });
+  for (const file of [
+    "common.proto",
+    "machine.proto",
+    "program.proto",
+    "hal.proto",
+    "scope.proto",
+  ]) {
+    copyFileSync(
+      join(import.meta.dirname, "../proto/linuxcnc/v1", file),
+      join(customRoot, "linuxcnc/v1", file),
+    );
+  }
   copyFileSync(
     join(import.meta.dirname, "../proto/linuxcnc/v1/linuxcnc.proto"),
     join(customRoot, "linuxcnc/v1/custom-machine.proto"),
@@ -79,6 +91,7 @@ const packageDefinition = protoLoader.loadSync(
     join(schemaRoot, "grpc/health/v1/health.proto"),
   ],
   {
+    includeDirs: [schemaRoot],
     keepCase: false,
     longs: String,
     enums: Number,

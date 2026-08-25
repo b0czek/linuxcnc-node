@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/hal.proto
 
 import type { HalComponentKind as _linuxcnc_v1_HalComponentKind, HalComponentKind__Output as _linuxcnc_v1_HalComponentKind__Output } from '../../linuxcnc/v1/HalComponentKind';
 

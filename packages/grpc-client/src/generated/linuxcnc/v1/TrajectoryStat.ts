@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/machine.proto
 
 import type { AxisName as _linuxcnc_v1_AxisName, AxisName__Output as _linuxcnc_v1_AxisName__Output } from '../../linuxcnc/v1/AxisName';
 import type { TrajMode as _linuxcnc_v1_TrajMode, TrajMode__Output as _linuxcnc_v1_TrajMode__Output } from '../../linuxcnc/v1/TrajMode';

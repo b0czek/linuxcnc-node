@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/machine.proto
 
 import type { JointType as _linuxcnc_v1_JointType, JointType__Output as _linuxcnc_v1_JointType__Output } from '../../linuxcnc/v1/JointType';
 

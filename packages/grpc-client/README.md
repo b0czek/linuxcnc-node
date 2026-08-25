@@ -6,7 +6,8 @@ The package deliberately has no EventEmitter, HAL object model, property
 watchers, or transport-layer helper abstractions. Use the raw generated clients directly
 and map their wire messages to local domain models at the application boundary.
 
-The checked-in source is generated from `proto/linuxcnc/v1/linuxcnc.proto`.
+The checked-in source is generated from the schema set in `proto/linuxcnc/v1`;
+`linuxcnc.proto` is the aggregate entrypoint.
 Run the repository `check:generated` command in CI to verify the schema and
 generated enum values remain synchronized.
 

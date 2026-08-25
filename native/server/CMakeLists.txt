@@ -190,15 +190,41 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
     endif()
     set(LINUXCNC_GRPC_PROTO_ROOT "${LINUXCNC_GRPC_REPO_ROOT}/proto" CACHE PATH
         "Root containing versioned LinuxCNC protobuf files")
-    set(LINUXCNC_GRPC_PROTO_FILE "${LINUXCNC_GRPC_PROTO_ROOT}/linuxcnc/v1/linuxcnc.proto")
+    set(LINUXCNC_GRPC_PROTO_FILES
+        "${LINUXCNC_GRPC_PROTO_ROOT}/linuxcnc/v1/common.proto"
+        "${LINUXCNC_GRPC_PROTO_ROOT}/linuxcnc/v1/machine.proto"
+        "${LINUXCNC_GRPC_PROTO_ROOT}/linuxcnc/v1/program.proto"
+        "${LINUXCNC_GRPC_PROTO_ROOT}/linuxcnc/v1/hal.proto"
+        "${LINUXCNC_GRPC_PROTO_ROOT}/linuxcnc/v1/scope.proto"
+        "${LINUXCNC_GRPC_PROTO_ROOT}/linuxcnc/v1/linuxcnc.proto")
     set(LINUXCNC_GRPC_HEALTH_PROTO_FILE "${LINUXCNC_GRPC_PROTO_ROOT}/grpc/health/v1/health.proto")
     set(LINUXCNC_GRPC_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
     set(LINUXCNC_GRPC_GENERATED_CC
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/common.pb.cc"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/common.grpc.pb.cc"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/machine.pb.cc"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/machine.grpc.pb.cc"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/program.pb.cc"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/program.grpc.pb.cc"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/hal.pb.cc"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/hal.grpc.pb.cc"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/scope.pb.cc"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/scope.grpc.pb.cc"
         "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/linuxcnc.pb.cc"
         "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/linuxcnc.grpc.pb.cc"
         "${LINUXCNC_GRPC_GENERATED_DIR}/grpc/health/v1/health.pb.cc"
         "${LINUXCNC_GRPC_GENERATED_DIR}/grpc/health/v1/health.grpc.pb.cc")
     set(LINUXCNC_GRPC_GENERATED_HEADERS
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/common.pb.h"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/common.grpc.pb.h"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/machine.pb.h"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/machine.grpc.pb.h"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/program.pb.h"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/program.grpc.pb.h"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/hal.pb.h"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/hal.grpc.pb.h"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/scope.pb.h"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/scope.grpc.pb.h"
         "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/linuxcnc.pb.h"
         "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/linuxcnc.grpc.pb.h"
         "${LINUXCNC_GRPC_GENERATED_DIR}/grpc/health/v1/health.pb.h"
@@ -212,9 +238,9 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
             --cpp_out=${LINUXCNC_GRPC_GENERATED_DIR}
             --grpc_out=${LINUXCNC_GRPC_GENERATED_DIR}
             --plugin=protoc-gen-grpc=${LINUXCNC_GRPC_CPP_PLUGIN}
-            "${LINUXCNC_GRPC_PROTO_FILE}"
+            ${LINUXCNC_GRPC_PROTO_FILES}
             "${LINUXCNC_GRPC_HEALTH_PROTO_FILE}"
-        DEPENDS "${LINUXCNC_GRPC_PROTO_FILE}" "${LINUXCNC_GRPC_HEALTH_PROTO_FILE}"
+        DEPENDS ${LINUXCNC_GRPC_PROTO_FILES} "${LINUXCNC_GRPC_HEALTH_PROTO_FILE}"
         VERBATIM)
     add_library(linuxcnc-grpc-proto STATIC ${LINUXCNC_GRPC_GENERATED_CC})
     target_include_directories(linuxcnc-grpc-proto PUBLIC "${LINUXCNC_GRPC_GENERATED_DIR}")

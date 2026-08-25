@@ -5,11 +5,19 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "../../..");
 const destinationRoot = join(here, "../proto");
+const linuxCncSchemas = [
+  "common.proto",
+  "machine.proto",
+  "program.proto",
+  "hal.proto",
+  "scope.proto",
+  "linuxcnc.proto",
+];
 const files = [
-  [
-    join(root, "proto/linuxcnc/v1/linuxcnc.proto"),
-    join(destinationRoot, "linuxcnc/v1/linuxcnc.proto"),
-  ],
+  ...linuxCncSchemas.map((file) => [
+    join(root, "proto/linuxcnc/v1", file),
+    join(destinationRoot, "linuxcnc/v1", file),
+  ]),
   [
     join(root, "proto/google/protobuf/empty.proto"),
     join(destinationRoot, "google/protobuf/empty.proto"),

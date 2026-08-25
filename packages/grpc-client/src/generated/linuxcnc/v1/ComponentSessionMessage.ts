@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/hal.proto
 
 import type { ComponentOpen as _linuxcnc_v1_ComponentOpen, ComponentOpen__Output as _linuxcnc_v1_ComponentOpen__Output } from '../../linuxcnc/v1/ComponentOpen';
 import type { ComponentPin as _linuxcnc_v1_ComponentPin, ComponentPin__Output as _linuxcnc_v1_ComponentPin__Output } from '../../linuxcnc/v1/ComponentPin';

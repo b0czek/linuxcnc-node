@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/hal.proto
 
 import type { ComponentValue as _linuxcnc_v1_ComponentValue, ComponentValue__Output as _linuxcnc_v1_ComponentValue__Output } from '../../linuxcnc/v1/ComponentValue';
 import type { Long } from '@grpc/proto-loader';

@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <optional>
 
-#include "linuxcnc/v1/linuxcnc.grpc.pb.h"
+#include "linuxcnc/v1/machine.grpc.pb.h"
 #include "linuxcnc_grpc/nml_adapter.hpp"
 
 namespace linuxcnc::server::detail {

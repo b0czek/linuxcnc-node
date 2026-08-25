@@ -2,7 +2,7 @@
 
 #include <optional>
 
-#include "linuxcnc/v1/linuxcnc.pb.h"
+#include "linuxcnc/v1/hal.pb.h"
 #include "linuxcnc_grpc/hal_adapter.hpp"
 
 namespace linuxcnc::server {

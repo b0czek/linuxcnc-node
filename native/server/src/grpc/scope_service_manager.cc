@@ -7,7 +7,7 @@
 #include <utility>
 
 #include "grpc/scope_service_impl.hpp"
-#include "linuxcnc/v1/linuxcnc.grpc.pb.h"
+#include "linuxcnc/v1/scope.grpc.pb.h"
 #include "linuxcnc_grpc/callback_runtime.hpp"
 #include "linuxcnc_grpc/daemon_config.hpp"
 #include "linuxcnc_grpc/scope_manager.hpp"

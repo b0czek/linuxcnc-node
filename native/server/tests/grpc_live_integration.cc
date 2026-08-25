@@ -18,7 +18,10 @@
 #include <utility>
 #include <vector>
 
-#include "linuxcnc/v1/linuxcnc.grpc.pb.h"
+#include "linuxcnc/v1/hal.grpc.pb.h"
+#include "linuxcnc/v1/machine.grpc.pb.h"
+#include "linuxcnc/v1/program.grpc.pb.h"
+#include "linuxcnc/v1/scope.grpc.pb.h"
 
 namespace {
 

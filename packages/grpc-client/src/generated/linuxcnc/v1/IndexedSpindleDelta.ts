@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/machine.proto
 
 import type { SpindleStat as _linuxcnc_v1_SpindleStat, SpindleStat__Output as _linuxcnc_v1_SpindleStat__Output } from '../../linuxcnc/v1/SpindleStat';
 

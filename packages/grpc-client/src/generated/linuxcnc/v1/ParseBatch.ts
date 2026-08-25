@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/program.proto
 
 import type { GCodeOperation as _linuxcnc_v1_GCodeOperation, GCodeOperation__Output as _linuxcnc_v1_GCodeOperation__Output } from '../../linuxcnc/v1/GCodeOperation';
 

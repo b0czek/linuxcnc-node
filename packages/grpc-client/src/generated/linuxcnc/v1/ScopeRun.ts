@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/scope.proto
 
 import type { ScopeRunMode as _linuxcnc_v1_ScopeRunMode, ScopeRunMode__Output as _linuxcnc_v1_ScopeRunMode__Output } from '../../linuxcnc/v1/ScopeRunMode';
 

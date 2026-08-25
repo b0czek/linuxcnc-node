@@ -1,4 +1,4 @@
-// Original file: proto/linuxcnc/v1/linuxcnc.proto
+// Original file: proto/linuxcnc/v1/hal.proto
 
 export const HalComponentKind = {
   HAL_COMPONENT_KIND_UNSPECIFIED: 0,
