@@ -41,7 +41,7 @@ index 0000000000..0648d4bda6
 +    CANON_MOTION_MODE motion_mode = CANON_CONTINUOUS;
 +    double motion_tolerance = 0.1;
 +    double naivecam_tolerance = 0.1;
-+    double feed_rate = 0.0;
++    double feed_rate = 1.0;
 +    double traverse_rate = 0.0;
 +    double spindle_speed[EMCMOT_MAX_SPINDLES]{};
 +    CANON_DIRECTION spindle_direction[EMCMOT_MAX_SPINDLES]{};
