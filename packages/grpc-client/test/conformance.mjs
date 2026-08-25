@@ -84,11 +84,24 @@ const packageDefinition = protoLoader.loadSync(
     enums: Number,
     bytes: Buffer,
     oneofs: true,
+    defaults: true,
   },
 );
 const loaded = grpc.loadPackageDefinition(packageDefinition);
 const scalar = loaded.linuxcnc.v1.HalScalar;
 const statDelta = loaded.linuxcnc.v1.LinuxCNCStatDelta;
+const emptyDelta = statDelta.deserialize(Buffer.alloc(0));
+assert.equal(emptyDelta.echoSerialNumber, undefined);
+assert.equal(emptyDelta.debug, undefined);
+const trajectory = loaded.linuxcnc.v1.TrajectoryStat.deserialize(
+  Buffer.alloc(0),
+);
+assert.equal(trajectory.inPosition, false);
+assert.equal(trajectory.queue, 0);
+const indexedJoint = loaded.linuxcnc.v1.IndexedJointDelta.deserialize(
+  Buffer.alloc(0),
+);
+assert.equal(indexedJoint.index, 0);
 // A source observation is atomic: several independently present fields,
 // including valid zero values, must coexist in one sparse delta.
 const atomicDeltaGolden = Buffer.from("0807100018014000", "hex");

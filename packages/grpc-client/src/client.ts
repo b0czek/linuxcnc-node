@@ -47,7 +47,7 @@ export async function createLinuxCncClients(
       enums: Number,
       bytes: Buffer,
       oneofs: true,
-      defaults: false,
+      defaults: true,
     },
   );
   const loaded = grpc.loadPackageDefinition(

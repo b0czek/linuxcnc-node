@@ -125,7 +125,7 @@ void command_cancellation_and_acceptance_test() {
       [&](CommandContext& context) {
         cancellation_seen = context.cancelled && context.cancelled();
         action.arrive();
-        context.mark_accepted();
+        context.mark_accepted(101);
         action.wait_until_open();
       },
       [] { return true; });
@@ -135,6 +135,7 @@ void command_cancellation_and_acceptance_test() {
   assert(ticket.wait_for(CommandWaitPolicy::Accepted, std::chrono::seconds(1),
                          &result));
   assert(result.state == CommandState::Accepted);
+  assert(result.accepted_sequence == 101);
   assert(cancellation_seen.load());
   assert(!ticket.wait_for(CommandWaitPolicy::Completed,
                           std::chrono::milliseconds(1), &result));
@@ -160,7 +161,7 @@ void command_cancellation_before_worker_start_test() {
   auto queued = coordinator.submit_with_context(
       [&](CommandContext& context) {
         observed = context.cancelled && context.cancelled();
-        context.mark_accepted();
+        context.mark_accepted(202);
       },
       [&] { return cancelled.load(); });
   blocker.open();

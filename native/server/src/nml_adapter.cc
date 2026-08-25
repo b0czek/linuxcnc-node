@@ -890,7 +890,7 @@ CommandTicket NmlAdapter::submit(
           }
         }
         if (direct_tool_mutation) {
-          context.mark_accepted();
+          context.mark_accepted(0);
           if (command.on_completed) command.on_completed();
           return;
         }
@@ -903,7 +903,7 @@ CommandTicket NmlAdapter::submit(
           }
         }
         const int serial = command_message->serial_number;
-        context.mark_accepted();
+        context.mark_accepted(static_cast<std::uint64_t>(serial));
         impl_->wait_for_serial(serial);
         if (command.on_completed) command.on_completed();
       },

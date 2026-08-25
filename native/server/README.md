@@ -72,8 +72,10 @@ kind, 16-byte entry stride, configuration revision, sequence, and entry count.
 Each entry contains a `uint32` slot, a `HalType` byte, and an eight-byte typed
 payload. Type zero means unavailable. Multi-byte fields are little-endian;
 `s64` and `u64` must be decoded as integers rather than JavaScript numbers.
-Slow consumers receive coalesced latest-state deltas rather than every sampled
-transition. Client WebSocket messages are forbidden on both telemetry routes.
+Position history keeps its acquisition cadence while coalescing mutations into
+50 ms delivery windows for viewers. Slow consumers receive coalesced
+latest-state deltas rather than every sampled transition. Client WebSocket
+messages are forbidden on both telemetry routes.
 
 The HAL service uses the pinned LinuxCNC HAL repository for topology, exact
 scalar reads/writes, signals, and session-owned components. The scope service

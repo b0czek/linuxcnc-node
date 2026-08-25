@@ -212,7 +212,7 @@ void command_coordinator_test() {
   auto ticket = coordinator.submit_with_context([&](CommandContext& context) {
     started = true;
     while (!allow_accept.load()) std::this_thread::yield();
-    context.mark_accepted();
+    context.mark_accepted(42);
   });
   while (!started.load()) std::this_thread::yield();
   CommandResult result;
@@ -223,6 +223,7 @@ void command_coordinator_test() {
                          &result));
   assert(result.state == CommandState::Accepted ||
          result.state == CommandState::Completed);
+  assert(result.accepted_sequence == 42);
   assert(ticket.wait_for(std::chrono::seconds(1), &result));
   assert(result.state == CommandState::Completed);
   std::atomic<int> observed{0};

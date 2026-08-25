@@ -539,8 +539,8 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
           reactor.pending_delta_.reset();
           reactor.writing_ = true;
           reactor.StartWrite(&reactor.response_);
-        } else if (reactor.read_paused_) {
-          reactor.read_paused_ = false;
+        } else if (reactor.resume_read_after_write_) {
+          reactor.resume_read_after_write_ = false;
           reactor.StartRead(&reactor.request_);
         }
       });
@@ -580,7 +580,6 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
       }
       auto request = request_;
       request_.Clear();
-      read_paused_ = true;
       const auto state = state_;
       const std::weak_ptr<LifetimeGate<ComponentReactor>> weak = gate_;
       if (!service_.worker_.submit([service = &service_, state, weak,
@@ -604,10 +603,9 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
                   return;
                 }
                 if (response) {
-                  reactor.read_paused_ = true;
+                  reactor.resume_read_after_write_ = true;
                   reactor.offer_delta(std::move(*response));
                 } else {
-                  reactor.read_paused_ = false;
                   reactor.StartRead(&reactor.request_);
                 }
               });
@@ -639,7 +637,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     }
     HalServiceImpl& service_;
     bool admitted_ = false, stream_admitted_ = false;
-    bool writing_ = false, read_paused_ = false;
+    bool writing_ = false, resume_read_after_write_ = false;
     ComponentSessionMessage request_, response_;
     std::optional<ComponentSessionMessage> pending_delta_;
     std::shared_ptr<ComponentState> state_;

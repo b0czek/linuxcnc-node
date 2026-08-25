@@ -26,15 +26,20 @@ enum class CommandState {
 };
 
 struct CommandResult {
+  // Internal sequence assigned when work enters the daemon coordinator.
   std::uint64_t sequence = 0;
+  // Identifier assigned by the command channel when it accepts the command.
+  // Zero means the action did not produce a channel command.
+  std::uint64_t accepted_sequence = 0;
   CommandState state = CommandState::Queued;
   std::string error;
 };
 
 struct CommandContext {
   // NML adapters call this only after the command has been accepted by the
-  // command channel. An RPC cancellation never invokes it or removes work.
-  std::function<void()> mark_accepted;
+  // command channel, passing the channel's identifier. An RPC cancellation
+  // never invokes it or removes work.
+  std::function<void(std::uint64_t)> mark_accepted;
   std::function<bool()> cancelled;
 };
 
@@ -106,7 +111,8 @@ class CommandCoordinator {
 
   void run();
   static void transition(const std::shared_ptr<CommandTicket::State>& state,
-                         CommandState result, std::string error = {});
+                         CommandState result, std::string error = {},
+                         std::uint64_t accepted_sequence = 0);
 
   const std::size_t capacity_;
   mutable std::mutex mutex_;

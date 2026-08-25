@@ -571,6 +571,8 @@ int main(int argc, char** argv) {
   const auto changed =
       wait_for_optional_stop(machine.get(), target_optional_stop);
   assert(changed.status().task().optional_stop_state() == target_optional_stop);
+  assert(changed.status().echo_serial_number() ==
+         static_cast<std::int64_t>(completed.command_sequence()));
 
   // The first event is a typed replay from the baseline sequence. This
   // verifies that a status change made through the command queue is visible

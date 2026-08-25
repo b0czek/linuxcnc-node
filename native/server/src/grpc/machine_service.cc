@@ -113,7 +113,7 @@ class CommandTaskReactor final : public ::grpc::ServerUnaryReactor {
  private:
   void complete(const CommandResult& result) {
     gate_->finish([&](CommandTaskReactor& reactor) {
-      reactor.response_->set_command_sequence(result.sequence);
+      reactor.response_->set_command_sequence(result.accepted_sequence);
       if (result.state == CommandState::Failed) {
         reactor.response_->set_status(RCS_STATUS_ERROR);
         reactor.response_->mutable_error()->set_type(

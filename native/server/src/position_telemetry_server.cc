@@ -3,9 +3,11 @@
 #include <atomic>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/post.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
 #include <boost/beast/websocket.hpp>
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -30,6 +32,8 @@ namespace websocket = beast::websocket;
 using tcp = asio::ip::tcp;
 using PlainStream = beast::tcp_stream;
 
+constexpr auto kPositionDeliveryPeriod = std::chrono::milliseconds(50);
+
 std::pair<std::string, std::string> split_endpoint(
     const std::string& endpoint) {
   const auto separator = endpoint.rfind(':');
@@ -49,6 +53,7 @@ class Session final : public std::enable_shared_from_this<Session> {
           std::shared_ptr<HalValueTelemetry> hal_telemetry,
           std::function<void()> release)
       : websocket_(std::move(stream)),
+        position_delivery_timer_(websocket_.get_executor()),
         telemetry_(std::move(telemetry)),
         hal_telemetry_(std::move(hal_telemetry)),
         release_(std::move(release)) {}
@@ -87,17 +92,20 @@ class Session final : public std::enable_shared_from_this<Session> {
   void on_accept(beast::error_code error) {
     if (error) return fail();
     const std::weak_ptr<Session> weak = this->shared_from_this();
-    const auto callback = [weak](const std::uint64_t&) {
-      if (const auto self = weak.lock()) {
-        asio::post(self->websocket_.get_executor(), [weak] {
-          if (const auto session = weak.lock()) session->wake();
-        });
-      }
-    };
     if (mode_ == Mode::Position) {
-      position_subscription_ = telemetry_->subscribe(callback);
+      position_subscription_ = telemetry_->subscribe(
+          [weak](const std::uint64_t&) {
+            if (const auto self = weak.lock()) self->queue_position_wake();
+          });
       send_next(true);
     } else {
+      const auto callback = [weak](const std::uint64_t&) {
+        if (const auto self = weak.lock()) {
+          asio::post(self->websocket_.get_executor(), [weak] {
+            if (const auto session = weak.lock()) session->wake_hal();
+          });
+        }
+      };
       hal_subscription_ =
           hal_telemetry_->subscribe(hal_subscription_id_, callback);
       send_hal();
@@ -105,16 +113,43 @@ class Session final : public std::enable_shared_from_this<Session> {
     read_application_data();
   }
 
-  void wake() {
+  void queue_position_wake() {
+    if (position_wake_pending_.exchange(true)) return;
+    const std::weak_ptr<Session> weak = this->shared_from_this();
+    asio::post(websocket_.get_executor(), [weak] {
+      if (const auto session = weak.lock())
+        session->schedule_position_delivery();
+    });
+  }
+
+  void schedule_position_delivery() {
+    if (closed_ || closing_ || position_delivery_scheduled_) return;
+    position_delivery_scheduled_ = true;
+    position_delivery_timer_.expires_after(kPositionDeliveryPeriod);
+    position_delivery_timer_.async_wait(
+        beast::bind_front_handler(&Session::on_position_delivery,
+                                  this->shared_from_this()));
+  }
+
+  void on_position_delivery(beast::error_code error) {
+    position_delivery_scheduled_ = false;
+    if (error == asio::error::operation_aborted || closed_ || closing_) return;
+    if (error) return fail();
+    if (writing_) {
+      schedule_position_delivery();
+      return;
+    }
+    position_wake_pending_ = false;
+    send_next(false);
+  }
+
+  void wake_hal() {
     if (closed_) return;
     if (writing_) {
       dirty_ = true;
       return;
     }
-    if (mode_ == Mode::Position)
-      send_next(false);
-    else
-      send_hal();
+    send_hal();
   }
 
   void send_next(bool initial) {
@@ -174,10 +209,7 @@ class Session final : public std::enable_shared_from_this<Session> {
     if (closing_) return close_policy_violation();
     if (dirty_) {
       dirty_ = false;
-      if (mode_ == Mode::Position)
-        send_next(false);
-      else
-        send_hal();
+      send_hal();
     }
   }
 
@@ -204,6 +236,7 @@ class Session final : public std::enable_shared_from_this<Session> {
   void fail() {
     if (closed_) return;
     closed_ = true;
+    position_delivery_timer_.cancel();
     position_subscription_.reset();
     hal_subscription_.reset();
     if (!hal_subscription_id_.empty()) {
@@ -224,6 +257,7 @@ class Session final : public std::enable_shared_from_this<Session> {
   }
 
   websocket::stream<PlainStream> websocket_;
+  asio::steady_timer position_delivery_timer_;
   std::shared_ptr<PositionTelemetry> telemetry_;
   std::shared_ptr<HalValueTelemetry> hal_telemetry_;
   PositionTelemetry::Subscription position_subscription_;
@@ -240,8 +274,10 @@ class Session final : public std::enable_shared_from_this<Session> {
   std::uint64_t generation_ = 0;
   std::uint64_t write_cursor_ = 0;
   std::uint64_t write_generation_ = 0;
+  std::atomic<bool> position_wake_pending_{false};
   bool writing_ = false;
   bool dirty_ = false;
+  bool position_delivery_scheduled_ = false;
   bool closing_ = false;
   bool closed_ = false;
   enum class Mode { Position, Hal } mode_ = Mode::Position;

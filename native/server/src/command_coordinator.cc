@@ -140,9 +140,10 @@ void CommandCoordinator::run() {
       queue_.pop_front();
     }
 
-    const auto mark_accepted = [state = item.state] {
-      transition(state, CommandState::Accepted);
-    };
+    const auto mark_accepted =
+        [state = item.state](std::uint64_t accepted_sequence) {
+          transition(state, CommandState::Accepted, {}, accepted_sequence);
+        };
 
     try {
       if (item.context_action) {
@@ -150,7 +151,7 @@ void CommandCoordinator::run() {
         item.context_action(context);
       } else {
         item.action();
-        mark_accepted();
+        mark_accepted(0);
       }
       transition(item.state, CommandState::Completed);
     } catch (const std::exception& error) {
@@ -164,7 +165,7 @@ void CommandCoordinator::run() {
 
 void CommandCoordinator::transition(
     const std::shared_ptr<CommandTicket::State>& state, CommandState result,
-    std::string error) {
+    std::string error, std::uint64_t accepted_sequence) {
   std::vector<CommandTicket::Observer> ready;
   CommandResult snapshot;
   {
@@ -173,6 +174,8 @@ void CommandCoordinator::transition(
         state->result.state != CommandState::Queued) {
       return;
     }
+    if (result == CommandState::Accepted)
+      state->result.accepted_sequence = accepted_sequence;
     state->result.state = result;
     state->result.error = std::move(error);
     snapshot = state->result;
