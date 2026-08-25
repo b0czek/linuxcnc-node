@@ -667,27 +667,27 @@ class MachineServiceImpl final : public MachineCallbackBase,
 
     void wake() {
       if (writing_ || gate_->state() != LifetimeGate<StatusReactor>::State::Open) return;
-      const auto history = service_.status_history();
-      if (history.empty()) {
+      auto selection = service_.select_status_history(
+          initial_written_ ? cursor_ : after_, !initial_written_);
+      if (selection.entries.empty()) {
         finish({::grpc::StatusCode::UNAVAILABLE,
                 "LinuxCNC NML status snapshot is unavailable"});
         return;
       }
-      const auto& latest = history.back();
+      auto& latest = selection.entries.back();
       message_.Clear();
       if (!initial_written_) {
-        const auto base = std::find_if(history.begin(), history.end(),
-            [this](const auto& entry) { return entry.sequence == after_; });
-        if (after_ != 0 && base != history.end()) {
+        if (after_ != 0 && selection.anchor_retained) {
           message_.set_sequence(latest.sequence);
           auto* replay = message_.mutable_replay();
           replay->set_from_sequence(after_);
           replay->set_to_sequence(latest.sequence);
-          auto prior = base->snapshot;
-          for (auto entry = std::next(base); entry != history.end(); ++entry) {
-            auto delta = make_status_delta(prior, entry->snapshot, entry->sequence);
+          auto prior = selection.entries.begin();
+          for (auto entry = std::next(prior); entry != selection.entries.end();
+               ++entry, ++prior) {
+            auto delta = make_status_delta(prior->snapshot, entry->snapshot,
+                                           entry->sequence);
             if (delta) *replay->add_deltas() = std::move(*delta);
-            prior = entry->snapshot;
           }
         } else {
           message_.set_sequence(latest.sequence);
@@ -695,9 +695,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
         }
       } else {
         if (latest.sequence == cursor_) return;
-        const bool cursor_retained = std::any_of(history.begin(), history.end(),
-            [this](const auto& entry) { return entry.sequence == cursor_; });
-        if (!cursor_retained) {
+        if (!selection.anchor_retained) {
           message_.set_sequence(latest.sequence);
           fill_status(latest.snapshot, message_.mutable_snapshot());
         } else {
@@ -707,7 +705,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
           *message_.mutable_delta() = std::move(*delta);
         }
       }
-      writing_snapshot_ = latest.snapshot;
+      writing_snapshot_ = std::move(latest.snapshot);
       writing_sequence_ = latest.sequence;
       writing_ = true;
       StartWrite(&message_);
@@ -838,6 +836,11 @@ class MachineServiceImpl final : public MachineCallbackBase,
     NmlStatusSnapshot snapshot;
   };
 
+  struct StatusHistorySelection {
+    bool anchor_retained = false;
+    std::vector<StatusHistoryEntry> entries;
+  };
+
   bool read_status(NmlStatusSnapshot* snapshot, std::uint64_t* sequence) {
     NmlStatusSnapshot fresh;
     if (nml_.poll_status(&fresh)) observe_status(fresh);
@@ -848,9 +851,20 @@ class MachineServiceImpl final : public MachineCallbackBase,
     return true;
   }
 
-  std::vector<StatusHistoryEntry> status_history() const {
+  StatusHistorySelection select_status_history(std::uint64_t anchor,
+                                               bool include_replay) const {
     std::lock_guard lock(status_mutex_);
-    return {history_.begin(), history_.end()};
+    StatusHistorySelection selection;
+    if (history_.empty()) return selection;
+    const auto found = std::find_if(history_.begin(), history_.end(),
+        [anchor](const auto& entry) { return entry.sequence == anchor; });
+    selection.anchor_retained = found != history_.end();
+    if (include_replay && anchor != 0 && selection.anchor_retained) {
+      selection.entries.assign(found, history_.end());
+    } else {
+      selection.entries.push_back(history_.back());
+    }
+    return selection;
   }
 
   void poll_positions() {
