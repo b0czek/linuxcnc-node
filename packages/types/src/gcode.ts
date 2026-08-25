@@ -280,37 +280,3 @@ export interface GCodeParseResult {
   /** Bounding box of all motion operations */
   extents: Extents;
 }
-
-/**
- * Progress information reported during parsing.
- */
-/** @deprecated Progress callback payload from the removed native parser API. */
-export interface ParseProgress {
-  /** Number of bytes read from the file */
-  bytesRead: number;
-  /** Total file size in bytes */
-  totalBytes: number;
-  /** Percentage complete (0-100) */
-  percent: number;
-  /** Number of operations parsed so far */
-  operationCount: number;
-}
-
-/**
- * Options for parsing a G-code file.
- */
-/** @deprecated Native parser options; ProgramService streams ParseProgramEvent. */
-export interface ParseOptions {
-  /** Path to LinuxCNC INI file (required) */
-  iniPath: string;
-  /** Progress callback, called periodically during parsing */
-  onProgress?: (progress: ParseProgress) => void;
-  /**
-   * Target number of progress updates during parsing.
-   * The actual interval is calculated based on file size to achieve
-   * approximately this many updates. Default is 40.
-   * Set to 0 to disable progress callbacks entirely.
-   * @default 40
-   */
-  progressUpdates?: number;
-}

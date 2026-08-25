@@ -822,28 +822,3 @@ export type RecursivePartial<T> = {
       ? RecursivePartial<T[P]>
       : T[P];
 };
-
-// Callback types. These remain as source-compatibility aliases while legacy
-// consumers migrate; gRPC clients expose typed delta messages instead.
-/** @deprecated Eden transport callback; use a typed WatchStatus delta. */
-export type StatPropertyWatchCallback<P extends LinuxCNCStatPaths> = (
-  newValue: GetPropertyType<LinuxCNCStat, P>,
-  oldValue: GetPropertyType<LinuxCNCStat, P> | null,
-  propertyPath: P,
-) => void;
-
-export type ErrorCallback = (error: LinuxCNCError) => void;
-
-/**
- * A single stat change entry with the path and its correctly typed value.
- * This is a discriminated union that maps each path to its proper value type.
- */
-/** @deprecated Eden transport envelope; use LinuxCNCStatDelta from grpc-client. */
-export type StatChange = {
-  [P in LinuxCNCStatPaths]: {
-    /** Dot-separated path to the changed property */
-    path: P;
-    /** New value of the property */
-    value: GetPropertyType<LinuxCNCStat, P>;
-  };
-}[LinuxCNCStatPaths];
