@@ -9,6 +9,7 @@ namespace linuxcnc::server {
 class BoundedExecutor;
 class AdmissionCounter;
 class PositionTelemetry;
+class HalValueTelemetry;
 class ProgramWorkspaceStore;
 struct DaemonConfig;
 
@@ -28,7 +29,8 @@ std::unique_ptr<ManagedGrpcService> make_program_service(
 
 std::unique_ptr<ManagedGrpcService> make_hal_service(
     const DaemonConfig& config, BoundedExecutor& worker,
-    AdmissionCounter& component_admission, AdmissionCounter& stream_admission);
+    AdmissionCounter& component_admission, AdmissionCounter& stream_admission,
+    std::shared_ptr<HalValueTelemetry> telemetry);
 
 std::unique_ptr<ManagedGrpcService> make_scope_service(
     const DaemonConfig& config, BoundedExecutor& worker,

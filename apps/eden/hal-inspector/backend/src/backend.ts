@@ -11,6 +11,7 @@ import type {
 import type {
   Bootstrap,
   HalInspectorProtocol,
+  HalValueSubscriptionDescriptor,
   InspectorErrorCode,
   RpcResult,
   ScopeRunMode,
@@ -41,18 +42,14 @@ let connected = false;
 let startupError = "HAL Inspector is starting";
 let topologyRevision = 0;
 let topology: TopologySnapshot | null = null;
-let subscribed: HalItemRef[] = [];
-let pollIntervalMs = 100;
-let pollTimer: NodeJS.Timeout | undefined;
-let pollInFlight = false;
-let subscriptionGeneration = 0;
+let valueSubscription:
+  | (HalValueSubscriptionDescriptor & { subscriptionId: string })
+  | null = null;
 let initializeTimer: NodeJS.Timeout | undefined;
 let initializeRetryMs = 250;
 let initializing = false;
 let shuttingDown = false;
 let topologyOff: (() => void) | null = null;
-let valueCursor = 0;
-const previousValues = new Map<string, HalValue>();
 let visible = true;
 let scopeExpanded = false;
 let runMode: ScopeRunMode = "stop";
@@ -236,46 +233,6 @@ async function refreshTopology(send = false): Promise<TopologySnapshot> {
   return topology;
 }
 
-async function pollValues(): Promise<void> {
-  if (!client || !visible || subscribed.length === 0 || pollInFlight) return;
-  const activeClient = client;
-  const refs = [...subscribed];
-  const generation = subscriptionGeneration;
-  pollInFlight = true;
-  try {
-    const values = await activeClient.read(refs);
-    if (client !== activeClient || generation !== subscriptionGeneration)
-      return;
-    markConnected();
-    const changed: Array<{ ref: HalItemRef; value: HalValue }> = [];
-    refs.forEach((ref, index) => {
-      const value = values[index];
-      if (value === undefined) return;
-      const key = refKey(ref);
-      if (!Object.is(previousValues.get(key), value)) {
-        previousValues.set(key, value);
-        changed.push({ ref, value });
-      }
-    });
-    if (changed.length)
-      api.send("values/delta", { cursor: ++valueCursor, values: changed });
-  } catch (error) {
-    if (client === activeClient) {
-      connected = false;
-      api.send("connection/state", {
-        connected: false,
-        message: String(error),
-      });
-    }
-  } finally {
-    pollInFlight = false;
-  }
-}
-function restartValueTimer(): void {
-  if (pollTimer) clearInterval(pollTimer);
-  pollTimer = setInterval(() => void pollValues(), pollIntervalMs);
-}
-
 function deliverCapture(capture: ScopeCapture): void {
   if (!visible || !scopeExpanded || inFlightCapture !== null) {
     if (pendingCapture) skippedCaptures++;
@@ -383,7 +340,6 @@ api.handle("bootstrap/get", async () => {
     const value: Bootstrap = {
       connected,
       topology: await refreshTopology(),
-      cursor: valueCursor,
       scope: scope?.status ?? null,
       scopeRunMode: runMode,
     };
@@ -400,15 +356,53 @@ api.handle("topology/refresh", async () => {
     return fail("DISCONNECTED", error);
   }
 });
-api.handle("subscriptions/set", async ({ refs, intervalMs }) => {
-  subscribed = [...new Map(refs.map((ref) => [refKey(ref), ref])).values()];
-  subscriptionGeneration++;
-  pollIntervalMs = Math.max(50, Math.min(1000, Math.trunc(intervalMs)));
-  previousValues.clear();
-  restartValueTimer();
-  await pollValues();
-  return ok({ intervalMs: pollIntervalMs });
-});
+api.handle("subscriptions/set", ({ refs, intervalMs }) =>
+  queued(async () => {
+    if (!client) return fail("DISCONNECTED", startupError);
+    const selected = [
+      ...new Map(refs.map((ref) => [refKey(ref), ref])).values(),
+    ];
+    const period = Math.max(50, Math.min(1000, Math.trunc(intervalMs)));
+    try {
+      if (!valueSubscription) {
+        if (selected.length === 0) return ok(null);
+        valueSubscription = await client.createValueSubscription(
+          selected,
+          period,
+        );
+      } else {
+        valueSubscription = await client.updateValueSubscription(
+          valueSubscription.subscriptionId,
+          valueSubscription.revision,
+          selected,
+          period,
+        );
+      }
+      markConnected();
+      const { subscriptionId: _, ...descriptor } = valueSubscription;
+      return ok(descriptor);
+    } catch (error) {
+      const code = (error as { code?: number } | null)?.code;
+      if (valueSubscription && (code === 5 || code === 10)) {
+        const stale = valueSubscription.subscriptionId;
+        valueSubscription = null;
+        void client.deleteValueSubscription(stale).catch(() => undefined);
+        if (selected.length === 0) return ok(null);
+        try {
+          valueSubscription = await client.createValueSubscription(
+            selected,
+            period,
+          );
+          const { subscriptionId: _, ...descriptor } = valueSubscription;
+          return ok(descriptor);
+        } catch (recreateError) {
+          return fail(classifyGrpcError(recreateError), recreateError);
+        }
+      }
+      return fail(classifyGrpcError(error), error);
+    }
+  }),
+);
 api.handle("item/write", async ({ ref, value }) => {
   try {
     const meta = itemMeta(ref);
@@ -425,7 +419,6 @@ api.handle("item/write", async ({ ref, value }) => {
     const parsed = parseWrite(meta.type, value);
     if (!client) return fail("DISCONNECTED", startupError);
     const written = await client.write(ref, meta.type, parsed);
-    previousValues.set(refKey(ref), written);
     return ok({ value: written });
   } catch (error) {
     return fail("INVALID_VALUE", error);
@@ -536,7 +529,6 @@ api.handle("scope/force-trigger", () =>
 api.on("ui/state", (state) => {
   visible = state.visible;
   scopeExpanded = state.scopeExpanded;
-  if (visible) void pollValues();
   if (visible && scopeExpanded && pendingCapture && inFlightCapture === null) {
     const capture = pendingCapture;
     pendingCapture = null;
@@ -594,7 +586,7 @@ async function initialize(): Promise<void> {
       api.send("topology/changed", topology);
     });
     initializeRetryMs = 250;
-    restartValueTimer();
+    valueSubscription = null;
     markConnected();
   } catch (error) {
     candidate?.close();
@@ -611,12 +603,13 @@ async function initialize(): Promise<void> {
 function cleanup(): void {
   shuttingDown = true;
   if (initializeTimer) clearTimeout(initializeTimer);
-  if (pollTimer) clearInterval(pollTimer);
   topologyOff?.();
   topologyOff = null;
   scopeOff?.();
   scopeErrorOff?.();
   scope?.close();
+  if (client && valueSubscription)
+    void client.deleteValueSubscription(valueSubscription.subscriptionId);
   scope = null;
   client?.close();
   client = null;

@@ -21,12 +21,12 @@ client-component cleanup, and exclusive scope ownership. The harness refuses
 to start when another LinuxCNC/HAL runtime exists and reclaims only the runtime
 and NML resources it created.
 
-## Position telemetry WebSocket
+## Telemetry WebSocket
 
 Position-history configuration and clearing remain on `MachineService` through
 `ConfigurePositionHistory` and `ClearPositionHistory`. Telemetry is published
 directly to renderers at `ws://127.0.0.1:50052/v1/position-history` by default;
-set `--position-telemetry-endpoint=HOST:PORT` to change the listener. This
+set `--telemetry-endpoint=HOST:PORT` to change the shared listener. This
 read-only telemetry listener is always a plaintext `ws://` endpoint; `--tls`
 and `--mtls` secure only the gRPC control plane. A non-loopback telemetry bind
 requires `--unsafe-non-loopback`.
@@ -59,6 +59,21 @@ the preview's accumulated history and always has a zero replacement count.
 For kind 2, remove `replace_count` points from the accumulated tail before
 appending the payload. Sequence and generation are 64-bit values and should
 be read with `DataView.getBigUint64(..., true)`.
+
+HAL value telemetry uses the same listener. Create and update a subscription
+with `HalService.CreateValueSubscription` and `UpdateValueSubscription`, then
+attach the returned single-use path at `/v1/hal-values/{token}`. Configuration
+changes preserve the socket and advance its revision; the first frame for each
+revision is a complete replacement. `DeleteValueSubscription` and WebSocket
+disconnects release the subscription.
+
+HAL frames have a 32-byte header containing ASCII `LCHV`, version `1`, frame
+kind, 16-byte entry stride, configuration revision, sequence, and entry count.
+Each entry contains a `uint32` slot, a `HalType` byte, and an eight-byte typed
+payload. Type zero means unavailable. Multi-byte fields are little-endian;
+`s64` and `u64` must be decoded as integers rather than JavaScript numbers.
+Slow consumers receive coalesced latest-state deltas rather than every sampled
+transition. Client WebSocket messages are forbidden on both telemetry routes.
 
 The HAL service uses the pinned LinuxCNC HAL repository for topology, exact
 scalar reads/writes, signals, and session-owned components. The scope service

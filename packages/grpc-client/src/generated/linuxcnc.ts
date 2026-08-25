@@ -21,8 +21,10 @@ import type { ControlPointG6 as _linuxcnc_v1_ControlPointG6, ControlPointG6__Out
 import type { CoolantIoStat as _linuxcnc_v1_CoolantIoStat, CoolantIoStat__Output as _linuxcnc_v1_CoolantIoStat__Output } from './linuxcnc/v1/CoolantIoStat';
 import type { CreateHalSignalRequest as _linuxcnc_v1_CreateHalSignalRequest, CreateHalSignalRequest__Output as _linuxcnc_v1_CreateHalSignalRequest__Output } from './linuxcnc/v1/CreateHalSignalRequest';
 import type { CreateHalSignalResponse as _linuxcnc_v1_CreateHalSignalResponse, CreateHalSignalResponse__Output as _linuxcnc_v1_CreateHalSignalResponse__Output } from './linuxcnc/v1/CreateHalSignalResponse';
+import type { CreateHalValueSubscriptionRequest as _linuxcnc_v1_CreateHalValueSubscriptionRequest, CreateHalValueSubscriptionRequest__Output as _linuxcnc_v1_CreateHalValueSubscriptionRequest__Output } from './linuxcnc/v1/CreateHalValueSubscriptionRequest';
 import type { CreateWorkspaceRequest as _linuxcnc_v1_CreateWorkspaceRequest, CreateWorkspaceRequest__Output as _linuxcnc_v1_CreateWorkspaceRequest__Output } from './linuxcnc/v1/CreateWorkspaceRequest';
 import type { CreateWorkspaceResponse as _linuxcnc_v1_CreateWorkspaceResponse, CreateWorkspaceResponse__Output as _linuxcnc_v1_CreateWorkspaceResponse__Output } from './linuxcnc/v1/CreateWorkspaceResponse';
+import type { DeleteHalValueSubscriptionRequest as _linuxcnc_v1_DeleteHalValueSubscriptionRequest, DeleteHalValueSubscriptionRequest__Output as _linuxcnc_v1_DeleteHalValueSubscriptionRequest__Output } from './linuxcnc/v1/DeleteHalValueSubscriptionRequest';
 import type { DeleteWorkspaceRequest as _linuxcnc_v1_DeleteWorkspaceRequest, DeleteWorkspaceRequest__Output as _linuxcnc_v1_DeleteWorkspaceRequest__Output } from './linuxcnc/v1/DeleteWorkspaceRequest';
 import type { DigitalOutput as _linuxcnc_v1_DigitalOutput, DigitalOutput__Output as _linuxcnc_v1_DigitalOutput__Output } from './linuxcnc/v1/DigitalOutput';
 import type { DwellData as _linuxcnc_v1_DwellData, DwellData__Output as _linuxcnc_v1_DwellData__Output } from './linuxcnc/v1/DwellData';
@@ -53,6 +55,8 @@ import type { HalServiceClient as _linuxcnc_v1_HalServiceClient, HalServiceDefin
 import type { HalSignalInfo as _linuxcnc_v1_HalSignalInfo, HalSignalInfo__Output as _linuxcnc_v1_HalSignalInfo__Output } from './linuxcnc/v1/HalSignalInfo';
 import type { HalThreadInfo as _linuxcnc_v1_HalThreadInfo, HalThreadInfo__Output as _linuxcnc_v1_HalThreadInfo__Output } from './linuxcnc/v1/HalThreadInfo';
 import type { HalTopology as _linuxcnc_v1_HalTopology, HalTopology__Output as _linuxcnc_v1_HalTopology__Output } from './linuxcnc/v1/HalTopology';
+import type { HalValueSubscription as _linuxcnc_v1_HalValueSubscription, HalValueSubscription__Output as _linuxcnc_v1_HalValueSubscription__Output } from './linuxcnc/v1/HalValueSubscription';
+import type { HalValueSubscriptionSlot as _linuxcnc_v1_HalValueSubscriptionSlot, HalValueSubscriptionSlot__Output as _linuxcnc_v1_HalValueSubscriptionSlot__Output } from './linuxcnc/v1/HalValueSubscriptionSlot';
 import type { HalWrite as _linuxcnc_v1_HalWrite, HalWrite__Output as _linuxcnc_v1_HalWrite__Output } from './linuxcnc/v1/HalWrite';
 import type { HalWriteResponse as _linuxcnc_v1_HalWriteResponse, HalWriteResponse__Output as _linuxcnc_v1_HalWriteResponse__Output } from './linuxcnc/v1/HalWriteResponse';
 import type { HalWriteValue as _linuxcnc_v1_HalWriteValue, HalWriteValue__Output as _linuxcnc_v1_HalWriteValue__Output } from './linuxcnc/v1/HalWriteValue';
@@ -133,6 +137,7 @@ import type { ToolNumber as _linuxcnc_v1_ToolNumber, ToolNumber__Output as _linu
 import type { ToolTableDelta as _linuxcnc_v1_ToolTableDelta, ToolTableDelta__Output as _linuxcnc_v1_ToolTableDelta__Output } from './linuxcnc/v1/ToolTableDelta';
 import type { TrajectoryStat as _linuxcnc_v1_TrajectoryStat, TrajectoryStat__Output as _linuxcnc_v1_TrajectoryStat__Output } from './linuxcnc/v1/TrajectoryStat';
 import type { UnitsChangeData as _linuxcnc_v1_UnitsChangeData, UnitsChangeData__Output as _linuxcnc_v1_UnitsChangeData__Output } from './linuxcnc/v1/UnitsChangeData';
+import type { UpdateHalValueSubscriptionRequest as _linuxcnc_v1_UpdateHalValueSubscriptionRequest, UpdateHalValueSubscriptionRequest__Output as _linuxcnc_v1_UpdateHalValueSubscriptionRequest__Output } from './linuxcnc/v1/UpdateHalValueSubscriptionRequest';
 import type { UploadWorkspaceRequest as _linuxcnc_v1_UploadWorkspaceRequest, UploadWorkspaceRequest__Output as _linuxcnc_v1_UploadWorkspaceRequest__Output } from './linuxcnc/v1/UploadWorkspaceRequest';
 import type { UploadWorkspaceResponse as _linuxcnc_v1_UploadWorkspaceResponse, UploadWorkspaceResponse__Output as _linuxcnc_v1_UploadWorkspaceResponse__Output } from './linuxcnc/v1/UploadWorkspaceResponse';
 import type { WatchHalTopologyEvent as _linuxcnc_v1_WatchHalTopologyEvent, WatchHalTopologyEvent__Output as _linuxcnc_v1_WatchHalTopologyEvent__Output } from './linuxcnc/v1/WatchHalTopologyEvent';
@@ -172,8 +177,10 @@ export interface ProtoGrpcType {
       CoolantIoStat: MessageTypeDefinition<_linuxcnc_v1_CoolantIoStat, _linuxcnc_v1_CoolantIoStat__Output>
       CreateHalSignalRequest: MessageTypeDefinition<_linuxcnc_v1_CreateHalSignalRequest, _linuxcnc_v1_CreateHalSignalRequest__Output>
       CreateHalSignalResponse: MessageTypeDefinition<_linuxcnc_v1_CreateHalSignalResponse, _linuxcnc_v1_CreateHalSignalResponse__Output>
+      CreateHalValueSubscriptionRequest: MessageTypeDefinition<_linuxcnc_v1_CreateHalValueSubscriptionRequest, _linuxcnc_v1_CreateHalValueSubscriptionRequest__Output>
       CreateWorkspaceRequest: MessageTypeDefinition<_linuxcnc_v1_CreateWorkspaceRequest, _linuxcnc_v1_CreateWorkspaceRequest__Output>
       CreateWorkspaceResponse: MessageTypeDefinition<_linuxcnc_v1_CreateWorkspaceResponse, _linuxcnc_v1_CreateWorkspaceResponse__Output>
+      DeleteHalValueSubscriptionRequest: MessageTypeDefinition<_linuxcnc_v1_DeleteHalValueSubscriptionRequest, _linuxcnc_v1_DeleteHalValueSubscriptionRequest__Output>
       DeleteWorkspaceRequest: MessageTypeDefinition<_linuxcnc_v1_DeleteWorkspaceRequest, _linuxcnc_v1_DeleteWorkspaceRequest__Output>
       DigitalOutput: MessageTypeDefinition<_linuxcnc_v1_DigitalOutput, _linuxcnc_v1_DigitalOutput__Output>
       DwellData: MessageTypeDefinition<_linuxcnc_v1_DwellData, _linuxcnc_v1_DwellData__Output>
@@ -211,6 +218,8 @@ export interface ProtoGrpcType {
       HalThreadInfo: MessageTypeDefinition<_linuxcnc_v1_HalThreadInfo, _linuxcnc_v1_HalThreadInfo__Output>
       HalTopology: MessageTypeDefinition<_linuxcnc_v1_HalTopology, _linuxcnc_v1_HalTopology__Output>
       HalType: EnumTypeDefinition
+      HalValueSubscription: MessageTypeDefinition<_linuxcnc_v1_HalValueSubscription, _linuxcnc_v1_HalValueSubscription__Output>
+      HalValueSubscriptionSlot: MessageTypeDefinition<_linuxcnc_v1_HalValueSubscriptionSlot, _linuxcnc_v1_HalValueSubscriptionSlot__Output>
       HalWrite: MessageTypeDefinition<_linuxcnc_v1_HalWrite, _linuxcnc_v1_HalWrite__Output>
       HalWriteResponse: MessageTypeDefinition<_linuxcnc_v1_HalWriteResponse, _linuxcnc_v1_HalWriteResponse__Output>
       HalWriteValue: MessageTypeDefinition<_linuxcnc_v1_HalWriteValue, _linuxcnc_v1_HalWriteValue__Output>
@@ -308,6 +317,7 @@ export interface ProtoGrpcType {
       TrajMode: EnumTypeDefinition
       TrajectoryStat: MessageTypeDefinition<_linuxcnc_v1_TrajectoryStat, _linuxcnc_v1_TrajectoryStat__Output>
       UnitsChangeData: MessageTypeDefinition<_linuxcnc_v1_UnitsChangeData, _linuxcnc_v1_UnitsChangeData__Output>
+      UpdateHalValueSubscriptionRequest: MessageTypeDefinition<_linuxcnc_v1_UpdateHalValueSubscriptionRequest, _linuxcnc_v1_UpdateHalValueSubscriptionRequest__Output>
       UploadWorkspaceRequest: MessageTypeDefinition<_linuxcnc_v1_UploadWorkspaceRequest, _linuxcnc_v1_UploadWorkspaceRequest__Output>
       UploadWorkspaceResponse: MessageTypeDefinition<_linuxcnc_v1_UploadWorkspaceResponse, _linuxcnc_v1_UploadWorkspaceResponse__Output>
       WaitPolicy: EnumTypeDefinition

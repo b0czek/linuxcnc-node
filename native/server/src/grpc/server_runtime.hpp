@@ -14,6 +14,7 @@ namespace linuxcnc::server {
 class AdmissionCounter;
 class BoundedExecutor;
 class PositionTelemetry;
+class HalValueTelemetry;
 class PositionTelemetryServer;
 
 namespace detail {
@@ -35,6 +36,7 @@ class ServerRuntime {
       std::unique_ptr<ManagedGrpcService> scope,
       std::unique_ptr<PositionTelemetryServer> position_websocket,
       std::shared_ptr<PositionTelemetry> position_telemetry,
+      std::shared_ptr<HalValueTelemetry> hal_telemetry,
       AdmissionCounter& stream_admission, AdmissionCounter& upload_admission,
       AdmissionCounter& component_admission, AdmissionCounter& scope_admission,
       BoundedExecutor& blocking, BoundedExecutor& parser_worker,
@@ -78,6 +80,7 @@ class ServerRuntime {
   std::unique_ptr<ManagedGrpcService> scope_;
   std::unique_ptr<PositionTelemetryServer> position_websocket_;
   std::shared_ptr<PositionTelemetry> position_telemetry_;
+  std::shared_ptr<HalValueTelemetry> hal_telemetry_;
 
   AdmissionCounter& stream_admission_;
   AdmissionCounter& upload_admission_;

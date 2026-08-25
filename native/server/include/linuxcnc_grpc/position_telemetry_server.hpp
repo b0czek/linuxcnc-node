@@ -6,11 +6,13 @@ namespace linuxcnc::server {
 
 struct DaemonConfig;
 class PositionTelemetry;
+class HalValueTelemetry;
 
 class PositionTelemetryServer {
  public:
   PositionTelemetryServer(const DaemonConfig& config,
-                          std::shared_ptr<PositionTelemetry> telemetry);
+                          std::shared_ptr<PositionTelemetry> telemetry,
+                          std::shared_ptr<HalValueTelemetry> hal_telemetry);
   ~PositionTelemetryServer();
 
   PositionTelemetryServer(const PositionTelemetryServer&) = delete;

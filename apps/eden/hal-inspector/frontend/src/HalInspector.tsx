@@ -35,11 +35,17 @@ import {
 } from "solid-js";
 import type {
   HalInspectorProtocol,
+  HalValueSlot,
+  HalValueSubscriptionDescriptor,
   ScopeRollFrame,
   ScopeRunMode,
   TopologySnapshot,
 } from "../../shared/protocol";
 import { BrowseHeader } from "./BrowseHeader";
+import {
+  decodeHalTelemetryFrame,
+  type HalTelemetryFrame,
+} from "./hal-telemetry";
 import { InspectorSidebar } from "./InspectorSidebar";
 import { initLocale, t } from "./i18n";
 import {
@@ -68,6 +74,9 @@ export const HalInspector: Component = () => {
   const [selected, setSelected] = createSignal<Row | null>(null);
   const [watches, setWatches] = createSignal<HalItemRef[]>([]);
   const [values, setValues] = createSignal(new Map<string, HalValue>());
+  const [unavailableValues, setUnavailableValues] = createSignal(
+    new Set<string>(),
+  );
   const [activeTab, setActiveTab] = createSignal<ActiveTab>("browse");
   const [expandedGroups, setExpandedGroups] = createSignal(new Set<string>());
   const [treeOpen, setTreeOpen] = createSignal(false);
@@ -97,10 +106,22 @@ export const HalInspector: Component = () => {
   const [editRef, setEditRef] = createSignal<HalItemRef | null>(null);
   const [editValue, setEditValue] = createSignal("");
   const [error, setError] = createSignal("");
+  const [pageVisible, setPageVisible] = createSignal(
+    document.visibilityState === "visible",
+  );
+  const [telemetryRetry, setTelemetryRetry] = createSignal(0);
   const [preferencesLoaded, setPreferencesLoaded] = createSignal(false);
   let preferenceSaveTimer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
   let listElement: HTMLDivElement | null = null;
+  let valueSocket: WebSocket | null = null;
+  let socketGeneration = 0;
+  let subscriptionRequest = 0;
+  let activeValueRevision = 0;
+  let activeSlots = new Map<number, HalValueSlot>();
+  const slotMaps = new Map<number, Map<number, HalValueSlot>>();
+  const pendingFrames = new Map<number, HalTelemetryFrame[]>();
+  let telemetryRetryMs = 250;
 
   const categoryCount = (item: Category) => {
     const data = topology();
@@ -129,7 +150,9 @@ export const HalInspector: Component = () => {
           name: x.name,
           kind: "pins" as const,
           ref: { kind: "pin" as const, name: x.name },
-          value: values().get(`pin:${x.name}`) ?? x.value,
+          value: unavailableValues().has(`pin:${x.name}`)
+            ? undefined
+            : (values().get(`pin:${x.name}`) ?? x.value),
           type: x.type,
           writable: x.direction !== "out" && !x.signalName,
           subtitle: `${x.direction}${x.signalName ? ` · ${x.signalName}` : ""}`,
@@ -142,7 +165,9 @@ export const HalInspector: Component = () => {
           name: x.name,
           kind: "params" as const,
           ref: { kind: "param" as const, name: x.name },
-          value: values().get(`param:${x.name}`) ?? x.value,
+          value: unavailableValues().has(`param:${x.name}`)
+            ? undefined
+            : (values().get(`param:${x.name}`) ?? x.value),
           type: x.type,
           writable: x.direction === "rw",
           subtitle: x.direction,
@@ -155,7 +180,9 @@ export const HalInspector: Component = () => {
           name: x.name,
           kind: "signals" as const,
           ref: { kind: "signal" as const, name: x.name },
-          value: values().get(`signal:${x.name}`) ?? x.value,
+          value: unavailableValues().has(`signal:${x.name}`)
+            ? undefined
+            : (values().get(`signal:${x.name}`) ?? x.value),
           type: x.type,
           writable: x.writers === 0,
           subtitle: `${x.writers} writer · ${x.readers} reader`,
@@ -292,7 +319,9 @@ export const HalInspector: Component = () => {
       kind: ref.kind === "param" ? "params" : (`${ref.kind}s` as Category),
       ref,
       type: meta.type,
-      value: values().get(key(ref)) ?? meta.value,
+      value: unavailableValues().has(key(ref))
+        ? undefined
+        : (values().get(key(ref)) ?? meta.value),
       writable,
     };
   }
@@ -315,13 +344,124 @@ export const HalInspector: Component = () => {
         previous.every((ref, index) => key(ref) === key(next[index])),
     },
   );
-  createEffect(
-    () =>
-      void api.request("subscriptions/set", {
-        refs: subscribedRefs(),
-        intervalMs: intervalMs(),
-      }),
-  );
+  const expectedType = (type: HalValueSlot["type"]): number =>
+    ({ bit: 1, float: 2, s32: 3, u32: 4, s64: 5, u64: 6 })[type];
+
+  const applyTelemetryFrame = (frame: HalTelemetryFrame): void => {
+    const slots = slotMaps.get(frame.revision);
+    if (
+      !slots ||
+      (frame.kind === "delta" && activeValueRevision !== frame.revision)
+    ) {
+      const queued = pendingFrames.get(frame.revision) ?? [];
+      queued.push(frame);
+      if (queued.length > 32) queued.splice(0, queued.length - 32);
+      pendingFrames.set(frame.revision, queued);
+      return;
+    }
+    if (frame.revision < activeValueRevision) return;
+    if (frame.kind === "replacement") {
+      if (frame.entries.length !== slots.size)
+        throw new Error("HAL telemetry replacement omitted subscription slots");
+      activeValueRevision = frame.revision;
+    }
+    const updates: Array<{ ref: HalItemRef; value?: HalValue }> = [];
+    for (const entry of frame.entries) {
+      const slot = slots.get(entry.slot);
+      if (!slot)
+        throw new Error(`HAL telemetry referenced unknown slot ${entry.slot}`);
+      if (entry.type !== 0 && entry.type !== expectedType(slot.type))
+        throw new Error(`HAL telemetry type changed for '${slot.ref.name}'`);
+      updates.push({ ref: slot.ref, value: entry.value });
+    }
+    setValues((current) => {
+      const next = new Map(current);
+      if (frame.kind === "replacement") {
+        for (const slot of activeSlots.values()) next.delete(key(slot.ref));
+      }
+      for (const update of updates) {
+        if (update.value === undefined) next.delete(key(update.ref));
+        else next.set(key(update.ref), update.value);
+      }
+      return next;
+    });
+    setUnavailableValues((current) => {
+      const next = new Set(current);
+      if (frame.kind === "replacement")
+        for (const slot of activeSlots.values()) next.delete(key(slot.ref));
+      for (const update of updates) {
+        if (update.value === undefined) next.add(key(update.ref));
+        else next.delete(key(update.ref));
+      }
+      return next;
+    });
+    if (frame.kind === "replacement") activeSlots = slots;
+    setSelected((current) => {
+      if (!current?.ref) return current;
+      const update = updates.find(({ ref }) => key(ref) === key(current.ref!));
+      return update ? { ...current, value: update.value } : current;
+    });
+  };
+
+  const registerSubscription = (descriptor: HalValueSubscriptionDescriptor) => {
+    const slots = new Map(descriptor.slots.map((slot) => [slot.slot, slot]));
+    slotMaps.set(descriptor.revision, slots);
+    const queued = pendingFrames.get(descriptor.revision) ?? [];
+    pendingFrames.delete(descriptor.revision);
+    for (const frame of queued) applyTelemetryFrame(frame);
+    if (!descriptor.websocketUrl) return;
+    const generation = ++socketGeneration;
+    valueSocket?.close();
+    const socket = new WebSocket(descriptor.websocketUrl);
+    valueSocket = socket;
+    socket.binaryType = "arraybuffer";
+    socket.onmessage = (event) => {
+      if (
+        generation !== socketGeneration ||
+        !(event.data instanceof ArrayBuffer)
+      )
+        return;
+      try {
+        applyTelemetryFrame(decodeHalTelemetryFrame(event.data));
+        telemetryRetryMs = 250;
+      } catch (failure) {
+        setError(String(failure));
+        socket.close();
+      }
+    };
+    socket.onclose = () => {
+      if (generation !== socketGeneration || disposed || !pageVisible()) return;
+      valueSocket = null;
+      const delay = telemetryRetryMs;
+      telemetryRetryMs = Math.min(telemetryRetryMs * 2, 5000);
+      setTimeout(() => {
+        if (!disposed && generation === socketGeneration)
+          setTelemetryRetry((x) => x + 1);
+      }, delay);
+    };
+  };
+
+  createEffect(() => {
+    topology()?.revision;
+    telemetryRetry();
+    const refs = pageVisible() ? subscribedRefs() : [];
+    const period = intervalMs();
+    const request = ++subscriptionRequest;
+    void api
+      .request("subscriptions/set", { refs, intervalMs: period })
+      .then((result) => {
+        if (disposed) return;
+        if (result.ok && result.value?.websocketUrl)
+          registerSubscription(result.value);
+        if (request !== subscriptionRequest) return;
+        if (!result.ok) {
+          setError(result.error.message);
+          return;
+        }
+        if (result.value && !result.value.websocketUrl)
+          registerSubscription(result.value);
+      });
+  });
   createEffect(() =>
     api.send("ui/state", {
       visible: document.visibilityState === "visible",
@@ -592,10 +732,6 @@ export const HalInspector: Component = () => {
   const handleConnectionState = ({ connected }: { connected: boolean }) =>
     setConnected(connected);
   const handleTopologyChanged = (next: TopologySnapshot) => setTopology(next);
-  const handleValuesDelta = ({
-    values: deltas,
-  }: HalInspectorProtocol["hostMessages"]["values/delta"]) =>
-    applyValueUpdates(deltas);
   const handleScopeStatus = (next: ScopeStatus) => setScopeStatus(next);
   const handleScopeRunMode = ({ mode }: { mode: ScopeRunMode }) => {
     if ((scopeRunMode() === "roll") !== (mode === "roll")) {
@@ -626,17 +762,18 @@ export const HalInspector: Component = () => {
   };
   const handleApiError = ({ message }: { message: string }) =>
     setError(message);
-  const handleVisibilityChange = () =>
+  const handleVisibilityChange = () => {
+    setPageVisible(document.visibilityState === "visible");
     api.send("ui/state", {
       visible: document.visibilityState === "visible",
       scopeExpanded: activeTab() === "scope",
     });
+  };
 
   onMount(() => {
     disposed = false;
     api.on("connection/state", handleConnectionState);
     api.on("topology/changed", handleTopologyChanged);
-    api.on("values/delta", handleValuesDelta);
     api.on("scope/status", handleScopeStatus);
     api.on("scope/run-mode", handleScopeRunMode);
     api.on("scope/capture", handleScopeCapture);
@@ -665,7 +802,6 @@ export const HalInspector: Component = () => {
     disposed = true;
     api.off("connection/state", handleConnectionState);
     api.off("topology/changed", handleTopologyChanged);
-    api.off("values/delta", handleValuesDelta);
     api.off("scope/status", handleScopeStatus);
     api.off("scope/run-mode", handleScopeRunMode);
     api.off("scope/capture", handleScopeCapture);
@@ -673,6 +809,9 @@ export const HalInspector: Component = () => {
     api.off("error", handleApiError);
     document.removeEventListener("visibilitychange", handleVisibilityChange);
     listElement = null;
+    socketGeneration++;
+    valueSocket?.close();
+    valueSocket = null;
     clearTimeout(preferenceSaveTimer);
   });
 

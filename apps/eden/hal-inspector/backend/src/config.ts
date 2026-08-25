@@ -5,6 +5,7 @@ import { credentials as grpcCredentials } from "@grpc/grpc-js";
 
 export interface GrpcClientConfig {
   address: string;
+  telemetryUrl: string;
   /** Optional schema override; the generated client supplies its bundled default. */
   protoPath?: string;
   /** Root containing linuxcnc/v1, grpc/health/v1, and google/protobuf. */
@@ -88,6 +89,9 @@ export function readGrpcConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): GrpcClientConfig {
   const address = env.LINUXCNC_GRPC_ENDPOINT?.trim() || "127.0.0.1:50051";
+  const telemetryUrl =
+    env.LINUXCNC_TELEMETRY_URL?.trim().replace(/\/$/, "") ||
+    "ws://127.0.0.1:50052";
   const schema = defaultSchemaPaths(env);
   const ca = readPem(env, "LINUXCNC_GRPC_TLS_CA");
   const cert = readPem(env, "LINUXCNC_GRPC_TLS_CERT");
@@ -102,10 +106,11 @@ export function readGrpcConfig(
       "LINUXCNC_GRPC_TLS_CA is required when client certificates are configured",
     );
   }
-  if (!ca) return { address, ...schema };
+  if (!ca) return { address, telemetryUrl, ...schema };
 
   return {
     address,
+    telemetryUrl,
     ...schema,
     credentials: grpcCredentials.createSsl(ca, key, cert),
   };

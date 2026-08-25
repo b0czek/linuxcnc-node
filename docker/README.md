@@ -65,6 +65,7 @@ LINUXCNC_CONFIG_DIR=/absolute/path/to/machine docker compose up
 
 - gRPC: `localhost:50051`
 - Position telemetry: `ws://localhost:50052/v1/position-history`
+- HAL values: gRPC-created paths below `ws://localhost:50052/v1/hal-values/`
 - `edge`: current `main`
 - `X.Y.Z`, `X.Y`, and `latest`: a `vX.Y.Z` repository tag
 

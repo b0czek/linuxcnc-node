@@ -4,6 +4,7 @@
 #include "linuxcnc_grpc/callback_runtime.hpp"
 #include "linuxcnc_grpc/position_telemetry.hpp"
 #include "linuxcnc_grpc/position_telemetry_server.hpp"
+#include "linuxcnc_grpc/hal_value_telemetry.hpp"
 
 #include <grpcpp/grpcpp.h>
 
@@ -40,6 +41,7 @@ ServerRuntime::ServerRuntime(
     std::unique_ptr<ManagedGrpcService> scope,
     std::unique_ptr<PositionTelemetryServer> position_websocket,
     std::shared_ptr<PositionTelemetry> position_telemetry,
+    std::shared_ptr<HalValueTelemetry> hal_telemetry,
     AdmissionCounter& stream_admission, AdmissionCounter& upload_admission,
     AdmissionCounter& component_admission, AdmissionCounter& scope_admission,
     BoundedExecutor& blocking, BoundedExecutor& parser_worker,
@@ -51,6 +53,7 @@ ServerRuntime::ServerRuntime(
       scope_(std::move(scope)),
       position_websocket_(std::move(position_websocket)),
       position_telemetry_(std::move(position_telemetry)),
+      hal_telemetry_(std::move(hal_telemetry)),
       stream_admission_(stream_admission),
       upload_admission_(upload_admission),
       component_admission_(component_admission),
@@ -115,6 +118,9 @@ void ServerRuntime::request_shutdown() noexcept {
   invoke_shutdown("position-telemetry", [this] {
     if (position_telemetry_) position_telemetry_->close();
   });
+  invoke_shutdown("hal-telemetry", [this] {
+    if (hal_telemetry_) hal_telemetry_->close();
+  });
   invoke_shutdown("machine-service", [this] {
     if (machine_) machine_->shutdown();
   });
@@ -173,6 +179,7 @@ void ServerRuntime::finalize() noexcept {
   machine_.reset();
   position_websocket_.reset();
   position_telemetry_.reset();
+  hal_telemetry_.reset();
 
   invoke_shutdown("parser-shutdown", [this] { parser_worker_.shutdown(); });
   invoke_shutdown("hal-shutdown", [this] { hal_worker_.shutdown(); });

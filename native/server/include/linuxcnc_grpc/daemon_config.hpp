@@ -10,7 +10,7 @@ namespace linuxcnc::server {
 
 struct DaemonConfig {
   std::string endpoint = "127.0.0.1:50051";
-  std::string position_telemetry_endpoint = "127.0.0.1:50052";
+  std::string telemetry_endpoint = "127.0.0.1:50052";
   std::filesystem::path ini_file;
   std::filesystem::path nml_file;
   std::filesystem::path workspace_root = "/var/lib/linuxcnc-grpc/workspaces";
@@ -38,7 +38,7 @@ struct DaemonConfig {
 };
 
 // Parses the daemon's intentionally small process-level configuration. gRPC
-// credentials are loaded by the control-plane adapter; position telemetry is
+// credentials are loaded by the control-plane adapter; telemetry is
 // always plaintext WebSocket. This object validates both endpoint policies
 // before either socket can be bound.
 bool validate_config(const DaemonConfig& config, std::string* error = nullptr);

@@ -3,6 +3,8 @@
 #include "linuxcnc_grpc/daemon_config.hpp"
 #include "linuxcnc_grpc/position_telemetry.hpp"
 #include "linuxcnc_grpc/position_telemetry_wire.hpp"
+#include "linuxcnc_grpc/hal_value_telemetry.hpp"
+#include "linuxcnc_grpc/hal_value_telemetry_wire.hpp"
 
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/post.hpp>
@@ -13,6 +15,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -31,7 +34,7 @@ using PlainStream = beast::tcp_stream;
 std::pair<std::string, std::string> split_endpoint(const std::string& endpoint) {
   const auto separator = endpoint.rfind(':');
   if (separator == std::string::npos) {
-    throw std::invalid_argument("position telemetry endpoint must be HOST:PORT");
+    throw std::invalid_argument("telemetry endpoint must be HOST:PORT");
   }
   auto host = endpoint.substr(0, separator);
   if (host.size() > 1 && host.front() == '[' && host.back() == ']') {
@@ -43,8 +46,10 @@ std::pair<std::string, std::string> split_endpoint(const std::string& endpoint) 
 class Session final : public std::enable_shared_from_this<Session> {
  public:
   Session(PlainStream stream, std::shared_ptr<PositionTelemetry> telemetry,
+          std::shared_ptr<HalValueTelemetry> hal_telemetry,
           std::function<void()> release)
       : websocket_(std::move(stream)), telemetry_(std::move(telemetry)),
+        hal_telemetry_(std::move(hal_telemetry)),
         release_(std::move(release)) {}
 
   void run() { read_upgrade(); }
@@ -57,8 +62,18 @@ class Session final : public std::enable_shared_from_this<Session> {
   }
 
   void on_upgrade_request(beast::error_code error, std::size_t) {
-    if (error || request_.target() != "/v1/position-history" ||
-        !websocket::is_upgrade(request_)) return fail();
+    if (error || !websocket::is_upgrade(request_)) return fail();
+    const std::string target(request_.target());
+    if (target == "/v1/position-history") {
+      mode_ = Mode::Position;
+    } else {
+      const std::string prefix = "/v1/hal-values/";
+      if (target.rfind(prefix, 0) != 0) return fail();
+      auto claimed = hal_telemetry_->claim(target.substr(prefix.size()));
+      if (!claimed) return fail();
+      mode_ = Mode::Hal;
+      hal_subscription_id_ = std::move(*claimed);
+    }
     websocket_.binary(true);
     websocket_.read_message_max(1024);
     websocket_.set_option(websocket::stream_base::timeout::suggested(
@@ -71,14 +86,20 @@ class Session final : public std::enable_shared_from_this<Session> {
   void on_accept(beast::error_code error) {
     if (error) return fail();
     const std::weak_ptr<Session> weak = this->shared_from_this();
-    subscription_ = telemetry_->subscribe([weak](const std::uint64_t&) {
+    const auto callback = [weak](const std::uint64_t&) {
       if (const auto self = weak.lock()) {
         asio::post(self->websocket_.get_executor(), [weak] {
           if (const auto session = weak.lock()) session->wake();
         });
       }
-    });
-    send_next(true);
+    };
+    if (mode_ == Mode::Position) {
+      position_subscription_ = telemetry_->subscribe(callback);
+      send_next(true);
+    } else {
+      hal_subscription_ = hal_telemetry_->subscribe(hal_subscription_id_, callback);
+      send_hal();
+    }
     read_application_data();
   }
 
@@ -88,7 +109,8 @@ class Session final : public std::enable_shared_from_this<Session> {
       dirty_ = true;
       return;
     }
-    send_next(false);
+    if (mode_ == Mode::Position) send_next(false);
+    else send_hal();
   }
 
   void send_next(bool initial) {
@@ -109,16 +131,47 @@ class Session final : public std::enable_shared_from_this<Session> {
                                   this->shared_from_this()));
   }
 
+  void send_hal() {
+    const auto snapshot = hal_telemetry_->snapshot(hal_subscription_id_);
+    if (!snapshot) return fail();
+    if (!snapshot->sampled) return;
+    const bool replacement = hal_revision_ != snapshot->revision;
+    std::vector<std::size_t> changed;
+    if (!replacement) {
+      for (std::size_t index = 0; index < snapshot->values.size(); ++index) {
+        if (index >= hal_values_.size() || snapshot->values[index] != hal_values_[index])
+          changed.push_back(index);
+      }
+      if (changed.empty()) return;
+    }
+    write_hal_snapshot_ = *snapshot;
+    write_frame_ = encode_hal_telemetry_frame(
+        *snapshot, replacement ? HalTelemetryFrameKind::Replacement
+                               : HalTelemetryFrameKind::Delta,
+        changed);
+    writing_ = true;
+    websocket_.async_write(
+        asio::buffer(write_frame_),
+        beast::bind_front_handler(&Session::on_write,
+                                  this->shared_from_this()));
+  }
+
   void on_write(beast::error_code error, std::size_t) {
     writing_ = false;
     if (error) return fail();
     cursor_ = write_cursor_;
     generation_ = write_generation_;
+    if (write_hal_snapshot_) {
+      hal_revision_ = write_hal_snapshot_->revision;
+      hal_values_ = write_hal_snapshot_->values;
+      write_hal_snapshot_.reset();
+    }
     write_frame_.clear();
     if (closing_) return close_policy_violation();
     if (dirty_) {
       dirty_ = false;
-      send_next(false);
+      if (mode_ == Mode::Position) send_next(false);
+      else send_hal();
     }
   }
 
@@ -137,7 +190,7 @@ class Session final : public std::enable_shared_from_this<Session> {
 
   void close_policy_violation() {
     websocket::close_reason reason(websocket::close_code::policy_error);
-    reason.reason = "position telemetry is server-to-client only";
+    reason.reason = "telemetry is server-to-client only";
     websocket_.async_close(
         reason, [self = this->shared_from_this()](beast::error_code) {
           self->fail();
@@ -147,7 +200,12 @@ class Session final : public std::enable_shared_from_this<Session> {
   void fail() {
     if (closed_) return;
     closed_ = true;
-    subscription_.reset();
+    position_subscription_.reset();
+    hal_subscription_.reset();
+    if (!hal_subscription_id_.empty()) {
+      hal_telemetry_->erase(hal_subscription_id_);
+      hal_subscription_id_.clear();
+    }
     if (release_) {
       release_();
       release_ = {};
@@ -160,11 +218,17 @@ class Session final : public std::enable_shared_from_this<Session> {
 
   websocket::stream<PlainStream> websocket_;
   std::shared_ptr<PositionTelemetry> telemetry_;
-  PositionTelemetry::Subscription subscription_;
+  std::shared_ptr<HalValueTelemetry> hal_telemetry_;
+  PositionTelemetry::Subscription position_subscription_;
+  HalValueTelemetry::Subscription hal_subscription_;
   std::function<void()> release_;
   beast::flat_buffer read_buffer_;
   http::request<http::string_body> request_;
   std::vector<std::uint8_t> write_frame_;
+  std::optional<HalTelemetrySnapshot> write_hal_snapshot_;
+  std::vector<std::optional<HalTelemetryValue>> hal_values_;
+  std::string hal_subscription_id_;
+  std::uint64_t hal_revision_ = 0;
   std::uint64_t cursor_ = 0;
   std::uint64_t generation_ = 0;
   std::uint64_t write_cursor_ = 0;
@@ -173,6 +237,7 @@ class Session final : public std::enable_shared_from_this<Session> {
   bool dirty_ = false;
   bool closing_ = false;
   bool closed_ = false;
+  enum class Mode { Position, Hal } mode_ = Mode::Position;
 };
 
 }  // namespace
@@ -180,13 +245,15 @@ class Session final : public std::enable_shared_from_this<Session> {
 class PositionTelemetryServer::Impl {
  public:
   Impl(const DaemonConfig& config,
-       std::shared_ptr<PositionTelemetry> telemetry)
+       std::shared_ptr<PositionTelemetry> telemetry,
+       std::shared_ptr<HalValueTelemetry> hal_telemetry)
       : telemetry_(std::move(telemetry)),
+        hal_telemetry_(std::move(hal_telemetry)),
         acceptor_(io_) {
-    const auto [host, port] = split_endpoint(config.position_telemetry_endpoint);
+    const auto [host, port] = split_endpoint(config.telemetry_endpoint);
     tcp::resolver resolver(io_);
     const auto resolved = resolver.resolve(host, port);
-    if (resolved.empty()) throw std::runtime_error("cannot resolve position telemetry endpoint");
+    if (resolved.empty()) throw std::runtime_error("cannot resolve telemetry endpoint");
     const auto endpoint = resolved.begin()->endpoint();
     acceptor_.open(endpoint.protocol());
     acceptor_.set_option(asio::socket_base::reuse_address(true));
@@ -220,7 +287,7 @@ class PositionTelemetryServer::Impl {
             } else {
               auto release = [this] { active_sessions_.fetch_sub(1); };
               std::make_shared<Session>(
-                  PlainStream(std::move(socket)), telemetry_,
+                  PlainStream(std::move(socket)), telemetry_, hal_telemetry_,
                   std::move(release))->run();
             }
           }
@@ -230,6 +297,7 @@ class PositionTelemetryServer::Impl {
 
   asio::io_context io_{1};
   std::shared_ptr<PositionTelemetry> telemetry_;
+  std::shared_ptr<HalValueTelemetry> hal_telemetry_;
   tcp::acceptor acceptor_;
   std::atomic<bool> stopped_{false};
   std::atomic<std::size_t> active_sessions_{0};
@@ -237,8 +305,10 @@ class PositionTelemetryServer::Impl {
 };
 
 PositionTelemetryServer::PositionTelemetryServer(
-    const DaemonConfig& config, std::shared_ptr<PositionTelemetry> telemetry)
-    : impl_(std::make_unique<Impl>(config, std::move(telemetry))) {}
+    const DaemonConfig& config, std::shared_ptr<PositionTelemetry> telemetry,
+    std::shared_ptr<HalValueTelemetry> hal_telemetry)
+    : impl_(std::make_unique<Impl>(config, std::move(telemetry),
+                                  std::move(hal_telemetry))) {}
 
 PositionTelemetryServer::~PositionTelemetryServer() = default;
 

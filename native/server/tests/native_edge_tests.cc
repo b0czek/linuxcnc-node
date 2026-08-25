@@ -1,6 +1,8 @@
 #include "linuxcnc_grpc/command_coordinator.hpp"
 #include "linuxcnc_grpc/position_history.hpp"
 #include "linuxcnc_grpc/position_telemetry_wire.hpp"
+#include "linuxcnc_grpc/hal_value_telemetry.hpp"
+#include "linuxcnc_grpc/hal_value_telemetry_wire.hpp"
 #include "linuxcnc_grpc/program_workspace.hpp"
 #include "linuxcnc_grpc/scope_manager.hpp"
 #include "linuxcnc_grpc/status_hub.hpp"
@@ -361,6 +363,46 @@ void position_telemetry_wire_test() {
   assert(replacement[36] == 0);
 }
 
+void hal_value_telemetry_test() {
+  HalValueTelemetry telemetry(2);
+  std::vector<HalTelemetryResolvedItem> items{
+      {{HalTelemetryItemKind::Pin, "test.bit"}, HalTelemetryType::Bit},
+      {{HalTelemetryItemKind::Signal, "test.u64"}, HalTelemetryType::U64}};
+  const auto created = telemetry.create(items, std::chrono::milliseconds(50));
+  assert(created && created->revision == 1 && created->bindings.size() == 2);
+  const auto token = created->websocket_path.substr(
+      created->websocket_path.find_last_of('/') + 1);
+  const auto claimed = telemetry.claim(token);
+  assert(claimed && *claimed == created->subscription_id);
+  assert(!telemetry.claim(token));
+  const auto due = telemetry.due(std::chrono::steady_clock::now());
+  assert(due.size() == 1 && due[0].bindings.size() == 2);
+  telemetry.publish(created->subscription_id, 1,
+                    {HalTelemetryValue{true},
+                     HalTelemetryValue{std::uint64_t{0xffffffffffffffffULL}}});
+  const auto snapshot = telemetry.snapshot(created->subscription_id);
+  assert(snapshot && snapshot->sampled && snapshot->sequence == 1);
+  const auto frame = encode_hal_telemetry_frame(
+      *snapshot, HalTelemetryFrameKind::Replacement);
+  assert(frame.size() == kHalTelemetryHeaderSize + 2 * kHalTelemetryEntrySize);
+  assert(frame[0] == 'L' && frame[1] == 'C' && frame[2] == 'H' && frame[3] == 'V');
+  assert(frame[4] == 1 && frame[5] == 1 && frame[6] == 16);
+  assert(frame[36] == static_cast<std::uint8_t>(HalTelemetryType::Bit));
+  assert(frame[52] == static_cast<std::uint8_t>(HalTelemetryType::U64));
+  for (std::size_t index = 56; index < 64; ++index) assert(frame[index] == 0xff);
+
+  std::vector<HalTelemetryResolvedItem> changed{
+      items[0],
+      {{HalTelemetryItemKind::Param, "test.s32"}, HalTelemetryType::S32}};
+  const auto updated = telemetry.update(created->subscription_id, 1, changed,
+                                        std::chrono::milliseconds(100));
+  assert(updated && updated->revision == 2 && updated->bindings.size() == 2);
+  assert(updated->bindings[0].slot == created->bindings[0].slot);
+  assert(updated->bindings[1].slot > created->bindings[1].slot);
+  assert(telemetry.erase(created->subscription_id));
+  assert(!telemetry.snapshot(created->subscription_id));
+}
+
 std::vector<std::uint8_t> bytes(std::string value) {
   return {value.begin(), value.end()};
 }
@@ -518,6 +560,7 @@ int main() {
   position_cursor_generation_and_replacement_test();
   position_collinear_compaction_test();
   position_telemetry_wire_test();
+  hal_value_telemetry_test();
   workspace_traversal_quota_ttl_and_materialization_test();
   scope_coalescing_and_conflict_accounting_test();
   return 0;

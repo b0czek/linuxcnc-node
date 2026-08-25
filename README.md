@@ -4,7 +4,7 @@ LinuxCNC Node is an open-source C++ and TypeScript monorepo for building
 applications on top of LinuxCNC. Its architecture is one standalone
 `linuxcnc-grpc-server` beside one patched LinuxCNC instance, a versioned raw
 gRPC client, transport-independent TypeScript domain types, and a direct binary
-WebSocket stream for high-frequency position telemetry. The legacy Node native
+WebSocket data plane for position and selected HAL value telemetry. The legacy Node native
 addons and Eden bridge were retired after the atomic gRPC cutover. See the
 [native architecture](./docs/grpc-cutover.md).
 
@@ -69,8 +69,8 @@ pnpm test
 
 `linuxcnc-simulator` packages the pinned patched LinuxCNC backend and the
 native server in one headless image. It accepts a mounted LinuxCNC
-configuration and exposes gRPC on port `50051` plus position telemetry on
-WebSocket port `50052`.
+configuration and exposes the gRPC control plane on port `50051` plus the
+read-only telemetry data plane on WebSocket port `50052`.
 
 The container configuration, required capabilities, image tags, and custom
 INI contract are documented in [`docker`](./docker/README.md).

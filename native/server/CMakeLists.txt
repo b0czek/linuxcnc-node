@@ -21,6 +21,8 @@ set(LINUXCNC_GRPC_DOMAIN_SOURCES
     src/command_coordinator.cc
     src/daemon_config.cc
     src/hal_repository.cc
+    src/hal_value_telemetry.cc
+    src/hal_value_telemetry_wire.cc
     src/position_history.cc
     src/position_telemetry.cc
     src/position_telemetry_wire.cc

@@ -73,10 +73,10 @@ bool validate_config(const DaemonConfig& config, std::string* error) {
     return true;
   };
   if (!valid_endpoint(config.endpoint, "endpoint", config.tls) ||
-      !valid_endpoint(config.position_telemetry_endpoint,
-                      "position telemetry endpoint", false)) return false;
-  if (config.endpoint == config.position_telemetry_endpoint) {
-    return fail("gRPC and position telemetry endpoints must differ");
+      !valid_endpoint(config.telemetry_endpoint,
+                      "telemetry endpoint", false)) return false;
+  if (config.endpoint == config.telemetry_endpoint) {
+    return fail("gRPC and telemetry endpoints must differ");
   }
   if (config.mtls && !config.tls) return fail("mTLS requires TLS");
   if (config.tls && (config.tls_certificate.empty() || config.tls_private_key.empty())) {
@@ -179,8 +179,8 @@ bool parse_config(int argc, char* argv[], DaemonConfig* config, bool* show_help,
 
     std::string value;
     if (option_value(argument, "--endpoint", &value)) config->endpoint = value;
-    else if (option_value(argument, "--position-telemetry-endpoint", &value)) {
-      config->position_telemetry_endpoint = value;
+    else if (option_value(argument, "--telemetry-endpoint", &value)) {
+      config->telemetry_endpoint = value;
     }
     else if (option_value(argument, "--ini", &value)) config->ini_file = value;
     else if (option_value(argument, "--nml", &value)) config->nml_file = value;
@@ -267,7 +267,7 @@ bool parse_config(int argc, char* argv[], DaemonConfig* config, bool* show_help,
 std::string config_help() {
   return "linuxcnc-grpc-server [options]\n"
          "  --endpoint=HOST:PORT                 (default 127.0.0.1:50051)\n"
-         "  --position-telemetry-endpoint=HOST:PORT (default 127.0.0.1:50052)\n"
+         "  --telemetry-endpoint=HOST:PORT         (default 127.0.0.1:50052)\n"
          "  --ini=PATH --nml=PATH\n"
          "  --workspace-root=PATH --active-program-directory=PATH\n"
          "  --workspace-quota=BYTES --total-quota=BYTES --workspace-ttl-seconds=N\n"

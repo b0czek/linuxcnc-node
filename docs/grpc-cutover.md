@@ -48,7 +48,8 @@ directory. Parsing always uses the daemon INI and streams progress, bounded
 operation batches, and one final summary.
 
 `HalService` provides topology snapshots and watches, typed batch reads and
-writes, signal creation, message-level metadata, writer metadata, and a
+writes, mutable HAL value telemetry subscriptions, signal creation,
+message-level metadata, writer metadata, and a
 bidirectional client-component session. A session owns exactly one component;
 closing it destroys the component. Signal link/unlink operations are not part
 of v1 because the previous bridge declared but did not implement them.
@@ -63,15 +64,19 @@ Network work never runs from realtime code.
 
 ## Endpoint and security
 
-The default gRPC endpoint is `127.0.0.1:50051`. Position telemetry defaults to
-the WebSocket endpoint `ws://127.0.0.1:50052/v1/position-history`. Addresses
+The default gRPC endpoint is `127.0.0.1:50051`. The shared telemetry listener
+defaults to `ws://127.0.0.1:50052`, with position history at
+`/v1/position-history` and token-attached HAL values at
+`/v1/hal-values/{token}`. Addresses
 and ports are configurable. The standard gRPC health service is always
 available and reflection is disabled unless explicitly enabled. TLS and mutual
-TLS are supported for the gRPC control plane. The read-only position telemetry
+TLS are supported for the gRPC control plane. The read-only telemetry
 listener is always plaintext WebSocket and does not inherit gRPC TLS settings.
 A non-loopback plaintext bind is rejected unless the operator also sets the
 explicit unsafe-bind option. The daemon intentionally has no machine lease or
 application authorization layer; Noah owns writer policy and concurrency.
+HAL Inspector uses `LINUXCNC_TELEMETRY_URL` for the externally reachable
+WebSocket base and defaults it to `ws://127.0.0.1:50052`.
 
 ## Operational bounds
 
@@ -83,7 +88,7 @@ The initial polling defaults preserve the addon behavior:
 | Errors | 100 ms |
 | Position acquisition | 10 ms |
 | HAL topology | 2 s |
-| HAL Inspector values | 50-1000 ms |
+| HAL Inspector values | subscription-selected, 50-1000 ms |
 | Scope poll | 20 ms |
 | Scope heartbeat | 100 ms |
 
@@ -95,5 +100,5 @@ operation batches are bounded and scope frames are coalesced for slow clients.
 
 The atomic cutover is complete. The legacy Node native addons, their TypeScript
 wrappers, the temporary Eden protocol declarations, and the Eden bridge have
-been removed. gRPC remains the control plane; high-frequency position telemetry
-flows directly from the machine daemon to preview renderers over WebSocket.
+been removed. gRPC remains the control plane; position and selected HAL value
+telemetry flow directly from the machine daemon to renderers over WebSocket.

@@ -42,7 +42,7 @@ mkdir -p "$program_prefix" "$workspace_root"
 
 exec linuxcnc-grpc-server \
   "--endpoint=${LINUXCNC_GRPC_ENDPOINT:-0.0.0.0:50051}" \
-  "--position-telemetry-endpoint=${LINUXCNC_TELEMETRY_ENDPOINT:-0.0.0.0:50052}" \
+  "--telemetry-endpoint=${LINUXCNC_TELEMETRY_ENDPOINT:-0.0.0.0:50052}" \
   "--ini=$ini_file" \
   "--nml=$NMLFILE" \
   "--workspace-root=$workspace_root" \

@@ -7,6 +7,7 @@ import type {
   HalPinInfo,
   HalSignalInfo,
   HalThreadInfo,
+  HalType,
   HalValue,
   ScopeAcquisitionConfig,
   ScopeCapture,
@@ -43,9 +44,17 @@ export interface TopologySnapshot {
   threads: HalThreadInfo[];
 }
 
-export interface ValueDelta {
-  cursor: number;
-  values: Array<{ ref: HalItemRef; value: HalValue }>;
+export interface HalValueSlot {
+  slot: number;
+  ref: HalItemRef;
+  type: HalType;
+}
+
+export interface HalValueSubscriptionDescriptor {
+  revision: number;
+  samplePeriodMs: number;
+  slots: HalValueSlot[];
+  websocketUrl?: string;
 }
 
 export type ScopeRunMode = "stop" | "run" | "single" | "roll";
@@ -58,7 +67,6 @@ export interface ScopeRollFrame {
 export interface Bootstrap {
   connected: boolean;
   topology: TopologySnapshot | null;
-  cursor: number;
   scope: ScopeStatus | null;
   scopeRunMode: ScopeRunMode;
 }
@@ -67,7 +75,6 @@ export interface HalInspectorProtocol extends ChannelProtocol {
   hostMessages: {
     "connection/state": { connected: boolean; message?: string };
     "topology/changed": TopologySnapshot;
-    "values/delta": ValueDelta;
     "scope/status": ScopeStatus;
     "scope/run-mode": { mode: ScopeRunMode };
     "scope/capture": { id: number; capture: ScopeCapture; skipped: number };
@@ -92,7 +99,7 @@ export interface HalInspectorProtocol extends ChannelProtocol {
     };
     "subscriptions/set": {
       args: { refs: HalItemRef[]; intervalMs: number };
-      result: RpcResult<{ intervalMs: number }>;
+      result: RpcResult<HalValueSubscriptionDescriptor | null>;
     };
     "item/write": {
       args: { ref: HalItemRef; value: string | number | boolean };

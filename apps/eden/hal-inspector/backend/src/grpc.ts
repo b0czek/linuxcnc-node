@@ -10,6 +10,7 @@ import {
   HalItemKind as WireHalItemKind,
   type HalItemRef as WireHalItemRef,
   HalType as WireHalType,
+  type HalValueSubscription__Output as WireHalValueSubscription,
   type ScopeAcquisitionConfig as WireScopeAcquisitionConfig,
 } from "@linuxcnc-node/grpc-client";
 import type {
@@ -28,6 +29,7 @@ import type {
   ScopeStatus,
 } from "@linuxcnc-node/types";
 import type {
+  HalValueSubscriptionDescriptor,
   InspectorErrorCode,
   TopologySnapshot,
 } from "../../shared/protocol";
@@ -429,7 +431,17 @@ export function scopeAck(
 export interface HalScopeClient {
   getTopology(): Promise<TopologySnapshot>;
   watchTopology(listener: (topology: TopologySnapshot) => void): () => void;
-  read(refs: readonly HalItemRef[]): Promise<HalValue[]>;
+  createValueSubscription(
+    refs: readonly HalItemRef[],
+    intervalMs: number,
+  ): Promise<HalValueSubscriptionDescriptor & { subscriptionId: string }>;
+  updateValueSubscription(
+    subscriptionId: string,
+    revision: number,
+    refs: readonly HalItemRef[],
+    intervalMs: number,
+  ): Promise<HalValueSubscriptionDescriptor & { subscriptionId: string }>;
+  deleteValueSubscription(subscriptionId: string): Promise<void>;
   write(ref: HalItemRef, type: HalType, value: HalValue): Promise<HalValue>;
   openScope(): Promise<ScopeSession>;
   close(): void;
@@ -459,6 +471,25 @@ export async function createHalScopeClient(): Promise<HalScopeClient> {
   let topologyRetry: NodeJS.Timeout | undefined;
   let topologyRetryMs = 250;
   let closed = false;
+
+  const mapValueSubscription = (
+    value: WireHalValueSubscription,
+  ): HalValueSubscriptionDescriptor & { subscriptionId: string } => {
+    const websocketPath = value.websocketPath ?? "";
+    return {
+      subscriptionId: value.subscriptionId ?? "",
+      revision: toNumber(value.revision, "HAL subscription revision"),
+      samplePeriodMs: Number(value.samplePeriodMs ?? 100),
+      slots: (value.slots ?? []).map((slot) => ({
+        slot: Number(slot.slot ?? 0),
+        ref: domainItemRef(slot.item ?? undefined),
+        type: domainHalType(slot.type),
+      })),
+      ...(websocketPath
+        ? { websocketUrl: `${config.telemetryUrl}${websocketPath}` }
+        : {}),
+    };
+  };
 
   const scheduleTopologyWatch = (): void => {
     if (closed || topologyListeners.size === 0 || topologyRetry) return;
@@ -510,13 +541,36 @@ export async function createHalScopeClient(): Promise<HalScopeClient> {
       startTopologyWatch();
       return () => topologyListeners.delete(listener);
     },
-    async read(refs) {
-      const response: any = await unary<any>(
-        (request, callback) => hal.read(request, callback),
-        { items: refs.map(wireItemRef) },
+    async createValueSubscription(refs, intervalMs) {
+      const response = await unary<WireHalValueSubscription>(
+        (request, callback) =>
+          hal.createValueSubscription(request, callback as never),
+        { items: refs.map(wireItemRef), samplePeriodMs: intervalMs },
       );
-      return (response.values ?? []).map((entry: any) =>
-        domainHalValue(entry.value),
+      return mapValueSubscription(response);
+    },
+    async updateValueSubscription(
+      subscriptionId,
+      currentRevision,
+      refs,
+      intervalMs,
+    ) {
+      const response = await unary<WireHalValueSubscription>(
+        (request, callback) =>
+          hal.updateValueSubscription(request, callback as never),
+        {
+          subscriptionId,
+          expectedRevision: currentRevision.toString(),
+          items: refs.map(wireItemRef),
+          samplePeriodMs: intervalMs,
+        },
+      );
+      return mapValueSubscription(response);
+    },
+    async deleteValueSubscription(subscriptionId) {
+      await unary(
+        (request, callback) => hal.deleteValueSubscription(request, callback),
+        { subscriptionId },
       );
     },
     async write(ref, type, value) {

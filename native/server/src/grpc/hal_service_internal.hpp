@@ -40,6 +40,24 @@ class HalUnaryService : public HalUnaryCallbackBase {
       HalWriteResponse* response) override {
     return task(request, response, &HalUnaryService::do_write);
   }
+  ::grpc::ServerUnaryReactor* CreateValueSubscription(
+      ::grpc::CallbackServerContext*,
+      const CreateHalValueSubscriptionRequest* request,
+      HalValueSubscription* response) override {
+    return task(request, response, &HalUnaryService::do_create_value_subscription);
+  }
+  ::grpc::ServerUnaryReactor* UpdateValueSubscription(
+      ::grpc::CallbackServerContext*,
+      const UpdateHalValueSubscriptionRequest* request,
+      HalValueSubscription* response) override {
+    return task(request, response, &HalUnaryService::do_update_value_subscription);
+  }
+  ::grpc::ServerUnaryReactor* DeleteValueSubscription(
+      ::grpc::CallbackServerContext*,
+      const DeleteHalValueSubscriptionRequest* request,
+      google::protobuf::Empty* response) override {
+    return task(request, response, &HalUnaryService::do_delete_value_subscription);
+  }
   ::grpc::ServerUnaryReactor* CreateSignal(
       ::grpc::CallbackServerContext*, const CreateHalSignalRequest* request,
       CreateHalSignalResponse* response) override {
@@ -68,6 +86,12 @@ class HalUnaryService : public HalUnaryCallbackBase {
   virtual ::grpc::Status do_get_topology(const GetHalTopologyRequest*, GetHalTopologyResponse*) = 0;
   virtual ::grpc::Status do_read(const HalReadRequest*, HalReadResponse*) = 0;
   virtual ::grpc::Status do_write(const HalWrite*, HalWriteResponse*) = 0;
+  virtual ::grpc::Status do_create_value_subscription(
+      const CreateHalValueSubscriptionRequest*, HalValueSubscription*) = 0;
+  virtual ::grpc::Status do_update_value_subscription(
+      const UpdateHalValueSubscriptionRequest*, HalValueSubscription*) = 0;
+  virtual ::grpc::Status do_delete_value_subscription(
+      const DeleteHalValueSubscriptionRequest*, google::protobuf::Empty*) = 0;
   virtual ::grpc::Status do_create_signal(const CreateHalSignalRequest*,
                                           CreateHalSignalResponse*) = 0;
   virtual ::grpc::Status do_set_message_level(const SetHalMessageLevelRequest*,

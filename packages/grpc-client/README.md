@@ -16,6 +16,11 @@ applications with a custom layout can pass `protoRoot`, `protoPath`, and/or
 `healthProtoPath` explicitly; the health path is never inferred from the
 application schema filename.
 
+HAL value consumers create and mutate subscriptions with the raw `HalService`
+methods, then attach the returned path to the daemon's read-only telemetry
+WebSocket. This package exposes the gRPC control contract only; consumers
+decode the versioned `LCHV` frames at their renderer boundary.
+
 ## Streaming program previews
 
 Use `clients.program.parseProgram(...)` as a readable server stream. Append

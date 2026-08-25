@@ -34,7 +34,7 @@ EOF
 
 "$server" \
   "--endpoint=127.0.0.1:${port}" \
-  "--position-telemetry-endpoint=127.0.0.1:${telemetry_port}" \
+  "--telemetry-endpoint=127.0.0.1:${telemetry_port}" \
   "--ini=$root/linuxcnc.ini" \
   "--nml=$root/nml.conf" \
   "--workspace-root=$root/workspaces" \

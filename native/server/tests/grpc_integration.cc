@@ -46,6 +46,15 @@ std::vector<std::uint8_t> read_telemetry_frame(
   return bytes;
 }
 
+std::vector<std::uint8_t> read_raw_frame(
+    websocket::stream<beast::tcp_stream>& socket) {
+  beast::flat_buffer buffer;
+  socket.read(buffer);
+  std::vector<std::uint8_t> bytes(buffer.size());
+  asio::buffer_copy(asio::buffer(bytes), buffer.data());
+  return bytes;
+}
+
 int main(int argc, char** argv) {
   const std::string endpoint = argc > 1 ? argv[1] : "127.0.0.1:50051";
   auto channel = grpc::CreateChannel(endpoint,
@@ -188,6 +197,57 @@ int main(int argc, char** argv) {
   auto hal = linuxcnc::v1::HalService::NewStub(channel);
   linuxcnc::v1::GetHalTopologyResponse topology;
   assert(hal->GetTopology(&context5, {}, &topology).ok());
+
+  grpc::ClientContext create_signal_context;
+  linuxcnc::v1::CreateHalSignalRequest create_signal;
+  create_signal.set_name("integration.telemetry");
+  create_signal.set_type(linuxcnc::v1::HAL_TYPE_BIT);
+  linuxcnc::v1::CreateHalSignalResponse created_signal;
+  assert(hal->CreateSignal(&create_signal_context, create_signal,
+                           &created_signal).ok());
+  grpc::ClientContext create_subscription_context;
+  linuxcnc::v1::CreateHalValueSubscriptionRequest create_subscription;
+  create_subscription.set_sample_period_ms(50);
+  auto* requested_item = create_subscription.add_items();
+  requested_item->set_kind(linuxcnc::v1::HAL_ITEM_KIND_SIGNAL);
+  requested_item->set_name("integration.telemetry");
+  linuxcnc::v1::HalValueSubscription value_subscription;
+  assert(hal->CreateValueSubscription(&create_subscription_context,
+                                      create_subscription,
+                                      &value_subscription).ok());
+  assert(value_subscription.revision() == 1);
+  assert(value_subscription.slots_size() == 1);
+  websocket::stream<beast::tcp_stream> hal_telemetry(io);
+  beast::get_lowest_layer(hal_telemetry).connect(
+      resolver.resolve(telemetry_host, telemetry_port));
+  hal_telemetry.handshake(telemetry_host, value_subscription.websocket_path());
+  const auto hal_replacement = read_raw_frame(hal_telemetry);
+  assert(hal_replacement.size() == 48);
+  assert(hal_replacement[0] == 'L' && hal_replacement[1] == 'C' &&
+         hal_replacement[2] == 'H' && hal_replacement[3] == 'V');
+  assert(hal_replacement[4] == 1 && hal_replacement[5] == 1);
+  grpc::ClientContext write_context;
+  linuxcnc::v1::HalWrite write;
+  auto* write_value = write.add_writes();
+  *write_value->mutable_item() = *requested_item;
+  write_value->mutable_value()->set_type(linuxcnc::v1::HAL_TYPE_BIT);
+  write_value->mutable_value()->set_bit(true);
+  linuxcnc::v1::HalWriteResponse write_response;
+  assert(hal->Write(&write_context, write, &write_response).ok());
+  const auto hal_delta = read_raw_frame(hal_telemetry);
+  assert(hal_delta.size() == 48 && hal_delta[5] == 2);
+  grpc::ClientContext update_subscription_context;
+  linuxcnc::v1::UpdateHalValueSubscriptionRequest update_subscription;
+  update_subscription.set_subscription_id(value_subscription.subscription_id());
+  update_subscription.set_expected_revision(value_subscription.revision());
+  update_subscription.set_sample_period_ms(100);
+  linuxcnc::v1::HalValueSubscription updated_subscription;
+  assert(hal->UpdateValueSubscription(&update_subscription_context,
+                                      update_subscription,
+                                      &updated_subscription).ok());
+  assert(updated_subscription.revision() == 2);
+  const auto empty_replacement = read_raw_frame(hal_telemetry);
+  assert(empty_replacement.size() == 32 && empty_replacement[5] == 1);
   grpc::ClientContext future_topology_context;
   future_topology_context.set_deadline(
       std::chrono::system_clock::now() + std::chrono::seconds(2));

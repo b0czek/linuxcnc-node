@@ -778,6 +778,25 @@ message HalReadResponse { repeated HalReadValue values = 1; }
 message HalWrite { repeated HalWriteValue writes = 1; }
 message HalWriteValue { HalItemRef item = 1; HalScalar value = 2; }
 message HalWriteResponse { repeated HalReadValue values = 1; }
+message HalValueSubscriptionSlot { uint32 slot = 1; HalItemRef item = 2; HalType type = 3; }
+message CreateHalValueSubscriptionRequest {
+  repeated HalItemRef items = 1;
+  uint32 sample_period_ms = 2;
+}
+message HalValueSubscription {
+  string subscription_id = 1;
+  string websocket_path = 2;
+  uint64 revision = 3;
+  uint32 sample_period_ms = 4;
+  repeated HalValueSubscriptionSlot slots = 5;
+}
+message UpdateHalValueSubscriptionRequest {
+  string subscription_id = 1;
+  uint64 expected_revision = 2;
+  repeated HalItemRef items = 3;
+  uint32 sample_period_ms = 4;
+}
+message DeleteHalValueSubscriptionRequest { string subscription_id = 1; }
 message CreateHalSignalRequest { string name = 1; HalType type = 2; }
 message CreateHalSignalResponse { HalSignalInfo signal = 1; }
 message SetHalMessageLevelRequest { RtapiMessageLevel level = 1; }
@@ -863,6 +882,9 @@ service HalService {
   rpc GetTopology(GetHalTopologyRequest) returns (GetHalTopologyResponse);
   rpc WatchTopology(WatchHalTopologyRequest) returns (stream WatchHalTopologyEvent);
   rpc Read(HalReadRequest) returns (HalReadResponse);
+  rpc CreateValueSubscription(CreateHalValueSubscriptionRequest) returns (HalValueSubscription);
+  rpc UpdateValueSubscription(UpdateHalValueSubscriptionRequest) returns (HalValueSubscription);
+  rpc DeleteValueSubscription(DeleteHalValueSubscriptionRequest) returns (google.protobuf.Empty);
   rpc Write(HalWrite) returns (HalWriteResponse);
   rpc CreateSignal(CreateHalSignalRequest) returns (CreateHalSignalResponse);
   rpc SetMessageLevel(SetHalMessageLevelRequest) returns (google.protobuf.Empty);

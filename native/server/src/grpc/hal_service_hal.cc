@@ -3,6 +3,7 @@
 #include "linuxcnc_grpc/daemon_config.hpp"
 #include "linuxcnc_grpc/grpc_hal_mapping.hpp"
 #include "linuxcnc_grpc/hal_adapter.hpp"
+#include "linuxcnc_grpc/hal_value_telemetry.hpp"
 
 #include <algorithm>
 #include <array>
@@ -16,6 +17,8 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -35,6 +38,33 @@ std::optional<HalAdapterType> decode_hal_type(HalType type) {
   return static_cast<HalAdapterType>(static_cast<int>(type) - 1);
 }
 
+HalTelemetryReference telemetry_reference(const HalAdapterReference& source) {
+  return {static_cast<HalTelemetryItemKind>(static_cast<int>(source.kind) + 1),
+          source.name};
+}
+
+HalAdapterReference adapter_reference(const HalTelemetryReference& source) {
+  return {static_cast<HalAdapterItemKind>(static_cast<int>(source.kind) - 1),
+          source.name};
+}
+
+void encode_subscription(const HalTelemetryDescriptor& source,
+                         HalValueSubscription* target) {
+  target->Clear();
+  target->set_subscription_id(source.subscription_id);
+  target->set_websocket_path(source.websocket_path);
+  target->set_revision(source.revision);
+  target->set_sample_period_ms(static_cast<std::uint32_t>(source.sample_period.count()));
+  for (const auto& binding : source.bindings) {
+    auto* slot = target->add_slots();
+    slot->set_slot(binding.slot);
+    slot->mutable_item()->set_kind(
+        static_cast<HalItemKind>(static_cast<int>(binding.item.kind)));
+    slot->mutable_item()->set_name(binding.item.name);
+    slot->set_type(static_cast<HalType>(static_cast<int>(binding.type)));
+  }
+}
+
 class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
   class TopologyReactor;
   class ComponentReactor;
@@ -44,10 +74,12 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
 
   HalServiceImpl(const DaemonConfig& config, BoundedExecutor& worker,
                  AdmissionCounter& component_admission,
-                 AdmissionCounter& stream_admission)
+                 AdmissionCounter& stream_admission,
+                 std::shared_ptr<HalValueTelemetry> telemetry)
       : HalUnaryService(worker), worker_(worker),
         component_admission_(component_admission),
         stream_admission_(stream_admission),
+        telemetry_(std::move(telemetry)),
         topology_period_(config.topology_period),
         timer_([this] { timer_loop(); }) {}
 
@@ -134,6 +166,52 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     }
   }
 
+  ::grpc::Status do_create_value_subscription(
+      const CreateHalValueSubscriptionRequest* request,
+      HalValueSubscription* response) override {
+    if (request->items_size() == 0)
+      return Invalid("HAL value subscription requires at least one item");
+    auto resolved = resolve_subscription_items(request->items(), nullptr);
+    if (!resolved.first.ok()) return resolved.first;
+    const auto period = subscription_period(request->sample_period_ms());
+    if (!period) return Invalid("HAL value sample period must be between 50 and 60000 ms");
+    auto created = telemetry_->create(std::move(resolved.second), *period);
+    if (!created) return {::grpc::StatusCode::RESOURCE_EXHAUSTED,
+                          "HAL value subscription limit reached"};
+    encode_subscription(*created, response);
+    return ::grpc::Status::OK;
+  }
+
+  ::grpc::Status do_update_value_subscription(
+      const UpdateHalValueSubscriptionRequest* request,
+      HalValueSubscription* response) override {
+    const auto current = telemetry_->descriptor(request->subscription_id());
+    if (!current) return {::grpc::StatusCode::NOT_FOUND,
+                          "HAL value subscription was not found"};
+    if (current->revision != request->expected_revision())
+      return {::grpc::StatusCode::ABORTED,
+              "HAL value subscription revision does not match"};
+    auto resolved = resolve_subscription_items(request->items(), &*current);
+    if (!resolved.first.ok()) return resolved.first;
+    const auto period = subscription_period(request->sample_period_ms());
+    if (!period) return Invalid("HAL value sample period must be between 50 and 60000 ms");
+    auto updated = telemetry_->update(request->subscription_id(),
+        request->expected_revision(), std::move(resolved.second), *period);
+    if (!updated) return {::grpc::StatusCode::ABORTED,
+                          "HAL value subscription changed concurrently"};
+    encode_subscription(*updated, response);
+    return ::grpc::Status::OK;
+  }
+
+  ::grpc::Status do_delete_value_subscription(
+      const DeleteHalValueSubscriptionRequest* request,
+      google::protobuf::Empty*) override {
+    if (request->subscription_id().empty())
+      return Invalid("HAL value subscription id is required");
+    telemetry_->erase(request->subscription_id());
+    return ::grpc::Status::OK;
+  }
+
   ::grpc::Status do_create_signal(const CreateHalSignalRequest* request,
                                   CreateHalSignalResponse* response) override {
     const auto type = decode_hal_type(request->type());
@@ -197,6 +275,73 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
   }
 
  private:
+  static std::optional<std::chrono::milliseconds> subscription_period(
+      std::uint32_t value) {
+    if (value == 0) value = 100;
+    if (value < 50 || value > 60000) return std::nullopt;
+    return std::chrono::milliseconds(value);
+  }
+
+  std::pair<::grpc::Status, std::vector<HalTelemetryResolvedItem>>
+  resolve_subscription_items(
+      const google::protobuf::RepeatedPtrField<HalItemRef>& items,
+      const HalTelemetryDescriptor* existing) {
+    if (items.size() > 1024)
+      return {{::grpc::StatusCode::RESOURCE_EXHAUSTED,
+               "HAL value subscription exceeds 1024 items"}, {}};
+    std::vector<HalAdapterReference> references;
+    std::unordered_set<std::string> unique;
+    for (const auto& item : items) {
+      auto decoded = decode_hal_reference(item);
+      if (!decoded) return {Invalid("HAL value subscription contains an invalid item"), {}};
+      const auto key = std::to_string(static_cast<int>(decoded->kind)) + ":" + decoded->name;
+      if (!unique.insert(key).second)
+        return {Invalid("HAL value subscription contains a duplicate item"), {}};
+      references.push_back(std::move(*decoded));
+    }
+    const auto values = adapter_.read_many(references);
+    std::unordered_map<std::string, HalTelemetryType> prior;
+    if (existing) for (const auto& binding : existing->bindings)
+      prior.emplace(std::to_string(static_cast<int>(binding.item.kind)) + ":" +
+                    binding.item.name, binding.type);
+    std::vector<HalTelemetryResolvedItem> result;
+    for (std::size_t index = 0; index < references.size(); ++index) {
+      const auto reference = telemetry_reference(references[index]);
+      HalTelemetryType type = HalTelemetryType::Unavailable;
+      if (values[index]) {
+        type = static_cast<HalTelemetryType>(values[index]->index() + 1);
+      } else {
+        const auto found = prior.find(std::to_string(static_cast<int>(reference.kind)) +
+                                      ":" + reference.name);
+        if (found == prior.end())
+          return {{::grpc::StatusCode::NOT_FOUND,
+                   "HAL item '" + reference.name + "' was not found"}, {}};
+        type = found->second;
+      }
+      result.push_back({reference, type});
+    }
+    return {::grpc::Status::OK, std::move(result)};
+  }
+
+  void sample_telemetry() {
+    for (const auto& due : telemetry_->due(std::chrono::steady_clock::now())) {
+      std::vector<HalAdapterReference> references;
+      for (const auto& binding : due.bindings)
+        references.push_back(adapter_reference(binding.item));
+      auto values = adapter_.read_many(references);
+      std::vector<std::optional<HalTelemetryValue>> published;
+      published.reserve(values.size());
+      for (std::size_t index = 0; index < values.size(); ++index) {
+        if (!values[index] || values[index]->index() + 1 !=
+                                  static_cast<std::size_t>(due.bindings[index].type))
+          published.emplace_back();
+        else
+          published.push_back(*values[index]);
+      }
+      telemetry_->publish(due.subscription_id, due.revision, std::move(published));
+    }
+  }
+
   struct ComponentState {
     struct Item {
       std::string suffix;
@@ -626,6 +771,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
       if (refresh_topology) next_topology = now + topology_period_;
       worker_.submit([this, refresh_topology] {
         sample_components();
+        sample_telemetry();
         if (!refresh_topology) return;
         try {
           const auto snapshot = topology_snapshot();
@@ -665,6 +811,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
   BoundedExecutor& worker_;
   AdmissionCounter& component_admission_;
   AdmissionCounter& stream_admission_;
+  std::shared_ptr<HalValueTelemetry> telemetry_;
   const std::chrono::milliseconds topology_period_;
   SubscriptionHub<std::uint64_t> topology_wakes_;
   std::mutex components_mutex_;
@@ -685,9 +832,11 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
 std::unique_ptr<ManagedGrpcService> make_hal_service_impl(
     const DaemonConfig& config, BoundedExecutor& worker,
     AdmissionCounter& component_admission,
-    AdmissionCounter& stream_admission) {
+    AdmissionCounter& stream_admission,
+    std::shared_ptr<HalValueTelemetry> telemetry) {
   return std::make_unique<HalServiceImpl>(
-      config, worker, component_admission, stream_admission);
+      config, worker, component_admission, stream_admission,
+      std::move(telemetry));
 }
 
 }  // namespace linuxcnc::server::detail
