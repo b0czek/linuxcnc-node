@@ -14,6 +14,13 @@
 
 namespace linuxcnc::server {
 
+namespace detail {
+constexpr bool nml_serial_after(std::int32_t lhs, std::int32_t rhs) {
+  return static_cast<std::int32_t>(static_cast<std::uint32_t>(lhs) -
+                                   static_cast<std::uint32_t>(rhs)) > 0;
+}
+}  // namespace detail
+
 enum class NmlCommandKind {
   SetTaskMode,
   SetTaskState,

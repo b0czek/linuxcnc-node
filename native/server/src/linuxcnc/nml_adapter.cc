@@ -125,10 +125,6 @@ std::string nml_text(const char (&source)[Size]) {
                                    source)};
 }
 
-bool serial_after(std::int32_t lhs, std::int32_t rhs) {
-  return static_cast<std::int32_t>(static_cast<std::uint32_t>(lhs) -
-                                   static_cast<std::uint32_t>(rhs)) > 0;
-}
 }  // namespace
 #endif
 
@@ -281,7 +277,7 @@ struct NmlAdapter::Impl {
       if (observation_sequence <= pending.after_observation)
         return now >= pending.deadline ? Resolution::TimedOut
                                        : Resolution::Pending;
-      if (serial_after(snapshot.echo_serial_number, pending.serial))
+      if (detail::nml_serial_after(snapshot.echo_serial_number, pending.serial))
         return Resolution::Completed;
       if (snapshot.echo_serial_number == pending.serial) {
         if (snapshot.rcs_status ==

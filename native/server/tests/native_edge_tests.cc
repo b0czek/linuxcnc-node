@@ -339,6 +339,15 @@ void command_validation_test() {
   assert(!validate_nml_command(command, &configuration));
 }
 
+void nml_serial_wrap_test() {
+  constexpr auto maximum = std::numeric_limits<std::int32_t>::max();
+  constexpr auto minimum = std::numeric_limits<std::int32_t>::min();
+  static_assert(detail::nml_serial_after(minimum, maximum));
+  static_assert(!detail::nml_serial_after(maximum, minimum));
+  static_assert(detail::nml_serial_after(42, 41));
+  static_assert(!detail::nml_serial_after(41, 42));
+}
+
 PositionSample position(double x, std::int32_t motion = 0) {
   PositionSample sample;
   sample.coordinates[0] = x;
@@ -715,6 +724,7 @@ int main() {
   command_priority_and_reserved_capacity_test();
   deferred_command_completion_test();
   command_validation_test();
+  nml_serial_wrap_test();
   position_cursor_generation_and_replacement_test();
   position_collinear_compaction_test();
   hal_value_telemetry_test();
