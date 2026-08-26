@@ -4,18 +4,19 @@ Date: Sun, 23 Aug 2026 22:34:37 +0200
 Subject: [PATCH] rs274: add recording canon preview backend
 
 ---
- src/emc/rs274ngc/recordingcanon.cc | 565 +++++++++++++++++++++++++++++
- src/emc/rs274ngc/recordingcanon.hh | 134 +++++++
- 2 files changed, 699 insertions(+)
+ src/emc/rs274ngc/recordingcanon.cc | 617 +++++++++++++++++++++++++++++
+ src/emc/rs274ngc/recordingcanon.hh | 143 +++++++
+ src/emc/tooldata/tooldata_mmap.cc  |   5 +
+ 3 files changed, 765 insertions(+)
  create mode 100644 src/emc/rs274ngc/recordingcanon.cc
  create mode 100644 src/emc/rs274ngc/recordingcanon.hh
 
 diff --git a/src/emc/rs274ngc/recordingcanon.cc b/src/emc/rs274ngc/recordingcanon.cc
 new file mode 100644
-index 0000000000..cdddfe9621
+index 0000000000..c93ab40fcf
 --- /dev/null
 +++ b/src/emc/rs274ngc/recordingcanon.cc
-@@ -0,0 +1,565 @@
+@@ -0,0 +1,617 @@
 +#include "recordingcanon.hh"
 +
 +#include <algorithm>
@@ -37,6 +38,12 @@ index 0000000000..cdddfe9621
 +    EmcPose position{};
 +    EmcPose probe_position{};
 +    CANON_UNITS units = CANON_UNITS_INCHES;
++    std::vector<CANON_TOOL_TABLE> tools;
++    std::size_t max_events = 0;
++    std::size_t max_bytes = 0;
++    std::size_t recorded_bytes = 0;
++    std::size_t max_control_points = 0;
++    bool exceeded = false;
 +    CANON_PLANE plane = CANON_PLANE::XY;
 +    CANON_MOTION_MODE motion_mode = CANON_CONTINUOUS;
 +    double motion_tolerance = 0.1;
@@ -61,6 +68,33 @@ index 0000000000..cdddfe9621
 +{
 +    assert(active_session && "recording canon call without an active Session");
 +    return *active_session;
++}
++
++template <typename T>
++std::size_t event_size(const T &) { return sizeof(T); }
++
++std::size_t event_size(const NurbsG5Feed &event)
++{
++    return sizeof(event) + event.control_points.size() * sizeof(NURBS_CONTROL_POINT);
++}
++
++std::size_t event_size(const NurbsG6Feed &event)
++{
++    return sizeof(event) + event.control_points.size() * sizeof(NURBS_G6_CONTROL_POINT);
++}
++
++template <typename T>
++void record(T &&event)
++{
++    auto &state = active();
++    const auto bytes = event_size(event);
++    if (state.events.size() >= state.max_events ||
++        bytes > state.max_bytes - std::min(state.recorded_bytes, state.max_bytes)) {
++        state.exceeded = true;
++        return;
++    }
++    state.recorded_bytes += bytes;
++    state.events.emplace_back(std::forward<T>(event));
 +}
 +
 +EmcPose pose(double x, double y, double z,
@@ -151,12 +185,19 @@ index 0000000000..cdddfe9621
 +
 +} // namespace
 +
-+Session::Session() : impl(std::make_unique<Impl>())
++Session::Session(SessionConfig config) : impl(std::make_unique<Impl>())
 +{
 +    assert(!active_session && "recording canon Sessions may not overlap");
 +    active_session = impl.get();
++    impl->units = config.units;
++    impl->tools = std::move(config.tools);
++    impl->max_events = config.max_events;
++    impl->max_bytes = config.max_bytes;
++    impl->max_control_points = config.max_control_points;
 +    tool_offset = {};
 +}
++
++bool Session::limit_exceeded() const { return impl->exceeded; }
 +
 +Session::~Session()
 +{
@@ -168,6 +209,7 @@ index 0000000000..cdddfe9621
 +{
 +    std::vector<Event> result;
 +    result.swap(impl->events);
++    impl->recorded_bytes = 0;
 +    return result;
 +}
 +
@@ -182,7 +224,7 @@ index 0000000000..cdddfe9621
 +{
 +    auto &state = recording::active();
 +    state.position = recording::pose(x, y, z, a, b, c, u, v, w);
-+    state.events.emplace_back(recording::StraightTraverse{line_number, state.position});
++    recording::record(recording::StraightTraverse{line_number, state.position});
 +}
 +
 +void STRAIGHT_FEED(int line_number,
@@ -192,7 +234,7 @@ index 0000000000..cdddfe9621
 +{
 +    auto &state = recording::active();
 +    state.position = recording::pose(x, y, z, a, b, c, u, v, w);
-+    state.events.emplace_back(recording::StraightFeed{line_number, state.position});
++    recording::record(recording::StraightFeed{line_number, state.position});
 +}
 +
 +void ARC_FEED(int line_number,
@@ -203,7 +245,7 @@ index 0000000000..cdddfe9621
 +              double u, double v, double w)
 +{
 +    auto &state = recording::active();
-+    state.events.emplace_back(recording::ArcFeed{
++    recording::record(recording::ArcFeed{
 +        line_number, first_end, second_end, first_axis, second_axis,
 +        rotation, axis_end_point, a, b, c, u, v, w, state.plane});
 +    recording::set_plane_end(state.position, state.plane,
@@ -225,21 +267,21 @@ index 0000000000..cdddfe9621
 +    auto &state = recording::active();
 +    state.probe_position = recording::pose(x, y, z, a, b, c, u, v, w);
 +    state.position = state.probe_position;
-+    state.events.emplace_back(recording::StraightProbe{
++    recording::record(recording::StraightProbe{
 +        line_number, state.position, probe_type});
 +}
 +
 +void RIGID_TAP(int line_number, double x, double y, double z, double scale)
 +{
 +    auto &state = recording::active();
-+    state.events.emplace_back(recording::RigidTap{line_number, x, y, z, scale});
++    recording::record(recording::RigidTap{line_number, x, y, z, scale});
 +    state.position.tran.x = x;
 +    state.position.tran.y = y;
 +}
 +
 +void DWELL(double seconds)
 +{
-+    recording::active().events.emplace_back(recording::Dwell{seconds});
++    recording::record(recording::Dwell{seconds});
 +}
 +
 +void NURBS_G5_FEED(int line_number,
@@ -247,7 +289,11 @@ index 0000000000..cdddfe9621
 +                   unsigned int order, CANON_PLANE plane)
 +{
 +    auto &state = recording::active();
-+    state.events.emplace_back(recording::NurbsG5Feed{
++    if (control_points.size() > state.max_control_points) {
++        state.exceeded = true;
++        return;
++    }
++    recording::record(recording::NurbsG5Feed{
 +        line_number, control_points, order, plane});
 +    if (!control_points.empty()) {
 +        const auto &last = control_points.back();
@@ -263,7 +309,11 @@ index 0000000000..cdddfe9621
 +                   CANON_PLANE plane)
 +{
 +    auto &state = recording::active();
-+    state.events.emplace_back(recording::NurbsG6Feed{
++    if (control_points.size() > state.max_control_points) {
++        state.exceeded = true;
++        return;
++    }
++    recording::record(recording::NurbsG6Feed{
 +        line_number, control_points, order, feed_rate, l_option, plane});
 +    if (control_points.size() > order) {
 +        const auto &last = control_points.back();
@@ -284,14 +334,14 @@ index 0000000000..cdddfe9621
 +        recording::scale_pose(tool_offset, scale);
 +        state.units = units;
 +    }
-+    state.events.emplace_back(recording::LengthUnits{units});
++    recording::record(recording::LengthUnits{units});
 +}
 +
 +void SELECT_PLANE(CANON_PLANE plane)
 +{
 +    auto &state = recording::active();
 +    state.plane = plane;
-+    state.events.emplace_back(recording::Plane{plane});
++    recording::record(recording::Plane{plane});
 +}
 +
 +void SET_G5X_OFFSET(int index,
@@ -299,7 +349,7 @@ index 0000000000..cdddfe9621
 +                    double a, double b, double c,
 +                    double u, double v, double w)
 +{
-+    recording::active().events.emplace_back(recording::G5xOffset{
++    recording::record(recording::G5xOffset{
 +        index, recording::pose(x, y, z, a, b, c, u, v, w)});
 +}
 +
@@ -307,13 +357,13 @@ index 0000000000..cdddfe9621
 +                    double a, double b, double c,
 +                    double u, double v, double w)
 +{
-+    recording::active().events.emplace_back(recording::G92Offset{
++    recording::record(recording::G92Offset{
 +        recording::pose(x, y, z, a, b, c, u, v, w)});
 +}
 +
 +void SET_XY_ROTATION(double degrees)
 +{
-+    recording::active().events.emplace_back(recording::XyRotation{degrees});
++    recording::record(recording::XyRotation{degrees});
 +}
 +
 +void CANON_UPDATE_END_POINT(double x, double y, double z,
@@ -327,7 +377,7 @@ index 0000000000..cdddfe9621
 +{
 +    auto &state = recording::active();
 +    state.feed_rate = rate;
-+    state.events.emplace_back(recording::FeedRate{rate});
++    recording::record(recording::FeedRate{rate});
 +}
 +
 +void SET_TRAVERSE_RATE(double rate) { recording::active().traverse_rate = rate; }
@@ -389,7 +439,7 @@ index 0000000000..cdddfe9621
 +void USE_TOOL_LENGTH_OFFSET(const EmcPose &offset)
 +{
 +    tool_offset = offset;
-+    recording::active().events.emplace_back(recording::ToolOffset{offset});
++    recording::record(recording::ToolOffset{offset});
 +}
 +
 +void SET_TOOL_TABLE_ENTRY(int, int, const EmcPose &, const EmcPose &,
@@ -401,14 +451,14 @@ index 0000000000..cdddfe9621
 +{
 +    auto &state = recording::active();
 +    state.tool_slot = state.selected_tool;
-+    state.events.emplace_back(recording::ToolChange{state.selected_tool});
++    recording::record(recording::ToolChange{state.selected_tool});
 +}
 +
 +void CHANGE_TOOL_NUMBER(int number)
 +{
 +    auto &state = recording::active();
 +    state.tool_slot = number;
-+    state.events.emplace_back(recording::ToolChange{number});
++    recording::record(recording::ToolChange{number});
 +}
 +
 +void RELOAD_TOOLDATA() {}
@@ -547,9 +597,12 @@ index 0000000000..cdddfe9621
 +
 +CANON_TOOL_TABLE GET_EXTERNAL_TOOL_TABLE(int pocket)
 +{
++    auto &state = recording::active();
++    if (pocket >= 0 && static_cast<std::size_t>(pocket) < state.tools.size())
++        return state.tools[pocket];
 +    CANON_TOOL_TABLE result{};
-+    result.pocketno = pocket;
-+    result.toolno = pocket;
++    result.pocketno = -1;
++    result.toolno = -1;
 +    return result;
 +}
 +
@@ -583,10 +636,10 @@ index 0000000000..cdddfe9621
 +void INTERP_ABORT(int, const char *) {}
 diff --git a/src/emc/rs274ngc/recordingcanon.hh b/src/emc/rs274ngc/recordingcanon.hh
 new file mode 100644
-index 0000000000..bae7c66f6c
+index 0000000000..a9f1a33750
 --- /dev/null
 +++ b/src/emc/rs274ngc/recordingcanon.hh
-@@ -0,0 +1,134 @@
+@@ -0,0 +1,143 @@
 +#ifndef RECORDING_CANON_HH
 +#define RECORDING_CANON_HH
 +
@@ -597,6 +650,14 @@ index 0000000000..bae7c66f6c
 +#include <vector>
 +
 +namespace linuxcnc::recording {
++
++struct SessionConfig {
++    CANON_UNITS units = CANON_UNITS_INCHES;
++    std::vector<CANON_TOOL_TABLE> tools;
++    std::size_t max_events = 100000;
++    std::size_t max_bytes = 8 * 1024 * 1024;
++    std::size_t max_control_points = 10000;
++};
 +
 +struct StraightTraverse {
 +    int line_number;
@@ -706,13 +767,14 @@ index 0000000000..bae7c66f6c
 +public:
 +    struct Impl;
 +
-+    Session();
++    explicit Session(SessionConfig config = {});
 +    ~Session();
 +
 +    Session(const Session &) = delete;
 +    Session &operator=(const Session &) = delete;
 +
 +    std::vector<Event> take_events();
++    bool limit_exceeded() const;
 +
 +private:
 +    std::unique_ptr<Impl> impl;
@@ -721,3 +783,33 @@ index 0000000000..bae7c66f6c
 +} // namespace linuxcnc::recording
 +
 +#endif
+diff --git a/src/emc/tooldata/tooldata_mmap.cc b/src/emc/tooldata/tooldata_mmap.cc
+index f9ad3cb7da..45d0c2e7c2 100644
+--- a/src/emc/tooldata/tooldata_mmap.cc
++++ b/src/emc/tooldata/tooldata_mmap.cc
+@@ -23,6 +23,7 @@
+ #include <fcntl.h> // open(2)
+ #include <sys/mman.h>
+ #include <string.h>
++#include <mutex>
+ #include "config.h"
+ #include <rtapi_mutex.h>
+ #include "tooldata.hh"
+@@ -167,6 +168,9 @@ int tool_mmap_creator(EMC_TOOL_STAT const * ptr,int random_toolchanger)
+ //typ: milltask, guis (emcmodule,emcsh,...), halui
+ int tool_mmap_user()
+ {
++    static std::mutex user_mapping_mutex;
++    const std::lock_guard<std::mutex> lock(user_mapping_mutex);
++    if (tool_mmap_base) return 0;
+     int fd = open(tool_mmap_fname(),
+                   TOOL_MMAP_USER_OPEN_FLAGS, TOOL_MMAP_MODE);
+ 
+@@ -191,6 +195,7 @@ int tool_mmap_user()
+         perror("tool_mmap_user(): mmap fail");
+         exit(EXIT_FAILURE);
+     }
++    close(fd);
+     return 0;
+ } //tool_mmap_user()
+ 

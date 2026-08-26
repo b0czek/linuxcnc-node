@@ -39,10 +39,10 @@ bool nearly_equal(double actual, double expected) {
 }  // namespace
 
 int main(int argc, char** argv) {
-  if (argc != 6) {
+  if (argc != 7) {
     std::cerr << "usage: gcode_parser_integration <ini-path> <gcode-path> "
                  "<operations-gcode-path> <cutter-comp-gcode-path> "
-                 "<python-remap-gcode-path>\n";
+                 "<python-remap-gcode-path> <modal-free-metric-path>\n";
     return 2;
   }
 
@@ -166,6 +166,24 @@ int main(int argc, char** argv) {
       });
   assert(self_execute_feed != remap_operations.end());
   assert(direct_canon_feed != remap_operations.end());
+
+  std::vector<Operation> modal_free_operations;
+  ParseOptions modal_free_options;
+  modal_free_options.ini_path = argv[1];
+  modal_free_options.on_batch = [&](OperationBatch&& batch) {
+    modal_free_operations.insert(modal_free_operations.end(),
+                                 std::make_move_iterator(batch.begin()),
+                                 std::make_move_iterator(batch.end()));
+    return true;
+  };
+  parser.parse_file(argv[6], modal_free_options);
+  const auto metric_move = std::find_if(
+      modal_free_operations.begin(), modal_free_operations.end(),
+      [](const auto& op) {
+        const auto* traverse = std::get_if<TraverseOp>(&op);
+        return traverse && nearly_equal(traverse->pos.x, 1.0);
+      });
+  assert(metric_move != modal_free_operations.end());
 
   // A callback can cancel after a bounded batch. Cancellation is observed
   // before the next rs274 read/execute step and never removes that batch.

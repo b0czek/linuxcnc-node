@@ -494,20 +494,40 @@ class Session final : public std::enable_shared_from_this<Session> {
             };
             options.on_batch = [flow, send](gcode::OperationBatch&& batch) {
               if (batch.empty()) return true;
-              {
+              const auto send_batch = [flow, send](
+                                          linuxcnc::v1::ProgramPreviewEvent&&
+                                              event) {
                 std::unique_lock lock(flow->mutex);
                 flow->condition.wait(lock, [flow] {
                   return flow->cancelled || flow->outstanding_batches < 2;
                 });
                 if (flow->cancelled) return false;
                 ++flow->outstanding_batches;
-              }
+                lock.unlock();
+                send(std::move(event), true, false);
+                return true;
+              };
+              constexpr std::size_t max_preview_frame_bytes =
+                  4U * 1024U * 1024U;
               linuxcnc::v1::ProgramPreviewEvent event;
-              for (const auto& operation : batch)
+              for (const auto& operation : batch) {
                 encode_gcode_operation(operation,
                                        event.mutable_batch()->add_operations());
-              send(std::move(event), true, false);
-              return true;
+                if (event.ByteSizeLong() <= max_preview_frame_bytes) continue;
+                event.mutable_batch()->mutable_operations()->RemoveLast();
+                if (event.batch().operations().empty())
+                  throw std::runtime_error(
+                      "G-code operation exceeds preview frame byte limit");
+                if (!send_batch(std::move(event))) return false;
+                event.Clear();
+                encode_gcode_operation(
+                    operation, event.mutable_batch()->add_operations());
+                if (event.ByteSizeLong() > max_preview_frame_bytes)
+                  throw std::runtime_error(
+                      "G-code operation exceeds preview frame byte limit");
+              }
+              return event.batch().operations().empty() ||
+                     send_batch(std::move(event));
             };
             gcode::SerializedRs274Parser parser;
             const auto result = parser.parse_file(source.string(), options);

@@ -16,6 +16,7 @@ program="$fixture_dir/simple_linear.ngc"
 operations_program="$fixture_dir/preview_operations.ngc"
 cutter_compensation_program="$fixture_dir/cutter_compensation.ngc"
 python_remap_program="$fixture_dir/python_remap.ngc"
+modal_free_metric_program="$fixture_dir/modal_free_metric.ngc"
 parameter_file="$fixture_dir/sim_mm.var"
 tool_table="$fixture_dir/sim_mm.tbl"
 workdir=$(mktemp -d "${TMPDIR:-/tmp}/linuxcnc-gcode-parser.XXXXXX")
@@ -33,4 +34,4 @@ cp "$fixture_dir/toplevel.py" "$workdir/toplevel.py"
 cd "$workdir"
 EMC2_HOME="${EMC2_HOME:-}" "$binary" "$workdir/machine.ini" "$program" \
     "$operations_program" "$cutter_compensation_program" \
-    "$python_remap_program"
+    "$python_remap_program" "$modal_free_metric_program"

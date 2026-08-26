@@ -3,7 +3,9 @@
 #include <sys/stat.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
+#include <fstream>
 #include <mutex>
 #include <stdexcept>
 
@@ -21,6 +23,55 @@ std::mutex rs274_mutex;
 
 bool result_ok(const int result) {
   return result == INTERP_OK || result == INTERP_EXECUTE_FINISH;
+}
+
+struct IniPreviewState {
+  CANON_UNITS units = CANON_UNITS_INCHES;
+  std::string startup_code;
+};
+
+IniPreviewState load_preview_state(const std::string& path) {
+  std::ifstream input(path);
+  if (!input) throw std::runtime_error("failed to open INI file: " + path);
+  IniPreviewState state;
+  std::string section;
+  std::string line;
+  while (std::getline(input, line)) {
+    const auto comment = line.find_first_of(";#");
+    if (comment != std::string::npos) line.erase(comment);
+    const auto trim = [](std::string value) {
+      const auto first = value.find_first_not_of(" \t\r");
+      if (first == std::string::npos) return std::string{};
+      const auto last = value.find_last_not_of(" \t\r");
+      return value.substr(first, last - first + 1);
+    };
+    line = trim(line);
+    if (line.size() >= 2 && line.front() == '[' && line.back() == ']') {
+      section = line.substr(1, line.size() - 2);
+      continue;
+    }
+    const auto equals = line.find('=');
+    if (equals == std::string::npos) continue;
+    auto key = trim(line.substr(0, equals));
+    auto value = trim(line.substr(equals + 1));
+    const auto upper = [](unsigned char value) { return std::toupper(value); };
+    std::transform(section.begin(), section.end(), section.begin(), upper);
+    std::transform(key.begin(), key.end(), key.begin(), upper);
+    if (section == "TRAJ" && key == "LINEAR_UNITS") {
+      const auto lower = [](unsigned char character) {
+        return std::tolower(character);
+      };
+      std::transform(value.begin(), value.end(), value.begin(), lower);
+      if (value == "mm" || value == "metric") state.units = CANON_UNITS_MM;
+      else if (value == "cm") state.units = CANON_UNITS_CM;
+      else if (value == "inch" || value == "in" || value == "imperial")
+        state.units = CANON_UNITS_INCHES;
+      else throw std::runtime_error("unsupported [TRAJ]LINEAR_UNITS: " + value);
+    } else if (section == "RS274NGC" && key == "RS274NGC_STARTUP_CODE") {
+      state.startup_code = value;
+    }
+  }
+  return state;
 }
 
 }  // namespace
@@ -61,10 +112,21 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
   context.cancellationCallback = options.is_cancelled;
   context.batchSize = options.batch_size;
 
+  const auto preview_state = load_preview_state(options.ini_path);
+  ::linuxcnc::recording::SessionConfig session_config;
+  session_config.units = preview_state.units;
+  session_config.tools.assign(CANON_POCKETS_MAX, tooldata_entry_init());
+  if (tool_mmap_user() == 0) {
+    for (int pocket = 0; pocket < CANON_POCKETS_MAX; ++pocket) {
+      if (tooldata_get(&session_config.tools[pocket], pocket) != IDX_OK)
+        session_config.tools[pocket] = tooldata_entry_init();
+    }
+  }
+
   // The selected canon backend records every call made by the interpreter,
   // including calls from Python/NGC remaps. Translation and RPC batching stay
   // outside the interpreter/canonical call stack.
-  ::linuxcnc::recording::Session recording_session;
+  ::linuxcnc::recording::Session recording_session(std::move(session_config));
   bool opened = false;
 
   try {
@@ -96,10 +158,22 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
       concrete->_setup.program_prefix[options.program_prefix.size()] = '\0';
     }
     consumeRecordingEvents(recording_session, context);
-
-    // Tool data is optional for preview. LinuxCNC's canonical tool callbacks
-    // continue to return safe defaults when no tool table is available.
-    (void)tool_mmap_user();
+    if (recording_session.limit_exceeded())
+      throw std::runtime_error("G-code preview resource limit exceeded");
+    if (!preview_state.startup_code.empty()) {
+      const int startup_result =
+          interpreter_->execute(preview_state.startup_code.c_str());
+      consumeRecordingEvents(recording_session, context);
+      if (recording_session.limit_exceeded())
+        throw std::runtime_error("G-code preview resource limit exceeded");
+      if (!result_ok(startup_result)) {
+        char error_buffer[256]{};
+        interpreter_->error_text(startup_result, error_buffer,
+                                 sizeof(error_buffer));
+        throw std::runtime_error(std::string("invalid RS274NGC_STARTUP_CODE: ") +
+                                 error_buffer);
+      }
+    }
 
     if (interpreter_->open(filepath.c_str()) != 0)
       throw std::runtime_error("failed to open G-code file: " + filepath);
@@ -129,6 +203,8 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
       result = interpreter_->execute();
       ++line_count;
       consumeRecordingEvents(recording_session, context);
+      if (recording_session.limit_exceeded())
+        throw std::runtime_error("G-code preview resource limit exceeded");
       if (!context.cancellationRequested()) {
         // Delivery happens after execute returns, outside canonical callback
         // code, so a gRPC adapter can enqueue work without doing network I/O

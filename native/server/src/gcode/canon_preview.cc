@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
 #include <utility>
 
 #include "recordingcanon.hh"
@@ -11,6 +12,23 @@ namespace {
 
 namespace canon = ::linuxcnc::recording;
 constexpr double pi = 3.14159265358979323846;
+constexpr std::size_t max_batch_bytes = 4U * 1024U * 1024U;
+
+std::size_t operation_size(const Operation& operation) {
+  return std::visit(
+      [](const auto& value) {
+        using T = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<T, NurbsG5Op>)
+          return sizeof(T) + value.nurbsData.controlPoints.size() *
+                                 sizeof(NurbsG5ControlPoint);
+        else if constexpr (std::is_same_v<T, NurbsG6Op>)
+          return sizeof(T) + value.nurbsData.controlPoints.size() *
+                                 sizeof(NurbsG6ControlPoint);
+        else
+          return sizeof(T);
+      },
+      operation);
+}
 
 double positive_angle(double angle) {
   const double turn = 2.0 * pi;
@@ -388,16 +406,28 @@ bool ParseContext::flushReadyBatch() {
 bool ParseContext::flushBatch() {
   if (!batchCallback || operations.empty()) return !cancelled;
   const std::size_t max_batch = batchSize == 0 ? operations.size() : batchSize;
-  while (!operations.empty() && !cancelled) {
-    const std::size_t count = std::min(max_batch, operations.size());
+  std::size_t offset = 0;
+  while (offset < operations.size() && !cancelled) {
+    std::size_t count = 0;
+    std::size_t bytes = 0;
+    while (offset + count < operations.size() && count < max_batch) {
+      const auto next = operation_size(operations[offset + count]);
+      if (count != 0 && bytes + next > max_batch_bytes) break;
+      if (next > max_batch_bytes)
+        throw std::runtime_error(
+            "G-code operation exceeds preview batch byte limit");
+      bytes += next;
+      ++count;
+    }
     OperationBatch batch;
     batch.reserve(count);
     for (std::size_t index = 0; index < count; ++index)
-      batch.push_back(std::move(operations[index]));
-    operations.erase(operations.begin(),
-                     operations.begin() + static_cast<std::ptrdiff_t>(count));
+      batch.push_back(std::move(operations[offset + index]));
+    offset += count;
     if (!batchCallback(std::move(batch))) cancelled = true;
   }
+  operations.erase(operations.begin(),
+                   operations.begin() + static_cast<std::ptrdiff_t>(offset));
   return !cancelled;
 }
 
