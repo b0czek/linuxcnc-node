@@ -63,23 +63,29 @@ bool CommandTicket::observe(CommandWaitPolicy policy, Observer observer) const {
   return true;
 }
 
-CommandCoordinator::CommandCoordinator(std::size_t capacity)
+CommandCoordinator::CommandCoordinator(std::size_t capacity,
+                                       std::size_t safety_capacity)
     : capacity_(capacity == 0 ? 1 : capacity),
+      safety_capacity_(safety_capacity == 0 ? 1 : safety_capacity),
       worker_(&CommandCoordinator::run, this) {}
 
 CommandCoordinator::~CommandCoordinator() { shutdown(); }
 
-CommandTicket CommandCoordinator::submit(CommandAction action) {
+CommandTicket CommandCoordinator::submit(CommandAction action,
+                                         CommandPriority priority) {
   if (!action) throw std::invalid_argument("command action must not be empty");
 
   auto state = std::make_shared<CommandTicket::State>();
   std::unique_lock lock(mutex_);
   if (stopping_) throw std::runtime_error("command coordinator is stopped");
-  if (queue_.size() >= capacity_)
+  auto& queue = priority == CommandPriority::Safety ? safety_queue_ : queue_;
+  const auto capacity = priority == CommandPriority::Safety ? safety_capacity_
+                                                             : capacity_;
+  if (queue.size() >= capacity)
     throw std::runtime_error("command queue is full");
   const auto sequence = next_sequence_++;
   state->result.sequence = sequence;
-  queue_.push_back(Item{sequence, std::move(action), {}, state});
+  queue.push_back(Item{sequence, std::move(action), {}, state});
   lock.unlock();
   condition_.notify_one();
   return CommandTicket(std::move(state));
@@ -87,20 +93,24 @@ CommandTicket CommandCoordinator::submit(CommandAction action) {
 
 CommandTicket CommandCoordinator::submit_with_context(
     ContextCommandAction action) {
-  return submit_with_context(std::move(action), {});
+  return submit_with_context(std::move(action), {}, CommandPriority::Normal);
 }
 
 CommandTicket CommandCoordinator::submit_with_context(
-    ContextCommandAction action, std::function<bool()> cancelled) {
+    ContextCommandAction action, std::function<bool()> cancelled,
+    CommandPriority priority) {
   if (!action) throw std::invalid_argument("command action must not be empty");
   auto state = std::make_shared<CommandTicket::State>();
   std::unique_lock lock(mutex_);
   if (stopping_) throw std::runtime_error("command coordinator is stopped");
-  if (queue_.size() >= capacity_)
+  auto& queue = priority == CommandPriority::Safety ? safety_queue_ : queue_;
+  const auto capacity = priority == CommandPriority::Safety ? safety_capacity_
+                                                             : capacity_;
+  if (queue.size() >= capacity)
     throw std::runtime_error("command queue is full");
   const auto sequence = next_sequence_++;
   state->result.sequence = sequence;
-  queue_.push_back(
+  queue.push_back(
       Item{sequence,
            {},
            [action = std::move(action),
@@ -126,7 +136,7 @@ void CommandCoordinator::shutdown() {
 
 std::size_t CommandCoordinator::queued() const {
   std::lock_guard lock(mutex_);
-  return queue_.size();
+  return queue_.size() + safety_queue_.size();
 }
 
 void CommandCoordinator::run() {
@@ -134,10 +144,13 @@ void CommandCoordinator::run() {
     Item item;
     {
       std::unique_lock lock(mutex_);
-      condition_.wait(lock, [this] { return stopping_ || !queue_.empty(); });
-      if (queue_.empty() && stopping_) return;
-      item = std::move(queue_.front());
-      queue_.pop_front();
+      condition_.wait(lock, [this] {
+        return stopping_ || !safety_queue_.empty() || !queue_.empty();
+      });
+      if (queue_.empty() && safety_queue_.empty() && stopping_) return;
+      auto& next = safety_queue_.empty() ? queue_ : safety_queue_;
+      item = std::move(next.front());
+      next.pop_front();
     }
 
     const auto mark_accepted =
@@ -147,13 +160,24 @@ void CommandCoordinator::run() {
 
     try {
       if (item.context_action) {
-        CommandContext context{mark_accepted, {}};
+        bool deferred = false;
+        CommandContext context{
+            mark_accepted,
+            {},
+            [&deferred] { deferred = true; },
+            [state = item.state] {
+              transition(state, CommandState::Completed);
+            },
+            [state = item.state](std::string error) {
+              transition(state, CommandState::Failed, std::move(error));
+            }};
         item.context_action(context);
+        if (!deferred) transition(item.state, CommandState::Completed);
       } else {
         item.action();
         mark_accepted(0);
+        transition(item.state, CommandState::Completed);
       }
-      transition(item.state, CommandState::Completed);
     } catch (const std::exception& error) {
       transition(item.state, CommandState::Failed, error.what());
     } catch (...) {
@@ -170,6 +194,9 @@ void CommandCoordinator::transition(
   CommandResult snapshot;
   {
     std::lock_guard lock(state->mutex);
+    if (state->result.state == CommandState::Completed ||
+        state->result.state == CommandState::Failed)
+      return;
     if (result == CommandState::Accepted &&
         state->result.state != CommandState::Queued) {
       return;

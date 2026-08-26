@@ -25,6 +25,11 @@ enum class CommandState {
   Failed,
 };
 
+enum class CommandPriority {
+  Normal,
+  Safety,
+};
+
 struct CommandResult {
   // Internal sequence assigned when work enters the daemon coordinator.
   std::uint64_t sequence = 0;
@@ -41,6 +46,11 @@ struct CommandContext {
   // never invokes it or removes work.
   std::function<void(std::uint64_t)> mark_accepted;
   std::function<bool()> cancelled;
+  // A writer calls defer_completion after a successful external write. The
+  // status multiplexer later resolves the ticket through these callbacks.
+  std::function<void()> defer_completion;
+  std::function<void()> mark_completed;
+  std::function<void(std::string)> mark_failed;
 };
 
 // A command is deliberately a native callable.  The gRPC layer translates a
@@ -85,7 +95,8 @@ class CommandTicket {
 
 class CommandCoordinator {
  public:
-  explicit CommandCoordinator(std::size_t capacity = 128);
+  explicit CommandCoordinator(std::size_t capacity = 128,
+                              std::size_t safety_capacity = 8);
   ~CommandCoordinator();
 
   CommandCoordinator(const CommandCoordinator&) = delete;
@@ -94,10 +105,13 @@ class CommandCoordinator {
   // submit() only queues the action.  The action is executed serially by the
   // coordinator worker, and cancellation of an RPC wait never removes an
   // already accepted action from this queue.
-  CommandTicket submit(CommandAction action);
+  CommandTicket submit(CommandAction action,
+                       CommandPriority priority = CommandPriority::Normal);
   CommandTicket submit_with_context(ContextCommandAction action);
   CommandTicket submit_with_context(ContextCommandAction action,
-                                    std::function<bool()> cancelled);
+                                    std::function<bool()> cancelled,
+                                    CommandPriority priority =
+                                        CommandPriority::Normal);
   void shutdown();
   std::size_t queued() const;
 
@@ -115,9 +129,11 @@ class CommandCoordinator {
                          std::uint64_t accepted_sequence = 0);
 
   const std::size_t capacity_;
+  const std::size_t safety_capacity_;
   mutable std::mutex mutex_;
   std::condition_variable condition_;
   std::deque<Item> queue_;
+  std::deque<Item> safety_queue_;
   std::uint64_t next_sequence_ = 1;
   bool stopping_ = false;
   std::thread worker_;

@@ -184,6 +184,73 @@ void command_failure_wait_test() {
   coordinator.shutdown();
 }
 
+void command_priority_and_reserved_capacity_test() {
+  CommandCoordinator coordinator(1, 1);
+  Gate blocker;
+  std::mutex order_mutex;
+  std::vector<int> order;
+  auto first = coordinator.submit([&] {
+    blocker.arrive();
+    blocker.wait_until_open();
+    std::lock_guard lock(order_mutex);
+    order.push_back(1);
+  });
+  blocker.wait_for_arrival();
+  auto normal = coordinator.submit([&] {
+    std::lock_guard lock(order_mutex);
+    order.push_back(2);
+  });
+  auto safety = coordinator.submit(
+      [&] {
+        std::lock_guard lock(order_mutex);
+        order.push_back(3);
+      },
+      CommandPriority::Safety);
+
+  bool safety_full = false;
+  try {
+    (void)coordinator.submit([] {}, CommandPriority::Safety);
+  } catch (const std::runtime_error& error) {
+    safety_full = std::string(error.what()) == "command queue is full";
+  }
+  assert(safety_full);
+  assert(coordinator.queued() == 2);
+
+  blocker.open();
+  CommandResult result;
+  assert(first.wait_for(std::chrono::seconds(1), &result));
+  assert(safety.wait_for(std::chrono::seconds(1), &result));
+  assert(normal.wait_for(std::chrono::seconds(1), &result));
+  assert(order == std::vector<int>({1, 3, 2}));
+  coordinator.shutdown();
+}
+
+void deferred_command_completion_test() {
+  CommandCoordinator coordinator(1);
+  std::function<void()> complete;
+  std::function<void(std::string)> fail;
+  auto ticket = coordinator.submit_with_context([&](CommandContext& context) {
+    complete = context.mark_completed;
+    fail = context.mark_failed;
+    context.defer_completion();
+    context.mark_accepted(303);
+  });
+
+  CommandResult result;
+  assert(ticket.wait_for(CommandWaitPolicy::Accepted, std::chrono::seconds(1),
+                         &result));
+  assert(result.state == CommandState::Accepted);
+  assert(result.accepted_sequence == 303);
+  assert(!ticket.wait_for(CommandWaitPolicy::Completed,
+                          std::chrono::milliseconds(1), &result));
+  complete();
+  assert(ticket.wait_for(std::chrono::seconds(1), &result));
+  assert(result.state == CommandState::Completed);
+  fail("late failure");
+  assert(ticket.wait().state == CommandState::Completed);
+  coordinator.shutdown();
+}
+
 void command_validation_test() {
   NmlStatusSnapshot configuration;
   configuration.motion_stat.traj.joints = 3;
@@ -683,6 +750,8 @@ int main() {
   command_cancellation_and_acceptance_test();
   command_cancellation_before_worker_start_test();
   command_failure_wait_test();
+  command_priority_and_reserved_capacity_test();
+  deferred_command_completion_test();
   command_validation_test();
   status_replay_rollover_test();
   position_cursor_generation_and_replacement_test();

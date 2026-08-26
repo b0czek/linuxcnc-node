@@ -4,6 +4,7 @@
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/websocket.hpp>
+#include <atomic>
 #include <cassert>
 #include <chrono>
 #include <cstdint>
@@ -578,6 +579,42 @@ int main(int argc, char** argv) {
   ExecuteCommandRequest mdi_move;
   mdi_move.mutable_mdi()->set_command("G0 X1");
   (void)execute_completed(machine.get(), std::move(mdi_move));
+
+  // Completion observation must not occupy the command writer. A dwell keeps
+  // an MDI command executing while an abort is admitted and written.
+  std::atomic<bool> dwell_started{false};
+  grpc::Status dwell_status;
+  ExecuteCommandResponse dwell_response;
+  std::thread dwell([&] {
+    ExecuteCommandRequest request;
+    request.set_wait_policy(linuxcnc::v1::WAIT_POLICY_COMPLETED);
+    request.mutable_mdi()->set_command("G4 P2");
+    grpc::ClientContext context;
+    context.set_deadline(std::chrono::system_clock::now() +
+                         std::chrono::seconds(5));
+    dwell_started = true;
+    dwell_status =
+        machine->ExecuteCommand(&context, request, &dwell_response);
+  });
+  while (!dwell_started.load()) std::this_thread::yield();
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  ExecuteCommandRequest abort;
+  abort.set_wait_policy(linuxcnc::v1::WAIT_POLICY_ACCEPTED);
+  abort.mutable_abort_task();
+  grpc::ClientContext abort_context;
+  abort_context.set_deadline(std::chrono::system_clock::now() +
+                             std::chrono::seconds(1));
+  ExecuteCommandResponse abort_response;
+  const auto abort_started = std::chrono::steady_clock::now();
+  const auto abort_status =
+      machine->ExecuteCommand(&abort_context, abort, &abort_response);
+  const auto abort_elapsed = std::chrono::steady_clock::now() - abort_started;
+  assert(abort_status.ok());
+  assert(abort_response.command_sequence() != 0);
+  assert(abort_elapsed < std::chrono::seconds(1));
+  dwell.join();
+  assert(dwell_status.ok());
 
   // Exercise one safe representative from the remaining command families.
   // The protobuf setters are the command catalog: this table deliberately

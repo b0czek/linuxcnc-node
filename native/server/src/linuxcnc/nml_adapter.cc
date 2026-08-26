@@ -168,48 +168,67 @@ struct NmlAdapter::Impl {
 
   class CommandCompletionTracker {
    public:
-    bool wait_for_serial(int serial) {
-      const auto deadline =
-          std::chrono::steady_clock::now() + std::chrono::seconds(5);
-      std::unique_lock lock(mutex_);
-      const bool observed = condition_.wait_until(lock, deadline, [&] {
-        if (!channel_healthy_) return have_snapshot_;
-        if (!have_snapshot_) return false;
-        if (latest_.echo_serial_number > serial) return true;
-        return latest_.echo_serial_number == serial &&
-               latest_.rcs_status !=
-                   static_cast<std::int32_t>(RCS_STATUS::EXEC);
-      });
-      if (!observed)
-        throw std::runtime_error(
-            "timed out waiting for LinuxCNC command completion");
-      if (!channel_healthy_)
-        throw std::runtime_error("LinuxCNC NML status channel is unavailable");
-      if (latest_.echo_serial_number == serial &&
-          latest_.rcs_status ==
-              static_cast<std::int32_t>(RCS_STATUS::ERROR)) {
-        throw std::runtime_error("LinuxCNC rejected the command");
+    using Completion = std::function<void()>;
+    using Failure = std::function<void(std::string)>;
+
+    void track(int serial, Completion completed, Failure failed) {
+      Pending pending{serial,
+                      std::chrono::steady_clock::now() +
+                          std::chrono::seconds(5),
+                      0, std::move(completed), std::move(failed)};
+      Resolution resolution = Resolution::Pending;
+      {
+        std::lock_guard lock(mutex_);
+        pending.after_observation = observation_sequence_;
+        if (!channel_healthy_) {
+          resolution = Resolution::Unavailable;
+        } else if (have_snapshot_) {
+          resolution =
+              resolve(pending, latest_, std::chrono::steady_clock::now(),
+                      observation_sequence_);
+        }
+        if (resolution == Resolution::Pending) {
+          pending_.push_back(std::move(pending));
+          return;
+        }
       }
-      return true;
+      finish(std::move(pending), resolution);
     }
 
     void channel_failed() {
+      std::vector<Pending> failed;
       {
         std::lock_guard lock(mutex_);
         channel_healthy_ = false;
+        failed.swap(pending_);
       }
-      condition_.notify_all();
+      for (auto& pending : failed)
+        pending.failed("LinuxCNC NML status channel is unavailable");
     }
 
     void observe(const NmlStatusSnapshot& snapshot) {
+      std::vector<std::pair<Pending, Resolution>> ready;
       {
         std::lock_guard lock(mutex_);
         latest_ = snapshot;
         have_snapshot_ = true;
         channel_healthy_ = true;
         observed_at_ = std::chrono::steady_clock::now();
+        ++observation_sequence_;
+        collect_ready(observed_at_, &ready);
       }
-      condition_.notify_all();
+      for (auto& item : ready)
+        finish(std::move(item.first), item.second);
+    }
+
+    void tick() {
+      std::vector<std::pair<Pending, Resolution>> ready;
+      {
+        std::lock_guard lock(mutex_);
+        collect_ready(std::chrono::steady_clock::now(), &ready);
+      }
+      for (auto& item : ready)
+        finish(std::move(item.first), item.second);
     }
 
     bool fresh() const {
@@ -220,12 +239,79 @@ struct NmlAdapter::Impl {
     }
 
    private:
+    struct Pending {
+      int serial;
+      std::chrono::steady_clock::time_point deadline;
+      std::uint64_t after_observation;
+      Completion completed;
+      Failure failed;
+    };
+
+    enum class Resolution { Pending, Completed, Rejected, TimedOut, Unavailable };
+
+    static Resolution resolve(const Pending& pending,
+                              const NmlStatusSnapshot& snapshot,
+                              std::chrono::steady_clock::time_point now,
+                              std::uint64_t observation_sequence) {
+      if (observation_sequence <= pending.after_observation)
+        return now >= pending.deadline ? Resolution::TimedOut
+                                       : Resolution::Pending;
+      if (snapshot.echo_serial_number > pending.serial)
+        return Resolution::Completed;
+      if (snapshot.echo_serial_number == pending.serial) {
+        if (snapshot.rcs_status ==
+            static_cast<std::int32_t>(RCS_STATUS::DONE))
+          return Resolution::Completed;
+        if (snapshot.rcs_status ==
+            static_cast<std::int32_t>(RCS_STATUS::ERROR))
+          return Resolution::Rejected;
+      }
+      return now >= pending.deadline ? Resolution::TimedOut
+                                     : Resolution::Pending;
+    }
+
+    void collect_ready(
+        std::chrono::steady_clock::time_point now,
+        std::vector<std::pair<Pending, Resolution>>* ready) {
+      auto pending = pending_.begin();
+      while (pending != pending_.end()) {
+        const auto resolution =
+            resolve(*pending, latest_, now, observation_sequence_);
+        if (resolution == Resolution::Pending) {
+          ++pending;
+          continue;
+        }
+        ready->emplace_back(std::move(*pending), resolution);
+        pending = pending_.erase(pending);
+      }
+    }
+
+    static void finish(Pending pending, Resolution resolution) {
+      switch (resolution) {
+        case Resolution::Completed:
+          pending.completed();
+          break;
+        case Resolution::Rejected:
+          pending.failed("LinuxCNC rejected the command");
+          break;
+        case Resolution::TimedOut:
+          pending.failed("timed out waiting for LinuxCNC command completion");
+          break;
+        case Resolution::Unavailable:
+          pending.failed("LinuxCNC NML status channel is unavailable");
+          break;
+        case Resolution::Pending:
+          break;
+      }
+    }
+
     mutable std::mutex mutex_;
-    std::condition_variable condition_;
     NmlStatusSnapshot latest_;
+    std::vector<Pending> pending_;
     std::chrono::steady_clock::time_point observed_at_{};
     bool have_snapshot_ = false;
     bool channel_healthy_ = false;
+    std::uint64_t observation_sequence_ = 0;
   };
 
   std::unique_ptr<RCS_CMD_CHANNEL> make_command_channel() const {
@@ -375,6 +461,7 @@ NmlStatusPoll NmlAdapter::poll_status(NmlStatusSnapshot* snapshot) {
     return NmlStatusPoll::Disconnected;
   }
   if (type != EMC_STAT_TYPE) {
+    impl_->completions.tick();
     return impl_->completions.fresh() ? NmlStatusPoll::Idle
                                       : NmlStatusPoll::Stale;
   }
@@ -603,18 +690,20 @@ CommandTicket NmlAdapter::submit(
     // NOLINTNEXTLINE(performance-unnecessary-value-param): see above.
     std::function<bool()> cancelled) {
 #ifdef LINUXCNC_GRPC_HAS_NML
+  const bool safety_command = command.kind == NmlCommandKind::Stop ||
+                              command.kind == NmlCommandKind::Pause ||
+                              command.kind == NmlCommandKind::AbortTask;
   return impl_->commands.submit_with_context(
-      [this, command = std::move(command)](CommandContext& context) mutable {
+      [this, command = std::move(command),
+       safety_command](CommandContext& context) mutable {
         // A request cancelled while it was still queued has not reached
         // LinuxCNC and can be dropped safely. After the first NML write below,
         // cancellation no longer participates in command completion.
-        if (context.cancelled && context.cancelled()) {
+        if (!safety_command && context.cancelled && context.cancelled()) {
           throw std::runtime_error(
               "command cancelled before LinuxCNC acceptance");
         }
-        if (command.kind != NmlCommandKind::ProgramOpen && command.prepare) {
-          command.prepare(command);
-        }
+        if (command.prepare) command.prepare(command);
         std::unique_ptr<RCS_CMD_MSG> message;
         bool direct_tool_mutation = false;
         switch (command.kind) {
@@ -641,8 +730,6 @@ CommandTicket NmlAdapter::submit(
             if (!impl_->write_command(close.get()))
               throw std::runtime_error(
                   "failed to close the previous LinuxCNC program");
-            impl_->completions.wait_for_serial(close->serial_number);
-            if (command.prepare) command.prepare(command);
             auto value = std::make_unique<EMC_TASK_PLAN_OPEN>();
             if (command.path.size() >= sizeof(value->file))
               throw std::runtime_error("program path too long");
@@ -988,10 +1075,25 @@ CommandTicket NmlAdapter::submit(
         }
         const int serial = command_message->serial_number;
         context.mark_accepted(static_cast<std::uint64_t>(serial));
-        impl_->completions.wait_for_serial(serial);
-        if (command.on_completed) command.on_completed();
+        context.defer_completion();
+        impl_->completions.track(
+            serial,
+            [completed = context.mark_completed,
+             failed = context.mark_failed,
+             on_completed = std::move(command.on_completed)]() mutable {
+              try {
+                if (on_completed) on_completed();
+                completed();
+              } catch (const std::exception& error) {
+                failed(error.what());
+              } catch (...) {
+                failed("command completion callback failed");
+              }
+            },
+            context.mark_failed);
       },
-      std::move(cancelled));
+      std::move(cancelled), safety_command ? CommandPriority::Safety
+                                           : CommandPriority::Normal);
 #else
   (void)command;
   (void)cancelled;
