@@ -3,7 +3,7 @@ From: Dariusz Majnert <dariusz.majnert@gmail.com>
 Date: Wed, 26 Aug 2026 20:51:20 +0200
 Subject: [PATCH] motion: arm Single Step during active execution
 
-Forward AUTO_STEP to motion while an AUTO program is already running. The default trajectory planner latches the active source block, or the active G76 approach or thread-plus-clearance unit, and finishes that unit at an exact boundary before pausing.
+Forward AUTO_STEP to motion while an AUTO program is already running. The default trajectory planner latches the active source block, or the active G76 safe-approach or infeed-thread-clearance unit, and finishes that unit at an exact boundary before pausing.
 
 Keep later prequeued motion from starting, restore temporary exact boundaries when Step is canceled by Resume or Stop, and report single_stepping while an in-flight step remains armed. Cover ordinary multi-move blocks and an active G76 thread with later passes queued.
 ---
@@ -12,12 +12,12 @@ Keep later prequeued motion from starting, restore temporary exact boundaries wh
  src/emc/task/emctaskmain.cc            |  48 ++++++------
  src/emc/tp/tp.c                        |  80 ++++++++++++++++----
  src/emc/tp/tp_types.h                  |   6 +-
- tests/resumable-stop/README            |   6 ++
+ tests/resumable-stop/README            |  10 ++-
  tests/resumable-stop/checkresult       |   2 +-
  tests/resumable-stop/inflight-step.ngc |   7 ++
  tests/resumable-stop/test-ui.py        | 100 ++++++++++++++++++++++++-
  tests/resumable-stop/test.sh           |   2 +
- 10 files changed, 224 insertions(+), 53 deletions(-)
+ 10 files changed, 226 insertions(+), 55 deletions(-)
  create mode 100644 tests/resumable-stop/inflight-step.ngc
 
 diff --git a/src/emc/motion/command.c b/src/emc/motion/command.c
@@ -397,13 +397,20 @@ index 15be0f3127..893a9df4c2 100644
  } TP_STRUCT;
  
 diff --git a/tests/resumable-stop/README b/tests/resumable-stop/README
-index b325f8c8b1..4676f3859f 100644
+index e845030ffb..72607e0da2 100644
 --- a/tests/resumable-stop/README
 +++ b/tests/resumable-stop/README
-@@ -17,6 +17,12 @@ starts G76 in normal AUTO_RUN, stops after the first pass with later passes
- already queued, and verifies that each
- following AUTO_STEP reaches exactly one cylindrical or tapered approach
- endpoint, and the next AUTO_STEP completes that pass's thread and clearance.
+@@ -13,11 +13,17 @@ requests across the cut/retract handoff, and a negative G33 test proving that
+ an unrelated following rapid is not executed. Single Step coverage enters the
+ first G76 pass directly and verifies every cylindrical and tapered safe
+ approach step followed by its combined infeed, synchronized-cut, and clearance
+-step. It also starts G76 in normal AUTO_RUN, stops after the first pass with later passes
+-already queued, and verifies that each
++step. It also starts G76 in normal AUTO_RUN, stops after the first pass with
++later passes already queued, and verifies that each
+ following AUTO_STEP reaches exactly one cylindrical or tapered safe approach
+ endpoint, and the next AUTO_STEP completes that pass's infeed, thread, and
+ clearance.
 +In-flight Single Step coverage arms during an ordinary source block with three
 +later motion blocks already queued and during an active G76 cut with later
 +passes queued. It verifies that the active block or thread-plus-clearance unit
@@ -437,7 +444,7 @@ index 0000000000..1f72544983
 +G1 X40
 +M2
 diff --git a/tests/resumable-stop/test-ui.py b/tests/resumable-stop/test-ui.py
-index 82df9ff8c5..ee5ddf1ddc 100755
+index 89bf59d175..0ecb3cc4be 100755
 --- a/tests/resumable-stop/test-ui.py
 +++ b/tests/resumable-stop/test-ui.py
 @@ -24,7 +24,23 @@ def wait_for(predicate, message, timeout=10.0, poll_interval=0.02):

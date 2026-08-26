@@ -254,15 +254,16 @@ synchronized cut inherit the pass owner, keeping Stop bound to that pass's
 marked clearance.
 
 Each generated cylindrical or tapered G76 pass is split into two Single Step
-units. The first performs the approach and stops at the thread start position;
-the second performs the synchronized thread and its marked clearance retract.
-These internal motion fences are active only while stepping, so uninterrupted
+units. The first returns to the pass start and stops at the safe clearance
+depth. The second performs
+the infeed, synchronized thread, and marked clearance retract together. These
+internal motion fences are active only while stepping, so uninterrupted
 `AUTO_RUN` retains task readahead. Motion-level targeting preserves the same
-approach/thread-plus-clearance sequence after Stop when later G76 passes were
-already queued during normal `AUTO_RUN`; ordinary unmarked motion retains
+safe-approach/infeed-thread-clearance sequence after Stop when later G76 passes
+were already queued during normal `AUTO_RUN`; ordinary unmarked motion retains
 source-line stepping. Twenty-five
 runtime scenarios cover direct first passes, fresh and prequeued cylindrical
-and tapered approach/thread-clearance pairs, synchronized exit tapers,
+and tapered safe-approach/thread-clearance pairs, synchronized exit tapers,
 arc-blend clearance endpoints, an unmarked post-G33 rapid, and repeated Stops
 with deterministic cut-side timing near the cut/retract handoff. The internal
 NML and motion fields add no public status field or Node.js binding requirement.

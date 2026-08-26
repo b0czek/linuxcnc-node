@@ -3,13 +3,13 @@ From: Dariusz <dariusz@localhost>
 Date: Mon, 17 Aug 2026 22:08:20 +0200
 Subject: [PATCH] linuxcnc: clear G76 passes safely on Stop and Step
 
-Give each generated G76 pass an internal identity spanning its approach, synchronized cut, and exact clearance retract. Stop latches the active pass and finishes only its marked retract, including when the target arrives after the cut or the request crosses the cut/retract handoff.
+Give each generated G76 pass an internal identity spanning its safe approach, synchronized cut, and exact clearance retract. Stop latches the active pass and finishes only its marked retract, including when the target arrives after the cut or the request crosses the cut/retract handoff.
 
-Split Single Step into two internal units per pass: the approach to the thread start, followed by the synchronized thread and its clearance retract together. Teach motion-level Step to preserve those same boundaries when later passes were already queued by AUTO_RUN, while ordinary unmarked motion retains source-line stepping.
+Split Single Step into two internal units per pass: return to the pass start while remaining at safe clearance, followed by the infeed, synchronized thread, and clearance retract together. Teach motion-level Step to preserve those same boundaries when later passes were already queued by AUTO_RUN, while ordinary unmarked motion retains source-line stepping.
 
-Preserve pass ownership on synthetic blend arcs, make marked clearance endpoints non-blendable, reset pass-step state on abort and mode changes, and extend resumable-stop coverage to cylindrical and tapered Stop-to-Step handoffs, exit tapers, arc blending, deterministic cut/retract timing, and two-step approach/thread-clearance sequencing.
+Preserve pass ownership on synthetic blend arcs, make marked clearance endpoints non-blendable, reset pass-step state on abort and mode changes, and extend resumable-stop coverage to cylindrical and tapered Stop-to-Step handoffs, exit tapers, arc blending, deterministic cut/retract timing, and two-step safe-approach/thread-clearance sequencing.
 ---
- docs/src/gcode/g-code.adoc                    |  14 +
+ docs/src/gcode/g-code.adoc                    |  15 +
  src/emc/motion/command.c                      |  31 +-
  src/emc/motion/control.c                      |  25 +-
  src/emc/motion/motion.h                       |   2 +
@@ -20,7 +20,7 @@ Preserve pass ownership on synthetic blend arcs, make marked clearance endpoints
  src/emc/nml_intf/interpl.cc                   |  17 +-
  src/emc/nml_intf/interpl.hh                   |   5 +
  src/emc/rs274ngc/gcodemodule.cc               |   5 +
- src/emc/rs274ngc/interp_convert.cc            |  16 +
+ src/emc/rs274ngc/interp_convert.cc            |  12 +
  src/emc/sai/saicanon.cc                       |   6 +
  src/emc/task/emccanon.cc                      |  63 +++-
  src/emc/task/emctask.cc                       |   4 +-
@@ -32,7 +32,7 @@ Preserve pass ownership on synthetic blend arcs, make marked clearance endpoints
  src/emc/tp/tp.h                               |   3 +-
  src/emc/tp/tp_types.h                         |  10 +-
  tests/interp/compile/use-rs274.cc             |   5 +
- tests/resumable-stop/README                   |  21 +-
+ tests/resumable-stop/README                   |  22 +-
  tests/resumable-stop/checkresult              |   3 +-
  .../resumable-stop/g33-followed-by-rapid.ngc  |   7 +
  tests/resumable-stop/g76-exit-taper.ngc       |   7 +
@@ -44,7 +44,7 @@ Preserve pass ownership on synthetic blend arcs, make marked clearance endpoints
  tests/resumable-stop/test-ui.py               | 326 +++++++++++++++++-
  tests/resumable-stop/test.ini                 |   1 +
  tests/resumable-stop/test.sh                  |  14 +
- 35 files changed, 869 insertions(+), 58 deletions(-)
+ 35 files changed, 867 insertions(+), 58 deletions(-)
  create mode 100644 tests/resumable-stop/g33-followed-by-rapid.ngc
  create mode 100644 tests/resumable-stop/g76-exit-taper.ngc
  create mode 100644 tests/resumable-stop/g76-handoff.ngc
@@ -54,20 +54,21 @@ Preserve pass ownership on synthetic blend arcs, make marked clearance endpoints
  create mode 100644 tests/resumable-stop/g76-tapered.ngc
 
 diff --git a/docs/src/gcode/g-code.adoc b/docs/src/gcode/g-code.adoc
-index 4160cfb4a2..a7bd6bd133 100644
+index 4160cfb4a2..760cfe2384 100644
 --- a/docs/src/gcode/g-code.adoc
 +++ b/docs/src/gcode/g-code.adoc
-@@ -1986,6 +1986,20 @@ pass, so a relief groove will be required at the entry unless the
+@@ -1986,6 +1986,21 @@ pass, so a relief groove will be required at the entry unless the
  beginning of the thread is past the end of the material or an entry
  taper is used.
  
-+In Single Step mode, each G76 pass is two steps. The first step performs the
-+approach and stops at the thread start position. The second step performs the
-+synchronized cut and its immediate retract to the pass clearance position.
-+The next step begins the next pass. These internal fences do not drain the
-+motion queue during normal, uninterrupted `AUTO_RUN` execution. The approach
-+endpoint and marked clearance retract are exact, non-blendable endpoints while
-+stepping, so motion reaches zero velocity at both boundaries.
++In Single Step mode, each G76 pass is two steps. The first step moves to the
++pass start while remaining at the safe clearance depth. The second step
++performs the infeed, synchronized cut, and immediate retract to the pass
++clearance position. The next step begins the next pass. These internal fences
++do not drain the motion queue during normal, uninterrupted `AUTO_RUN`
++execution. The safe approach endpoint and marked clearance retract are exact,
++non-blendable endpoints while stepping, so motion reaches zero velocity at
++both boundaries.
 +
 +When resumable Stop is enabled, a Stop requested during a G76 cut or its
 +immediate clearance retract completes that explicitly marked retract before
@@ -455,16 +456,15 @@ index 32aeed560b..d97d0ac765 100644
  void PALLET_SHUTTLE() {}
  void SELECT_TOOL(int tool) {selected_tool = tool;}
 diff --git a/src/emc/rs274ngc/interp_convert.cc b/src/emc/rs274ngc/interp_convert.cc
-index 373916cfb0..2c5deb0e27 100644
+index 373916cfb0..33a35bda2e 100644
 --- a/src/emc/rs274ngc/interp_convert.cc
 +++ b/src/emc/rs274ngc/interp_convert.cc
-@@ -5618,11 +5618,15 @@ threading_pass(setup_pointer settings, block_pointer block,
+@@ -5618,11 +5618,14 @@ threading_pass(setup_pointer settings, block_pointer block,
  	       double start_y, double start_z, double zoff, double taper_dist,
  	       int entry_taper, int exit_taper, double taper_pitch,
  	       double pitch, double full_threadheight, double target_z) {
 +    START_G76_PASS();
-+    if(taper_dist && entry_taper)
-+	FINISH_G76_APPROACH();
++    FINISH_G76_APPROACH();
      STRAIGHT_TRAVERSE(block->line_number, boring?
  		      safe_x + depth - end_depth:
  		      safe_x - depth + end_depth,
@@ -474,18 +474,15 @@ index 373916cfb0..2c5deb0e27 100644
  	DISABLE_FEED_OVERRIDE();
  	START_SPEED_FEED_SYNCH(settings->active_spindle, taper_pitch, 0);
  	STRAIGHT_FEED(block->line_number, boring?
-@@ -5633,8 +5637,10 @@ threading_pass(setup_pointer settings, block_pointer block,
+@@ -5633,6 +5636,7 @@ threading_pass(setup_pointer settings, block_pointer block,
  		      start_y, start_z - zoff - taper_dist, AABBCC);
  	START_SPEED_FEED_SYNCH(settings->active_spindle, pitch, 0);
      } else {
-+	FINISH_G76_APPROACH();
++	START_G76_CUT();
  	STRAIGHT_TRAVERSE(block->line_number, boring? safe_x + depth: safe_x - depth,
  			  start_y, start_z - zoff, AABBCC); //in
-+	START_G76_CUT();
  	DISABLE_FEED_OVERRIDE();
- 	START_SPEED_FEED_SYNCH(settings->active_spindle, pitch, 0);
-     }
-@@ -5652,11 +5658,13 @@ threading_pass(setup_pointer settings, block_pointer block,
+@@ -5652,11 +5656,13 @@ threading_pass(setup_pointer settings, block_pointer block,
  		      start_y, target_z - zoff, AABBCC); //over
      }
      STOP_SPEED_FEED_SYNCH();
@@ -499,7 +496,7 @@ index 373916cfb0..2c5deb0e27 100644
  }
  
  // Make one threading pass along a tapered XZ drive line.  X coordinates are
-@@ -5670,6 +5678,7 @@ tapered_threading_pass(setup_pointer settings, block_pointer block,
+@@ -5670,6 +5676,7 @@ tapered_threading_pass(setup_pointer settings, block_pointer block,
  	       double full_compound_offset, double taper_dist,
  	       int entry_taper, int exit_taper, double pitch,
  	       double full_threadheight) {
@@ -507,16 +504,15 @@ index 373916cfb0..2c5deb0e27 100644
      const double drive_dx = end_x - start_x;
      const double drive_dz = end_z - start_z;
      const double drive_length = hypot(drive_dx, drive_dz);
-@@ -5687,6 +5696,8 @@ tapered_threading_pass(setup_pointer settings, block_pointer block,
+@@ -5687,6 +5694,7 @@ tapered_threading_pass(setup_pointer settings, block_pointer block,
      const double cut_start_x = pass_start_x + depth_direction * depth;
      const double cut_end_x = pass_end_x + depth_direction * depth;
  
-+    if(taper_dist && entry_taper)
-+	FINISH_G76_APPROACH();
++    FINISH_G76_APPROACH();
      STRAIGHT_TRAVERSE(block->line_number,
  		      cut_start_x - depth_direction * end_depth,
  		      start_y, pass_start_z, AABBCC); // back
-@@ -5701,6 +5712,7 @@ tapered_threading_pass(setup_pointer settings, block_pointer block,
+@@ -5701,6 +5709,7 @@ tapered_threading_pass(setup_pointer settings, block_pointer block,
  		  entry_end_z - pass_start_z) /
  	    fabs(entry_end_z - pass_start_z);
  
@@ -524,18 +520,15 @@ index 373916cfb0..2c5deb0e27 100644
  	DISABLE_FEED_OVERRIDE();
  	START_SPEED_FEED_SYNCH(settings->active_spindle, entry_pitch, 0);
  	STRAIGHT_FEED(block->line_number, crest_start_x,
-@@ -5709,8 +5721,10 @@ tapered_threading_pass(setup_pointer settings, block_pointer block,
+@@ -5709,6 +5718,7 @@ tapered_threading_pass(setup_pointer settings, block_pointer block,
  		      start_y, entry_end_z, AABBCC); // angled in
  	START_SPEED_FEED_SYNCH(settings->active_spindle, drive_pitch, 0);
      } else {
-+	FINISH_G76_APPROACH();
++	START_G76_CUT();
  	STRAIGHT_TRAVERSE(block->line_number, cut_start_x,
  			  start_y, pass_start_z, AABBCC); // in
-+	START_G76_CUT();
  	DISABLE_FEED_OVERRIDE();
- 	START_SPEED_FEED_SYNCH(settings->active_spindle, drive_pitch, 0);
-     }
-@@ -5735,10 +5749,12 @@ tapered_threading_pass(setup_pointer settings, block_pointer block,
+@@ -5735,10 +5745,12 @@ tapered_threading_pass(setup_pointer settings, block_pointer block,
  		      start_y, pass_end_z, AABBCC); // over
      }
      STOP_SPEED_FEED_SYNCH();
@@ -1341,10 +1334,10 @@ index 4a55bad0de..a5a795f475 100644
  void CANON_ERROR(const char *fmt, ...) {}
  void UPDATE_TAG(const StateTag& tag) {}
 diff --git a/tests/resumable-stop/README b/tests/resumable-stop/README
-index e457195324..b325f8c8b1 100644
+index e457195324..e845030ffb 100644
 --- a/tests/resumable-stop/README
 +++ b/tests/resumable-stop/README
-@@ -5,6 +5,21 @@ This regression test exercises the task-level Stop operation directly through
+@@ -5,6 +5,22 @@ This regression test exercises the task-level Stop operation directly through
  the Python command API. It checks that an active feed move stops without
  aborting queued AUTO state, that spindle and coolant outputs are disabled
  while stopped, and that Resume restores them before continuing the same
@@ -1357,12 +1350,13 @@ index e457195324..b325f8c8b1 100644
 +cylindrical and tapered drive lines, synchronized exit tapers, repeated Stop
 +requests across the cut/retract handoff, and a negative G33 test proving that
 +an unrelated following rapid is not executed. Single Step coverage enters the
-+first G76 pass directly and verifies every cylindrical and tapered approach
-+step followed by its combined synchronized-cut and clearance step. It also
-+starts G76 in normal AUTO_RUN, stops after the first pass with later passes
++first G76 pass directly and verifies every cylindrical and tapered safe
++approach step followed by its combined infeed, synchronized-cut, and clearance
++step. It also starts G76 in normal AUTO_RUN, stops after the first pass with later passes
 +already queued, and verifies that each
-+following AUTO_STEP reaches exactly one cylindrical or tapered approach
-+endpoint, and the next AUTO_STEP completes that pass's thread and clearance.
++following AUTO_STEP reaches exactly one cylindrical or tapered safe approach
++endpoint, and the next AUTO_STEP completes that pass's infeed, thread, and
++clearance.
 +Arc blending is enabled for all scenarios, so the exact-clearance assertions
 +also prove that a marked G76 retract endpoint is not trimmed by a following
 +rapid. The handoff stress case uses a slow synchronized feed and issues Stop at
@@ -1465,7 +1459,7 @@ index 0000000000..b0eb997e19
 +M5
 +M2
 diff --git a/tests/resumable-stop/test-ui.py b/tests/resumable-stop/test-ui.py
-index 13dc57d304..82df9ff8c5 100755
+index 13dc57d304..89bf59d175 100755
 --- a/tests/resumable-stop/test-ui.py
 +++ b/tests/resumable-stop/test-ui.py
 @@ -17,13 +17,13 @@ def fail(message):
@@ -1662,7 +1656,7 @@ index 13dc57d304..82df9ff8c5 100755
 +
 +def run_g76_single_step_test():
 +    run_g76_single_step_program(
-+        "g76-step.ngc", ((8.8, 10.4), (8.6, 10.2), (8.4, 10.0)),
++        "g76-step.ngc", ((10.4, 10.4), (10.2, 10.2), (10.0, 10.0)),
 +        "cylindrical G76",
 +    )
 +
@@ -1670,7 +1664,7 @@ index 13dc57d304..82df9ff8c5 100755
 +def run_tapered_g76_single_step_test():
 +    run_g76_single_step_program(
 +        "g76-tapered-step.ngc",
-+        ((8.8, 8.4), (8.6, 8.2), (8.4, 8.0)),
++        ((10.4, 8.4), (10.2, 8.2), (10.0, 8.0)),
 +        "tapered-drive G76",
 +    )
 +
@@ -1718,7 +1712,7 @@ index 13dc57d304..82df9ff8c5 100755
 +
 +def run_g76_stop_then_single_step_test():
 +    run_g76_stop_then_single_step_program(
-+        "g76.ngc", 9.5, ((8.8, 10.4), (8.6, 10.2), (8.4, 10.0)),
++        "g76.ngc", 9.5, ((10.4, 10.4), (10.2, 10.2), (10.0, 10.0)),
 +        "cylindrical G76",
 +    )
 +
@@ -1727,7 +1721,7 @@ index 13dc57d304..82df9ff8c5 100755
 +    run_g76_stop_then_single_step_program(
 +        "g76-tapered.ngc",
 +        8.6,
-+        ((8.8, 8.4), (8.6, 8.2), (8.4, 8.0)),
++        ((10.4, 8.4), (10.2, 8.2), (10.0, 8.0)),
 +        "tapered-drive G76",
 +    )
 +
