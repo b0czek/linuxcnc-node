@@ -7,6 +7,10 @@ port="${LINUXCNC_GRPC_INTEGRATION_PORT:-$((52000 + ($$ % 1000)))}"
 telemetry_port="${LINUXCNC_POSITION_TELEMETRY_INTEGRATION_PORT:-$((53000 + ($$ % 1000)))}"
 root="$(mktemp -d "${TMPDIR:-/tmp}/linuxcnc-grpc-integration.XXXXXX")"
 cleanup() {
+  if [[ -n "${websocket_client_pid:-}" ]]; then
+    kill -TERM "${websocket_client_pid}" 2>/dev/null || true
+    wait "${websocket_client_pid}" 2>/dev/null || true
+  fi
   if [[ -n "${server_pid:-}" ]]; then
     kill -TERM "${server_pid}" 2>/dev/null || true
     for _ in $(seq 1 60); do
@@ -62,7 +66,14 @@ fi
 # Keep a callback stream active while SIGTERM drives the ordered shutdown.
 "$integration" "127.0.0.1:${port}" --hold-stream &
 client_pid=$!
-sleep 0.05
+"$integration" "127.0.0.1:${port}" "127.0.0.1:${telemetry_port}" \
+  --hold-websocket >"$root/websocket-client.log" &
+websocket_client_pid=$!
+for _ in $(seq 1 100); do
+  grep -q "websocket-held" "$root/websocket-client.log" && break
+  sleep 0.01
+done
+grep -q "websocket-held" "$root/websocket-client.log"
 kill -TERM "$server_pid"
 for _ in $(seq 1 20); do
   kill -0 "$server_pid" 2>/dev/null || break
@@ -75,3 +86,6 @@ fi
 wait "$server_pid"
 server_pid=""
 wait "$client_pid"
+kill -TERM "$websocket_client_pid" 2>/dev/null || true
+wait "$websocket_client_pid" 2>/dev/null || true
+websocket_client_pid=""

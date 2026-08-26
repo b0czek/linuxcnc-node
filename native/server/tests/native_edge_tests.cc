@@ -374,7 +374,7 @@ void position_cursor_generation_and_replacement_test() {
 
   const auto initial = history.snapshot();
   assert(initial.reset);
-  assert(initial.generation == 1);
+  assert(initial.generation == 2);
   assert(initial.first_sequence == 1);
   assert(initial.next_sequence == 3);
   assert(initial.packed.size() == 2 * kPositionStride);
@@ -406,6 +406,18 @@ void position_cursor_generation_and_replacement_test() {
   assert(cleared.packed.empty());
   assert(history.since(history.next_sequence(), 0, cleared.generation)
              .packed.empty());
+
+  PositionHistory retained(2);
+  assert(retained.append(position(1.0, 1)));
+  assert(retained.append(position(2.0, 2)));
+  const auto synchronized = retained.snapshot();
+  assert(retained.append(position(3.0, 3)));
+  const auto evicted = retained.since(
+      synchronized.next_sequence, 0, synchronized.generation);
+  assert(evicted.reset);
+  assert(evicted.packed.size() == 2 * kPositionStride);
+  assert(evicted.packed[0] == 2.0);
+  assert(evicted.packed[kPositionStride] == 3.0);
 
   PositionHistory non_finite_history(8);
   auto finite = position(1.0);
@@ -459,6 +471,16 @@ void position_collinear_compaction_test() {
   assert(corner.append(position_xy(1.0, 0.0)));
   assert(corner.append(position_xy(1.0, 1.0)));
   assert(corner.size() == 3);
+
+  PositionHistory rotary(16);
+  auto rotary_start = position(0.0);
+  auto rotary_middle = rotary_start;
+  auto rotary_end = rotary_start;
+  rotary_middle.coordinates[3] = 1.0;
+  assert(rotary.append(rotary_start));
+  assert(rotary.append(rotary_middle));
+  assert(rotary.append(rotary_end));
+  assert(rotary.size() == 3);
 
   PositionHistory arc(256);
   for (int step = 0; step <= 100; ++step) {

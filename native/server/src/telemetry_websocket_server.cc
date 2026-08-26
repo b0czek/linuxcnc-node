@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -41,6 +42,8 @@ using tcp = asio::ip::tcp;
 using PlainStream = beast::tcp_stream;
 
 constexpr auto kPositionDeliveryPeriod = std::chrono::milliseconds(50);
+constexpr auto kWriteDeadline = std::chrono::seconds(5);
+constexpr std::size_t kMaxSessions = 16;
 
 linuxcnc::v1::FrameKind frame_kind(bool replacement) {
   return replacement ? linuxcnc::v1::FRAME_KIND_REPLACEMENT
@@ -178,6 +181,7 @@ class Session final : public std::enable_shared_from_this<Session> {
           std::function<void()> release)
       : websocket_(std::move(stream)),
         position_delivery_timer_(websocket_.get_executor()),
+        write_deadline_(websocket_.get_executor()),
         telemetry_(std::move(telemetry)),
         hal_telemetry_(std::move(hal_telemetry)),
         workspaces_(std::move(workspaces)),
@@ -195,9 +199,8 @@ class Session final : public std::enable_shared_from_this<Session> {
       preview_flow_->cancelled = true;
     }
     preview_flow_->condition.notify_all();
-    shutdown_requested_ = true;
-    if (!websocket_.is_open()) return fail();
-    if (!writing_) close_shutdown();
+    abort_socket();
+    fail();
   }
 
  private:
@@ -305,11 +308,8 @@ class Session final : public std::enable_shared_from_this<Session> {
     const bool replacement = initial || batch.reset;
     write_cursor_ = batch.next_sequence;
     write_generation_ = batch.generation;
-    write_frame_ = encode_position_frame(batch, replacement);
     writing_ = true;
-    websocket_.async_write(asio::buffer(write_frame_),
-                           beast::bind_front_handler(&Session::on_write,
-                                                     this->shared_from_this()));
+    write_frame(encode_position_frame(batch, replacement));
   }
 
   void send_hal() {
@@ -327,17 +327,30 @@ class Session final : public std::enable_shared_from_this<Session> {
       if (changed.empty()) return;
     }
     write_hal_snapshot_ = *snapshot;
-    write_frame_ = encode_hal_frame(*snapshot, replacement, changed);
     writing_ = true;
-    websocket_.async_write(asio::buffer(write_frame_),
-                           beast::bind_front_handler(&Session::on_write,
-                                                     this->shared_from_this()));
+    write_frame(encode_hal_frame(*snapshot, replacement, changed));
+  }
+
+  void write_frame(std::string frame) {
+    write_frame_ = std::move(frame);
+    write_deadline_.expires_after(kWriteDeadline);
+    write_deadline_.async_wait([self = this->shared_from_this()](
+                                   beast::error_code error) {
+      if (!error) {
+        self->abort_socket();
+        self->fail();
+      }
+    });
+    websocket_.async_write(
+        asio::buffer(write_frame_),
+        beast::bind_front_handler(&Session::on_write,
+                                  this->shared_from_this()));
   }
 
   void on_write(beast::error_code error, std::size_t) {
+    write_deadline_.cancel();
     writing_ = false;
     if (error) return fail();
-    if (shutdown_requested_) return close_shutdown();
     if (mode_ == Mode::Preview) {
       if (preview_active_batch_) {
         std::lock_guard lock(preview_flow_->mutex);
@@ -532,26 +545,16 @@ class Session final : public std::enable_shared_from_this<Session> {
     if (writing_ || preview_queue_.empty() || closed_) return;
     auto message = std::move(preview_queue_.front());
     preview_queue_.pop_front();
-    write_frame_ = std::move(message.bytes);
     preview_active_batch_ = message.batch;
     preview_active_terminal_ = message.terminal;
     writing_ = true;
-    websocket_.async_write(asio::buffer(write_frame_),
-                           beast::bind_front_handler(&Session::on_write,
-                                                     this->shared_from_this()));
+    write_frame(std::move(message.bytes));
   }
 
   void close_normal() {
     websocket_.async_close(
         websocket::close_code::normal,
         [self = this->shared_from_this()](beast::error_code) { self->fail(); });
-  }
-
-  void close_shutdown() {
-    websocket::close_reason reason(websocket::close_code::going_away);
-    reason.reason = "server shutting down";
-    websocket_.async_close(reason, [self = this->shared_from_this()](
-                                       beast::error_code) { self->fail(); });
   }
 
   void close_try_again_later() {
@@ -570,6 +573,7 @@ class Session final : public std::enable_shared_from_this<Session> {
     }
     preview_flow_->condition.notify_all();
     position_delivery_timer_.cancel();
+    write_deadline_.cancel();
     position_subscription_.reset();
     hal_subscription_.reset();
     if (!hal_subscription_id_.empty()) {
@@ -584,6 +588,12 @@ class Session final : public std::enable_shared_from_this<Session> {
       release_();
       release_ = {};
     }
+    write_frame_.clear();
+    preview_queue_.clear();
+    abort_socket();
+  }
+
+  void abort_socket() {
     beast::error_code ignored;
     // NOLINTNEXTLINE(bugprone-unused-return-value): best-effort teardown
     (void)beast::get_lowest_layer(websocket_)
@@ -595,6 +605,7 @@ class Session final : public std::enable_shared_from_this<Session> {
 
   websocket::stream<PlainStream> websocket_;
   asio::steady_timer position_delivery_timer_;
+  asio::steady_timer write_deadline_;
   std::shared_ptr<PositionTelemetry> telemetry_;
   std::shared_ptr<HalValueTelemetry> hal_telemetry_;
   std::shared_ptr<ProgramWorkspaceStore> workspaces_;
@@ -629,7 +640,6 @@ class Session final : public std::enable_shared_from_this<Session> {
   bool preview_active_batch_ = false;
   bool preview_active_terminal_ = false;
   bool preview_admitted_ = false;
-  bool shutdown_requested_ = false;
   enum class Mode { Position, Hal, Preview } mode_ = Mode::Position;
 };
 
@@ -685,7 +695,7 @@ class TelemetryWebSocketServer::Impl {
   void accept() {
     acceptor_.async_accept([this](beast::error_code error, tcp::socket socket) {
       if (!error) {
-        if (active_sessions_.fetch_add(1) >= 128) {
+        if (active_sessions_.fetch_add(1) >= kMaxSessions) {
           active_sessions_.fetch_sub(1);
           beast::error_code ignored;
           // NOLINTNEXTLINE(bugprone-unused-return-value): rejected connection

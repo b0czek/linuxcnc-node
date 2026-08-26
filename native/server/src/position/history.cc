@@ -43,7 +43,13 @@ bool PositionHistory::append(const PositionSample& sample) {
   } else {
     entries_.push_back(Entry{sequence, sample, std::nullopt});
   }
-  if (entries_.size() > max_samples_) entries_.erase(entries_.begin());
+  if (entries_.size() > max_samples_) {
+    entries_.erase(entries_.begin());
+    // A cursor only identifies the next append; it cannot describe which
+    // bounded prefix the consumer still retains. Force synchronized consumers
+    // to replace their local history whenever capacity evicts that prefix.
+    ++generation_;
+  }
   return true;
 }
 
@@ -140,7 +146,7 @@ bool PositionHistory::collinear(const PositionSample& current,
   double current_length_squared = 0.0;
   double previous_length_squared = 0.0;
   double dot = 0.0;
-  for (std::size_t index = 0; index < 3; ++index) {
+  for (std::size_t index = 0; index < current.coordinates.size(); ++index) {
     const double current_delta =
         current.coordinates[index] - previous.coordinates[index];
     const double previous_delta =

@@ -7,6 +7,7 @@
 #include <boost/beast/websocket.hpp>
 #include <cassert>
 #include <chrono>
+#include <iostream>
 #include <memory>
 #include <string>
 #include <thread>
@@ -142,6 +143,17 @@ int main(int argc, char** argv) {
       split_endpoint(telemetry_endpoint);
   asio::io_context io;
   tcp::resolver resolver(io);
+  if (argc > 3 && std::string(argv[3]) == "--hold-websocket") {
+    websocket::stream<beast::tcp_stream> non_reading(io);
+    beast::get_lowest_layer(non_reading)
+        .connect(resolver.resolve(telemetry_host, telemetry_port));
+    non_reading.handshake(telemetry_host, "/v1/position-history");
+    std::cout << "websocket-held\n" << std::flush;
+    // Deliberately never read the initial frame or shutdown handshake. The
+    // daemon must cancel this socket rather than waiting for peer cooperation.
+    std::this_thread::sleep_for(std::chrono::seconds(10));
+    return 0;
+  }
   websocket::stream<beast::tcp_stream> telemetry(io);
   beast::get_lowest_layer(telemetry).connect(
       resolver.resolve(telemetry_host, telemetry_port));
