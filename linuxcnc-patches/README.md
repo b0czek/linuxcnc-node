@@ -286,4 +286,6 @@ The temporary exact boundary is restored if Step is canceled by Resume or Stop.
 Existing paused source-line stepping and G76 pass stepping remain intact. Two
 additional runtime scenarios arm Step during an ordinary block with three later
 blocks queued and during an active G76 cut with later passes queued, bringing
-the resumable-stop suite to twenty-seven scenarios.
+the resumable-stop suite to twenty-seven scenarios. During an in-flight step,
+`single_stepping` reports the armed/active state while task and motion remain
+unpaused; both paused flags become true only after motion reaches the boundary.
