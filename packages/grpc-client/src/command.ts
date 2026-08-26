@@ -1,5 +1,9 @@
 import type * as grpc from "@grpc/grpc-js";
-import type { CommandWaitPolicy, LinuxCncCommand } from "@linuxcnc-node/types";
+import type {
+  CommandWaitPolicy,
+  LinuxCncCommand,
+  Position,
+} from "@linuxcnc-node/types";
 import type { ExecuteCommandRequest } from "./generated/linuxcnc/v1/ExecuteCommandRequest";
 import type { ExecuteCommandResponse__Output } from "./generated/linuxcnc/v1/ExecuteCommandResponse";
 import type { MachineServiceClient } from "./generated/linuxcnc/v1/MachineService";
@@ -9,11 +13,31 @@ const waitPolicies = {
   completed: "WAIT_POLICY_COMPLETED",
 } as const;
 
+function encodePosition(position: Position) {
+  return { values: Array.from(position) };
+}
+
 const requestFor = (
   command: LinuxCncCommand,
   waitPolicy: CommandWaitPolicy,
 ): ExecuteCommandRequest => {
   const { type, ...payload } = command;
+  if (type === "setTool") {
+    const { offset, wearOffset, ...tool } = command.tool;
+    return {
+      command: type,
+      setTool: {
+        tool: {
+          ...tool,
+          ...(offset === undefined ? {} : { offset: encodePosition(offset) }),
+          ...(wearOffset === undefined
+            ? {}
+            : { wearOffset: encodePosition(wearOffset) }),
+        },
+      },
+      waitPolicy: waitPolicies[waitPolicy],
+    };
+  }
   return {
     command: type,
     [type]: payload,

@@ -102,11 +102,13 @@ export interface ToolEntry {
   comment: string;
 }
 
-/** Presence-sensitive partial tool-table update in protobuf-ready form. */
-export type ToolUpdate = Partial<Omit<ToolEntry, "offset" | "wearOffset">> &
+/** Presence-sensitive partial tool-table update. */
+export type ToolUpdate = Partial<
+  Omit<ToolEntry, "toolNo" | "offset" | "wearOffset">
+> &
   Pick<ToolEntry, "toolNo"> & {
-    offset?: { values: readonly number[] };
-    wearOffset?: { values: readonly number[] };
+    offset?: Position;
+    wearOffset?: Position;
   };
 
 /**

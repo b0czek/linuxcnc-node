@@ -110,14 +110,18 @@ test("optional false and omitted remain distinct on the wire", async () => {
   assert.equal(omitted.spindleOn.waitForSpeed, undefined);
 });
 
-test("partial tool updates preserve explicit zero and omitted fields", async () => {
+test("partial tool updates encode domain positions and preserve fields", async () => {
   const { client, requests } = capturingClient();
 
   await executeCommand(
     client,
     {
       type: "setTool",
-      tool: { toolNo: 7, diameter: 0, offset: { values: [0.25] } },
+      tool: {
+        toolNo: 7,
+        diameter: 0,
+        offset: new Float64Array([0.25]),
+      },
     },
     "completed",
   );
