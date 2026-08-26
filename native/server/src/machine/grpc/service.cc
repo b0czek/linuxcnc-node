@@ -1036,9 +1036,15 @@ class MachineServiceImpl final : public MachineCallbackBase,
           mark_status_unavailable();
         }
         if (status_due) {
-          next_status = now + status_period_;
+          do {
+            next_status += status_period_;
+          } while (next_status <= now);
         }
-        if (position_due) next_position = now + position_period;
+        if (position_due) {
+          do {
+            next_position += position_period;
+          } while (next_position <= now);
+        }
       } else if (!enabled) {
         next_position = now + position_period;
       }
@@ -1051,7 +1057,13 @@ class MachineServiceImpl final : public MachineCallbackBase,
           error_wakes_.publish(sequence);
           ++drained;
         }
-        next_error = drained == kErrorBatchSize ? now : now + error_period_;
+        if (drained == kErrorBatchSize) {
+          next_error = now;
+        } else {
+          do {
+            next_error += error_period_;
+          } while (next_error <= now);
+        }
       }
       std::unique_lock lock(position_mutex_);
       auto deadline = std::min(next_status, next_error);

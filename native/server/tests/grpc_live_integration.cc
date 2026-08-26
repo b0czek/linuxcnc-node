@@ -137,6 +137,59 @@ ExecuteCommandResponse execute_completed(
   return response;
 }
 
+ExecuteCommandResponse execute_accepted(
+    linuxcnc::v1::MachineService::Stub* machine,
+    ExecuteCommandRequest request) {
+  request.set_wait_policy(linuxcnc::v1::WAIT_POLICY_ACCEPTED);
+  grpc::ClientContext context;
+  context.set_deadline(std::chrono::system_clock::now() +
+                       std::chrono::seconds(5));
+  ExecuteCommandResponse response;
+  const auto status = machine->ExecuteCommand(&context, request, &response);
+  if (!status.ok()) {
+    std::cerr << "ExecuteCommand failed: " << status.error_message() << "\n";
+    std::abort();
+  }
+  assert(response.status() == linuxcnc::v1::RCS_STATUS_EXEC ||
+         response.status() == linuxcnc::v1::RCS_STATUS_DONE);
+  return response;
+}
+
+void verify_moving_status_cadence(linuxcnc::v1::MachineService::Stub* machine) {
+  const auto baseline = get_status_with_retry(machine);
+  grpc::ClientContext context;
+  context.set_deadline(std::chrono::system_clock::now() +
+                       std::chrono::seconds(5));
+  linuxcnc::v1::WatchStatusRequest request;
+  request.set_after_sequence(baseline.sequence());
+  auto watch = machine->WatchStatus(&context, request);
+
+  ExecuteCommandRequest move;
+  move.mutable_mdi()->set_command("G1 X20 F600");
+  (void)execute_accepted(machine, std::move(move));
+
+  std::vector<std::chrono::steady_clock::time_point> arrivals;
+  linuxcnc::v1::WatchStatusEvent event;
+  while (arrivals.size() < 20 && watch->Read(&event)) {
+    if ((event.has_delta() && event.delta().has_motion() &&
+         event.delta().motion().has_traj()) ||
+        (event.has_replay() && event.replay().deltas_size() > 0)) {
+      arrivals.push_back(std::chrono::steady_clock::now());
+    }
+  }
+  context.TryCancel();
+  (void)watch->Finish();
+  assert(arrivals.size() == 20);
+  auto maximum_gap = std::chrono::steady_clock::duration::zero();
+  for (std::size_t index = 1; index < arrivals.size(); ++index)
+    maximum_gap = std::max(maximum_gap, arrivals[index] - arrivals[index - 1]);
+  const auto maximum_gap_ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(maximum_gap);
+  std::cout << "moving status maximum gap: " << maximum_gap_ms.count()
+            << " ms\n";
+  assert(maximum_gap_ms < std::chrono::milliseconds(120));
+}
+
 void expect_command_error(linuxcnc::v1::MachineService::Stub* machine,
                           const ExecuteCommandRequest& request,
                           grpc::StatusCode expected) {
@@ -576,6 +629,7 @@ int main(int argc, char** argv) {
   ExecuteCommandRequest mdi_mode;
   mdi_mode.mutable_set_task_mode()->set_mode(linuxcnc::v1::TASK_MODE_MDI);
   (void)execute_completed(machine.get(), std::move(mdi_mode));
+  verify_moving_status_cadence(machine.get());
   ExecuteCommandRequest mdi_move;
   mdi_move.mutable_mdi()->set_command("G0 X1");
   (void)execute_completed(machine.get(), std::move(mdi_move));

@@ -245,6 +245,9 @@ class Session final : public std::enable_shared_from_this<Session> {
             if (const auto self = weak.lock()) self->queue_position_wake();
           });
       send_next(true);
+      next_position_delivery_ =
+          std::chrono::steady_clock::now() + kPositionDeliveryPeriod;
+      schedule_position_delivery();
     } else if (mode_ == Mode::Hal) {
       const auto callback = [weak](const std::uint64_t&) {
         if (const auto self = weak.lock()) {
@@ -262,19 +265,12 @@ class Session final : public std::enable_shared_from_this<Session> {
     read_application_data();
   }
 
-  void queue_position_wake() {
-    if (position_wake_pending_.exchange(true)) return;
-    const std::weak_ptr<Session> weak = this->shared_from_this();
-    asio::post(websocket_.get_executor(), [weak] {
-      if (const auto session = weak.lock())
-        session->schedule_position_delivery();
-    });
-  }
+  void queue_position_wake() { position_wake_pending_ = true; }
 
   void schedule_position_delivery() {
     if (closed_ || closing_ || position_delivery_scheduled_) return;
     position_delivery_scheduled_ = true;
-    position_delivery_timer_.expires_after(kPositionDeliveryPeriod);
+    position_delivery_timer_.expires_at(next_position_delivery_);
     position_delivery_timer_.async_wait(beast::bind_front_handler(
         &Session::on_position_delivery, this->shared_from_this()));
   }
@@ -283,12 +279,12 @@ class Session final : public std::enable_shared_from_this<Session> {
     position_delivery_scheduled_ = false;
     if (error == asio::error::operation_aborted || closed_ || closing_) return;
     if (error) return fail();
-    if (writing_) {
-      schedule_position_delivery();
-      return;
-    }
-    position_wake_pending_ = false;
-    send_next(false);
+    const auto now = std::chrono::steady_clock::now();
+    do {
+      next_position_delivery_ += kPositionDeliveryPeriod;
+    } while (next_position_delivery_ <= now);
+    schedule_position_delivery();
+    if (!writing_ && position_wake_pending_.exchange(false)) send_next(false);
   }
 
   void wake_hal() {
@@ -668,6 +664,7 @@ class Session final : public std::enable_shared_from_this<Session> {
   std::uint64_t generation_ = 0;
   std::uint64_t write_cursor_ = 0;
   std::uint64_t write_generation_ = 0;
+  std::chrono::steady_clock::time_point next_position_delivery_;
   std::atomic<bool> position_wake_pending_{false};
   bool writing_ = false;
   bool dirty_ = false;
