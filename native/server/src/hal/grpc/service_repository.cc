@@ -626,11 +626,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
             error = Invalid("component value rejected");
           } else {
             response_.Clear();
-            auto* delta = response_.mutable_delta();
-            delta->set_sequence(++sequence_);
-            auto* encoded = delta->add_values();
-            *encoded->mutable_item() = request.value().item();
-            encode_hal_value(*value, encoded->mutable_value());
+            *response_.mutable_value() = request.value();
             respond = true;
           }
           break;
@@ -688,7 +684,6 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     std::string prefix_;
     std::string writer_id_;
     std::vector<std::string> owned_;
-    std::uint64_t sequence_ = 0;
     ComponentSessionMessage request_;
     ComponentSessionMessage response_;
     std::atomic<bool> cleaned_{false};

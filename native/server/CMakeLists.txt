@@ -330,6 +330,18 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
             -Wall -Wextra -Wpedantic)
         add_test(NAME linuxcnc-grpc-mapping-edge-tests
                  COMMAND linuxcnc-grpc-mapping-edge-tests)
+        add_executable(linuxcnc-grpc-component-outbox-tests
+            tests/component_outbox_tests.cc)
+        target_compile_features(linuxcnc-grpc-component-outbox-tests PRIVATE
+            cxx_std_17)
+        target_include_directories(linuxcnc-grpc-component-outbox-tests PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/src")
+        target_link_libraries(linuxcnc-grpc-component-outbox-tests PRIVATE
+            linuxcnc-grpc-proto)
+        target_compile_options(linuxcnc-grpc-component-outbox-tests PRIVATE
+            -Wall -Wextra -Wpedantic)
+        add_test(NAME linuxcnc-grpc-component-outbox-tests
+                 COMMAND linuxcnc-grpc-component-outbox-tests)
     endif()
 endif()
 

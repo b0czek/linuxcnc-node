@@ -937,17 +937,30 @@ int main(int argc, char** argv) {
       linuxcnc::v1::HAL_TYPE_S64);
   component_value.mutable_value()->mutable_value()->set_s64(signed_value);
   assert(component->Write(component_value));
+  bool saw_component_acknowledgement = false;
   bool saw_component_delta = false;
   while (component->Read(&component_response)) {
-    if (!component_response.has_delta()) continue;
-    for (const auto& value : component_response.delta().values()) {
-      if (value.item().name() == "grpc-live-component.value") {
-        assert(value.value().s64() == signed_value);
-        saw_component_delta = true;
+    if (component_response.has_value()) {
+      assert(component_response.value().item().kind() ==
+             linuxcnc::v1::HAL_ITEM_KIND_PIN);
+      assert(component_response.value().item().name() ==
+             "grpc-live-component.value");
+      assert(component_response.value().value().type() ==
+             linuxcnc::v1::HAL_TYPE_S64);
+      assert(component_response.value().value().s64() == signed_value);
+      saw_component_acknowledgement = true;
+    }
+    if (component_response.has_delta()) {
+      for (const auto& value : component_response.delta().values()) {
+        if (value.item().name() == "grpc-live-component.value") {
+          assert(value.value().s64() == signed_value);
+          saw_component_delta = true;
+        }
       }
     }
-    if (saw_component_delta) break;
+    if (saw_component_acknowledgement && saw_component_delta) break;
   }
+  assert(saw_component_acknowledgement);
   assert(saw_component_delta);
   linuxcnc::v1::ComponentSessionMessage component_close;
   component_close.mutable_close();

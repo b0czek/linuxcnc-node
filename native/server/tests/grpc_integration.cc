@@ -287,5 +287,44 @@ int main(int argc, char** argv) {
          future_topology_request.after_sequence());
   future_topology_context.TryCancel();
   (void)future_topology->Finish();
+
+  grpc::ClientContext component_context;
+  component_context.set_deadline(std::chrono::system_clock::now() +
+                                 std::chrono::seconds(2));
+  auto component = hal->ComponentSession(&component_context);
+  linuxcnc::v1::ComponentSessionMessage component_request;
+  component_request.mutable_open()->set_name("integration-component");
+  assert(component->Write(component_request));
+  linuxcnc::v1::ComponentSessionMessage component_response;
+  assert(component->Read(&component_response));
+  assert(component_response.has_metadata());
+
+  component_request.Clear();
+  component_request.mutable_pin()->set_name("output");
+  component_request.mutable_pin()->set_type(linuxcnc::v1::HAL_TYPE_S32);
+  component_request.mutable_pin()->set_direction(
+      linuxcnc::v1::HAL_PIN_DIRECTION_OUT);
+  assert(component->Write(component_request));
+
+  component_request.Clear();
+  component_request.mutable_value()->mutable_item()->set_kind(
+      linuxcnc::v1::HAL_ITEM_KIND_PIN);
+  component_request.mutable_value()->mutable_item()->set_name(
+      "integration-component.output");
+  component_request.mutable_value()->mutable_value()->set_type(
+      linuxcnc::v1::HAL_TYPE_S32);
+  component_request.mutable_value()->mutable_value()->set_s32(42);
+  assert(component->Write(component_request));
+  assert(component->Read(&component_response));
+  assert(component_response.has_value());
+  assert(component_response.value().item().name() ==
+         "integration-component.output");
+  assert(component_response.value().value().s32() == 42);
+
+  component_request.Clear();
+  component_request.mutable_close();
+  assert(component->Write(component_request));
+  component->WritesDone();
+  assert(component->Finish().ok());
   return 0;
 }

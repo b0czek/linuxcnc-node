@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include "hal/grpc/component_outbox.hpp"
 #include "hal/grpc/service_internal.hpp"
 #include "linuxcnc_grpc/daemon/config.hpp"
 #include "linuxcnc_grpc/hal/grpc/mapping.hpp"
@@ -534,13 +535,11 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
           reactor.finish(::grpc::Status::OK);
           return;
         }
-        if (reactor.pending_delta_) {
-          reactor.response_ = std::move(*reactor.pending_delta_);
-          reactor.pending_delta_.reset();
-          reactor.writing_ = true;
-          reactor.StartWrite(&reactor.response_);
-        } else if (reactor.resume_read_after_write_) {
-          reactor.resume_read_after_write_ = false;
+        if (reactor.active_response_) reactor.resume_read_when_idle_ = true;
+        if (!reactor.outbox_.empty()) {
+          reactor.start_write(reactor.outbox_.pop_front());
+        } else if (reactor.resume_read_when_idle_) {
+          reactor.resume_read_when_idle_ = false;
           reactor.StartRead(&reactor.request_);
         }
       });
@@ -564,15 +563,26 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     }
     void offer_delta(ComponentSessionMessage message) {
       if (writing_) {
-        pending_delta_ = std::move(message);
+        outbox_.push_delta(std::move(message));
         return;
       }
-      response_ = std::move(message);
-      writing_ = true;
-      StartWrite(&response_);
+      start_write({std::move(message), false});
     }
 
    private:
+    void offer_response(ComponentSessionMessage message) {
+      if (writing_) {
+        outbox_.push_response(std::move(message));
+        return;
+      }
+      start_write({std::move(message), true});
+    }
+    void start_write(ComponentOutbox::Entry entry) {
+      response_ = std::move(entry.message);
+      active_response_ = entry.resume_read;
+      writing_ = true;
+      StartWrite(&response_);
+    }
     void read_done(bool ok) {
       if (!ok) {
         finish(::grpc::Status::OK);
@@ -603,8 +613,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
                   return;
                 }
                 if (response) {
-                  reactor.resume_read_after_write_ = true;
-                  reactor.offer_delta(std::move(*response));
+                  reactor.offer_response(std::move(*response));
                 } else {
                   reactor.StartRead(&reactor.request_);
                 }
@@ -637,9 +646,10 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     }
     HalServiceImpl& service_;
     bool admitted_ = false, stream_admitted_ = false;
-    bool writing_ = false, resume_read_after_write_ = false;
+    bool writing_ = false, active_response_ = false;
+    bool resume_read_when_idle_ = false;
     ComponentSessionMessage request_, response_;
-    std::optional<ComponentSessionMessage> pending_delta_;
+    ComponentOutbox outbox_;
     std::shared_ptr<ComponentState> state_;
     std::shared_ptr<LifetimeGate<ComponentReactor>> gate_;
     ActiveCallbackRegistry::Registration registration_;
@@ -755,6 +765,9 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
         if (name.rfind(prefix, 0) == 0) name.erase(0, prefix.size());
         if (!state.component->write(name, *value))
           throw HalAdapterError("component value was rejected", -EINVAL);
+        ComponentSessionMessage message;
+        *message.mutable_value() = request.value();
+        *response = std::move(message);
         return;
       }
       case ComponentSessionMessage::kClose:
