@@ -559,7 +559,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
     const NmlStatusSnapshot* configuration_ptr = nullptr;
     {
       std::lock_guard lock(status_mutex_);
-      if (have_latest_) {
+      if (have_latest_ && status_available_) {
         configuration = latest_;
         configuration_ptr = &configuration;
       }
@@ -570,9 +570,6 @@ class MachineServiceImpl final : public MachineCallbackBase,
       return {::grpc::StatusCode::UNAVAILABLE, validation.message};
     }
     if (!validation) return Invalid(validation.message);
-    if (!nml_.connect())
-      return {::grpc::StatusCode::UNAVAILABLE,
-              "LinuxCNC NML command channel is unavailable"};
     try {
       *ticket = nml_.submit(std::move(command),
                             [cancelled] { return cancelled->cancelled(); });
@@ -743,6 +740,11 @@ class MachineServiceImpl final : public MachineCallbackBase,
       if (writing_ ||
           gate_->state() != LifetimeGate<StatusReactor>::State::Open)
         return;
+      if (!service_.status_available()) {
+        finish({::grpc::StatusCode::UNAVAILABLE,
+                "LinuxCNC NML status snapshot is stale"});
+        return;
+      }
       auto selection = service_.select_status_history(
           initial_written_ ? cursor_ : after_, !initial_written_);
       if (selection.entries.empty()) {
@@ -758,6 +760,8 @@ class MachineServiceImpl final : public MachineCallbackBase,
           auto* replay = message_.mutable_replay();
           replay->set_from_sequence(after_);
           replay->set_to_sequence(latest.sequence);
+          fill_status(selection.entries.front().snapshot,
+                      replay->mutable_snapshot());
           auto prior = selection.entries.begin();
           for (auto entry = std::next(prior); entry != selection.entries.end();
                ++entry, ++prior) {
@@ -925,13 +929,28 @@ class MachineServiceImpl final : public MachineCallbackBase,
   };
 
   bool read_status(NmlStatusSnapshot* snapshot, std::uint64_t* sequence) {
-    NmlStatusSnapshot fresh;
-    if (nml_.poll_status(&fresh)) observe_status(fresh);
     std::lock_guard lock(status_mutex_);
-    if (!have_latest_) return false;
+    if (!have_latest_ || !status_available_) return false;
     *snapshot = latest_;
     if (sequence) *sequence = sequence_;
     return true;
+  }
+
+  bool status_available() const {
+    std::lock_guard lock(status_mutex_);
+    return status_available_;
+  }
+
+  void mark_status_unavailable() {
+    bool notify = false;
+    std::uint64_t sequence = 0;
+    {
+      std::lock_guard lock(status_mutex_);
+      notify = status_available_;
+      status_available_ = false;
+      sequence = sequence_;
+    }
+    if (notify) status_wakes_.publish(sequence);
   }
 
   StatusHistorySelection select_status_history(std::uint64_t anchor,
@@ -970,8 +989,15 @@ class MachineServiceImpl final : public MachineCallbackBase,
       const bool position_due = enabled && now >= next_position;
       if (status_due || position_due) {
         NmlStatusSnapshot snapshot;
-        if (nml_.poll_status(&snapshot)) {
-          if (status_due) observe_status(snapshot);
+        const auto status_poll = nml_.poll_status(&snapshot);
+        if (status_poll == NmlStatusPoll::Updated) {
+          bool recovered = false;
+          {
+            std::lock_guard lock(status_mutex_);
+            recovered = !status_available_;
+            status_available_ = true;
+          }
+          if (status_due || recovered) observe_status(snapshot, recovered);
           if (position_due) {
             PositionSample sample;
             for (std::size_t index = 0; index < sample.coordinates.size();
@@ -983,6 +1009,9 @@ class MachineServiceImpl final : public MachineCallbackBase,
             sample.motion_type = snapshot.motion_type;
             positions_->append(sample);
           }
+        } else if (status_poll == NmlStatusPoll::Stale ||
+                   status_poll == NmlStatusPoll::Disconnected) {
+          mark_status_unavailable();
         }
         if (status_due) {
           next_status = now + status_period_;
@@ -1011,7 +1040,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
     }
   }
 
-  void observe_status(const NmlStatusSnapshot& fresh) {
+  void observe_status(const NmlStatusSnapshot& fresh, bool force_rebase = false) {
     // ProgramClose may originate outside this RPC service. Reconcile the pin
     // from authoritative LinuxCNC status so TTL cleanup resumes once no file
     // is open, regardless of which client initiated the close.
@@ -1025,11 +1054,15 @@ class MachineServiceImpl final : public MachineCallbackBase,
     std::uint64_t published = 0;
     std::unique_lock lock(status_mutex_);
     if (!have_latest_) {
-      sequence_ = fresh.echo_serial_number > 0
-                      ? static_cast<std::uint64_t>(fresh.echo_serial_number)
-                      : 1;
+      sequence_ = 1;
       latest_ = fresh;
       have_latest_ = true;
+      history_.push_back(StatusHistoryEntry{sequence_, latest_});
+      published = sequence_;
+    } else if (force_rebase) {
+      ++sequence_;
+      latest_ = fresh;
+      history_.clear();
       history_.push_back(StatusHistoryEntry{sequence_, latest_});
       published = sequence_;
     } else if (!status_equal(latest_, fresh)) {
@@ -1056,6 +1089,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
   mutable std::mutex status_mutex_;
   NmlStatusSnapshot latest_;
   bool have_latest_ = false;
+  bool status_available_ = false;
   std::uint64_t sequence_ = 0;
   std::deque<StatusHistoryEntry> history_;
   SequencedRing<NmlErrorEvent> errors_{256};

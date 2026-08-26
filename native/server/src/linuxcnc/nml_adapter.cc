@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <condition_variable>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -122,35 +123,152 @@ struct NmlAdapter::Impl {
   std::string nml_file;
   CommandCoordinator commands;
 #ifdef LINUXCNC_GRPC_HAS_NML
-  std::unique_ptr<RCS_CMD_CHANNEL> command;
-  std::unique_ptr<RCS_STAT_CHANNEL> status;
-  std::unique_ptr<NML> errors;
-  mutable std::mutex mutex;
+  struct RetryState {
+    bool ready() const {
+      return std::chrono::steady_clock::now() >= next_attempt;
+    }
+    void succeeded() {
+      delay = std::chrono::milliseconds(100);
+      next_attempt = {};
+    }
+    void failed() {
+      next_attempt = std::chrono::steady_clock::now() + delay;
+      delay = std::min(delay * 2, std::chrono::milliseconds(5000));
+    }
+
+    std::chrono::milliseconds delay{100};
+    std::chrono::steady_clock::time_point next_attempt{};
+  };
+
+  template <typename Channel>
+  class OwnedChannel {
+   public:
+    template <typename Factory>
+    Channel* get(Factory&& factory) {
+      if (channel_) return channel_.get();
+      if (!retry_.ready()) return nullptr;
+      channel_ = factory();
+      if (!channel_ || !channel_->valid()) {
+        failed();
+        return nullptr;
+      }
+      retry_.succeeded();
+      return channel_.get();
+    }
+
+    void failed() {
+      channel_.reset();
+      retry_.failed();
+    }
+
+   private:
+    std::unique_ptr<Channel> channel_;
+    RetryState retry_;
+  };
+
+  class CommandCompletionTracker {
+   public:
+    bool wait_for_serial(int serial) {
+      const auto deadline =
+          std::chrono::steady_clock::now() + std::chrono::seconds(5);
+      std::unique_lock lock(mutex_);
+      const bool observed = condition_.wait_until(lock, deadline, [&] {
+        if (!channel_healthy_) return have_snapshot_;
+        if (!have_snapshot_) return false;
+        if (latest_.echo_serial_number > serial) return true;
+        return latest_.echo_serial_number == serial &&
+               latest_.rcs_status !=
+                   static_cast<std::int32_t>(RCS_STATUS::EXEC);
+      });
+      if (!observed)
+        throw std::runtime_error(
+            "timed out waiting for LinuxCNC command completion");
+      if (!channel_healthy_)
+        throw std::runtime_error("LinuxCNC NML status channel is unavailable");
+      if (latest_.echo_serial_number == serial &&
+          latest_.rcs_status ==
+              static_cast<std::int32_t>(RCS_STATUS::ERROR)) {
+        throw std::runtime_error("LinuxCNC rejected the command");
+      }
+      return true;
+    }
+
+    void channel_failed() {
+      {
+        std::lock_guard lock(mutex_);
+        channel_healthy_ = false;
+      }
+      condition_.notify_all();
+    }
+
+    void observe(const NmlStatusSnapshot& snapshot) {
+      {
+        std::lock_guard lock(mutex_);
+        latest_ = snapshot;
+        have_snapshot_ = true;
+        channel_healthy_ = true;
+        observed_at_ = std::chrono::steady_clock::now();
+      }
+      condition_.notify_all();
+    }
+
+    bool fresh() const {
+      std::lock_guard lock(mutex_);
+      return channel_healthy_ && have_snapshot_ &&
+             std::chrono::steady_clock::now() - observed_at_ <
+                 std::chrono::seconds(1);
+    }
+
+   private:
+    mutable std::mutex mutex_;
+    std::condition_variable condition_;
+    NmlStatusSnapshot latest_;
+    std::chrono::steady_clock::time_point observed_at_{};
+    bool have_snapshot_ = false;
+    bool channel_healthy_ = false;
+  };
+
+  std::unique_ptr<RCS_CMD_CHANNEL> make_command_channel() const {
+    if (nml_file.empty()) return {};
+    return std::make_unique<RCS_CMD_CHANNEL>(
+        emcFormat, "emcCommand", "xemc", nml_file.c_str());
+  }
+
+  std::unique_ptr<RCS_STAT_CHANNEL> make_status_channel() const {
+    if (nml_file.empty()) return {};
+    return std::make_unique<RCS_STAT_CHANNEL>(
+        emcFormat, "emcStatus", "xemc", nml_file.c_str());
+  }
+
+  std::unique_ptr<NML> make_error_channel() const {
+    if (nml_file.empty()) return {};
+    return std::make_unique<NML>(emcFormat, "emcError", "xemc",
+                                 nml_file.c_str());
+  }
+
+  // Each channel has exactly one owner: the command worker owns command,
+  // while the service polling thread owns status and error. No channel mutexes
+  // are needed.
+  OwnedChannel<RCS_CMD_CHANNEL> command_channel;
+  OwnedChannel<RCS_STAT_CHANNEL> status_channel;
+  OwnedChannel<NML> error_channel;
+  CommandCompletionTracker completions;
   mutable std::mutex tool_mutex;
   bool tool_mmap_ready = false;
   std::string tool_table_filename;
 
-  bool wait_for_serial(int serial) {
-    const auto deadline =
-        std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (std::chrono::steady_clock::now() < deadline) {
-      {
-        std::lock_guard lock(mutex);
-        if (status && status->peek() == EMC_STAT_TYPE) {
-          auto* value = static_cast<EMC_STAT*>(status->get_address());
-          if (value && value->echo_serial_number > serial) return true;
-          if (value && value->echo_serial_number == serial) {
-            if (value->status == RCS_STATUS::ERROR) {
-              throw std::runtime_error("LinuxCNC rejected the command");
-            }
-            if (value->status == RCS_STATUS::DONE) return true;
-          }
-        }
-      }
-      esleep(0.01);
-    }
-    throw std::runtime_error(
-        "timed out waiting for LinuxCNC command completion");
+  void fail_status_channel() {
+    status_channel.failed();
+    completions.channel_failed();
+  }
+
+  bool write_command(RCS_CMD_MSG* message) {
+    auto* channel = command_channel.get(
+        [this] { return make_command_channel(); });
+    if (!channel) return false;
+    if (channel->write(message) == 0) return true;
+    command_channel.failed();
+    return false;
   }
 
   bool ensure_tool_mmap_unlocked() {
@@ -215,28 +333,24 @@ struct NmlAdapter::Impl {
     return index;
   }
 
-  void read_tool_table_path() {
+  void read_tool_table_path(const std::string& ini_filename) {
     {
       std::lock_guard lock(tool_mutex);
       if (!tool_table_filename.empty()) return;
     }
-    if (!status || status->peek() != EMC_STAT_TYPE) return;
-    const auto* value = static_cast<const EMC_STAT*>(status->get_address());
-    if (!value || value->task.ini_filename[0] == '\0') return;
+    if (ini_filename.empty()) return;
     char filename[LINELEN] = {};
-    if (iniFindString(value->task.ini_filename, "TOOL_TABLE", "EMCIO", filename,
+    if (iniFindString(ini_filename.c_str(), "TOOL_TABLE", "EMCIO", filename,
                       sizeof(filename)) != 0 ||
         filename[0] == '\0')
       return;
     std::filesystem::path path(filename);
     if (path.is_relative())
-      path =
-          std::filesystem::path(value->task.ini_filename).parent_path() / path;
+      path = std::filesystem::path(ini_filename).parent_path() / path;
     std::lock_guard lock(tool_mutex);
     tool_table_filename = std::filesystem::absolute(path).string();
   }
 #endif
-  bool connected = false;
 };
 
 NmlAdapter::NmlAdapter(std::string nml_file, std::size_t command_capacity)
@@ -244,61 +358,31 @@ NmlAdapter::NmlAdapter(std::string nml_file, std::size_t command_capacity)
 
 NmlAdapter::~NmlAdapter() {
   impl_->commands.shutdown();
-  disconnect();
 }
 
-bool NmlAdapter::connect() {
+NmlStatusPoll NmlAdapter::poll_status(NmlStatusSnapshot* snapshot) {
 #ifdef LINUXCNC_GRPC_HAS_NML
-  std::lock_guard lock(impl_->mutex);
-  if (impl_->connected) {
-    impl_->read_tool_table_path();
-    return true;
+  if (!snapshot) return NmlStatusPoll::Disconnected;
+  auto* channel = impl_->status_channel.get(
+      [this] { return impl_->make_status_channel(); });
+  if (!channel) {
+    impl_->completions.channel_failed();
+    return NmlStatusPoll::Disconnected;
   }
-  if (impl_->nml_file.empty()) return false;
-  impl_->command = std::make_unique<RCS_CMD_CHANNEL>(
-      emcFormat, "emcCommand", "xemc", impl_->nml_file.c_str());
-  impl_->status = std::make_unique<RCS_STAT_CHANNEL>(
-      emcFormat, "emcStatus", "xemc", impl_->nml_file.c_str());
-  impl_->errors = std::make_unique<NML>(emcFormat, "emcError", "xemc",
-                                        impl_->nml_file.c_str());
-  impl_->connected = impl_->command->valid() && impl_->status->valid() &&
-                     impl_->errors->valid();
-  if (impl_->connected) impl_->read_tool_table_path();
-  if (!impl_->connected) {
-    impl_->command.reset();
-    impl_->status.reset();
-    impl_->errors.reset();
+  const auto type = channel->peek();
+  if (type == -1) {
+    impl_->fail_status_channel();
+    return NmlStatusPoll::Disconnected;
   }
-  return impl_->connected;
-#else
-  return false;
-#endif
-}
-
-bool NmlAdapter::connected() const noexcept {
-#ifdef LINUXCNC_GRPC_HAS_NML
-  std::lock_guard lock(impl_->mutex);
-#endif
-  return impl_->connected;
-}
-
-void NmlAdapter::disconnect() {
-#ifdef LINUXCNC_GRPC_HAS_NML
-  std::lock_guard lock(impl_->mutex);
-  impl_->errors.reset();
-  impl_->status.reset();
-  impl_->command.reset();
-#endif
-  impl_->connected = false;
-}
-
-bool NmlAdapter::poll_status(NmlStatusSnapshot* snapshot) {
-#ifdef LINUXCNC_GRPC_HAS_NML
-  if (!snapshot || !connect()) return false;
-  std::lock_guard lock(impl_->mutex);
-  if (impl_->status->peek() != EMC_STAT_TYPE) return false;
-  auto* status = static_cast<EMC_STAT*>(impl_->status->get_address());
-  if (!status) return false;
+  if (type != EMC_STAT_TYPE) {
+    return impl_->completions.fresh() ? NmlStatusPoll::Idle
+                                      : NmlStatusPoll::Stale;
+  }
+  auto* status = static_cast<EMC_STAT*>(channel->get_address());
+  if (!status) {
+    impl_->fail_status_channel();
+    return NmlStatusPoll::Disconnected;
+  }
   snapshot->echo_serial_number = status->echo_serial_number;
   snapshot->rcs_status = static_cast<std::int32_t>(status->status);
   snapshot->task_mode = static_cast<std::int32_t>(status->task.mode);
@@ -430,69 +514,75 @@ bool NmlAdapter::poll_status(NmlStatusSnapshot* snapshot) {
   snapshot->io_stat.flood = status->io.coolant.flood;
   snapshot->io_stat.estop = status->io.aux.estop;
   snapshot->tool_table.clear();
-  std::lock_guard tool_lock(impl_->tool_mutex);
-  if (impl_->ensure_tool_mmap_unlocked()) {
-    const int last = std::min(CANON_POCKETS_MAX - 1, tooldata_last_index_get());
-    for (int index = 0; index <= last; ++index) {
-      CANON_TOOL_TABLE entry{};
-      if (tooldata_get(&entry, index) == IDX_OK) {
-        NmlToolEntry value;
-        fill_tool(entry, &value);
-        snapshot->tool_table.push_back(std::move(value));
+  impl_->read_tool_table_path(snapshot->ini_filename);
+  {
+    std::lock_guard tool_lock(impl_->tool_mutex);
+    if (impl_->ensure_tool_mmap_unlocked()) {
+      const int last =
+          std::min(CANON_POCKETS_MAX - 1, tooldata_last_index_get());
+      for (int index = 0; index <= last; ++index) {
+        CANON_TOOL_TABLE entry{};
+        if (tooldata_get(&entry, index) == IDX_OK) {
+          NmlToolEntry value;
+          fill_tool(entry, &value);
+          snapshot->tool_table.push_back(std::move(value));
+        }
       }
     }
   }
-  return true;
+  impl_->completions.observe(*snapshot);
+  return NmlStatusPoll::Updated;
 #else
   (void)snapshot;
-  return false;
+  return NmlStatusPoll::Disconnected;
 #endif
 }
 
 std::optional<NmlErrorEvent> NmlAdapter::poll_error() {
 #ifdef LINUXCNC_GRPC_HAS_NML
-  if (!connect()) return std::nullopt;
-  std::lock_guard lock(impl_->mutex);
-  const auto type = impl_->errors->read();
+  auto* channel = impl_->error_channel.get(
+      [this] { return impl_->make_error_channel(); });
+  if (!channel) return std::nullopt;
+  const auto type = channel->read();
+  if (type == -1) {
+    impl_->error_channel.failed();
+    return std::nullopt;
+  }
   if (type == 0) return std::nullopt;
+  auto* address = channel->get_address();
+  if (!address) {
+    impl_->error_channel.failed();
+    return std::nullopt;
+  }
   NmlErrorEvent result;
   result.type = static_cast<std::int32_t>(type);
   char message[LINELEN] = {};
   switch (type) {
     case EMC_OPERATOR_ERROR_TYPE:
       std::strncpy(
-          message,
-          static_cast<EMC_OPERATOR_ERROR*>(impl_->errors->get_address())->error,
+          message, static_cast<EMC_OPERATOR_ERROR*>(address)->error,
           sizeof(message) - 1);
       break;
     case EMC_OPERATOR_TEXT_TYPE:
-      std::strncpy(
-          message,
-          static_cast<EMC_OPERATOR_TEXT*>(impl_->errors->get_address())->text,
-          sizeof(message) - 1);
+      std::strncpy(message, static_cast<EMC_OPERATOR_TEXT*>(address)->text,
+                   sizeof(message) - 1);
       break;
     case EMC_OPERATOR_DISPLAY_TYPE:
       std::strncpy(
-          message,
-          static_cast<EMC_OPERATOR_DISPLAY*>(impl_->errors->get_address())
-              ->display,
+          message, static_cast<EMC_OPERATOR_DISPLAY*>(address)->display,
           sizeof(message) - 1);
       break;
     case NML_ERROR_TYPE:
-      std::strncpy(message,
-                   static_cast<NML_ERROR*>(impl_->errors->get_address())->error,
+      std::strncpy(message, static_cast<NML_ERROR*>(address)->error,
                    sizeof(message) - 1);
       break;
     case NML_TEXT_TYPE:
-      std::strncpy(message,
-                   static_cast<NML_TEXT*>(impl_->errors->get_address())->text,
+      std::strncpy(message, static_cast<NML_TEXT*>(address)->text,
                    sizeof(message) - 1);
       break;
     case NML_DISPLAY_TYPE:
-      std::strncpy(
-          message,
-          static_cast<NML_DISPLAY*>(impl_->errors->get_address())->display,
-          sizeof(message) - 1);
+      std::strncpy(message, static_cast<NML_DISPLAY*>(address)->display,
+                   sizeof(message) - 1);
       break;
     default:
       std::snprintf(message, sizeof(message), "NML message type %d",
@@ -522,8 +612,6 @@ CommandTicket NmlAdapter::submit(
           throw std::runtime_error(
               "command cancelled before LinuxCNC acceptance");
         }
-        if (!connect())
-          throw std::runtime_error("LinuxCNC NML channels are unavailable");
         if (command.kind != NmlCommandKind::ProgramOpen && command.prepare) {
           command.prepare(command);
         }
@@ -550,13 +638,10 @@ CommandTicket NmlAdapter::submit(
             break;
           case NmlCommandKind::ProgramOpen: {
             auto close = std::make_unique<EMC_TASK_PLAN_CLOSE>();
-            {
-              std::lock_guard lock(impl_->mutex);
-              if (impl_->command->write(close.get()) != 0)
-                throw std::runtime_error(
-                    "failed to close the previous LinuxCNC program");
-            }
-            impl_->wait_for_serial(close->serial_number);
+            if (!impl_->write_command(close.get()))
+              throw std::runtime_error(
+                  "failed to close the previous LinuxCNC program");
+            impl_->completions.wait_for_serial(close->serial_number);
             if (command.prepare) command.prepare(command);
             auto value = std::make_unique<EMC_TASK_PLAN_OPEN>();
             if (command.path.size() >= sizeof(value->file))
@@ -897,14 +982,13 @@ CommandTicket NmlAdapter::submit(
         if (!message) throw std::runtime_error("unsupported LinuxCNC command");
         auto* command_message = message.get();
         {
-          std::lock_guard lock(impl_->mutex);
-          if (impl_->command->write(command_message) != 0) {
+          if (!impl_->write_command(command_message)) {
             throw std::runtime_error("failed to write LinuxCNC NML command");
           }
         }
         const int serial = command_message->serial_number;
         context.mark_accepted(static_cast<std::uint64_t>(serial));
-        impl_->wait_for_serial(serial);
+        impl_->completions.wait_for_serial(serial);
         if (command.on_completed) command.on_completed();
       },
       std::move(cancelled));

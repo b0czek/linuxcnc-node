@@ -285,6 +285,13 @@ struct NmlErrorEvent {
   std::string message;
 };
 
+enum class NmlStatusPoll {
+  Updated,
+  Idle,
+  Stale,
+  Disconnected,
+};
+
 // Thin, transport-independent LinuxCNC NML boundary. The wire service maps
 // protobuf commands/statuses to these value types; this class owns NML channel
 // lifetime, serial command ordering, and completion observation.
@@ -299,10 +306,7 @@ class NmlAdapter {
   NmlAdapter(const NmlAdapter&) = delete;
   NmlAdapter& operator=(const NmlAdapter&) = delete;
 
-  bool connect();
-  bool connected() const noexcept;
-  void disconnect();
-  bool poll_status(NmlStatusSnapshot* snapshot);
+  NmlStatusPoll poll_status(NmlStatusSnapshot* snapshot);
   std::optional<NmlErrorEvent> poll_error();
   CommandTicket submit(NmlCommand command,
                        std::function<bool()> cancelled = {});

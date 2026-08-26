@@ -506,6 +506,7 @@ int main(int argc, char** argv) {
   assert(watch->Read(&event));
   assert(event.has_replay());
   assert(event.replay().from_sequence() == baseline.sequence());
+  assert(event.replay().has_snapshot());
   assert(event.replay().deltas_size() > 0);
   bool found_optional_stop_delta = false;
   for (const auto& delta : event.replay().deltas()) {
