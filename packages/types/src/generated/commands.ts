@@ -28,7 +28,7 @@ export type LinuxCncCommand =
   | { type: "overrideLimits" }
   | { type: "teleopEnable"; enable: boolean }
   | { type: "setFeedOverrideEnable"; enable: boolean }
-  | { type: "setSpindleOverrideEnable"; enable: boolean; spindleIndex: number }
+  | { type: "setSpindleOverrideEnable"; enable: boolean }
   | { type: "setFeedHoldEnable"; enable: boolean }
   | { type: "setAdaptiveFeedEnable"; enable: boolean }
   | { type: "homeJoint"; jointIndex: number }

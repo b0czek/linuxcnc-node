@@ -120,8 +120,8 @@ class CommandTaskReactor final : public ::grpc::ServerUnaryReactor {
         reactor.response_->set_status(RCS_STATUS_ERROR);
         reactor.response_->mutable_error()->set_type(
             NML_MESSAGE_TYPE_NML_ERROR);
-        reactor.response_->mutable_error()->set_sequence(
-            static_cast<std::int64_t>(result.sequence));
+        reactor.response_->mutable_error()->set_command_sequence(
+            result.sequence);
         reactor.response_->mutable_error()->set_message(result.error);
       } else if (result.state == CommandState::Accepted) {
         reactor.response_->set_status(RCS_STATUS_EXEC);
@@ -589,8 +589,9 @@ class MachineServiceImpl final : public MachineCallbackBase,
   }
 
   ::grpc::ServerWriteReactor<LinuxCNCError>* WatchErrors(
-      ::grpc::CallbackServerContext*, const google::protobuf::Empty*) override {
-    return new ErrorReactor(*this);
+      ::grpc::CallbackServerContext*,
+      const WatchErrorsRequest* request) override {
+    return new ErrorReactor(*this, request->after_sequence());
   }
 
   ::grpc::ServerUnaryReactor* ConfigurePositionHistory(
@@ -819,7 +820,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
 
   class ErrorReactor final : public ::grpc::ServerWriteReactor<LinuxCNCError> {
    public:
-    explicit ErrorReactor(MachineServiceImpl& service)
+    ErrorReactor(MachineServiceImpl& service, std::uint64_t after_sequence)
         : service_(service),
           admitted_(service_.stream_admission_.acquire()),
           gate_(std::make_shared<LifetimeGate<ErrorReactor>>(this)) {
@@ -837,7 +838,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
                 "stream admission limit reached"});
         return;
       }
-      cursor_ = service_.errors_.next_sequence() - 1;
+      cursor_ = after_sequence;
       subscription_ =
           service_.error_wakes_.subscribe([weak_gate](const std::uint64_t&) {
             auto gate = weak_gate.lock();
@@ -896,7 +897,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
       message_.Clear();
       message_.set_type(static_cast<NmlMessageType>(entry.event.type));
       message_.set_message(entry.event.message);
-      message_.set_sequence(static_cast<std::int64_t>(entry.sequence));
+      message_.set_sequence(entry.sequence);
       writing_sequence_ = entry.sequence;
       writing_ = true;
       StartWrite(&message_);

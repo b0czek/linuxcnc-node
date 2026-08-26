@@ -176,6 +176,7 @@ export * from "./linuxcnc/v1/UpdateHalValueSubscriptionRequest";
 export * from "./linuxcnc/v1/UploadWorkspaceRequest";
 export * from "./linuxcnc/v1/UploadWorkspaceResponse";
 export * from "./linuxcnc/v1/WaitPolicy";
+export * from "./linuxcnc/v1/WatchErrorsRequest";
 export * from "./linuxcnc/v1/WatchHalTopologyEvent";
 export * from "./linuxcnc/v1/WatchHalTopologyRequest";
 export * from "./linuxcnc/v1/WatchStatusEvent";

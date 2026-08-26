@@ -249,6 +249,7 @@ export const PROTO_DOMAIN_FIELDS = {
     type: { number: 1, wireName: "type" },
     message: { number: 2, wireName: "message" },
     sequence: { number: 3, wireName: "sequence" },
+    commandSequence: { number: 4, wireName: "command_sequence" },
   },
   Extents: {
     min: { number: 1, wireName: "min" },

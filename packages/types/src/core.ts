@@ -796,6 +796,9 @@ export interface LinuxCNCError {
 
   /** Monotonic daemon error sequence when received over MachineService. */
   sequence?: number;
+
+  /** Coordinator sequence for a synthetic command failure. */
+  commandSequence?: number;
 }
 
 export type DebugFlags = EmcDebug;

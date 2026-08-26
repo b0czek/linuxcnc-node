@@ -59,7 +59,8 @@ message ToolEntry {
 message LinuxCNCError {
   NmlMessageType type = 1;
   string message = 2;
-  int64 sequence = 3;
+  uint64 sequence = 3;
+  uint64 command_sequence = 4;
 }
 
 message ProgramHandle { string workspace_id = 1; string relative_path = 2; }

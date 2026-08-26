@@ -432,6 +432,11 @@ message WatchStatusRequest {
   uint64 after_sequence = 1;
 }
 
+// Replays retained errors strictly after the supplied sequence.
+message WatchErrorsRequest {
+  uint64 after_sequence = 1;
+}
+
 message StatusReplay {
   uint64 from_sequence = 1;
   uint64 to_sequence = 2;
@@ -506,7 +511,7 @@ message ExecuteCommandRequest {
 }
 
 message ExecuteCommandResponse {
-  uint64 command_sequence = 1;
+  uint32 command_sequence = 1;
   RcsStatus status = 2;
   LinuxCNCError error = 3;
 }
@@ -538,7 +543,8 @@ message SetSpindleOverride {
 
 message SetSpindleOverrideEnable {
   bool enable = 1;
-  int32 spindle_index = 2;
+  reserved 2;
+  reserved "spindle_index";
 }
 
 message JointIndex { int32 joint_index = 1; }
@@ -592,7 +598,7 @@ service MachineService {
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
   rpc WatchStatus(WatchStatusRequest) returns (stream WatchStatusEvent);
   rpc ExecuteCommand(ExecuteCommandRequest) returns (ExecuteCommandResponse);
-  rpc WatchErrors(google.protobuf.Empty) returns (stream LinuxCNCError);
+  rpc WatchErrors(WatchErrorsRequest) returns (stream LinuxCNCError);
   rpc ConfigurePositionHistory(PositionHistoryConfig) returns (google.protobuf.Empty);
   rpc ClearPositionHistory(google.protobuf.Empty) returns (google.protobuf.Empty);
 }

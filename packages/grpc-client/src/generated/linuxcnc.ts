@@ -147,6 +147,7 @@ import type { UnitsChangeData as _linuxcnc_v1_UnitsChangeData, UnitsChangeData__
 import type { UpdateHalValueSubscriptionRequest as _linuxcnc_v1_UpdateHalValueSubscriptionRequest, UpdateHalValueSubscriptionRequest__Output as _linuxcnc_v1_UpdateHalValueSubscriptionRequest__Output } from './linuxcnc/v1/UpdateHalValueSubscriptionRequest';
 import type { UploadWorkspaceRequest as _linuxcnc_v1_UploadWorkspaceRequest, UploadWorkspaceRequest__Output as _linuxcnc_v1_UploadWorkspaceRequest__Output } from './linuxcnc/v1/UploadWorkspaceRequest';
 import type { UploadWorkspaceResponse as _linuxcnc_v1_UploadWorkspaceResponse, UploadWorkspaceResponse__Output as _linuxcnc_v1_UploadWorkspaceResponse__Output } from './linuxcnc/v1/UploadWorkspaceResponse';
+import type { WatchErrorsRequest as _linuxcnc_v1_WatchErrorsRequest, WatchErrorsRequest__Output as _linuxcnc_v1_WatchErrorsRequest__Output } from './linuxcnc/v1/WatchErrorsRequest';
 import type { WatchHalTopologyEvent as _linuxcnc_v1_WatchHalTopologyEvent, WatchHalTopologyEvent__Output as _linuxcnc_v1_WatchHalTopologyEvent__Output } from './linuxcnc/v1/WatchHalTopologyEvent';
 import type { WatchHalTopologyRequest as _linuxcnc_v1_WatchHalTopologyRequest, WatchHalTopologyRequest__Output as _linuxcnc_v1_WatchHalTopologyRequest__Output } from './linuxcnc/v1/WatchHalTopologyRequest';
 import type { WatchStatusEvent as _linuxcnc_v1_WatchStatusEvent, WatchStatusEvent__Output as _linuxcnc_v1_WatchStatusEvent__Output } from './linuxcnc/v1/WatchStatusEvent';
@@ -337,6 +338,7 @@ export interface ProtoGrpcType {
       UploadWorkspaceRequest: MessageTypeDefinition<_linuxcnc_v1_UploadWorkspaceRequest, _linuxcnc_v1_UploadWorkspaceRequest__Output>
       UploadWorkspaceResponse: MessageTypeDefinition<_linuxcnc_v1_UploadWorkspaceResponse, _linuxcnc_v1_UploadWorkspaceResponse__Output>
       WaitPolicy: EnumTypeDefinition
+      WatchErrorsRequest: MessageTypeDefinition<_linuxcnc_v1_WatchErrorsRequest, _linuxcnc_v1_WatchErrorsRequest__Output>
       WatchHalTopologyEvent: MessageTypeDefinition<_linuxcnc_v1_WatchHalTopologyEvent, _linuxcnc_v1_WatchHalTopologyEvent__Output>
       WatchHalTopologyRequest: MessageTypeDefinition<_linuxcnc_v1_WatchHalTopologyRequest, _linuxcnc_v1_WatchHalTopologyRequest__Output>
       WatchStatusEvent: MessageTypeDefinition<_linuxcnc_v1_WatchStatusEvent, _linuxcnc_v1_WatchStatusEvent__Output>
