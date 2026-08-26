@@ -179,7 +179,8 @@ class MachineServiceImpl final : public MachineCallbackBase,
                               std::shared_ptr<PositionTelemetry> positions,
                               BoundedExecutor& blocking,
                               AdmissionCounter& stream_admission)
-      : nml_(config.nml_file, config.command_queue_capacity),
+      : nml_(config.nml_file, config.command_queue_capacity,
+             config.command_completion_timeout),
         blocking_(blocking),
         stream_admission_(stream_admission),
         workspaces_(std::move(workspaces)),
@@ -398,8 +399,6 @@ class MachineServiceImpl final : public MachineCallbackBase,
       case ExecuteCommandRequest::kSetSpindleOverrideEnable:
         command.kind = NmlCommandKind::SetSpindleOverrideEnable;
         command.boolean = request->set_spindle_override_enable().enable();
-        command.integer =
-            request->set_spindle_override_enable().spindle_index();
         break;
       case ExecuteCommandRequest::kSetFeedHoldEnable:
         command.kind = NmlCommandKind::SetFeedHoldEnable;

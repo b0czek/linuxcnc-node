@@ -241,11 +241,13 @@ void daemon_config_test() {
   char program[] = "linuxcnc-grpc-server";
   char period[] = "--status-period-ms=25";
   char quota[] = "--workspace-quota=64";
-  char* arguments[] = {program, period, quota};
+  char completion_timeout[] = "--command-completion-timeout-ms=120000";
+  char* arguments[] = {program, period, quota, completion_timeout};
   std::string error;
-  assert(parse_config(3, arguments, &config, nullptr, &error));
+  assert(parse_config(4, arguments, &config, nullptr, &error));
   assert(config.status_period == std::chrono::milliseconds(25));
   assert(config.workspace_quota_bytes == 64);
+  assert(config.command_completion_timeout == std::chrono::minutes(2));
   char telemetry[] = "--telemetry-endpoint=127.0.0.1:51000";
   char* telemetry_arguments[] = {program, telemetry};
   assert(parse_config(2, telemetry_arguments, &config, nullptr, &error));

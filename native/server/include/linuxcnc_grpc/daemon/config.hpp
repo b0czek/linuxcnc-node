@@ -26,6 +26,8 @@ struct DaemonConfig {
   std::size_t status_replay_capacity = 256;
   std::size_t gcode_batch_size = 128;
   std::size_t scope_samples = 32000;
+  // Zero leaves completion waiting to the RPC deadline/cancellation.
+  std::chrono::milliseconds command_completion_timeout{0};
   std::chrono::milliseconds status_period{50};
   std::chrono::milliseconds error_period{100};
   std::chrono::milliseconds position_period{10};

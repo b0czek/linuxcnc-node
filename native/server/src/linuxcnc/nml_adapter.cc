@@ -116,12 +116,32 @@ void fill_tool(const CANON_TOOL_TABLE& source, NmlToolEntry* result) {
 }  // namespace
 #endif
 
+#ifdef LINUXCNC_GRPC_HAS_NML
+namespace {
+template <std::size_t Size>
+std::string nml_text(const char (&source)[Size]) {
+  return {source,
+          static_cast<std::size_t>(std::find(source, source + Size, '\0') -
+                                   source)};
+}
+
+bool serial_after(std::int32_t lhs, std::int32_t rhs) {
+  return static_cast<std::int32_t>(static_cast<std::uint32_t>(lhs) -
+                                   static_cast<std::uint32_t>(rhs)) > 0;
+}
+}  // namespace
+#endif
+
 struct NmlAdapter::Impl {
-  explicit Impl(std::string path, std::size_t capacity)
-      : nml_file(std::move(path)), commands(capacity) {}
+  explicit Impl(std::string path, std::size_t capacity,
+                std::chrono::milliseconds completion_timeout)
+      : nml_file(std::move(path)),
+        commands(capacity),
+        command_completion_timeout(completion_timeout) {}
 
   std::string nml_file;
   CommandCoordinator commands;
+  std::chrono::milliseconds command_completion_timeout;
 #ifdef LINUXCNC_GRPC_HAS_NML
   struct RetryState {
     bool ready() const {
@@ -171,10 +191,15 @@ struct NmlAdapter::Impl {
     using Completion = std::function<void()>;
     using Failure = std::function<void(std::string)>;
 
+    explicit CommandCompletionTracker(std::chrono::milliseconds timeout)
+        : timeout_(timeout) {}
+
     void track(int serial, Completion completed, Failure failed) {
+      const auto now = std::chrono::steady_clock::now();
       Pending pending{serial,
-                      std::chrono::steady_clock::now() +
-                          std::chrono::seconds(5),
+                      timeout_ == std::chrono::milliseconds::zero()
+                          ? std::chrono::steady_clock::time_point::max()
+                          : now + timeout_,
                       0, std::move(completed), std::move(failed)};
       Resolution resolution = Resolution::Pending;
       {
@@ -256,7 +281,7 @@ struct NmlAdapter::Impl {
       if (observation_sequence <= pending.after_observation)
         return now >= pending.deadline ? Resolution::TimedOut
                                        : Resolution::Pending;
-      if (snapshot.echo_serial_number > pending.serial)
+      if (serial_after(snapshot.echo_serial_number, pending.serial))
         return Resolution::Completed;
       if (snapshot.echo_serial_number == pending.serial) {
         if (snapshot.rcs_status ==
@@ -312,6 +337,7 @@ struct NmlAdapter::Impl {
     bool have_snapshot_ = false;
     bool channel_healthy_ = false;
     std::uint64_t observation_sequence_ = 0;
+    std::chrono::milliseconds timeout_{};
   };
 
   std::unique_ptr<RCS_CMD_CHANNEL> make_command_channel() const {
@@ -338,7 +364,7 @@ struct NmlAdapter::Impl {
   OwnedChannel<RCS_CMD_CHANNEL> command_channel;
   OwnedChannel<RCS_STAT_CHANNEL> status_channel;
   OwnedChannel<NML> error_channel;
-  CommandCompletionTracker completions;
+  CommandCompletionTracker completions{command_completion_timeout};
   mutable std::mutex tool_mutex;
   bool tool_mmap_ready = false;
   std::string tool_table_filename;
@@ -439,8 +465,10 @@ struct NmlAdapter::Impl {
 #endif
 };
 
-NmlAdapter::NmlAdapter(std::string nml_file, std::size_t command_capacity)
-    : impl_(std::make_unique<Impl>(std::move(nml_file), command_capacity)) {}
+NmlAdapter::NmlAdapter(std::string nml_file, std::size_t command_capacity,
+                       std::chrono::milliseconds command_completion_timeout)
+    : impl_(std::make_unique<Impl>(std::move(nml_file), command_capacity,
+                                  command_completion_timeout)) {}
 
 NmlAdapter::~NmlAdapter() {
   impl_->commands.shutdown();
@@ -643,40 +671,35 @@ std::optional<NmlErrorEvent> NmlAdapter::poll_error() {
   }
   NmlErrorEvent result;
   result.type = static_cast<std::int32_t>(type);
-  char message[LINELEN] = {};
   switch (type) {
     case EMC_OPERATOR_ERROR_TYPE:
-      std::strncpy(
-          message, static_cast<EMC_OPERATOR_ERROR*>(address)->error,
-          sizeof(message) - 1);
+      result.message =
+          nml_text(static_cast<EMC_OPERATOR_ERROR*>(address)->error);
       break;
     case EMC_OPERATOR_TEXT_TYPE:
-      std::strncpy(message, static_cast<EMC_OPERATOR_TEXT*>(address)->text,
-                   sizeof(message) - 1);
+      result.message = nml_text(static_cast<EMC_OPERATOR_TEXT*>(address)->text);
       break;
     case EMC_OPERATOR_DISPLAY_TYPE:
-      std::strncpy(
-          message, static_cast<EMC_OPERATOR_DISPLAY*>(address)->display,
-          sizeof(message) - 1);
+      result.message =
+          nml_text(static_cast<EMC_OPERATOR_DISPLAY*>(address)->display);
       break;
     case NML_ERROR_TYPE:
-      std::strncpy(message, static_cast<NML_ERROR*>(address)->error,
-                   sizeof(message) - 1);
+      result.message = nml_text(static_cast<NML_ERROR*>(address)->error);
       break;
     case NML_TEXT_TYPE:
-      std::strncpy(message, static_cast<NML_TEXT*>(address)->text,
-                   sizeof(message) - 1);
+      result.message = nml_text(static_cast<NML_TEXT*>(address)->text);
       break;
     case NML_DISPLAY_TYPE:
-      std::strncpy(message, static_cast<NML_DISPLAY*>(address)->display,
-                   sizeof(message) - 1);
+      result.message = nml_text(static_cast<NML_DISPLAY*>(address)->display);
       break;
-    default:
+    default: {
+      char message[64] = {};
       std::snprintf(message, sizeof(message), "NML message type %d",
                     static_cast<int>(type));
+      result.message = message;
       break;
+    }
   }
-  result.message = message;
   return result;
 #else
   return std::nullopt;
@@ -842,7 +865,6 @@ CommandTicket NmlAdapter::submit(
           case NmlCommandKind::SetSpindleOverrideEnable: {
             auto value = std::make_unique<EMC_TRAJ_SET_SO_ENABLE>();
             value->mode = command.boolean ? 1 : 0;
-            value->spindle = command.integer;
             message = std::move(value);
             break;
           }

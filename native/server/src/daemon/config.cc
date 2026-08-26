@@ -254,6 +254,12 @@ bool parse_config(int argc, char* argv[], DaemonConfig* config, bool* show_help,
         if (error) *error = "invalid --command-queue-capacity";
         return false;
       }
+    } else if (option_value(argument, "--command-completion-timeout-ms",
+                            &value)) {
+      if (!parse_milliseconds(value, &config->command_completion_timeout)) {
+        if (error) *error = "invalid --command-completion-timeout-ms";
+        return false;
+      }
     } else if (option_value(argument, "--status-replay-capacity", &value)) {
       if (!parse_size(value, &config->status_replay_capacity)) {
         if (error) *error = "invalid --status-replay-capacity";
@@ -316,6 +322,7 @@ std::string config_help() {
          "  --workspace-quota=BYTES --total-quota=BYTES "
          "--workspace-ttl-seconds=N\n"
          "  --command-queue-capacity=N\n"
+         "  --command-completion-timeout-ms=0     (0 uses RPC deadline)\n"
          "  --tls --tls-certificate=PATH --tls-private-key=PATH (gRPC only)\n"
          "  --mtls --tls-client-ca=PATH --reflection (gRPC only)\n"
          "  --status-period-ms=50 --error-period-ms=100 "

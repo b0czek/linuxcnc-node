@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -256,7 +257,7 @@ struct NmlCommand {
 };
 
 struct NmlStatusSnapshot {
-  std::int64_t echo_serial_number = 0;
+  std::int32_t echo_serial_number = 0;
   std::int32_t rcs_status = -1;
   std::int32_t task_mode = 0;
   std::int32_t task_state = 0;
@@ -300,7 +301,9 @@ class NmlAdapter {
   static constexpr std::int32_t kDigitalOutputLimit = 64;
   static constexpr std::int32_t kAnalogOutputLimit = 64;
 
-  explicit NmlAdapter(std::string nml_file, std::size_t command_capacity = 128);
+  explicit NmlAdapter(
+      std::string nml_file, std::size_t command_capacity = 128,
+      std::chrono::milliseconds command_completion_timeout = {});
   ~NmlAdapter();
 
   NmlAdapter(const NmlAdapter&) = delete;
