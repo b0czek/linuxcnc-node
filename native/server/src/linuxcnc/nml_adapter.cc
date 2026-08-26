@@ -729,6 +729,7 @@ CommandTicket NmlAdapter::submit(
         if (command.prepare) command.prepare(command);
         std::unique_ptr<RCS_CMD_MSG> message;
         bool direct_tool_mutation = false;
+        bool composite_accepted = false;
         switch (command.kind) {
           case NmlCommandKind::SetTaskMode: {
             auto value = std::make_unique<EMC_TASK_SET_MODE>();
@@ -749,16 +750,20 @@ CommandTicket NmlAdapter::submit(
             message = std::make_unique<EMC_TASK_PLAN_INIT>();
             break;
           case NmlCommandKind::ProgramOpen: {
-            auto close = std::make_unique<EMC_TASK_PLAN_CLOSE>();
-            if (!impl_->write_command(close.get()))
-              throw std::runtime_error(
-                  "failed to close the previous LinuxCNC program");
             auto value = std::make_unique<EMC_TASK_PLAN_OPEN>();
             if (command.path.size() >= sizeof(value->file))
               throw std::runtime_error("program path too long");
             std::strncpy(value->file, command.path.c_str(),
                          sizeof(value->file) - 1);
             value->file[sizeof(value->file) - 1] = '\0';
+
+            auto close = std::make_unique<EMC_TASK_PLAN_CLOSE>();
+            if (!impl_->write_command(close.get()))
+              throw std::runtime_error(
+                  "failed to close the previous LinuxCNC program");
+            context.mark_accepted(
+                static_cast<std::uint32_t>(close->serial_number));
+            composite_accepted = true;
             message = std::move(value);
             break;
           }
@@ -1096,7 +1101,8 @@ CommandTicket NmlAdapter::submit(
           }
         }
         const int serial = command_message->serial_number;
-        context.mark_accepted(static_cast<std::uint64_t>(serial));
+        if (!composite_accepted)
+          context.mark_accepted(static_cast<std::uint32_t>(serial));
         context.defer_completion();
         impl_->completions.track(
             serial,

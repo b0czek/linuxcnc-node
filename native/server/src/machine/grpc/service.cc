@@ -182,6 +182,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
                               AdmissionCounter& stream_admission)
       : nml_(config.nml_file, config.command_queue_capacity,
              config.command_completion_timeout),
+        control_(1, config.command_queue_capacity),
         blocking_(blocking),
         stream_admission_(stream_admission),
         workspaces_(std::move(workspaces)),
@@ -207,6 +208,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
     status_wakes_.close();
     error_wakes_.close();
     callbacks_.shutdown();
+    control_.shutdown();
     position_condition_.notify_all();
     if (position_poller_.joinable()) position_poller_.join();
   }
@@ -248,7 +250,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
       ExecuteCommandResponse* response) override {
     auto owned_request = std::make_shared<ExecuteCommandRequest>(*request);
     return new CommandTaskReactor(
-        blocking_, callbacks_, response,
+        control_, callbacks_, response,
         [this, owned_request = std::move(owned_request)](
             const std::shared_ptr<CancellationToken>& cancelled,
             CommandTicket* ticket, CommandWaitPolicy* policy) {
@@ -1082,6 +1084,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
   }
 
   NmlAdapter nml_;
+  BoundedExecutor control_;
   BoundedExecutor& blocking_;
   AdmissionCounter& stream_admission_;
   std::shared_ptr<ProgramWorkspaceStore> workspaces_;
