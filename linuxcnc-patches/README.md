@@ -274,3 +274,16 @@ It follows the same backend boundary already used by task (`emccanon.cc`), Axis
 (`gcodemodule.cc`), and the standalone interpreter (`saicanon.cc`), leaving
 those existing implementations untouched.
 
+### 0011 — In-flight Single Step arming
+
+`AUTO_STEP` is forwarded to motion while an AUTO program is already running.
+The trajectory planner latches the active source block, or the active G76 pass
+group supplied by patch 0009, and finishes that unit normally before stopping
+at an exact boundary. Later motion remains queued and does not begin, including
+when several following blocks or threading passes were prequeued by readahead.
+
+The temporary exact boundary is restored if Step is canceled by Resume or Stop.
+Existing paused source-line stepping and G76 pass stepping remain intact. Two
+additional runtime scenarios arm Step during an ordinary block with three later
+blocks queued and during an active G76 cut with later passes queued, bringing
+the resumable-stop suite to twenty-seven scenarios.
