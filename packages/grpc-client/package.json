@@ -13,7 +13,7 @@
     "prebuild": "node scripts/bundle-proto.mjs && node scripts/generate-grpc.mjs",
     "build": "tsc",
     "check:generated": "node ../types/scripts/check-generated.mjs && node scripts/check-generated.mjs",
-    "test:conformance": "pnpm run build && node test/conformance.mjs",
+    "test:conformance": "pnpm run build && node --test test/*.test.mjs",
     "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
