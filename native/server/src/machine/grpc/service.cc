@@ -37,6 +37,7 @@ namespace {
 using namespace ::linuxcnc::v1;
 
 constexpr std::uint32_t kMaxPositionSamplePeriodMs = 60'000;
+constexpr std::size_t kErrorBatchSize = 32;
 
 ::grpc::Status Invalid(const std::string& message) {
   return {::grpc::StatusCode::INVALID_ARGUMENT, message};
@@ -1020,11 +1021,16 @@ class MachineServiceImpl final : public MachineCallbackBase,
         next_position = now + position_period;
       }
       if (now >= next_error) {
-        if (auto error = nml_.poll_error()) {
+        std::size_t drained = 0;
+        while (drained < kErrorBatchSize) {
+          auto error = nml_.poll_error();
+          if (!error) break;
           const auto sequence = errors_.publish(std::move(*error));
           error_wakes_.publish(sequence);
+          ++drained;
         }
-        next_error = now + error_period_;
+        next_error =
+            drained == kErrorBatchSize ? now : now + error_period_;
       }
       std::unique_lock lock(position_mutex_);
       auto deadline = std::min(next_status, next_error);
