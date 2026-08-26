@@ -117,9 +117,13 @@ import type { ScopeStop as _linuxcnc_v1_ScopeStop, ScopeStop__Output as _linuxcn
 import type { ScopeTrigger as _linuxcnc_v1_ScopeTrigger, ScopeTrigger__Output as _linuxcnc_v1_ScopeTrigger__Output } from './linuxcnc/v1/ScopeTrigger';
 import type { SetBool as _linuxcnc_v1_SetBool, SetBool__Output as _linuxcnc_v1_SetBool__Output } from './linuxcnc/v1/SetBool';
 import type { SetDebugLevel as _linuxcnc_v1_SetDebugLevel, SetDebugLevel__Output as _linuxcnc_v1_SetDebugLevel__Output } from './linuxcnc/v1/SetDebugLevel';
-import type { SetDouble as _linuxcnc_v1_SetDouble, SetDouble__Output as _linuxcnc_v1_SetDouble__Output } from './linuxcnc/v1/SetDouble';
+import type { SetFeedRate as _linuxcnc_v1_SetFeedRate, SetFeedRate__Output as _linuxcnc_v1_SetFeedRate__Output } from './linuxcnc/v1/SetFeedRate';
+import type { SetFlood as _linuxcnc_v1_SetFlood, SetFlood__Output as _linuxcnc_v1_SetFlood__Output } from './linuxcnc/v1/SetFlood';
 import type { SetHalMessageLevelRequest as _linuxcnc_v1_SetHalMessageLevelRequest, SetHalMessageLevelRequest__Output as _linuxcnc_v1_SetHalMessageLevelRequest__Output } from './linuxcnc/v1/SetHalMessageLevelRequest';
 import type { SetHalWriterReadyRequest as _linuxcnc_v1_SetHalWriterReadyRequest, SetHalWriterReadyRequest__Output as _linuxcnc_v1_SetHalWriterReadyRequest__Output } from './linuxcnc/v1/SetHalWriterReadyRequest';
+import type { SetMaxVelocity as _linuxcnc_v1_SetMaxVelocity, SetMaxVelocity__Output as _linuxcnc_v1_SetMaxVelocity__Output } from './linuxcnc/v1/SetMaxVelocity';
+import type { SetMist as _linuxcnc_v1_SetMist, SetMist__Output as _linuxcnc_v1_SetMist__Output } from './linuxcnc/v1/SetMist';
+import type { SetRapidRate as _linuxcnc_v1_SetRapidRate, SetRapidRate__Output as _linuxcnc_v1_SetRapidRate__Output } from './linuxcnc/v1/SetRapidRate';
 import type { SetSpindleOverride as _linuxcnc_v1_SetSpindleOverride, SetSpindleOverride__Output as _linuxcnc_v1_SetSpindleOverride__Output } from './linuxcnc/v1/SetSpindleOverride';
 import type { SetSpindleOverrideEnable as _linuxcnc_v1_SetSpindleOverrideEnable, SetSpindleOverrideEnable__Output as _linuxcnc_v1_SetSpindleOverrideEnable__Output } from './linuxcnc/v1/SetSpindleOverrideEnable';
 import type { SetTaskMode as _linuxcnc_v1_SetTaskMode, SetTaskMode__Output as _linuxcnc_v1_SetTaskMode__Output } from './linuxcnc/v1/SetTaskMode';
@@ -298,9 +302,13 @@ export interface ProtoGrpcType {
       ScopeTrigger: MessageTypeDefinition<_linuxcnc_v1_ScopeTrigger, _linuxcnc_v1_ScopeTrigger__Output>
       SetBool: MessageTypeDefinition<_linuxcnc_v1_SetBool, _linuxcnc_v1_SetBool__Output>
       SetDebugLevel: MessageTypeDefinition<_linuxcnc_v1_SetDebugLevel, _linuxcnc_v1_SetDebugLevel__Output>
-      SetDouble: MessageTypeDefinition<_linuxcnc_v1_SetDouble, _linuxcnc_v1_SetDouble__Output>
+      SetFeedRate: MessageTypeDefinition<_linuxcnc_v1_SetFeedRate, _linuxcnc_v1_SetFeedRate__Output>
+      SetFlood: MessageTypeDefinition<_linuxcnc_v1_SetFlood, _linuxcnc_v1_SetFlood__Output>
       SetHalMessageLevelRequest: MessageTypeDefinition<_linuxcnc_v1_SetHalMessageLevelRequest, _linuxcnc_v1_SetHalMessageLevelRequest__Output>
       SetHalWriterReadyRequest: MessageTypeDefinition<_linuxcnc_v1_SetHalWriterReadyRequest, _linuxcnc_v1_SetHalWriterReadyRequest__Output>
+      SetMaxVelocity: MessageTypeDefinition<_linuxcnc_v1_SetMaxVelocity, _linuxcnc_v1_SetMaxVelocity__Output>
+      SetMist: MessageTypeDefinition<_linuxcnc_v1_SetMist, _linuxcnc_v1_SetMist__Output>
+      SetRapidRate: MessageTypeDefinition<_linuxcnc_v1_SetRapidRate, _linuxcnc_v1_SetRapidRate__Output>
       SetSpindleOverride: MessageTypeDefinition<_linuxcnc_v1_SetSpindleOverride, _linuxcnc_v1_SetSpindleOverride__Output>
       SetSpindleOverrideEnable: MessageTypeDefinition<_linuxcnc_v1_SetSpindleOverrideEnable, _linuxcnc_v1_SetSpindleOverrideEnable__Output>
       SetTaskMode: MessageTypeDefinition<_linuxcnc_v1_SetTaskMode, _linuxcnc_v1_SetTaskMode__Output>

@@ -9,7 +9,8 @@ import type { RunProgram as _linuxcnc_v1_RunProgram, RunProgram__Output as _linu
 import type { SetBool as _linuxcnc_v1_SetBool, SetBool__Output as _linuxcnc_v1_SetBool__Output } from '../../linuxcnc/v1/SetBool';
 import type { Mdi as _linuxcnc_v1_Mdi, Mdi__Output as _linuxcnc_v1_Mdi__Output } from '../../linuxcnc/v1/Mdi';
 import type { SetTrajMode as _linuxcnc_v1_SetTrajMode, SetTrajMode__Output as _linuxcnc_v1_SetTrajMode__Output } from '../../linuxcnc/v1/SetTrajMode';
-import type { SetDouble as _linuxcnc_v1_SetDouble, SetDouble__Output as _linuxcnc_v1_SetDouble__Output } from '../../linuxcnc/v1/SetDouble';
+import type { SetMaxVelocity as _linuxcnc_v1_SetMaxVelocity, SetMaxVelocity__Output as _linuxcnc_v1_SetMaxVelocity__Output } from '../../linuxcnc/v1/SetMaxVelocity';
+import type { SetFeedRate as _linuxcnc_v1_SetFeedRate, SetFeedRate__Output as _linuxcnc_v1_SetFeedRate__Output } from '../../linuxcnc/v1/SetFeedRate';
 import type { SetSpindleOverride as _linuxcnc_v1_SetSpindleOverride, SetSpindleOverride__Output as _linuxcnc_v1_SetSpindleOverride__Output } from '../../linuxcnc/v1/SetSpindleOverride';
 import type { SetSpindleOverrideEnable as _linuxcnc_v1_SetSpindleOverrideEnable, SetSpindleOverrideEnable__Output as _linuxcnc_v1_SetSpindleOverrideEnable__Output } from '../../linuxcnc/v1/SetSpindleOverrideEnable';
 import type { JointIndex as _linuxcnc_v1_JointIndex, JointIndex__Output as _linuxcnc_v1_JointIndex__Output } from '../../linuxcnc/v1/JointIndex';
@@ -20,12 +21,15 @@ import type { JointLimit as _linuxcnc_v1_JointLimit, JointLimit__Output as _linu
 import type { SpindleOn as _linuxcnc_v1_SpindleOn, SpindleOn__Output as _linuxcnc_v1_SpindleOn__Output } from '../../linuxcnc/v1/SpindleOn';
 import type { SpindleIndex as _linuxcnc_v1_SpindleIndex, SpindleIndex__Output as _linuxcnc_v1_SpindleIndex__Output } from '../../linuxcnc/v1/SpindleIndex';
 import type { SpindleBrake as _linuxcnc_v1_SpindleBrake, SpindleBrake__Output as _linuxcnc_v1_SpindleBrake__Output } from '../../linuxcnc/v1/SpindleBrake';
+import type { SetMist as _linuxcnc_v1_SetMist, SetMist__Output as _linuxcnc_v1_SetMist__Output } from '../../linuxcnc/v1/SetMist';
+import type { SetFlood as _linuxcnc_v1_SetFlood, SetFlood__Output as _linuxcnc_v1_SetFlood__Output } from '../../linuxcnc/v1/SetFlood';
 import type { SetTool as _linuxcnc_v1_SetTool, SetTool__Output as _linuxcnc_v1_SetTool__Output } from '../../linuxcnc/v1/SetTool';
 import type { ToolNumber as _linuxcnc_v1_ToolNumber, ToolNumber__Output as _linuxcnc_v1_ToolNumber__Output } from '../../linuxcnc/v1/ToolNumber';
 import type { DigitalOutput as _linuxcnc_v1_DigitalOutput, DigitalOutput__Output as _linuxcnc_v1_DigitalOutput__Output } from '../../linuxcnc/v1/DigitalOutput';
 import type { AnalogOutput as _linuxcnc_v1_AnalogOutput, AnalogOutput__Output as _linuxcnc_v1_AnalogOutput__Output } from '../../linuxcnc/v1/AnalogOutput';
 import type { SetDebugLevel as _linuxcnc_v1_SetDebugLevel, SetDebugLevel__Output as _linuxcnc_v1_SetDebugLevel__Output } from '../../linuxcnc/v1/SetDebugLevel';
 import type { MessageCommand as _linuxcnc_v1_MessageCommand, MessageCommand__Output as _linuxcnc_v1_MessageCommand__Output } from '../../linuxcnc/v1/MessageCommand';
+import type { SetRapidRate as _linuxcnc_v1_SetRapidRate, SetRapidRate__Output as _linuxcnc_v1_SetRapidRate__Output } from '../../linuxcnc/v1/SetRapidRate';
 
 export interface ExecuteCommandRequest {
   'waitPolicy'?: (_linuxcnc_v1_WaitPolicy);
@@ -47,8 +51,8 @@ export interface ExecuteCommandRequest {
   'setBlockDelete'?: (_linuxcnc_v1_SetBool | null);
   'mdi'?: (_linuxcnc_v1_Mdi | null);
   'setTrajMode'?: (_linuxcnc_v1_SetTrajMode | null);
-  'setMaxVelocity'?: (_linuxcnc_v1_SetDouble | null);
-  'setFeedRate'?: (_linuxcnc_v1_SetDouble | null);
+  'setMaxVelocity'?: (_linuxcnc_v1_SetMaxVelocity | null);
+  'setFeedRate'?: (_linuxcnc_v1_SetFeedRate | null);
   'setSpindleOverride'?: (_linuxcnc_v1_SetSpindleOverride | null);
   'overrideLimits'?: (_linuxcnc_v1_EmptyCommand | null);
   'teleopEnable'?: (_linuxcnc_v1_SetBool | null);
@@ -68,8 +72,8 @@ export interface ExecuteCommandRequest {
   'spindleDecrease'?: (_linuxcnc_v1_SpindleIndex | null);
   'spindleOff'?: (_linuxcnc_v1_SpindleIndex | null);
   'spindleBrake'?: (_linuxcnc_v1_SpindleBrake | null);
-  'setMist'?: (_linuxcnc_v1_SetBool | null);
-  'setFlood'?: (_linuxcnc_v1_SetBool | null);
+  'setMist'?: (_linuxcnc_v1_SetMist | null);
+  'setFlood'?: (_linuxcnc_v1_SetFlood | null);
   'loadToolTable'?: (_linuxcnc_v1_EmptyCommand | null);
   'setTool'?: (_linuxcnc_v1_SetTool | null);
   'deleteTool'?: (_linuxcnc_v1_ToolNumber | null);
@@ -79,7 +83,7 @@ export interface ExecuteCommandRequest {
   'sendOperatorError'?: (_linuxcnc_v1_MessageCommand | null);
   'sendOperatorText'?: (_linuxcnc_v1_MessageCommand | null);
   'sendOperatorDisplay'?: (_linuxcnc_v1_MessageCommand | null);
-  'setRapidRate'?: (_linuxcnc_v1_SetDouble | null);
+  'setRapidRate'?: (_linuxcnc_v1_SetRapidRate | null);
   'command'?: "setTaskMode"|"setState"|"taskPlanSynch"|"resetInterpreter"|"programOpen"|"programClose"|"runProgram"|"pauseProgram"|"resumeProgram"|"stepProgram"|"reverseProgram"|"forwardProgram"|"stop"|"abortTask"|"setOptionalStop"|"setBlockDelete"|"mdi"|"setTrajMode"|"setMaxVelocity"|"setFeedRate"|"setSpindleOverride"|"overrideLimits"|"teleopEnable"|"setFeedOverrideEnable"|"setSpindleOverrideEnable"|"setFeedHoldEnable"|"setAdaptiveFeedEnable"|"homeJoint"|"unhomeJoint"|"jogStop"|"jogContinuous"|"jogIncrement"|"setMinPositionLimit"|"setMaxPositionLimit"|"spindleOn"|"spindleIncrease"|"spindleDecrease"|"spindleOff"|"spindleBrake"|"setMist"|"setFlood"|"loadToolTable"|"setTool"|"deleteTool"|"setDigitalOutput"|"setAnalogOutput"|"setDebugLevel"|"sendOperatorError"|"sendOperatorText"|"sendOperatorDisplay"|"setRapidRate";
 }
 
@@ -103,8 +107,8 @@ export interface ExecuteCommandRequest__Output {
   'setBlockDelete'?: (_linuxcnc_v1_SetBool__Output);
   'mdi'?: (_linuxcnc_v1_Mdi__Output);
   'setTrajMode'?: (_linuxcnc_v1_SetTrajMode__Output);
-  'setMaxVelocity'?: (_linuxcnc_v1_SetDouble__Output);
-  'setFeedRate'?: (_linuxcnc_v1_SetDouble__Output);
+  'setMaxVelocity'?: (_linuxcnc_v1_SetMaxVelocity__Output);
+  'setFeedRate'?: (_linuxcnc_v1_SetFeedRate__Output);
   'setSpindleOverride'?: (_linuxcnc_v1_SetSpindleOverride__Output);
   'overrideLimits'?: (_linuxcnc_v1_EmptyCommand__Output);
   'teleopEnable'?: (_linuxcnc_v1_SetBool__Output);
@@ -124,8 +128,8 @@ export interface ExecuteCommandRequest__Output {
   'spindleDecrease'?: (_linuxcnc_v1_SpindleIndex__Output);
   'spindleOff'?: (_linuxcnc_v1_SpindleIndex__Output);
   'spindleBrake'?: (_linuxcnc_v1_SpindleBrake__Output);
-  'setMist'?: (_linuxcnc_v1_SetBool__Output);
-  'setFlood'?: (_linuxcnc_v1_SetBool__Output);
+  'setMist'?: (_linuxcnc_v1_SetMist__Output);
+  'setFlood'?: (_linuxcnc_v1_SetFlood__Output);
   'loadToolTable'?: (_linuxcnc_v1_EmptyCommand__Output);
   'setTool'?: (_linuxcnc_v1_SetTool__Output);
   'deleteTool'?: (_linuxcnc_v1_ToolNumber__Output);
@@ -135,6 +139,6 @@ export interface ExecuteCommandRequest__Output {
   'sendOperatorError'?: (_linuxcnc_v1_MessageCommand__Output);
   'sendOperatorText'?: (_linuxcnc_v1_MessageCommand__Output);
   'sendOperatorDisplay'?: (_linuxcnc_v1_MessageCommand__Output);
-  'setRapidRate'?: (_linuxcnc_v1_SetDouble__Output);
+  'setRapidRate'?: (_linuxcnc_v1_SetRapidRate__Output);
   'command'?: "setTaskMode"|"setState"|"taskPlanSynch"|"resetInterpreter"|"programOpen"|"programClose"|"runProgram"|"pauseProgram"|"resumeProgram"|"stepProgram"|"reverseProgram"|"forwardProgram"|"stop"|"abortTask"|"setOptionalStop"|"setBlockDelete"|"mdi"|"setTrajMode"|"setMaxVelocity"|"setFeedRate"|"setSpindleOverride"|"overrideLimits"|"teleopEnable"|"setFeedOverrideEnable"|"setSpindleOverrideEnable"|"setFeedHoldEnable"|"setAdaptiveFeedEnable"|"homeJoint"|"unhomeJoint"|"jogStop"|"jogContinuous"|"jogIncrement"|"setMinPositionLimit"|"setMaxPositionLimit"|"spindleOn"|"spindleIncrease"|"spindleDecrease"|"spindleOff"|"spindleBrake"|"setMist"|"setFlood"|"loadToolTable"|"setTool"|"deleteTool"|"setDigitalOutput"|"setAnalogOutput"|"setDebugLevel"|"sendOperatorError"|"sendOperatorText"|"sendOperatorDisplay"|"setRapidRate";
 }

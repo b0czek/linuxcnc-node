@@ -54,6 +54,12 @@ export type Position = Float64Array;
  */
 export type Position3 = Float64Array;
 
+/** Opaque reference to a program stored in a server workspace. */
+export interface ProgramHandle {
+  workspaceId: string;
+  relativePath: string;
+}
+
 /**
  * Tool table entry representing a cutting tool in the LinuxCNC system.
  * Each tool has physical properties, position offset, and is assigned to a specific pocket.
@@ -95,6 +101,13 @@ export interface ToolEntry {
    */
   comment: string;
 }
+
+/** Presence-sensitive partial tool-table update in protobuf-ready form. */
+export type ToolUpdate = Partial<Omit<ToolEntry, "offset" | "wearOffset">> &
+  Pick<ToolEntry, "toolNo"> & {
+    offset?: { values: readonly number[] };
+    wearOffset?: { values: readonly number[] };
+  };
 
 /**
  * Active G-codes for each modal group in the LinuxCNC interpreter.

@@ -4,6 +4,7 @@ import type {
   HalValue,
   OperationType,
   Plane,
+  ProgramHandle,
   ProgramUnits,
 } from "@linuxcnc-node/types";
 import type { HalScalar } from "./generated/linuxcnc/v1/hal_pb.js";
@@ -77,8 +78,7 @@ export interface HalValuesOptions extends OpenOptions {
   onFrame(frame: HalValueFrame): void;
 }
 export interface ProgramPreviewOptions extends OpenOptions {
-  workspaceId: string;
-  relativePath: string;
+  entry: ProgramHandle;
   onEvent(event: ProgramPreviewEvent): void;
 }
 
@@ -108,14 +108,13 @@ export function halValuesUrl(base: string | URL, tokenOrPath: string): string {
 }
 export function programPreviewUrl(
   base: string | URL,
-  workspaceId: string,
-  relativePath: string,
+  entry: ProgramHandle,
 ): string {
   const url = websocketBase(base);
   url.pathname = "/v1/program-preview";
   url.search = "";
-  url.searchParams.set("workspace_id", workspaceId);
-  url.searchParams.set("relative_path", relativePath);
+  url.searchParams.set("workspace_id", entry.workspaceId);
+  url.searchParams.set("relative_path", entry.relativePath);
   url.hash = "";
   return url.toString();
 }
@@ -430,7 +429,7 @@ export function openProgramPreview(
   options: ProgramPreviewOptions,
 ): SocketHandle {
   return open(
-    programPreviewUrl(base, options.workspaceId, options.relativePath),
+    programPreviewUrl(base, options.entry),
     decodeProgramPreviewEvent,
     options.onEvent,
     options,

@@ -23,6 +23,10 @@ const domainOutputFlag = process.argv.indexOf("--domain-output");
 if (domainOutputFlag >= 0 && !process.argv[domainOutputFlag + 1]) {
   throw new Error("--domain-output requires a file path");
 }
+const commandOutputFlag = process.argv.indexOf("--command-output");
+if (commandOutputFlag >= 0 && !process.argv[commandOutputFlag + 1]) {
+  throw new Error("--command-output requires a file path");
+}
 const generated =
   outputFlag >= 0
     ? resolve(process.cwd(), process.argv[outputFlag + 1])
@@ -33,6 +37,12 @@ const generatedDomain =
     : outputFlag >= 0
       ? join(dirname(generated), "domain.ts")
       : join(here, "../src/generated/domain.ts");
+const generatedCommands =
+  commandOutputFlag >= 0
+    ? resolve(process.cwd(), process.argv[commandOutputFlag + 1])
+    : outputFlag >= 0
+      ? join(dirname(generated), "commands.ts")
+      : join(here, "../src/generated/commands.ts");
 const source = protoFiles
   .map((file) => readFileSync(join(protoDirectory, file), "utf8"))
   .join("\n");
@@ -169,6 +179,7 @@ const domainFields = Object.fromEntries(
 const gcodeOperationVariants = parseOneofFields("GCodeOperation", "data");
 const halScalarVariants = parseOneofFields("HalScalar", "value");
 const packedChannelFields = domainFields.PackedChannel;
+const commandVariants = parseOneofFields("ExecuteCommandRequest", "command");
 let output =
   "/** Generated from the proto/linuxcnc/v1 schema set. Do not edit manually. */\n\n";
 for (const name of stableEnums) {
@@ -207,6 +218,69 @@ for (const field of packedChannelFields)
   domainOutput += `  { name: "${field.name}", wireName: "${field.wireName}", number: ${field.number} },\n`;
 domainOutput += "] as const;\n";
 writeFileSync(generatedDomain, domainOutput);
+
+const scalarTypes = new Map([
+  ["double", "number"],
+  ["float", "number"],
+  ["int32", "number"],
+  ["sint32", "number"],
+  ["sfixed32", "number"],
+  ["uint32", "number"],
+  ["fixed32", "number"],
+  ["int64", "string"],
+  ["sint64", "string"],
+  ["sfixed64", "string"],
+  ["uint64", "string"],
+  ["fixed64", "string"],
+  ["bool", "boolean"],
+  ["string", "string"],
+  ["bytes", "Uint8Array"],
+]);
+const commandDomainTypes = new Map([
+  ["ProgramHandle", "ProgramHandle"],
+  ["ToolEntry", "ToolUpdate"],
+  ["Position", "Position"],
+]);
+const enumTypes = new Set(stableEnums);
+const commandFieldType = (field) =>
+  scalarTypes.get(field.wireType) ??
+  commandDomainTypes.get(field.wireType) ??
+  (enumTypes.has(field.wireType) ? field.wireType : field.wireType);
+const commandPayloads = commandVariants.map((variant) => ({
+  ...variant,
+  fields: parseMessageFields(variant.wireType),
+}));
+const commandEnums = [
+  ...new Set(
+    commandPayloads.flatMap((variant) =>
+      variant.fields
+        .filter((field) => enumTypes.has(field.wireType))
+        .map((field) => field.wireType),
+    ),
+  ),
+];
+let commandOutput =
+  "/** Generated from ExecuteCommandRequest.command. Do not edit manually. */\n\n";
+commandOutput += `import type { ProgramHandle, ToolUpdate } from "../core";\n`;
+commandOutput += `import type { ${commandEnums.join(", ")} } from "../constants";\n\n`;
+commandOutput += "export type LinuxCncCommand =\n";
+for (const variant of commandPayloads) {
+  commandOutput += `  | { type: "${variant.name}"`;
+  for (const field of variant.fields) {
+    const optional = field.label === "optional";
+    const repeated = field.label === "repeated";
+    const type = commandFieldType(field);
+    commandOutput += `; ${field.name}${optional ? "?" : ""}: ${repeated ? `readonly ${type}[]` : type}`;
+  }
+  commandOutput += " }\n";
+}
+commandOutput += ";\n\n";
+commandOutput += `export type LinuxCncCommandOf<\n  T extends LinuxCncCommand["type"],\n> = Extract<LinuxCncCommand, { type: T }>;\n\n`;
+commandOutput += "export const LINUXCNC_COMMAND_TYPES = [\n";
+for (const variant of commandPayloads)
+  commandOutput += `  "${variant.name}",\n`;
+commandOutput += '] as const satisfies readonly LinuxCncCommand["type"][];\n\n';
+writeFileSync(generatedCommands, commandOutput);
 
 const candidates = [process.env.PROTOC, "protoc"].filter(Boolean);
 const protoc = candidates.find(

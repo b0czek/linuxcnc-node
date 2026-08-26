@@ -469,8 +469,8 @@ message ExecuteCommandRequest {
     SetBool set_block_delete = 17;
     Mdi mdi = 18;
     SetTrajMode set_traj_mode = 19;
-    SetDouble set_max_velocity = 20;
-    SetDouble set_feed_rate = 21;
+    SetMaxVelocity set_max_velocity = 20;
+    SetFeedRate set_feed_rate = 21;
     SetSpindleOverride set_spindle_override = 22;
     EmptyCommand override_limits = 23;
     SetBool teleop_enable = 24;
@@ -490,8 +490,8 @@ message ExecuteCommandRequest {
     SpindleIndex spindle_decrease = 38;
     SpindleIndex spindle_off = 39;
     SpindleBrake spindle_brake = 40;
-    SetBool set_mist = 41;
-    SetBool set_flood = 42;
+    SetMist set_mist = 41;
+    SetFlood set_flood = 42;
     EmptyCommand load_tool_table = 43;
     SetTool set_tool = 44;
     ToolNumber delete_tool = 45;
@@ -501,7 +501,7 @@ message ExecuteCommandRequest {
     MessageCommand send_operator_error = 49;
     MessageCommand send_operator_text = 50;
     MessageCommand send_operator_display = 51;
-    SetDouble set_rapid_rate = 52;
+    SetRapidRate set_rapid_rate = 52;
   }
 }
 
@@ -527,11 +527,19 @@ message Mdi { string command = 1; }
 
 message SetTrajMode { TrajMode mode = 1; }
 
-message SetDouble { double value = 1; }
+message SetMaxVelocity { double velocity = 1; }
 
-message SetSpindleOverride { double scale = 1; int32 spindle_index = 2; bool has_spindle_index = 3; }
+message SetFeedRate { double scale = 1; }
 
-message SetSpindleOverrideEnable { bool enable = 1; int32 spindle_index = 2; bool has_spindle_index = 3; }
+message SetSpindleOverride {
+  double scale = 1;
+  int32 spindle_index = 2;
+}
+
+message SetSpindleOverrideEnable {
+  bool enable = 1;
+  int32 spindle_index = 2;
+}
 
 message JointIndex { int32 joint_index = 1; }
 
@@ -543,11 +551,22 @@ message JogIncrement { int32 axis_or_joint_index = 1; bool is_joint_jog = 2; dou
 
 message JointLimit { int32 joint_index = 1; double limit = 2; }
 
-message SpindleOn { double speed = 1; int32 spindle_index = 2; optional bool wait_for_speed = 3; bool has_spindle_index = 4; }
+message SpindleOn {
+  double speed = 1;
+  int32 spindle_index = 2;
+  optional bool wait_for_speed = 3;
+}
 
 message SpindleIndex { int32 spindle_index = 1; }
 
-message SpindleBrake { bool engage = 1; int32 spindle_index = 2; bool has_spindle_index = 3; }
+message SpindleBrake {
+  bool engage = 1;
+  int32 spindle_index = 2;
+}
+
+message SetMist { bool on = 1; }
+
+message SetFlood { bool on = 1; }
 
 message SetTool { ToolEntry tool = 1; }
 
@@ -558,6 +577,8 @@ message DigitalOutput { int32 index = 1; bool value = 2; }
 message AnalogOutput { int32 index = 1; double value = 2; }
 
 message SetDebugLevel { int32 level = 1; }
+
+message SetRapidRate { double scale = 1; }
 
 message MessageCommand { string message = 1; }
 

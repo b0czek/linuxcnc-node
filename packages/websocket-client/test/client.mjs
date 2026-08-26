@@ -123,8 +123,7 @@ test("preview decoder maps positions to Float64Array operations", () => {
   const socket = new FakeSocket();
   let event;
   openProgramPreview("ws://localhost", {
-    workspaceId: "workspace",
-    relativePath: "preview.ngc",
+    entry: { workspaceId: "workspace", relativePath: "preview.ngc" },
     createWebSocket: () => socket,
     onEvent: (value) => (event = value),
   });
@@ -136,11 +135,10 @@ test("preview decoder maps positions to Float64Array operations", () => {
 
 test("preview URLs safely encode workspace and relative path", () => {
   const url = new URL(
-    programPreviewUrl(
-      "https://machine.example/base",
-      "space & id",
-      "dir/a+b #1.ngc",
-    ),
+    programPreviewUrl("https://machine.example/base", {
+      workspaceId: "space & id",
+      relativePath: "dir/a+b #1.ngc",
+    }),
   );
   assert.equal(url.protocol, "wss:");
   assert.equal(url.pathname, "/v1/program-preview");

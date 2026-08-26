@@ -586,7 +586,7 @@ int main(int argc, char** argv) {
           {"task", [](auto& request) { request.mutable_task_plan_synch(); }},
           {"trajectory",
            [](auto& request) {
-             request.mutable_set_feed_rate()->set_value(1.0);
+             request.mutable_set_feed_rate()->set_scale(1.0);
            }},
           {"jog",
            [](auto& request) {
@@ -599,7 +599,7 @@ int main(int argc, char** argv) {
            }},
           {"coolant",
            [](auto& request) {
-             request.mutable_set_mist()->set_enable(false);
+             request.mutable_set_mist()->set_on(false);
            }},
           {"tool", [](auto& request) { request.mutable_load_tool_table(); }},
           {"io",

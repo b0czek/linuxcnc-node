@@ -12,6 +12,7 @@ import { join } from "node:path";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
 import { createLinuxCncClients } from "../dist/client.js";
+import { executeCommand } from "../dist/command.js";
 
 const generated = join(import.meta.dirname, "../dist/generated");
 assert.ok(existsSync(join(generated, "linuxcnc/v1/MachineService.d.ts")));
@@ -41,6 +42,69 @@ assert.equal(typeof createLinuxCncClients, "function");
 const clients = await createLinuxCncClients({ address: "127.0.0.1:50051" });
 for (const client of Object.values(clients)) client.close();
 assert.ok(clients.health);
+
+const requests = [];
+const machine = {
+  executeCommand(request, callback) {
+    requests.push(request);
+    callback(null, { commandSequence: "7", status: 1 });
+  },
+};
+assert.deepEqual(
+  await executeCommand(
+    machine,
+    { type: "setSpindleOverride", scale: 1.2, spindleIndex: 0 },
+    "accepted",
+  ),
+  { commandSequence: "7", status: 1 },
+);
+await executeCommand(
+  machine,
+  {
+    type: "spindleOn",
+    speed: 1200,
+    spindleIndex: 1,
+    waitForSpeed: false,
+  },
+  "completed",
+);
+await executeCommand(
+  machine,
+  { type: "spindleOn", speed: 1200, spindleIndex: 1 },
+  "completed",
+);
+await executeCommand(
+  machine,
+  {
+    type: "programOpen",
+    entry: { workspaceId: "main", relativePath: "part.ngc" },
+  },
+  "completed",
+);
+await executeCommand(
+  machine,
+  {
+    type: "setTool",
+    tool: { toolNo: 7, diameter: 0, offset: { values: [0.25] } },
+  },
+  "completed",
+);
+assert.deepEqual(requests[0], {
+  command: "setSpindleOverride",
+  setSpindleOverride: { scale: 1.2, spindleIndex: 0 },
+  waitPolicy: "WAIT_POLICY_ACCEPTED",
+});
+assert.equal(requests[1].spindleOn.waitForSpeed, false);
+assert.equal("waitForSpeed" in requests[2].spindleOn, false);
+assert.deepEqual(requests[3].programOpen.entry, {
+  workspaceId: "main",
+  relativePath: "part.ngc",
+});
+assert.deepEqual(requests[4].setTool.tool, {
+  toolNo: 7,
+  diameter: 0,
+  offset: { values: [0.25] },
+});
 
 // A custom filename proves health schema resolution is explicit rather than
 // inferred by rewriting protoPath.
@@ -102,6 +166,14 @@ const packageDefinition = protoLoader.loadSync(
   },
 );
 const loaded = grpc.loadPackageDefinition(packageDefinition);
+const executeDefinition =
+  loaded.linuxcnc.v1.MachineService.service.ExecuteCommand;
+const encodedToolCommand = executeDefinition.requestSerialize(requests[4]);
+const decodedToolCommand =
+  executeDefinition.requestDeserialize(encodedToolCommand);
+assert.deepEqual(decodedToolCommand.setTool.tool.offset.values, [0.25]);
+assert.equal(decodedToolCommand.setTool.tool.diameter, 0);
+assert.equal(decodedToolCommand.setTool.tool.pocketNo, undefined);
 assert.equal(loaded.linuxcnc.v1.ProgramService.service.parseProgram, undefined);
 assert.ok(loaded.linuxcnc.v1.PositionHistoryFrame);
 assert.ok(loaded.linuxcnc.v1.HalValueFrame);

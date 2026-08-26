@@ -31,6 +31,7 @@ const generatedTempDir = mkdtempSync(
 try {
   const generatedTempPath = join(generatedTempDir, "enums.ts");
   const generatedDomainTempPath = join(generatedTempDir, "domain.ts");
+  const generatedCommandTempPath = join(generatedTempDir, "commands.ts");
   const result = spawnSync(
     process.execPath,
     [
@@ -39,6 +40,8 @@ try {
       generatedTempPath,
       "--domain-output",
       generatedDomainTempPath,
+      "--command-output",
+      generatedCommandTempPath,
     ],
     {
       cwd: root,
@@ -63,6 +66,15 @@ try {
   if (!checkedInDomainBytes.equals(generatedDomainBytes)) {
     throw new Error(
       "generated domain output differs: packages/types/src/generated/domain.ts",
+    );
+  }
+  const checkedInCommandBytes = readFileSync(
+    join(here, "../src/generated/commands.ts"),
+  );
+  const generatedCommandBytes = readFileSync(generatedCommandTempPath);
+  if (!checkedInCommandBytes.equals(generatedCommandBytes)) {
+    throw new Error(
+      "generated command output differs: packages/types/src/generated/commands.ts",
     );
   }
 } finally {
@@ -129,12 +141,12 @@ for (const name of stableEnums) {
   }
 }
 
-const commandInterface =
-  readFileSync(join(root, "packages/types/src/command.ts"), "utf8").match(
-    /export interface NativeCommandArguments \{([\s\S]*?)\n\}/,
-  )?.[1] ?? "";
+const generatedCommands = readFileSync(
+  join(root, "packages/types/src/generated/commands.ts"),
+  "utf8",
+);
 const commandNames = [
-  ...commandInterface.matchAll(/^(?:\t| {2})([A-Za-z][A-Za-z0-9]*):/gm),
+  ...generatedCommands.matchAll(/^ {2}\| \{ type: "([A-Za-z][A-Za-z0-9]*)"/gm),
 ].map((m) => m[1]);
 const snake = (value) =>
   value.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
@@ -163,6 +175,35 @@ if (
     `command catalog drifted: missing=${missingCommands.join(", ") || "none"} ` +
       `extra=${extraCommands.join(", ") || "none"} ` +
       `domain=${expectedCommandNames.length} wire=${wireCommandNames.length}`,
+  );
+}
+
+const nativeService = readFileSync(
+  join(root, "native/server/src/machine/grpc/service.cc"),
+  "utf8",
+);
+const pascal = (value) => value[0].toUpperCase() + value.slice(1);
+const missingNativeCases = commandNames.filter(
+  (name) =>
+    !nativeService.includes(`case ExecuteCommandRequest::k${pascal(name)}:`),
+);
+if (missingNativeCases.length) {
+  throw new Error(
+    `native protobuf dispatch is missing: ${missingNativeCases.join(", ")}`,
+  );
+}
+const nativeAdapter = readFileSync(
+  join(root, "native/server/src/linuxcnc/nml_adapter.cc"),
+  "utf8",
+);
+const nativeAdapterCases = new Set(
+  [...nativeAdapter.matchAll(/case\s+NmlCommandKind::([A-Za-z0-9]+):/g)].map(
+    (match) => match[1],
+  ),
+);
+if (nativeAdapterCases.size !== commandNames.length) {
+  throw new Error(
+    `native NML dispatch has ${nativeAdapterCases.size} cases for ${commandNames.length} protobuf commands`,
   );
 }
 

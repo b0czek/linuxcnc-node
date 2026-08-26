@@ -368,22 +368,20 @@ class MachineServiceImpl final : public MachineCallbackBase,
         break;
       case ExecuteCommandRequest::kSetMaxVelocity:
         command.kind = NmlCommandKind::SetMaxVelocity;
-        command.number = request->set_max_velocity().value();
+        command.number = request->set_max_velocity().velocity();
         break;
       case ExecuteCommandRequest::kSetFeedRate:
         command.kind = NmlCommandKind::SetFeedRate;
-        command.number = request->set_feed_rate().value();
+        command.number = request->set_feed_rate().scale();
         break;
       case ExecuteCommandRequest::kSetRapidRate:
         command.kind = NmlCommandKind::SetRapidRate;
-        command.number = request->set_rapid_rate().value();
+        command.number = request->set_rapid_rate().scale();
         break;
       case ExecuteCommandRequest::kSetSpindleOverride:
         command.kind = NmlCommandKind::SetSpindleOverride;
         command.number = request->set_spindle_override().scale();
-        command.integer = request->set_spindle_override().has_spindle_index()
-                              ? request->set_spindle_override().spindle_index()
-                              : 0;
+        command.integer = request->set_spindle_override().spindle_index();
         break;
       case ExecuteCommandRequest::kOverrideLimits:
         command.kind = NmlCommandKind::OverrideLimits;
@@ -400,9 +398,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
         command.kind = NmlCommandKind::SetSpindleOverrideEnable;
         command.boolean = request->set_spindle_override_enable().enable();
         command.integer =
-            request->set_spindle_override_enable().has_spindle_index()
-                ? request->set_spindle_override_enable().spindle_index()
-                : 0;
+            request->set_spindle_override_enable().spindle_index();
         break;
       case ExecuteCommandRequest::kSetFeedHoldEnable:
         command.kind = NmlCommandKind::SetFeedHoldEnable;
@@ -451,9 +447,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
       case ExecuteCommandRequest::kSpindleOn:
         command.kind = NmlCommandKind::SpindleOn;
         command.number = request->spindle_on().speed();
-        command.integer = request->spindle_on().has_spindle_index()
-                              ? request->spindle_on().spindle_index()
-                              : 0;
+        command.integer = request->spindle_on().spindle_index();
         command.boolean = !request->spindle_on().has_wait_for_speed() ||
                           request->spindle_on().wait_for_speed();
         break;
@@ -471,18 +465,16 @@ class MachineServiceImpl final : public MachineCallbackBase,
         break;
       case ExecuteCommandRequest::kSpindleBrake:
         command.kind = NmlCommandKind::SpindleBrake;
-        command.integer = request->spindle_brake().has_spindle_index()
-                              ? request->spindle_brake().spindle_index()
-                              : 0;
+        command.integer = request->spindle_brake().spindle_index();
         command.boolean = request->spindle_brake().engage();
         break;
       case ExecuteCommandRequest::kSetMist:
         command.kind = NmlCommandKind::SetMist;
-        command.boolean = request->set_mist().enable();
+        command.boolean = request->set_mist().on();
         break;
       case ExecuteCommandRequest::kSetFlood:
         command.kind = NmlCommandKind::SetFlood;
-        command.boolean = request->set_flood().enable();
+        command.boolean = request->set_flood().on();
         break;
       case ExecuteCommandRequest::kLoadToolTable:
         command.kind = NmlCommandKind::LoadToolTable;
