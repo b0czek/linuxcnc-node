@@ -260,6 +260,47 @@ int main(int argc, char** argv) {
   write_value->mutable_value()->set_bit(true);
   linuxcnc::v1::HalWriteResponse write_response;
   assert(hal->Write(&write_context, write, &write_response).ok());
+
+  linuxcnc::v1::HalReadRequest duplicate_read;
+  *duplicate_read.add_items() = *requested_item;
+  *duplicate_read.add_items() = *requested_item;
+  linuxcnc::v1::HalReadResponse rejected_read;
+  grpc::ClientContext duplicate_read_context;
+  assert(hal->Read(&duplicate_read_context, duplicate_read, &rejected_read)
+             .error_code() == grpc::StatusCode::INVALID_ARGUMENT);
+
+  linuxcnc::v1::HalWrite duplicate_write;
+  *duplicate_write.add_writes() = *write_value;
+  *duplicate_write.add_writes() = *write_value;
+  grpc::ClientContext duplicate_write_context;
+  linuxcnc::v1::HalWriteResponse rejected_write;
+  assert(hal->Write(&duplicate_write_context, duplicate_write, &rejected_write)
+             .error_code() == grpc::StatusCode::INVALID_ARGUMENT);
+
+  linuxcnc::v1::HalReadRequest oversized_read;
+  for (int index = 0; index < 1025; ++index) {
+    auto* oversized_item = oversized_read.add_items();
+    oversized_item->set_kind(linuxcnc::v1::HAL_ITEM_KIND_SIGNAL);
+    oversized_item->set_name("integration.item." + std::to_string(index));
+  }
+  grpc::ClientContext oversized_read_context;
+  assert(hal->Read(&oversized_read_context, oversized_read, &rejected_read)
+             .error_code() == grpc::StatusCode::RESOURCE_EXHAUSTED);
+
+  linuxcnc::v1::HalWrite oversized_write;
+  for (int index = 0; index < 1025; ++index) {
+    auto* oversized_value = oversized_write.add_writes();
+    oversized_value->mutable_item()->set_kind(
+        linuxcnc::v1::HAL_ITEM_KIND_SIGNAL);
+    oversized_value->mutable_item()->set_name("integration.item." +
+                                              std::to_string(index));
+    oversized_value->mutable_value()->set_type(linuxcnc::v1::HAL_TYPE_BIT);
+    oversized_value->mutable_value()->set_bit(false);
+  }
+  grpc::ClientContext oversized_write_context;
+  assert(hal->Write(&oversized_write_context, oversized_write, &rejected_write)
+             .error_code() == grpc::StatusCode::RESOURCE_EXHAUSTED);
+
   const auto hal_delta_bytes = read_raw_frame(hal_telemetry);
   linuxcnc::v1::HalValueFrame hal_delta;
   assert(hal_delta.ParseFromArray(hal_delta_bytes.data(),

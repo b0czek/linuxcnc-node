@@ -6,8 +6,8 @@
 #include <memory>
 #include <string>
 
-#include "hal/grpc/service_impl.hpp"
 #include "grpc/server/unary_task_reactor.hpp"
+#include "hal/grpc/service_impl.hpp"
 #include "linuxcnc/v1/hal.grpc.pb.h"
 #include "linuxcnc_grpc/callback_runtime.hpp"
 
@@ -33,12 +33,12 @@ class HalUnaryService : public HalUnaryCallbackBase {
   ::grpc::ServerUnaryReactor* Read(::grpc::CallbackServerContext*,
                                    const HalReadRequest* request,
                                    HalReadResponse* response) override {
-    return task(request, response, &HalUnaryService::do_read);
+    return cancellable_task(request, response, &HalUnaryService::do_read);
   }
   ::grpc::ServerUnaryReactor* Write(::grpc::CallbackServerContext*,
                                     const HalWrite* request,
                                     HalWriteResponse* response) override {
-    return task(request, response, &HalUnaryService::do_write);
+    return cancellable_task(request, response, &HalUnaryService::do_write);
   }
   ::grpc::ServerUnaryReactor* CreateValueSubscription(
       ::grpc::CallbackServerContext*,
@@ -88,8 +88,10 @@ class HalUnaryService : public HalUnaryCallbackBase {
   void shutdown_callbacks() { callbacks_.shutdown(); }
   virtual ::grpc::Status do_get_topology(const GetHalTopologyRequest*,
                                          GetHalTopologyResponse*) = 0;
-  virtual ::grpc::Status do_read(const HalReadRequest*, HalReadResponse*) = 0;
-  virtual ::grpc::Status do_write(const HalWrite*, HalWriteResponse*) = 0;
+  virtual ::grpc::Status do_read(const CancellationToken&,
+                                 const HalReadRequest*, HalReadResponse*) = 0;
+  virtual ::grpc::Status do_write(const CancellationToken&, const HalWrite*,
+                                  HalWriteResponse*) = 0;
   virtual ::grpc::Status do_create_value_subscription(
       const CreateHalValueSubscriptionRequest*, HalValueSubscription*) = 0;
   virtual ::grpc::Status do_update_value_subscription(
@@ -120,6 +122,24 @@ class HalUnaryService : public HalUnaryCallbackBase {
                                   "RPC cancelled");
           }
           return (this->*method)(owned_request.get(), task_response);
+        });
+  }
+
+  template <typename Request, typename Response>
+  ::grpc::ServerUnaryReactor* cancellable_task(
+      const Request* request, Response* response,
+      ::grpc::Status (HalUnaryService::*method)(const CancellationToken&,
+                                                const Request*, Response*)) {
+    auto owned_request = std::make_shared<Request>(*request);
+    return new detail::UnaryTaskReactor<Response>(
+        worker_, callbacks_, response,
+        [this, owned_request = std::move(owned_request), method](
+            const CancellationToken& token, Response* task_response) {
+          if (token.cancelled()) {
+            return ::grpc::Status(::grpc::StatusCode::CANCELLED,
+                                  "RPC cancelled");
+          }
+          return (this->*method)(token, owned_request.get(), task_response);
         });
   }
 

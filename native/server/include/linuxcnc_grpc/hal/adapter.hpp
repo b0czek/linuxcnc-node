@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -107,6 +109,8 @@ class HalAdapterError final : public std::runtime_error {
  */
 class LinuxCncHalComponent final {
  public:
+  static constexpr std::size_t kMaxItems = 64;
+
   ~LinuxCncHalComponent();
   LinuxCncHalComponent(const LinuxCncHalComponent&) = delete;
   LinuxCncHalComponent& operator=(const LinuxCncHalComponent&) = delete;
@@ -141,6 +145,8 @@ class LinuxCncHalComponent final {
  */
 class LinuxCncHalAdapter final {
  public:
+  static constexpr std::size_t kMaxDynamicItems = 1024;
+
   explicit LinuxCncHalAdapter(std::string component_name = "linuxcnc-grpc");
   ~LinuxCncHalAdapter();
   LinuxCncHalAdapter(const LinuxCncHalAdapter&) = delete;
@@ -153,13 +159,15 @@ class LinuxCncHalAdapter final {
   std::optional<HalAdapterValue> read(
       const HalAdapterReference& reference) const;
   std::vector<std::optional<HalAdapterValue>> read_many(
-      const std::vector<HalAdapterReference>& references) const;
+      const std::vector<HalAdapterReference>& references,
+      const std::function<bool()>& cancelled = {}) const;
   bool write(const HalAdapterReference& reference, HalAdapterValue value,
              HalAdapterValue* written = nullptr);
   std::size_t write_many(
       const std::vector<std::pair<HalAdapterReference, HalAdapterValue>>&
           updates,
-      std::vector<HalAdapterValue>* written = nullptr);
+      std::vector<HalAdapterValue>* written = nullptr,
+      const std::function<bool()>& cancelled = {});
 
   bool create_signal(const std::string& name, HalAdapterType type);
   bool pin_has_writer(const std::string& name) const;

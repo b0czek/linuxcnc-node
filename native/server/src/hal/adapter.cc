@@ -13,7 +13,9 @@
 // reproduce halcmd/_hal topology semantics without adding a Node binding layer.
 // daemon.
 #include <cerrno>
+#include <cstring>
 #include <map>
+#include <mutex>
 #include <utility>
 
 #include "hal_priv.h"
@@ -227,6 +229,45 @@ std::string full_name(const std::string& prefix, const std::string& suffix) {
   return result;
 }
 
+class HalAllocationSlab final {
+ public:
+  explicit HalAllocationSlab(std::size_t capacity) : capacity_(capacity) {
+    static_assert(sizeof(hal_data_u) >= sizeof(void*));
+    const auto bytes = static_cast<long>(capacity * sizeof(hal_data_u));
+    slots_ = static_cast<hal_data_u*>(hal_malloc(bytes));
+    if (!slots_)
+      throw HalAdapterError("HAL dynamic item slab allocation failed", -EBUSY);
+    std::memset(slots_, 0, capacity * sizeof(hal_data_u));
+    free_.reserve(capacity);
+    for (std::size_t index = capacity; index > 0; --index)
+      free_.push_back(index - 1);
+  }
+
+  std::optional<std::size_t> acquire() {
+    std::lock_guard lock(mutex_);
+    if (free_.empty()) return std::nullopt;
+    const auto index = free_.back();
+    free_.pop_back();
+    std::memset(slots_ + index, 0, sizeof(hal_data_u));
+    return index;
+  }
+
+  void release(std::size_t index) {
+    std::lock_guard lock(mutex_);
+    if (index >= capacity_) return;
+    std::memset(slots_ + index, 0, sizeof(hal_data_u));
+    free_.push_back(index);
+  }
+
+  void* data(std::size_t index) { return slots_ + index; }
+
+ private:
+  const std::size_t capacity_;
+  hal_data_u* slots_ = nullptr;
+  std::mutex mutex_;
+  std::vector<std::size_t> free_;
+};
+
 }  // namespace
 
 HalAdapterError::HalAdapterError(
@@ -243,25 +284,42 @@ struct LinuxCncHalComponent::Impl {
     hal_pin_dir_t pin_direction = HAL_DIR_UNSPECIFIED;
     hal_param_dir_t param_direction = HAL_RO;
     void* data_location = nullptr;
+    std::size_t slab_slot = 0;
   };
 
   int id = 0;
   std::string name;
   std::string prefix;
   bool ready = false;
+  std::shared_ptr<HalAllocationSlab> slab;
   std::map<std::string, Item> items;
+
+  void close() {
+    if (id > 0) {
+      hal_exit(id);
+      id = 0;
+    }
+    if (slab) {
+      for (const auto& [suffix, item] : items) {
+        (void)suffix;
+        slab->release(item.slab_slot);
+      }
+    }
+    items.clear();
+  }
 };
 
 struct LinuxCncHalAdapter::Impl {
   int component_id = 0;
   std::string component_name;
+  std::shared_ptr<HalAllocationSlab> slab;
 };
 
 LinuxCncHalComponent::LinuxCncHalComponent(std::unique_ptr<Impl> impl)
     : impl_(std::move(impl)) {}
 
 LinuxCncHalComponent::~LinuxCncHalComponent() {
-  if (impl_ && impl_->id > 0) hal_exit(impl_->id);
+  if (impl_) impl_->close();
 }
 
 LinuxCncHalComponent::LinuxCncHalComponent(
@@ -271,7 +329,7 @@ LinuxCncHalComponent::LinuxCncHalComponent(
 LinuxCncHalComponent& LinuxCncHalComponent::operator=(
     LinuxCncHalComponent&& other) noexcept {
   if (this == &other) return *this;
-  if (impl_ && impl_->id > 0) hal_exit(impl_->id);
+  if (impl_) impl_->close();
   impl_ = std::move(other.impl_);
   return *this;
 }
@@ -295,22 +353,35 @@ bool LinuxCncHalComponent::add_pin(const std::string& suffix,
   if (!impl_ || impl_->id <= 0 || impl_->ready || suffix.empty() ||
       impl_->items.find(suffix) != impl_->items.end())
     return false;
+  if (impl_->items.size() >= LinuxCncHalComponent::kMaxItems)
+    throw HalAdapterError("component dynamic item quota reached", -EBUSY);
   const auto full = full_name(impl_->prefix, suffix);
   if (full.empty()) return false;
-  auto item = Impl::Item{suffix, full,   type, true, HAL_DIR_UNSPECIFIED,
-                         HAL_RO, nullptr};
+  const auto slot = impl_->slab->acquire();
+  if (!slot)
+    throw HalAdapterError("global HAL dynamic item quota reached", -EBUSY);
+  auto item = Impl::Item{suffix,
+                         full,
+                         type,
+                         true,
+                         HAL_DIR_UNSPECIFIED,
+                         HAL_RO,
+                         impl_->slab->data(*slot),
+                         *slot};
   item.pin_direction = direction == HalAdapterPinDirection::Out  ? HAL_OUT
                        : direction == HalAdapterPinDirection::Io ? HAL_IO
                                                                  : HAL_IN;
-  item.data_location = hal_malloc(sizeof(void*));
-  if (!item.data_location) return false;
   auto [it, inserted] = impl_->items.emplace(suffix, std::move(item));
-  if (!inserted) return false;
+  if (!inserted) {
+    impl_->slab->release(*slot);
+    return false;
+  }
   const int result = hal_pin_new(
       it->second.full_name.c_str(), native_type(type), it->second.pin_direction,
       static_cast<void**>(it->second.data_location), impl_->id);
   if (result != 0) {
     impl_->items.erase(it);
+    impl_->slab->release(*slot);
     throw HalAdapterError("hal_pin_new failed for '" + full + "'", result);
   }
   return true;
@@ -322,8 +393,13 @@ bool LinuxCncHalComponent::add_param(const std::string& suffix,
   if (!impl_ || impl_->id <= 0 || impl_->ready || suffix.empty() ||
       impl_->items.find(suffix) != impl_->items.end())
     return false;
+  if (impl_->items.size() >= LinuxCncHalComponent::kMaxItems)
+    throw HalAdapterError("component dynamic item quota reached", -EBUSY);
   const auto full = full_name(impl_->prefix, suffix);
   if (full.empty()) return false;
+  const auto slot = impl_->slab->acquire();
+  if (!slot)
+    throw HalAdapterError("global HAL dynamic item quota reached", -EBUSY);
   auto item = Impl::Item{
       suffix,
       full,
@@ -331,17 +407,19 @@ bool LinuxCncHalComponent::add_param(const std::string& suffix,
       false,
       HAL_DIR_UNSPECIFIED,
       direction == HalAdapterParamDirection::ReadWrite ? HAL_RW : HAL_RO,
-      nullptr};
-  // hal_malloc() is aligned for every HAL scalar supported by hal_param_new.
-  item.data_location = hal_malloc(sizeof(hal_data_u));
-  if (!item.data_location) return false;
+      impl_->slab->data(*slot),
+      *slot};
   auto [it, inserted] = impl_->items.emplace(suffix, std::move(item));
-  if (!inserted) return false;
+  if (!inserted) {
+    impl_->slab->release(*slot);
+    return false;
+  }
   const int result = hal_param_new(
       it->second.full_name.c_str(), native_type(type),
       it->second.param_direction, it->second.data_location, impl_->id);
   if (result != 0) {
     impl_->items.erase(it);
+    impl_->slab->release(*slot);
     throw HalAdapterError("hal_param_new failed for '" + full + "'", result);
   }
   return true;
@@ -408,6 +486,13 @@ LinuxCncHalAdapter::LinuxCncHalAdapter(std::string component_name)
     impl_->component_id = 0;
     throw HalAdapterError(
         "hal_ready failed for '" + impl_->component_name + "'", result);
+  }
+  try {
+    impl_->slab = std::make_shared<HalAllocationSlab>(kMaxDynamicItems);
+  } catch (...) {
+    hal_exit(impl_->component_id);
+    impl_->component_id = 0;
+    throw;
   }
 }
 
@@ -557,11 +642,14 @@ std::optional<HalAdapterValue> LinuxCncHalAdapter::read(
 }
 
 std::vector<std::optional<HalAdapterValue>> LinuxCncHalAdapter::read_many(
-    const std::vector<HalAdapterReference>& references) const {
+    const std::vector<HalAdapterReference>& references,
+    const std::function<bool()>& cancelled) const {
   HalMutex lock;
   std::vector<std::optional<HalAdapterValue>> result;
   result.reserve(references.size());
   for (const auto& reference : references) {
+    if (cancelled && cancelled())
+      throw HalAdapterError("HAL read cancelled", -ECANCELED);
     const auto item = resolve_unlocked(reference);
     result.push_back(item ? std::optional<HalAdapterValue>(
                                 read_value(item->type, item->data))
@@ -587,11 +675,14 @@ bool LinuxCncHalAdapter::write(const HalAdapterReference& reference,
 
 std::size_t LinuxCncHalAdapter::write_many(
     const std::vector<std::pair<HalAdapterReference, HalAdapterValue>>& updates,
-    std::vector<HalAdapterValue>* written) {
+    std::vector<HalAdapterValue>* written,
+    const std::function<bool()>& cancelled) {
   HalMutex lock;
   std::vector<ResolvedItem> resolved;
   resolved.reserve(updates.size());
   for (const auto& [reference, value] : updates) {
+    if (cancelled && cancelled())
+      throw HalAdapterError("HAL write cancelled", -ECANCELED);
     const auto item = resolve_unlocked(reference);
     if (!item || !item->data || !same_type(item->type, value)) return 0;
     if (item->param && item->param->dir != HAL_RW) return 0;
@@ -603,6 +694,8 @@ std::size_t LinuxCncHalAdapter::write_many(
     written->clear();
     written->reserve(updates.size());
   }
+  if (cancelled && cancelled())
+    throw HalAdapterError("HAL write cancelled", -ECANCELED);
   for (std::size_t index = 0; index < updates.size(); ++index) {
     const auto& value = updates[index].second;
     if (!write_value(resolved[index].type, resolved[index].data, value))
@@ -656,17 +749,18 @@ std::unique_ptr<LinuxCncHalComponent> LinuxCncHalAdapter::open_component(
     const std::string& name, const std::string& prefix) {
   if (name.empty() || name.size() > HAL_NAME_LEN)
     throw HalAdapterError("invalid client HAL component name", -EINVAL);
-  auto impl = std::make_unique<LinuxCncHalComponent::Impl>();
-  impl->name = name;
-  impl->prefix = prefix.empty() ? name : prefix;
-  if (impl->prefix.size() > HAL_NAME_LEN)
+  auto component_impl = std::make_unique<LinuxCncHalComponent::Impl>();
+  component_impl->name = name;
+  component_impl->prefix = prefix.empty() ? name : prefix;
+  component_impl->slab = impl_->slab;
+  if (component_impl->prefix.size() > HAL_NAME_LEN)
     throw HalAdapterError("invalid client HAL component prefix", -EINVAL);
-  impl->id = hal_init(impl->name.c_str());
-  if (impl->id <= 0)
+  component_impl->id = hal_init(component_impl->name.c_str());
+  if (component_impl->id <= 0)
     throw HalAdapterError("hal_init failed for client component '" + name + "'",
-                          impl->id);
+                          component_impl->id);
   return std::unique_ptr<LinuxCncHalComponent>(
-      new LinuxCncHalComponent(std::move(impl)));
+      new LinuxCncHalComponent(std::move(component_impl)));
 }
 
 }  // namespace linuxcnc::server

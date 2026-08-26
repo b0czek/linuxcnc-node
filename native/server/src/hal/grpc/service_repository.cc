@@ -20,6 +20,8 @@
 namespace linuxcnc::server::detail {
 namespace {
 
+constexpr int kMaxHalBatchItems = 1024;
+
 ::grpc::Status Unimplemented(const std::string& message) {
   return {::grpc::StatusCode::UNIMPLEMENTED, message};
 }
@@ -166,11 +168,24 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     return ::grpc::Status::OK;
   }
 
-  ::grpc::Status do_read(const HalReadRequest* request,
+  ::grpc::Status do_read(const CancellationToken& token,
+                         const HalReadRequest* request,
                          HalReadResponse* response) override {
+    if (request->items_size() > kMaxHalBatchItems)
+      return {::grpc::StatusCode::RESOURCE_EXHAUSTED,
+              "HAL read exceeds 1024 items"};
     std::vector<std::string> names;
+    std::unordered_set<std::string> unique;
     names.reserve(request->items_size());
-    for (const auto& item : request->items()) names.push_back(item.name());
+    for (const auto& item : request->items()) {
+      if (token.cancelled())
+        return {::grpc::StatusCode::CANCELLED, "RPC cancelled"};
+      const auto key =
+          std::to_string(static_cast<int>(item.kind())) + ":" + item.name();
+      if (!unique.insert(key).second)
+        return Invalid("HAL read contains a duplicate item reference");
+      names.push_back(item.name());
+    }
     for (const auto& item : repository_.read_many(names)) {
       auto* value = response->add_values();
       value->mutable_item()->set_name(item.name);
@@ -180,11 +195,22 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     return ::grpc::Status::OK;
   }
 
-  ::grpc::Status do_write(const HalWrite* request,
+  ::grpc::Status do_write(const CancellationToken& token,
+                          const HalWrite* request,
                           HalWriteResponse* response) override {
+    if (request->writes_size() > kMaxHalBatchItems)
+      return {::grpc::StatusCode::RESOURCE_EXHAUSTED,
+              "HAL write exceeds 1024 items"};
     std::vector<HalUpdate> updates;
+    std::unordered_set<std::string> unique;
     updates.reserve(request->writes_size());
     for (const auto& write : request->writes()) {
+      if (token.cancelled())
+        return {::grpc::StatusCode::CANCELLED, "RPC cancelled"};
+      const auto key = std::to_string(static_cast<int>(write.item().kind())) +
+                       ":" + write.item().name();
+      if (!unique.insert(key).second)
+        return Invalid("HAL write contains a duplicate item reference");
       auto value = decode_hal_value(write.value());
       if (!value) return Invalid("HAL value type does not match its oneof");
       updates.push_back(HalUpdate{write.item().name(), *value});

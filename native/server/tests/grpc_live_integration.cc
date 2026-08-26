@@ -1,10 +1,10 @@
 #include <grpcpp/grpcpp.h>
 
+#include <atomic>
 #include <boost/asio/connect.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/websocket.hpp>
-#include <atomic>
 #include <cassert>
 #include <chrono>
 #include <cstdint>
@@ -593,8 +593,7 @@ int main(int argc, char** argv) {
     context.set_deadline(std::chrono::system_clock::now() +
                          std::chrono::seconds(5));
     dwell_started = true;
-    dwell_status =
-        machine->ExecuteCommand(&context, request, &dwell_response);
+    dwell_status = machine->ExecuteCommand(&context, request, &dwell_response);
   });
   while (!dwell_started.load()) std::this_thread::yield();
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -636,9 +635,7 @@ int main(int argc, char** argv) {
              request.mutable_spindle_off()->set_spindle_index(0);
            }},
           {"coolant",
-           [](auto& request) {
-             request.mutable_set_mist()->set_on(false);
-           }},
+           [](auto& request) { request.mutable_set_mist()->set_on(false); }},
           {"tool", [](auto& request) { request.mutable_load_tool_table(); }},
           {"io",
            [](auto& request) {
@@ -805,6 +802,45 @@ int main(int argc, char** argv) {
   topology_watch_context.TryCancel();
   (void)topology_watch->Finish();
   assert(saw_watched_signal);
+
+  // Every legally admitted watcher must receive the same immutable snapshot;
+  // fan-out must not consume one HAL worker queue slot per stream.
+  constexpr int topology_fanout = 128;
+  std::vector<std::unique_ptr<grpc::ClientContext>> fanout_contexts;
+  std::vector<
+      std::unique_ptr<grpc::ClientReader<linuxcnc::v1::WatchHalTopologyEvent>>>
+      fanout_streams;
+  fanout_contexts.reserve(topology_fanout);
+  fanout_streams.reserve(topology_fanout);
+  linuxcnc::v1::WatchHalTopologyRequest fanout_request;
+  fanout_request.set_after_sequence(topology_event.sequence());
+  for (int index = 0; index < topology_fanout; ++index) {
+    auto context = std::make_unique<grpc::ClientContext>();
+    context->set_deadline(std::chrono::system_clock::now() +
+                          std::chrono::seconds(8));
+    fanout_streams.push_back(hal->WatchTopology(context.get(), fanout_request));
+    fanout_contexts.push_back(std::move(context));
+  }
+  linuxcnc::v1::CreateHalSignalRequest fanout_signal_request;
+  fanout_signal_request.set_name("grpc-live-topology-fanout");
+  fanout_signal_request.set_type(linuxcnc::v1::HAL_TYPE_BIT);
+  linuxcnc::v1::CreateHalSignalResponse fanout_signal_response;
+  grpc::ClientContext fanout_signal_context;
+  assert(hal->CreateSignal(&fanout_signal_context, fanout_signal_request,
+                           &fanout_signal_response)
+             .ok());
+  std::uint64_t fanout_sequence = 0;
+  for (auto& stream : fanout_streams) {
+    linuxcnc::v1::WatchHalTopologyEvent event;
+    assert(stream->Read(&event));
+    assert(event.sequence() > fanout_request.after_sequence());
+    if (fanout_sequence == 0) fanout_sequence = event.sequence();
+    assert(event.sequence() == fanout_sequence);
+  }
+  for (std::size_t index = 0; index < fanout_streams.size(); ++index) {
+    fanout_contexts[index]->TryCancel();
+    (void)fanout_streams[index]->Finish();
+  }
 
   linuxcnc::v1::GetHalWriterMetadataResponse writer_metadata;
   grpc::ClientContext writer_metadata_context;

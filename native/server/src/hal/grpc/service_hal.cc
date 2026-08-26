@@ -18,19 +18,27 @@
 #include "hal/grpc/component_outbox.hpp"
 #include "hal/grpc/service_internal.hpp"
 #include "linuxcnc_grpc/daemon/config.hpp"
-#include "linuxcnc_grpc/hal/grpc/mapping.hpp"
 #include "linuxcnc_grpc/hal/adapter.hpp"
+#include "linuxcnc_grpc/hal/grpc/mapping.hpp"
 #include "linuxcnc_grpc/hal/value_telemetry.hpp"
 
 namespace linuxcnc::server::detail {
 namespace {
 
+constexpr int kMaxHalBatchItems = 1024;
+
+std::string reference_key(const HalAdapterReference& reference) {
+  return std::to_string(static_cast<int>(reference.kind)) + ":" +
+         reference.name;
+}
+
 ::grpc::Status hal_error(const HalAdapterError& error) {
   const auto code =
-      error.code() == -ENOENT   ? ::grpc::StatusCode::NOT_FOUND
-      : error.code() == -EBUSY  ? ::grpc::StatusCode::RESOURCE_EXHAUSTED
-      : error.code() == -EINVAL ? ::grpc::StatusCode::INVALID_ARGUMENT
-                                : ::grpc::StatusCode::FAILED_PRECONDITION;
+      error.code() == -ENOENT      ? ::grpc::StatusCode::NOT_FOUND
+      : error.code() == -EBUSY     ? ::grpc::StatusCode::RESOURCE_EXHAUSTED
+      : error.code() == -ECANCELED ? ::grpc::StatusCode::CANCELLED
+      : error.code() == -EINVAL    ? ::grpc::StatusCode::INVALID_ARGUMENT
+                                   : ::grpc::StatusCode::FAILED_PRECONDITION;
   return {code, error.what()};
 }
 
@@ -70,6 +78,10 @@ void encode_subscription(const HalTelemetryDescriptor& source,
 class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
   class TopologyReactor;
   class ComponentReactor;
+  struct TopologySnapshot {
+    std::uint64_t sequence = 0;
+    linuxcnc::v1::HalTopology topology;
+  };
 
  public:
   ::grpc::Service* service() noexcept override { return this; }
@@ -83,8 +95,10 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
         component_admission_(component_admission),
         stream_admission_(stream_admission),
         telemetry_(std::move(telemetry)),
-        topology_period_(config.topology_period),
-        timer_([this] { timer_loop(); }) {}
+        topology_period_(config.topology_period) {
+    refresh_topology_snapshot();
+    timer_ = std::thread([this] { timer_loop(); });
+  }
 
   ~HalServiceImpl() override { shutdown(); }
 
@@ -99,9 +113,9 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
   ::grpc::Status do_get_topology(const GetHalTopologyRequest*,
                                  GetHalTopologyResponse* response) override {
     try {
-      auto [sequence, topology] = topology_snapshot();
-      response->set_sequence(sequence);
-      *response->mutable_topology() = std::move(topology);
+      const auto snapshot = refresh_topology_snapshot();
+      response->set_sequence(snapshot->sequence);
+      *response->mutable_topology() = snapshot->topology;
       return ::grpc::Status::OK;
     } catch (const HalAdapterError& error) {
       return hal_error(error);
@@ -114,18 +128,28 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     return new TopologyReactor(*this, request->after_sequence());
   }
 
-  ::grpc::Status do_read(const HalReadRequest* request,
+  ::grpc::Status do_read(const CancellationToken& token,
+                         const HalReadRequest* request,
                          HalReadResponse* response) override {
+    if (request->items_size() > kMaxHalBatchItems)
+      return {::grpc::StatusCode::RESOURCE_EXHAUSTED,
+              "HAL read exceeds 1024 items"};
     try {
       std::vector<HalAdapterReference> references;
+      std::unordered_set<std::string> unique;
       references.reserve(request->items_size());
       for (const auto& item : request->items()) {
+        if (token.cancelled())
+          return {::grpc::StatusCode::CANCELLED, "RPC cancelled"};
         auto decoded = decode_hal_reference(item);
         if (!decoded)
           return Invalid("HAL read contains an invalid item reference");
+        if (!unique.insert(reference_key(*decoded)).second)
+          return Invalid("HAL read contains a duplicate item reference");
         references.push_back(std::move(*decoded));
       }
-      const auto values = adapter_.read_many(references);
+      const auto values = adapter_.read_many(
+          references, [&token] { return token.cancelled(); });
       for (std::size_t index = 0; index < values.size(); ++index) {
         const auto& value = values[index];
         if (!value) {
@@ -142,22 +166,33 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     }
   }
 
-  ::grpc::Status do_write(const HalWrite* request,
+  ::grpc::Status do_write(const CancellationToken& token,
+                          const HalWrite* request,
                           HalWriteResponse* response) override {
+    if (request->writes_size() > kMaxHalBatchItems)
+      return {::grpc::StatusCode::RESOURCE_EXHAUSTED,
+              "HAL write exceeds 1024 items"};
     try {
       std::vector<std::pair<HalAdapterReference, HalAdapterValue>> updates;
+      std::unordered_set<std::string> unique;
       updates.reserve(request->writes_size());
       for (const auto& write : request->writes()) {
+        if (token.cancelled())
+          return {::grpc::StatusCode::CANCELLED, "RPC cancelled"};
         auto reference = decode_hal_reference(write.item());
         auto value = decode_hal_scalar(write.value());
         if (!reference || !value) {
           return Invalid(
               "HAL write contains a mismatched reference or scalar oneof");
         }
+        if (!unique.insert(reference_key(*reference)).second)
+          return Invalid("HAL write contains a duplicate item reference");
         updates.emplace_back(std::move(reference.value()), value.value());
       }
       std::vector<HalAdapterValue> written;
-      if (adapter_.write_many(updates, &written) != updates.size()) {
+      if (adapter_.write_many(updates, &written, [&token] {
+            return token.cancelled();
+          }) != updates.size()) {
         return {::grpc::StatusCode::FAILED_PRECONDITION,
                 "one or more HAL items are missing, mistyped, or not writable"};
       }
@@ -356,12 +391,17 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
       std::vector<std::optional<HalTelemetryValue>> published;
       published.reserve(values.size());
       for (std::size_t index = 0; index < values.size(); ++index) {
-        if (!values[index] ||
-            values[index]->index() + 1 !=
-                static_cast<std::size_t>(due.bindings[index].type))
+        const auto& value = values[index];
+        if (!value) {
           published.emplace_back();
-        else
-          published.push_back(values[index]);
+          continue;
+        }
+        if (value->index() + 1 !=
+            static_cast<std::size_t>(due.bindings[index].type)) {
+          published.emplace_back();
+          continue;
+        }
+        published.push_back(value);
       }
       telemetry_->publish(due.subscription_id, due.revision,
                           std::move(published));
@@ -404,13 +444,14 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
                 "stream admission limit reached"});
         return;
       }
-      subscription_ =
-          service_.topology_wakes_.subscribe([weak](const std::uint64_t&) {
+      subscription_ = service_.topology_wakes_.subscribe(
+          [weak](const std::shared_ptr<const TopologySnapshot>& snapshot) {
             if (auto gate = weak.lock())
-              gate->invoke(
-                  [](TopologyReactor& reactor) { reactor.schedule(); });
+              gate->invoke([snapshot](TopologyReactor& reactor) {
+                reactor.offer(snapshot);
+              });
           });
-      schedule();
+      offer(service_.cached_topology_snapshot());
     }
     void OnWriteDone(bool ok) override {
       gate_->invoke([ok](TopologyReactor& reactor) {
@@ -419,7 +460,10 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
           reactor.finish(::grpc::Status::OK);
         else {
           reactor.after_ = reactor.writing_sequence_;
-          reactor.schedule();
+          if (reactor.pending_) {
+            auto pending = std::move(reactor.pending_);
+            reactor.start_write(pending);
+          }
         }
       });
     }
@@ -442,46 +486,26 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     }
 
    private:
-    void schedule() {
-      if (writing_ || scheduled_ ||
+    void offer(std::shared_ptr<const TopologySnapshot> snapshot) {
+      if (!snapshot || snapshot->sequence == after_ ||
           gate_->state() != LifetimeGate<TopologyReactor>::State::Open)
         return;
-      scheduled_ = true;
-      const std::weak_ptr<LifetimeGate<TopologyReactor>> weak = gate_;
-      if (!service_.worker_.submit([weak, service = &service_] {
-            ::grpc::Status status;
-            std::uint64_t sequence = 0;
-            linuxcnc::v1::HalTopology topology;
-            try {
-              auto snapshot = service->topology_snapshot();
-              sequence = snapshot.first;
-              topology = std::move(snapshot.second);
-            } catch (const HalAdapterError& error) {
-              status = hal_error(error);
-            }
-            if (auto gate = weak.lock())
-              gate->invoke([&](TopologyReactor& reactor) {
-                reactor.scheduled_ = false;
-                if (!status.ok()) {
-                  reactor.finish(status);
-                  return;
-                }
-                if (sequence == reactor.after_) return;
-                reactor.message_.Clear();
-                reactor.message_.set_sequence(sequence);
-                *reactor.message_.mutable_topology() = std::move(topology);
-                reactor.writing_sequence_ = sequence;
-                reactor.writing_ = true;
-                reactor.StartWrite(&reactor.message_);
-              });
-          })) {
-        scheduled_ = false;
-        finish(service_.worker_.accepting()
-                   ? ::grpc::Status(::grpc::StatusCode::RESOURCE_EXHAUSTED,
-                                    "HAL runtime queue is full")
-                   : ::grpc::Status(::grpc::StatusCode::UNAVAILABLE,
-                                    "server shutting down"));
+      if (writing_) {
+        if (snapshot->sequence > writing_sequence_ &&
+            (!pending_ || snapshot->sequence > pending_->sequence))
+          pending_ = std::move(snapshot);
+        return;
       }
+      start_write(snapshot);
+    }
+    void start_write(const std::shared_ptr<const TopologySnapshot>& snapshot) {
+      if (!snapshot || snapshot->sequence == after_) return;
+      message_.Clear();
+      message_.set_sequence(snapshot->sequence);
+      *message_.mutable_topology() = snapshot->topology;
+      writing_sequence_ = snapshot->sequence;
+      writing_ = true;
+      StartWrite(&message_);
     }
     void finish(::grpc::Status status) {
       gate_->finish([&](TopologyReactor& reactor) {
@@ -491,9 +515,11 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     }
     HalServiceImpl& service_;
     std::uint64_t after_ = 0, writing_sequence_ = 0;
-    bool admitted_ = false, writing_ = false, scheduled_ = false;
+    bool admitted_ = false, writing_ = false;
     WatchHalTopologyEvent message_;
-    SubscriptionHub<std::uint64_t>::Subscription subscription_;
+    std::shared_ptr<const TopologySnapshot> pending_;
+    SubscriptionHub<std::shared_ptr<const TopologySnapshot>>::Subscription
+        subscription_;
     std::shared_ptr<LifetimeGate<TopologyReactor>> gate_;
     ActiveCallbackRegistry::Registration registration_;
   };
@@ -828,10 +854,10 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
         sample_telemetry();
         if (!refresh_topology) return;
         try {
-          const auto snapshot = topology_snapshot();
-          if (snapshot.first > last_published_topology_) {
-            last_published_topology_ = snapshot.first;
-            topology_wakes_.publish(snapshot.first);
+          const auto snapshot = refresh_topology_snapshot();
+          if (snapshot->sequence > last_published_topology_) {
+            last_published_topology_ = snapshot->sequence;
+            topology_wakes_.publish(snapshot);
           }
         } catch (const HalAdapterError&) {
           last_published_topology_ = 0;
@@ -843,7 +869,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     }
   }
 
-  std::pair<std::uint64_t, linuxcnc::v1::HalTopology> topology_snapshot() {
+  std::shared_ptr<const TopologySnapshot> refresh_topology_snapshot() {
     linuxcnc::v1::HalTopology current;
     encode_hal_topology(adapter_.topology(), &current);
     auto structural = current;
@@ -853,11 +879,20 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     for (auto& signal : *structural.mutable_signals()) signal.clear_value();
     const auto serialized = structural.SerializeAsString();
     std::lock_guard lock(topology_mutex_);
-    if (topology_sequence_ == 0 || serialized != topology_serialized_) {
+    if (!topology_snapshot_ || serialized != topology_serialized_) {
       ++topology_sequence_;
       topology_serialized_ = serialized;
+      auto snapshot = std::make_shared<TopologySnapshot>();
+      snapshot->sequence = topology_sequence_;
+      snapshot->topology = std::move(current);
+      topology_snapshot_ = std::move(snapshot);
     }
-    return {topology_sequence_, std::move(current)};
+    return topology_snapshot_;
+  }
+
+  std::shared_ptr<const TopologySnapshot> cached_topology_snapshot() {
+    std::lock_guard lock(topology_mutex_);
+    return topology_snapshot_;
   }
 
   LinuxCncHalAdapter adapter_;
@@ -870,11 +905,12 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
   AdmissionCounter& stream_admission_;
   std::shared_ptr<HalValueTelemetry> telemetry_;
   const std::chrono::milliseconds topology_period_;
-  SubscriptionHub<std::uint64_t> topology_wakes_;
+  SubscriptionHub<std::shared_ptr<const TopologySnapshot>> topology_wakes_;
   std::mutex components_mutex_;
   std::vector<ComponentRegistration> components_;
   std::mutex topology_mutex_;
   std::string topology_serialized_;
+  std::shared_ptr<const TopologySnapshot> topology_snapshot_;
   std::uint64_t topology_sequence_ = 0;
   std::uint64_t last_published_topology_ = 0;
   std::atomic<bool> writer_ready_{true};
