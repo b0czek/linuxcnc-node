@@ -158,7 +158,9 @@ bool ProgramWorkspaceStore::write_file(
       !valid_relative_path(relative_path, &normalized))
     return false;
   std::lock_guard lock(mutex_);
-  if (!workspace_exists(workspace_id)) return false;
+  const auto found = workspaces_.find(workspace_id);
+  if (found == workspaces_.end() || found->second.immutable_leases != 0)
+    return false;
   const auto workspace = workspace_path(workspace_id);
   const auto destination = workspace / normalized;
   if (!within_root(destination) ||
@@ -231,7 +233,9 @@ bool ProgramWorkspaceStore::remove_file(const std::string& workspace_id,
     return false;
   std::lock_guard lock(mutex_);
   const auto path = workspace_path(workspace_id) / normalized;
-  if (!workspace_exists(workspace_id) || !within_root(path) ||
+  const auto found = workspaces_.find(workspace_id);
+  if (found == workspaces_.end() || found->second.immutable_leases != 0 ||
+      !within_root(path) ||
       has_symlink_component(path, workspace_path(workspace_id)))
     return false;
   std::error_code error;
@@ -262,11 +266,46 @@ bool ProgramWorkspaceStore::pin(const std::string& workspace_id) {
   return true;
 }
 
+bool ProgramWorkspaceStore::unpin_entry(const std::string& workspace_id) {
+  std::lock_guard lock(mutex_);
+  const auto found = workspaces_.find(workspace_id);
+  if (found == workspaces_.end() || found->second.leases == 0 ||
+      found->second.immutable_leases == 0)
+    return false;
+  --found->second.leases;
+  --found->second.immutable_leases;
+  touch_locked(workspace_id);
+  return true;
+}
+
+bool ProgramWorkspaceStore::pin_entry(const std::string& workspace_id,
+                                      const std::string& entry_path,
+                                      fs::path* resolved_entry) {
+  if (!resolved_entry) return false;
+  fs::path entry;
+  if (!valid_id(workspace_id) || !valid_relative_path(entry_path, &entry))
+    return false;
+  std::lock_guard lock(mutex_);
+  const auto found = workspaces_.find(workspace_id);
+  const auto workspace = workspace_path(workspace_id);
+  const auto source_entry = workspace / entry;
+  if (found == workspaces_.end() || !within_root(source_entry) ||
+      !is_safe_regular_file(source_entry) ||
+      has_symlink_component(source_entry, workspace)) {
+    return false;
+  }
+  ++found->second.leases;
+  ++found->second.immutable_leases;
+  touch_locked(workspace_id);
+  *resolved_entry = source_entry;
+  return true;
+}
+
 bool ProgramWorkspaceStore::unpin(const std::string& workspace_id) {
   std::lock_guard lock(mutex_);
   const auto found = workspaces_.find(workspace_id);
   if (found == workspaces_.end()) return false;
-  if (found->second.leases == 0) return false;
+  if (found->second.leases <= found->second.immutable_leases) return false;
   --found->second.leases;
   touch_locked(workspace_id);
   return true;

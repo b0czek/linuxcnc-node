@@ -146,6 +146,8 @@ struct NurbsG6ControlPoint {
 
 struct NurbsG6Data {
   unsigned int order = 0;
+  // LinuxCNC's G6 Q option (recording-canon l_option).
+  int interpolationMethod = 0;
   std::vector<NurbsG6ControlPoint> controlPoints;
 };
 

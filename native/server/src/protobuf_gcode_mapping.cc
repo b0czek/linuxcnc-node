@@ -83,6 +83,8 @@ void encode_gcode_operation(const gcode::Operation& source,
           auto* data = target->mutable_nurbs_g6();
           data->set_plane(static_cast<linuxcnc::v1::Plane>(operation.plane));
           data->set_order(static_cast<int>(operation.nurbsData.order));
+          data->set_interpolation_method(
+              operation.nurbsData.interpolationMethod);
           for (const auto& point : operation.nurbsData.controlPoints) {
             auto* encoded = data->add_control_points();
             encoded->set_x(point.x);

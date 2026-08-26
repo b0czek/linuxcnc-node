@@ -133,6 +133,21 @@ test("preview decoder maps positions to Float64Array operations", () => {
   assert.deepEqual(event.operations[0].pos, new Float64Array([1, 2, 3]));
 });
 
+test("preview decoder rejects non-finite canonical values", () => {
+  const position = message(3, message(1, fixed64(Number.NaN)));
+  const operation = concat(field(1, 0, varint(1)), position);
+  const socket = new FakeSocket();
+  let error;
+  openProgramPreview("ws://localhost", {
+    entry: { workspaceId: "workspace", relativePath: "preview.ngc" },
+    createWebSocket: () => socket,
+    onEvent: () => assert.fail("non-finite operation was delivered"),
+    onError: (value) => (error = value),
+  });
+  socket.receive(concat(message(2, message(1, operation))).buffer);
+  assert.match(error.message, /must be finite/);
+});
+
 test("preview URLs safely encode workspace and relative path", () => {
   const url = new URL(
     programPreviewUrl("https://machine.example/base", {

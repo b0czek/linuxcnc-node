@@ -100,9 +100,11 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
 
   struct stat file_stat{};
   if (stat(filepath.c_str(), &file_stat) != 0)
-    throw std::runtime_error("G-code file not found: " + filepath);
+    throw ParseError(ParseErrorCode::InvalidEntry,
+                     "G-code file not found: " + filepath);
   if (!S_ISREG(file_stat.st_mode))
-    throw std::runtime_error("G-code path is not a regular file: " + filepath);
+    throw ParseError(ParseErrorCode::InvalidEntry,
+                     "G-code path is not a regular file: " + filepath);
 
   ParseContext context;
   context.totalBytes = static_cast<std::size_t>(file_stat.st_size);
@@ -176,7 +178,8 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
     }
 
     if (interpreter_->open(filepath.c_str()) != 0)
-      throw std::runtime_error("failed to open G-code file: " + filepath);
+      throw ParseError(ParseErrorCode::InvalidEntry,
+                       "failed to open G-code file: " + filepath);
     opened = true;
 
     const std::size_t estimated_lines =
@@ -227,8 +230,10 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
         !result_ok(result)) {
       char error_buffer[256]{};
       interpreter_->error_text(result, error_buffer, sizeof(error_buffer));
-      throw std::runtime_error(std::string("G-code parse error: ") +
-                               error_buffer);
+      const int line = interpreter_->sequence_number();
+      throw ParseError(ParseErrorCode::Interpreter,
+                       std::string("G-code parse error: ") + error_buffer,
+                       line > 0 ? std::optional<int>(line) : std::nullopt);
     }
 
     interpreter_->close();
@@ -239,6 +244,11 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
     // A cancelled stream must not retain or deliver an unbounded tail.
     if (!context.cancelled) context.flushBatch();
     if (context.progressCallback) context.reportProgress(context.totalBytes);
+  } catch (const std::domain_error& error) {
+    const int line = interpreter_ ? interpreter_->sequence_number() : 0;
+    if (opened) interpreter_->close();
+    throw ParseError(ParseErrorCode::Interpreter, error.what(),
+                     line > 0 ? std::optional<int>(line) : std::nullopt);
   } catch (...) {
     if (opened) interpreter_->close();
     throw;

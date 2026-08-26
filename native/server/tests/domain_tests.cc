@@ -367,6 +367,12 @@ void workspace_test() {
   fs::path entry;
   assert(store.materialize(id, "program/main.ngc", &entry));
   assert(fs::exists(entry));
+  assert(store.pin_entry(id, "program/main.ngc", &resolved));
+  assert(!store.write_file(id, "program/main.ngc", contents));
+  assert(!store.remove_file(id, "program/main.ngc"));
+  assert(!store.unpin(id));
+  assert(store.unpin_entry(id));
+  assert(store.write_file(id, "program/main.ngc", contents));
   assert(store.pin(id));
   assert(store.pin(id));
   assert(!store.erase(id));

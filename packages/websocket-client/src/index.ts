@@ -162,8 +162,17 @@ function decodeHalValueFrame(
   };
 }
 
-const position = (value?: { values: number[] }): Float64Array =>
-  new Float64Array(value?.values ?? []);
+const finite = (value: number, label: string): number => {
+  if (!Number.isFinite(value)) throw new Error(`${label} must be finite`);
+  return value;
+};
+const position = (value?: { values: number[] }): Float64Array => {
+  const values = value?.values ?? [];
+  values.forEach((entry) => {
+    finite(entry, "preview position coordinate");
+  });
+  return new Float64Array(values);
+};
 function domainOperation(operation: WireOperation): GCodeOperation {
   const pos = position(operation.pos);
   const data = operation.data;
@@ -188,10 +197,10 @@ function domainOperation(operation: WireOperation): GCodeOperation {
         pos,
         plane: data.value.plane as Plane,
         arcData: {
-          centerFirst: data.value.centerFirst,
-          centerSecond: data.value.centerSecond,
+          centerFirst: finite(data.value.centerFirst, "arc center"),
+          centerSecond: finite(data.value.centerSecond, "arc center"),
           rotation: data.value.rotation,
-          axisEndPoint: data.value.axisEndPoint,
+          axisEndPoint: finite(data.value.axisEndPoint, "arc endpoint"),
         },
       };
     case WireOperationType.PROBE:
@@ -207,7 +216,7 @@ function domainOperation(operation: WireOperation): GCodeOperation {
         type: WireOperationType.RIGID_TAP as OperationType.RIGID_TAP,
         lineNumber: operation.lineNumber,
         pos: position(data.value.pos),
-        scale: data.value.scale,
+        scale: finite(data.value.scale, "rigid-tap scale"),
       };
     case WireOperationType.DWELL:
       if (data.case !== "dwell")
@@ -215,7 +224,7 @@ function domainOperation(operation: WireOperation): GCodeOperation {
       return {
         type: WireOperationType.DWELL as OperationType.DWELL,
         pos,
-        duration: data.value.duration,
+        duration: finite(data.value.duration, "dwell duration"),
         plane: data.value.plane as Plane,
       };
     case WireOperationType.NURBS_G5:
@@ -229,9 +238,9 @@ function domainOperation(operation: WireOperation): GCodeOperation {
         nurbsData: {
           order: data.value.order,
           controlPoints: data.value.controlPoints.map(({ x, y, weight }) => ({
-            x,
-            y,
-            weight,
+            x: finite(x, "G5 control point"),
+            y: finite(y, "G5 control point"),
+            weight: finite(weight, "G5 control point weight"),
           })),
         },
       };
@@ -245,11 +254,12 @@ function domainOperation(operation: WireOperation): GCodeOperation {
         plane: data.value.plane as Plane,
         nurbsData: {
           order: data.value.order,
+          interpolationMethod: data.value.interpolationMethod,
           controlPoints: data.value.controlPoints.map(({ x, y, r, k }) => ({
-            x,
-            y,
-            r,
-            k,
+            x: finite(x, "G6 control point"),
+            y: finite(y, "G6 control point"),
+            r: finite(r, "G6 control point R"),
+            k: finite(k, "G6 control point knot"),
           })),
         },
       };
@@ -287,7 +297,7 @@ function domainOperation(operation: WireOperation): GCodeOperation {
         throw new Error("XY-rotation operation is missing data");
       return {
         type: WireOperationType.XY_ROTATION as OperationType.XY_ROTATION,
-        rotation: data.value.rotation,
+        rotation: finite(data.value.rotation, "XY rotation"),
       };
     case WireOperationType.TOOL_OFFSET:
       if (data.case !== "toolOffset")
@@ -308,7 +318,7 @@ function domainOperation(operation: WireOperation): GCodeOperation {
         throw new Error("feed-rate operation is missing data");
       return {
         type: WireOperationType.FEED_RATE_CHANGE as OperationType.FEED_RATE_CHANGE,
-        feedRate: data.value.feedRate,
+        feedRate: finite(data.value.feedRate, "feed rate"),
       };
     default:
       throw new Error(`unknown G-code operation type ${operation.type}`);

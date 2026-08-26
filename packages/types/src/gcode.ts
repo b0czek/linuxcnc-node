@@ -141,6 +141,8 @@ export interface NurbsG6Operation {
   nurbsData: {
     /** B-spline order */
     order: number;
+    /** LinuxCNC G6 Q interpolation option (1, 2, or 3) */
+    interpolationMethod: number;
     /** Control points with R and K values */
     controlPoints: Array<{
       x: number;

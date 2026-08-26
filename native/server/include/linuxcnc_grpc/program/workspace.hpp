@@ -34,6 +34,11 @@ class ProgramWorkspaceStore {
                    const std::string& relative_path);
   bool erase(const std::string& workspace_id);
   bool pin(const std::string& workspace_id);
+  // Atomically starts an immutable lease and resolves its entry. Mutating a
+  // workspace is rejected while an immutable lease is active.
+  bool pin_entry(const std::string& workspace_id, const std::string& entry_path,
+                 std::filesystem::path* resolved_entry);
+  bool unpin_entry(const std::string& workspace_id);
   bool unpin(const std::string& workspace_id);
   bool resolve_entry(const std::string& workspace_id,
                      const std::string& entry_path,
@@ -51,6 +56,7 @@ class ProgramWorkspaceStore {
     std::chrono::steady_clock::time_point touched;
     std::chrono::seconds ttl;
     std::size_t leases = 0;
+    std::size_t immutable_leases = 0;
   };
 
   static bool valid_id(const std::string& workspace_id);

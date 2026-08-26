@@ -13,10 +13,7 @@ void PositionHistory::configure(std::size_t max_samples, double epsilon) {
   std::lock_guard lock(mutex_);
   max_samples_ = std::max<std::size_t>(1, max_samples);
   epsilon_ = std::max(0.0, epsilon);
-  if (entries_.size() > max_samples_) {
-    entries_.erase(entries_.begin(),
-                   entries_.end() - static_cast<std::ptrdiff_t>(max_samples_));
-  }
+  while (entries_.size() > max_samples_) entries_.pop_front();
   ++generation_;
 }
 
@@ -44,7 +41,7 @@ bool PositionHistory::append(const PositionSample& sample) {
     entries_.push_back(Entry{sequence, sample, std::nullopt});
   }
   if (entries_.size() > max_samples_) {
-    entries_.erase(entries_.begin());
+    entries_.pop_front();
     // A cursor only identifies the next append; it cannot describe which
     // bounded prefix the consumer still retains. Force synchronized consumers
     // to replace their local history whenever capacity evicts that prefix.

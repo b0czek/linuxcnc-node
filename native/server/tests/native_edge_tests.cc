@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "linuxcnc_grpc/command_coordinator.hpp"
+#include "linuxcnc_grpc/gcode/canon_preview.hpp"
 #include "linuxcnc_grpc/hal/value_telemetry.hpp"
 #include "linuxcnc_grpc/linuxcnc/command_validation.hpp"
 #include "linuxcnc_grpc/position/history.hpp"
@@ -412,8 +413,8 @@ void position_cursor_generation_and_replacement_test() {
   assert(retained.append(position(2.0, 2)));
   const auto synchronized = retained.snapshot();
   assert(retained.append(position(3.0, 3)));
-  const auto evicted = retained.since(
-      synchronized.next_sequence, 0, synchronized.generation);
+  const auto evicted =
+      retained.since(synchronized.next_sequence, 0, synchronized.generation);
   assert(evicted.reset);
   assert(evicted.packed.size() == 2 * kPositionStride);
   assert(evicted.packed[0] == 2.0);
@@ -424,6 +425,11 @@ void position_cursor_generation_and_replacement_test() {
   auto invalid = finite;
   invalid.coordinates[0] = std::numeric_limits<double>::quiet_NaN();
   assert(non_finite_history.append(finite));
+
+  PositionHistory large(100000);
+  for (int index = 0; index < 100001; ++index)
+    assert(large.append(position(static_cast<double>(index), index % 2)));
+  assert(large.size() == 100000);
   assert(non_finite_history.append(invalid));
   assert(!non_finite_history.append(invalid));
   assert(non_finite_history.append(finite));
@@ -489,6 +495,20 @@ void position_collinear_compaction_test() {
   }
   assert(arc.size() > 2);
   assert(arc.size() < 101);
+}
+
+void preview_non_finite_rejection_test() {
+  gcode::ParseContext context;
+  gcode::FeedOp operation;
+  operation.pos.x = std::numeric_limits<double>::infinity();
+  bool rejected = false;
+  try {
+    context.addOperation(std::move(operation));
+  } catch (const std::domain_error&) {
+    rejected = true;
+  }
+  assert(rejected);
+  assert(context.operations.empty());
 }
 
 void hal_value_telemetry_test() {
@@ -749,6 +769,7 @@ int main() {
   nml_serial_wrap_test();
   position_cursor_generation_and_replacement_test();
   position_collinear_compaction_test();
+  preview_non_finite_rejection_test();
   hal_value_telemetry_test();
   workspace_restart_cleanup_test();
   workspace_traversal_quota_ttl_and_materialization_test();

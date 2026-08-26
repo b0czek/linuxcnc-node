@@ -649,10 +649,44 @@ NmlStatusPoll NmlAdapter::poll_status(NmlStatusSnapshot* snapshot) {
 #endif
 }
 
+NmlStatusPoll NmlAdapter::poll_position(NmlPositionSnapshot* snapshot) {
+#ifdef LINUXCNC_GRPC_HAS_NML
+  if (!snapshot) return NmlStatusPoll::Disconnected;
+  auto* channel = impl_->status_channel.get(
+      [this] { return impl_->make_status_channel(); });
+  if (!channel) {
+    impl_->completions.channel_failed();
+    return NmlStatusPoll::Disconnected;
+  }
+  const auto type = channel->peek();
+  if (type == -1) {
+    impl_->fail_status_channel();
+    return NmlStatusPoll::Disconnected;
+  }
+  if (type != EMC_STAT_TYPE)
+    return impl_->completions.fresh() ? NmlStatusPoll::Idle
+                                      : NmlStatusPoll::Stale;
+  auto* status = static_cast<EMC_STAT*>(channel->get_address());
+  if (!status) {
+    impl_->fail_status_channel();
+    return NmlStatusPoll::Disconnected;
+  }
+  const auto commanded = from_emc_pose(status->motion.traj.position);
+  const auto offset = from_emc_pose(status->task.toolOffset);
+  snapshot->commanded = commanded.values;
+  snapshot->tool_offset = offset.values;
+  snapshot->motion_type = status->motion.traj.motion_type;
+  return NmlStatusPoll::Updated;
+#else
+  (void)snapshot;
+  return NmlStatusPoll::Disconnected;
+#endif
+}
+
 std::optional<NmlErrorEvent> NmlAdapter::poll_error() {
 #ifdef LINUXCNC_GRPC_HAS_NML
-  auto* channel = impl_->error_channel.get(
-      [this] { return impl_->make_error_channel(); });
+  auto* channel =
+      impl_->error_channel.get([this] { return impl_->make_error_channel(); });
   if (!channel) return std::nullopt;
   const auto type = channel->read();
   if (type == -1) {

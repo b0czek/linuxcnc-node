@@ -618,9 +618,6 @@ class MachineServiceImpl final : public MachineCallbackBase,
     if (request.sample_period_ms() > kMaxPositionSamplePeriodMs) {
       return Invalid("position history sample period exceeds 60000 ms");
     }
-    if (request.capacity() > 0) {
-      positions_->configure(request.capacity());
-    }
     {
       std::lock_guard lock(position_mutex_);
       if (request.has_enabled()) position_enabled_ = request.enabled();
@@ -629,9 +626,10 @@ class MachineServiceImpl final : public MachineCallbackBase,
             std::chrono::milliseconds(request.sample_period_ms());
       }
       ++position_config_generation_;
+      if (request.capacity() > 0) positions_->configure(request.capacity());
+      if (request.has_enabled() && !request.enabled()) positions_->clear();
     }
     position_condition_.notify_all();
-    if (request.has_enabled() && !request.enabled()) positions_->clear();
     return ::grpc::Status::OK;
   }
 
@@ -992,28 +990,49 @@ class MachineServiceImpl final : public MachineCallbackBase,
       const bool position_due = enabled && now >= next_position;
       if (status_due || position_due) {
         NmlStatusSnapshot snapshot;
-        const auto status_poll = nml_.poll_status(&snapshot);
+        NmlPositionSnapshot position_snapshot;
+        const auto status_poll = status_due
+                                     ? nml_.poll_status(&snapshot)
+                                     : nml_.poll_position(&position_snapshot);
         if (status_poll == NmlStatusPoll::Updated) {
-          bool recovered = false;
-          {
-            std::lock_guard lock(status_mutex_);
-            recovered = !status_available_;
-            status_available_ = true;
+          if (status_due) {
+            bool recovered = false;
+            {
+              std::lock_guard lock(status_mutex_);
+              recovered = !status_available_;
+              status_available_ = true;
+            }
+            if (recovered) positions_->clear();
+            observe_status(snapshot, recovered);
           }
-          if (status_due || recovered) observe_status(snapshot, recovered);
           if (position_due) {
             PositionSample sample;
             for (std::size_t index = 0; index < sample.coordinates.size();
                  ++index) {
               sample.coordinates[index] =
-                  snapshot.motion_stat.traj.position.values[index] -
-                  snapshot.task_stat.tool_offset.values[index];
+                  status_due
+                      ? snapshot.motion_stat.traj.position.values[index] -
+                            snapshot.task_stat.tool_offset.values[index]
+                      : position_snapshot.commanded[index] -
+                            position_snapshot.tool_offset[index];
             }
-            sample.motion_type = snapshot.motion_type;
-            positions_->append(sample);
+            sample.motion_type = status_due ? snapshot.motion_type
+                                            : position_snapshot.motion_type;
+            // Configuration changes linearize with the append. In particular,
+            // a poll that started before disable cannot repopulate the history
+            // after disable cleared it.
+            std::lock_guard lock(position_mutex_);
+            if (position_enabled_ && position_config_generation_ == generation)
+              positions_->append(sample);
           }
         } else if (status_poll == NmlStatusPoll::Stale ||
                    status_poll == NmlStatusPoll::Disconnected) {
+          bool was_available = false;
+          {
+            std::lock_guard lock(status_mutex_);
+            was_available = status_available_;
+          }
+          if (was_available) positions_->clear();
           mark_status_unavailable();
         }
         if (status_due) {
@@ -1032,8 +1051,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
           error_wakes_.publish(sequence);
           ++drained;
         }
-        next_error =
-            drained == kErrorBatchSize ? now : now + error_period_;
+        next_error = drained == kErrorBatchSize ? now : now + error_period_;
       }
       std::unique_lock lock(position_mutex_);
       auto deadline = std::min(next_status, next_error);

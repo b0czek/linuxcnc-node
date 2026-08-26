@@ -288,6 +288,12 @@ struct NmlStatusSnapshot {
   std::vector<NmlToolEntry> tool_table;
 };
 
+struct NmlPositionSnapshot {
+  std::array<double, 9> commanded{};
+  std::array<double, 9> tool_offset{};
+  std::int32_t motion_type = 0;
+};
+
 struct NmlErrorEvent {
   std::int32_t type = 0;
   std::string message;
@@ -317,6 +323,9 @@ class NmlAdapter {
   NmlAdapter& operator=(const NmlAdapter&) = delete;
 
   NmlStatusPoll poll_status(NmlStatusSnapshot* snapshot);
+  // Reads only fields required by high-rate position acquisition and avoids
+  // materializing joints, axes, spindles, I/O, and the tool table.
+  NmlStatusPoll poll_position(NmlPositionSnapshot* snapshot);
   std::optional<NmlErrorEvent> poll_error();
   CommandTicket submit(NmlCommand command,
                        std::function<bool()> cancelled = {});

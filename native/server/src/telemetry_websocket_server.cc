@@ -456,10 +456,9 @@ class Session final : public std::enable_shared_from_this<Session> {
               };
 #ifdef LINUXCNC_GRPC_HAS_RS274
           std::filesystem::path source;
-          const bool resolved =
-              store->resolve_entry(workspace_id, relative_path, &source);
-          const bool leased = resolved && store->pin(workspace_id);
-          if (!resolved || !leased) {
+          const bool leased =
+              store->pin_entry(workspace_id, relative_path, &source);
+          if (!leased) {
             linuxcnc::v1::ProgramPreviewEvent event;
             auto* error = event.mutable_error();
             error->set_code(
@@ -471,7 +470,7 @@ class Session final : public std::enable_shared_from_this<Session> {
           struct Lease {
             std::shared_ptr<ProgramWorkspaceStore> store;
             std::string workspace;
-            ~Lease() { store->unpin(workspace); }
+            ~Lease() { store->unpin_entry(workspace); }
           } lease{store, workspace_id};
           try {
             gcode::ParseOptions options;
@@ -494,19 +493,18 @@ class Session final : public std::enable_shared_from_this<Session> {
             };
             options.on_batch = [flow, send](gcode::OperationBatch&& batch) {
               if (batch.empty()) return true;
-              const auto send_batch = [flow, send](
-                                          linuxcnc::v1::ProgramPreviewEvent&&
-                                              event) {
-                std::unique_lock lock(flow->mutex);
-                flow->condition.wait(lock, [flow] {
-                  return flow->cancelled || flow->outstanding_batches < 2;
-                });
-                if (flow->cancelled) return false;
-                ++flow->outstanding_batches;
-                lock.unlock();
-                send(std::move(event), true, false);
-                return true;
-              };
+              const auto send_batch =
+                  [flow, send](linuxcnc::v1::ProgramPreviewEvent&& event) {
+                    std::unique_lock lock(flow->mutex);
+                    flow->condition.wait(lock, [flow] {
+                      return flow->cancelled || flow->outstanding_batches < 2;
+                    });
+                    if (flow->cancelled) return false;
+                    ++flow->outstanding_batches;
+                    lock.unlock();
+                    send(std::move(event), true, false);
+                    return true;
+                  };
               constexpr std::size_t max_preview_frame_bytes =
                   4U * 1024U * 1024U;
               linuxcnc::v1::ProgramPreviewEvent event;
@@ -520,8 +518,8 @@ class Session final : public std::enable_shared_from_this<Session> {
                       "G-code operation exceeds preview frame byte limit");
                 if (!send_batch(std::move(event))) return false;
                 event.Clear();
-                encode_gcode_operation(
-                    operation, event.mutable_batch()->add_operations());
+                encode_gcode_operation(operation,
+                                       event.mutable_batch()->add_operations());
                 if (event.ByteSizeLong() > max_preview_frame_bytes)
                   throw std::runtime_error(
                       "G-code operation exceeds preview frame byte limit");
@@ -529,8 +527,7 @@ class Session final : public std::enable_shared_from_this<Session> {
               return event.batch().operations().empty() ||
                      send_batch(std::move(event));
             };
-            gcode::SerializedRs274Parser parser;
-            const auto result = parser.parse_file(source.string(), options);
+            const auto result = gcode::parse_file(source.string(), options);
             {
               std::lock_guard lock(flow->mutex);
               if (flow->cancelled || result.cancelled) return;
@@ -540,11 +537,31 @@ class Session final : public std::enable_shared_from_this<Session> {
             encode_gcode_extents(result.extents, summary->mutable_extents());
             summary->set_operation_count(result.operationCount);
             send(std::move(event), false, true);
+          } catch (const gcode::ParseError& exception) {
+            linuxcnc::v1::ProgramPreviewEvent event;
+            auto* error = event.mutable_error();
+            switch (exception.code()) {
+              case gcode::ParseErrorCode::InvalidEntry:
+                error->set_code(
+                    linuxcnc::v1::PROGRAM_PREVIEW_ERROR_CODE_INVALID_ENTRY);
+                break;
+              case gcode::ParseErrorCode::Interpreter:
+                error->set_code(
+                    linuxcnc::v1::PROGRAM_PREVIEW_ERROR_CODE_INTERPRETER);
+                break;
+              case gcode::ParseErrorCode::Internal:
+                error->set_code(
+                    linuxcnc::v1::PROGRAM_PREVIEW_ERROR_CODE_INTERNAL);
+                break;
+            }
+            error->set_message(exception.what());
+            if (exception.line_number())
+              error->set_line_number(*exception.line_number());
+            send(std::move(event), false, true);
           } catch (const std::exception& exception) {
             linuxcnc::v1::ProgramPreviewEvent event;
             auto* error = event.mutable_error();
-            error->set_code(
-                linuxcnc::v1::PROGRAM_PREVIEW_ERROR_CODE_INTERPRETER);
+            error->set_code(linuxcnc::v1::PROGRAM_PREVIEW_ERROR_CODE_INTERNAL);
             error->set_message(exception.what());
             send(std::move(event), false, true);
           }
@@ -715,6 +732,10 @@ class TelemetryWebSocketServer::Impl {
   void accept() {
     acceptor_.async_accept([this](beast::error_code error, tcp::socket socket) {
       if (!error) {
+        sessions_.erase(
+            std::remove_if(sessions_.begin(), sessions_.end(),
+                           [](const auto& weak) { return weak.expired(); }),
+            sessions_.end());
         if (active_sessions_.fetch_add(1) >= kMaxSessions) {
           active_sessions_.fetch_sub(1);
           beast::error_code ignored;

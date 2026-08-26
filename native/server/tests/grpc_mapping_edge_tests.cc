@@ -112,6 +112,7 @@ void gcode_mapping_all_variants_test() {
   nurbs_g6.pos = full_position();
   nurbs_g6.plane = gcode::Plane::VW;
   nurbs_g6.nurbsData.order = 4;
+  nurbs_g6.nurbsData.interpolationMethod = 3;
   nurbs_g6.nurbsData.controlPoints = {{1.0, -2.0, 3.0, -4.0}};
   encode_gcode_operation(nurbs_g6, &encoded);
   assert(encoded.type() == linuxcnc::v1::OPERATION_TYPE_NURBS_G6);
@@ -119,6 +120,7 @@ void gcode_mapping_all_variants_test() {
   assert(encoded.data_case() == linuxcnc::v1::GCodeOperation::kNurbsG6);
   assert(encoded.nurbs_g6().plane() == linuxcnc::v1::PLANE_VW);
   assert(encoded.nurbs_g6().order() == 4);
+  assert(encoded.nurbs_g6().interpolation_method() == 3);
   assert(encoded.nurbs_g6().control_points_size() == 1);
   assert(encoded.nurbs_g6().control_points(0).r() == 3.0);
   assert(encoded.nurbs_g6().control_points(0).k() == -4.0);

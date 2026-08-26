@@ -93,7 +93,13 @@ message NurbsG5Data { Plane plane = 1; int32 order = 2; repeated ControlPointG5 
 
 message ControlPointG5 { double x = 1; double y = 2; double weight = 3; }
 
-message NurbsG6Data { Plane plane = 1; int32 order = 2; repeated ControlPointG6 control_points = 3; }
+message NurbsG6Data {
+  Plane plane = 1;
+  int32 order = 2;
+  repeated ControlPointG6 control_points = 3;
+  // LinuxCNC G6 Q interpolation option (1, 2, or 3).
+  int32 interpolation_method = 4;
+}
 
 message ControlPointG6 { double x = 1; double y = 2; double r = 3; double k = 4; }
 

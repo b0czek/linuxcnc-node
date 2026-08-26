@@ -78,6 +78,34 @@ Position preview_position(const ParseContext& context, const EmcPose& pose) {
           linear_value(context, pose.w)};
 }
 
+bool finite_position(const Position& position) {
+  return std::isfinite(position.x) && std::isfinite(position.y) &&
+         std::isfinite(position.z) && std::isfinite(position.a) &&
+         std::isfinite(position.b) && std::isfinite(position.c) &&
+         std::isfinite(position.u) && std::isfinite(position.v) &&
+         std::isfinite(position.w);
+}
+
+void require_finite(double value) {
+  if (!std::isfinite(value))
+    throw std::domain_error("non-finite canonical preview value");
+}
+
+void require_finite(const Position& position) {
+  if (!finite_position(position))
+    throw std::domain_error("non-finite canonical preview position");
+}
+
+void set_plane_end(Plane plane, double first, double second,
+                   Position* position);
+
+void update_control_point_extents(ParseContext& context, Plane plane,
+                                  double first, double second) {
+  Position point = context.currentPosition;
+  set_plane_end(plane, first, second, &point);
+  context.updateExtents(point);
+}
+
 void set_plane_end(Plane plane, double first, double second,
                    Position* position) {
   switch (plane) {
@@ -187,6 +215,7 @@ void consume(ParseContext& context, const canon::StraightTraverse& event) {
   TraverseOp operation;
   operation.lineNumber = event.line_number;
   operation.pos = preview_position(context, event.end);
+  context.updateExtents(context.currentPosition);
   context.currentPosition = operation.pos;
   context.updateExtents(operation.pos);
   context.addOperation(operation);
@@ -196,6 +225,7 @@ void consume(ParseContext& context, const canon::StraightFeed& event) {
   FeedOp operation;
   operation.lineNumber = event.line_number;
   operation.pos = preview_position(context, event.end);
+  context.updateExtents(context.currentPosition);
   context.currentPosition = operation.pos;
   context.updateExtents(operation.pos);
   context.addOperation(operation);
@@ -248,6 +278,7 @@ void consume(ParseContext& context, const canon::StraightProbe& event) {
   ProbeOp operation;
   operation.lineNumber = event.line_number;
   operation.pos = preview_position(context, event.end);
+  context.updateExtents(context.currentPosition);
   context.currentPosition = operation.pos;
   context.updateExtents(operation.pos);
   context.addOperation(operation);
@@ -260,6 +291,7 @@ void consume(ParseContext& context, const canon::RigidTap& event) {
                    linear_value(context, event.y),
                    linear_value(context, event.z)};
   operation.scale = event.scale;
+  context.updateExtents(context.currentPosition);
   context.currentPosition.x = operation.pos.x;
   context.currentPosition.y = operation.pos.y;
   context.extents.update(operation.pos.x, operation.pos.y, operation.pos.z);
@@ -285,7 +317,10 @@ void consume(ParseContext& context, const canon::NurbsG5Feed& event) {
         {linear_value(context, source.NURBS_X),
          linear_value(context, source.NURBS_Y), source.NURBS_W});
   operation.pos = context.currentPosition;
+  context.updateExtents(context.currentPosition);
   if (!operation.nurbsData.controlPoints.empty()) {
+    for (const auto& point : operation.nurbsData.controlPoints)
+      update_control_point_extents(context, operation.plane, point.x, point.y);
     const auto& last = operation.nurbsData.controlPoints.back();
     set_plane_end(operation.plane, last.x, last.y, &operation.pos);
     context.currentPosition = operation.pos;
@@ -299,6 +334,7 @@ void consume(ParseContext& context, const canon::NurbsG6Feed& event) {
   operation.lineNumber = event.line_number;
   operation.plane = preview_plane(event.plane);
   operation.nurbsData.order = event.order;
+  operation.nurbsData.interpolationMethod = event.l_option;
   operation.nurbsData.controlPoints.reserve(event.control_points.size());
   for (const auto& source : event.control_points)
     operation.nurbsData.controlPoints.push_back(
@@ -306,7 +342,10 @@ void consume(ParseContext& context, const canon::NurbsG6Feed& event) {
          linear_value(context, source.NURBS_Y), source.NURBS_R,
          source.NURBS_K});
   operation.pos = context.currentPosition;
+  context.updateExtents(context.currentPosition);
   if (operation.nurbsData.controlPoints.size() > event.order) {
+    for (const auto& point : operation.nurbsData.controlPoints)
+      update_control_point_extents(context, operation.plane, point.x, point.y);
     const auto& last = operation.nurbsData.controlPoints.back();
     set_plane_end(operation.plane, last.x, last.y, &operation.pos);
     context.currentPosition = operation.pos;
@@ -393,6 +432,52 @@ void consume(ParseContext& context, const canon::ToolChange& event) {
 
 void ParseContext::addOperation(Operation&& operation) {
   if (cancelled) return;
+  std::visit(
+      [](const auto& value) {
+        using T = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<T, TraverseOp> ||
+                      std::is_same_v<T, FeedOp> || std::is_same_v<T, ArcOp> ||
+                      std::is_same_v<T, ProbeOp> ||
+                      std::is_same_v<T, DwellOp> ||
+                      std::is_same_v<T, NurbsG5Op> ||
+                      std::is_same_v<T, NurbsG6Op>) {
+          require_finite(value.pos);
+        }
+        if constexpr (std::is_same_v<T, ArcOp>) {
+          require_finite(value.arcData.centerFirst);
+          require_finite(value.arcData.centerSecond);
+          require_finite(value.arcData.axisEndPoint);
+        } else if constexpr (std::is_same_v<T, RigidTapOp>) {
+          require_finite(value.pos.x);
+          require_finite(value.pos.y);
+          require_finite(value.pos.z);
+          require_finite(value.scale);
+        } else if constexpr (std::is_same_v<T, DwellOp>) {
+          require_finite(value.duration);
+        } else if constexpr (std::is_same_v<T, NurbsG5Op>) {
+          for (const auto& point : value.nurbsData.controlPoints) {
+            require_finite(point.x);
+            require_finite(point.y);
+            require_finite(point.weight);
+          }
+        } else if constexpr (std::is_same_v<T, NurbsG6Op>) {
+          for (const auto& point : value.nurbsData.controlPoints) {
+            require_finite(point.x);
+            require_finite(point.y);
+            require_finite(point.r);
+            require_finite(point.k);
+          }
+        } else if constexpr (std::is_same_v<T, G5xOffsetOp> ||
+                             std::is_same_v<T, G92OffsetOp> ||
+                             std::is_same_v<T, ToolOffsetOp>) {
+          require_finite(value.offset);
+        } else if constexpr (std::is_same_v<T, XYRotationOp>) {
+          require_finite(value.rotation);
+        } else if constexpr (std::is_same_v<T, FeedRateChangeOp>) {
+          require_finite(value.feedRate);
+        }
+      },
+      operation);
   operations.push_back(std::move(operation));
   ++operationCount;
 }
@@ -438,6 +523,7 @@ bool ParseContext::cancellationRequested() {
 }
 
 void ParseContext::updateExtents(const Position& position) {
+  require_finite(position);
   extents.update(position);
 }
 

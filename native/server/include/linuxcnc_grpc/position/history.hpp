@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <mutex>
 #include <optional>
 #include <vector>
@@ -66,7 +67,7 @@ class PositionHistory {
                             std::vector<double>* packed);
 
   mutable std::mutex mutex_;
-  std::vector<Entry> entries_;
+  std::deque<Entry> entries_;
   std::size_t max_samples_;
   double epsilon_;
   std::uint64_t next_sequence_ = 0;

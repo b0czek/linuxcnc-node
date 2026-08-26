@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <optional>
+#include <stdexcept>
 #include <string>
 
 #include "linuxcnc_grpc/gcode/operation_types.hpp"
@@ -10,6 +12,24 @@
 class InterpBase;
 
 namespace linuxcnc::server::gcode {
+
+enum class ParseErrorCode { InvalidEntry, Interpreter, Internal };
+
+class ParseError : public std::runtime_error {
+ public:
+  ParseError(ParseErrorCode code, std::string message,
+             std::optional<int> line_number = std::nullopt)
+      : std::runtime_error(std::move(message)),
+        code_(code),
+        line_number_(line_number) {}
+
+  ParseErrorCode code() const noexcept { return code_; }
+  std::optional<int> line_number() const noexcept { return line_number_; }
+
+ private:
+  ParseErrorCode code_;
+  std::optional<int> line_number_;
+};
 
 // Callbacks are invoked by the parser worker, never by realtime LinuxCNC
 // code. The batch callback owns at most batch_size operations at a time and
