@@ -240,7 +240,7 @@ thread line; full-depth and spring passes remain centered, and `Q0` keeps every
 pass on the centered line. Both cylindrical and tapered alternating paths are
 covered. No NML or Node.js API changes are required.
 
-### 0009 — Safe G76 Stop clearance and pass-by-pass Single Step
+### 0009 — Safe G76 Stop clearance and two-stage Single Step
 
 G76 marks each approach, synchronized cut, and particular clearance retract
 with an internal pass ID. When Stop is requested during the cut or clearance,
@@ -253,18 +253,19 @@ endpoint, so arc blending cannot trim it. Synthetic blend arcs within a
 synchronized cut inherit the pass owner, keeping Stop bound to that pass's
 marked clearance.
 
-Each generated cylindrical or tapered G76 pass is also a distinct Single Step
-unit containing its approach, synchronized cut, and clearance retract. Its
-internal motion fence is active only while stepping, so uninterrupted
-`AUTO_RUN` retains task readahead, although the exact clearance boundary
-reaches zero velocity. Motion-level pass targeting also limits each
-`AUTO_STEP` after Stop when later G76 passes were already queued during normal
-`AUTO_RUN`; ordinary unmarked motion retains source-line stepping. Twenty-five
+Each generated cylindrical or tapered G76 pass is split into two Single Step
+units. The first performs the approach and stops at the thread start position;
+the second performs the synchronized thread and its marked clearance retract.
+These internal motion fences are active only while stepping, so uninterrupted
+`AUTO_RUN` retains task readahead. Motion-level targeting preserves the same
+approach/thread-plus-clearance sequence after Stop when later G76 passes were
+already queued during normal `AUTO_RUN`; ordinary unmarked motion retains
+source-line stepping. Twenty-five
 runtime scenarios cover direct first passes, fresh and prequeued cylindrical
-and tapered passes, synchronized exit tapers, arc-blend clearance endpoints,
-an unmarked post-G33 rapid, and repeated Stops with deterministic cut-side
-timing near the cut/retract handoff. The internal NML and motion fields add no
-public status field or Node.js binding requirement.
+and tapered approach/thread-clearance pairs, synchronized exit tapers,
+arc-blend clearance endpoints, an unmarked post-G33 rapid, and repeated Stops
+with deterministic cut-side timing near the cut/retract handoff. The internal
+NML and motion fields add no public status field or Node.js binding requirement.
 
 ### 0010 — Recording canon backend for native G-code preview
 
@@ -277,15 +278,17 @@ those existing implementations untouched.
 ### 0011 — In-flight Single Step arming
 
 `AUTO_STEP` is forwarded to motion while an AUTO program is already running.
-The trajectory planner latches the active source block, or the active G76 pass
-group supplied by patch 0009, and finishes that unit normally before stopping
-at an exact boundary. Later motion remains queued and does not begin, including
-when several following blocks or threading passes were prequeued by readahead.
+The trajectory planner latches the active source block, or the active G76
+approach or thread-plus-clearance unit supplied by patch 0009, and finishes it
+before stopping at an exact boundary. Later motion remains queued and does not
+begin, including when several following blocks or threading passes were
+prequeued by readahead.
 
 The temporary exact boundary is restored if Step is canceled by Resume or Stop.
-Existing paused source-line stepping and G76 pass stepping remain intact. Two
-additional runtime scenarios arm Step during an ordinary block with three later
-blocks queued and during an active G76 cut with later passes queued, bringing
-the resumable-stop suite to twenty-seven scenarios. During an in-flight step,
-`single_stepping` reports the armed/active state while task and motion remain
-unpaused; both paused flags become true only after motion reaches the boundary.
+Existing paused source-line stepping and two-stage G76 stepping remain intact.
+Two additional runtime scenarios arm Step during an ordinary block with three
+later blocks queued and during an active G76 cut with later passes queued,
+bringing the resumable-stop suite to twenty-seven scenarios. During an
+in-flight step, `single_stepping` reports the armed/active state while task and
+motion remain unpaused; both paused flags become true only after motion reaches
+the boundary.

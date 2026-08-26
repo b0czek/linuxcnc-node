@@ -4,19 +4,19 @@ Date: Sun, 23 Aug 2026 22:34:37 +0200
 Subject: [PATCH] rs274: add recording canon preview backend
 
 ---
- src/emc/rs274ngc/recordingcanon.cc | 617 +++++++++++++++++++++++++++++
+ src/emc/rs274ngc/recordingcanon.cc | 618 +++++++++++++++++++++++++++++
  src/emc/rs274ngc/recordingcanon.hh | 143 +++++++
  src/emc/tooldata/tooldata_mmap.cc  |   5 +
- 3 files changed, 765 insertions(+)
+ 3 files changed, 766 insertions(+)
  create mode 100644 src/emc/rs274ngc/recordingcanon.cc
  create mode 100644 src/emc/rs274ngc/recordingcanon.hh
 
 diff --git a/src/emc/rs274ngc/recordingcanon.cc b/src/emc/rs274ngc/recordingcanon.cc
 new file mode 100644
-index 0000000000..c93ab40fcf
+index 0000000000..6684d37278
 --- /dev/null
 +++ b/src/emc/rs274ngc/recordingcanon.cc
-@@ -0,0 +1,617 @@
+@@ -0,0 +1,618 @@
 +#include "recordingcanon.hh"
 +
 +#include <algorithm>
@@ -625,6 +625,7 @@ index 0000000000..c93ab40fcf
 +
 +void FINISH() {}
 +void START_G76_PASS() {}
++void FINISH_G76_APPROACH() {}
 +void START_G76_CUT() {}
 +void START_G76_CLEARANCE() {}
 +void FINISH_G76_PASS(int) {}

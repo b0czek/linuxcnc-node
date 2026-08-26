@@ -3,9 +3,9 @@ From: Dariusz Majnert <dariusz.majnert@gmail.com>
 Date: Wed, 26 Aug 2026 20:51:20 +0200
 Subject: [PATCH] motion: arm Single Step during active execution
 
-Forward AUTO_STEP to motion while an AUTO program is running. Latch the active source block or G76 pass, finish it without feedhold-style interruption, and stop at its boundary even when later motion is already queued.
+Forward AUTO_STEP to motion while an AUTO program is already running. The default trajectory planner latches the active source block, or the active G76 approach or thread-plus-clearance unit, and finishes that unit at an exact boundary before pausing.
 
-Preserve paused source-line stepping and the G76 pass stepping introduced by the preceding threading patch, and cover ordinary and G76 in-flight arming with prequeued motion.
+Keep later prequeued motion from starting, restore temporary exact boundaries when Step is canceled by Resume or Stop, and report single_stepping while an in-flight step remains armed. Cover ordinary multi-move blocks and an active G76 thread with later passes queued.
 ---
  src/emc/motion/command.c               |  17 +++--
  src/emc/motion/control.c               |   9 ++-
@@ -189,7 +189,7 @@ index 1addd75459..f916833c47 100644
  	// following error, etc.) unhome joints marked VOLATILE_HOME. The estop
  	// and machine-off paths already do their own unhome; this catches the
 diff --git a/src/emc/tp/tp.c b/src/emc/tp/tp.c
-index 2bb6f31ed0..f17ca4c59e 100644
+index d4373fd89f..9091ba756d 100644
 --- a/src/emc/tp/tp.c
 +++ b/src/emc/tp/tp.c
 @@ -342,9 +342,9 @@ STATIC inline double tpGetRealFinalVel(TP_STRUCT const * const tp,
@@ -226,22 +226,21 @@ index 2bb6f31ed0..f17ca4c59e 100644
              tp->step_target_pending && tp->step_pass_id && !tp->step_tc &&
              tc->g76_pass_id != tp->step_pass_id) {
          rtapi_print_msg(RTAPI_MSG_ERR,
-@@ -1622,13 +1626,12 @@ STATIC inline int tpAddSegmentToQueue(TP_STRUCT * const tp, TC_STRUCT * const tc
-                 queued_tc->g76_pass_id == tp->stop_pass_id) {
-             tp->stop_tc = queued_tc;
+@@ -1624,12 +1628,11 @@ STATIC inline int tpAddSegmentToQueue(TP_STRUCT * const tp, TC_STRUCT * const tc
          }
--        if (tp->stepping_to_pass_clearance && tp->step_target_pending &&
-+        if (tp->stepping_to_motion_target && tp->step_target_pending &&
-                 !tp->step_tc &&
-                 queued_tc->g76_pass_id == tp->step_pass_id) {
-             tp->step_tc = queued_tc;
-         }
+     }
+     if (queued_tc && queued_tc->g76_pass_clearance &&
+-            tp->stepping_to_pass_clearance && tp->step_target_pending &&
++            tp->stepping_to_motion_target && tp->step_target_pending &&
+             !tp->step_tc &&
+             queued_tc->g76_pass_id == tp->step_pass_id) {
+         tp->step_tc = queued_tc;
      }
 -
      // Store end of current move as new final goal of TP
      // KLUDGE: endpoint is garbage for rigid tap since it's supposed to retract past the start point.
      if (tc->motion_type != TC_RIGIDTAP) {
-@@ -3441,10 +3444,11 @@ STATIC int tpCompleteSegment(TP_STRUCT * const tp,
+@@ -3442,10 +3445,11 @@ STATIC int tpCompleteSegment(TP_STRUCT * const tp,
          tp->stop_tc = 0;
          tp->stop_pass_id = 0;
      }
@@ -254,7 +253,7 @@ index 2bb6f31ed0..f17ca4c59e 100644
      }
  
      //TODO make progress to match target?
-@@ -4216,7 +4220,7 @@ int tpRunCycle(TP_STRUCT * const tp, long period)
+@@ -4217,7 +4221,7 @@ int tpRunCycle(TP_STRUCT * const tp, long period)
              }
              return TP_ERR_WAITING;
          }
@@ -263,7 +262,7 @@ index 2bb6f31ed0..f17ca4c59e 100644
                  tp->step_pass_id && !tp->step_tc) {
              tpHandleEmptyQueue(tp);
              return TP_ERR_WAITING;
-@@ -4357,6 +4361,30 @@ STATIC int tpGetQueuedG76PassId(TP_STRUCT * const tp)
+@@ -4372,6 +4376,30 @@ STATIC int tpGetQueuedG76PassId(TP_STRUCT * const tp)
      return tc ? tc->g76_pass_id : 0;
  }
  
@@ -294,7 +293,7 @@ index 2bb6f31ed0..f17ca4c59e 100644
  int tpPause(TP_STRUCT * const tp)
  {
      if (0 == tp) {
-@@ -4364,10 +4392,12 @@ int tpPause(TP_STRUCT * const tp)
+@@ -4379,10 +4407,12 @@ int tpPause(TP_STRUCT * const tp)
      }
  
      if (tp->stopping) {
@@ -308,7 +307,7 @@ index 2bb6f31ed0..f17ca4c59e 100644
          TC_STRUCT *tc = tcqItem(&tp->queue, 0);
          bool in_g76_cut_or_clearance = tc && tc->g76_pass_id &&
              (tc->synchronized == TC_SYNC_POSITION ||
-@@ -4398,7 +4428,7 @@ int tpPause(TP_STRUCT * const tp)
+@@ -4413,7 +4443,7 @@ int tpPause(TP_STRUCT * const tp)
              tp->pausing = 1;
          }
      } else if (emcmotStatus->stepping &&
@@ -317,12 +316,12 @@ index 2bb6f31ed0..f17ca4c59e 100644
          /*
           * EMCMOT_STEP requests default-TP pass targeting through the existing
           * tpPause ABI. Alternate planners leave step_target_pending clear and
-@@ -4407,15 +4437,25 @@ int tpPause(TP_STRUCT * const tp)
+@@ -4422,15 +4452,25 @@ int tpPause(TP_STRUCT * const tp)
          int pass_id = tpGetQueuedG76PassId(tp);
          if (pass_id) {
              tp->step_pass_id = pass_id;
 +            tp->step_motion_id = 0;
-             tp->step_tc = tpFindG76PassClearance(tp, pass_id);
+             tp->step_tc = tpFindG76StepTarget(tp, pass_id);
              tp->step_target_pending = 1;
              tp->pausing = 0;
          } else {
@@ -347,7 +346,7 @@ index 2bb6f31ed0..f17ca4c59e 100644
          }
      } else {
          tp->pausing = 1;
-@@ -4428,6 +4468,7 @@ int tpResume(TP_STRUCT * const tp)
+@@ -4443,6 +4483,7 @@ int tpResume(TP_STRUCT * const tp)
      if (0 == tp) {
          return TP_ERR_FAIL;
      }
@@ -355,7 +354,7 @@ index 2bb6f31ed0..f17ca4c59e 100644
      tp->pausing = 0;
      tp->stopping = 0;
      tp->stop_tc = 0;
-@@ -4436,7 +4477,10 @@ int tpResume(TP_STRUCT * const tp)
+@@ -4451,7 +4492,10 @@ int tpResume(TP_STRUCT * const tp)
      tp->step_tc = 0;
      tp->step_target_pending = 0;
      tp->step_pass_id = 0;
@@ -367,7 +366,7 @@ index 2bb6f31ed0..f17ca4c59e 100644
      emcmotStatus->stopped = 0;
      return TP_ERR_OK;
  }
-@@ -4452,7 +4496,11 @@ int tpAbort(TP_STRUCT * const tp)
+@@ -4467,7 +4511,11 @@ int tpAbort(TP_STRUCT * const tp)
          tp->step_tc = 0;
          tp->step_target_pending = 0;
          tp->step_pass_id = 0;
@@ -398,19 +397,19 @@ index 15be0f3127..893a9df4c2 100644
  } TP_STRUCT;
  
 diff --git a/tests/resumable-stop/README b/tests/resumable-stop/README
-index 28a455c537..bbc0685757 100644
+index b325f8c8b1..4676f3859f 100644
 --- a/tests/resumable-stop/README
 +++ b/tests/resumable-stop/README
-@@ -15,6 +15,12 @@ first G76 pass directly and verifies every cylindrical and tapered
- approach/cut/retract pass. It also starts G76 in normal AUTO_RUN, stops after
- the first pass with later passes already queued, and verifies that each
- following AUTO_STEP reaches exactly one cylindrical or tapered pass clearance.
+@@ -17,6 +17,12 @@ starts G76 in normal AUTO_RUN, stops after the first pass with later passes
+ already queued, and verifies that each
+ following AUTO_STEP reaches exactly one cylindrical or tapered approach
+ endpoint, and the next AUTO_STEP completes that pass's thread and clearance.
 +In-flight Single Step coverage arms during an ordinary source block with three
 +later motion blocks already queued and during an active G76 cut with later
-+passes queued. It verifies that the active block or pass finishes normally and
-+motion remains at its boundary until Resume. While the step is armed and the
-+active unit is still moving, both task and motion report unpaused; they change
-+to paused only when motion reaches the latched boundary.
++passes queued. It verifies that the active block or thread-plus-clearance unit
++finishes normally and motion remains at its boundary until Resume. While the
++step is armed and the active unit is still moving, both task and motion report
++unpaused; they change to paused only when motion reaches the latched boundary.
  Arc blending is enabled for all scenarios, so the exact-clearance assertions
  also prove that a marked G76 retract endpoint is not trimmed by a following
  rapid. The handoff stress case uses a slow synchronized feed and issues Stop at
@@ -438,7 +437,7 @@ index 0000000000..1f72544983
 +G1 X40
 +M2
 diff --git a/tests/resumable-stop/test-ui.py b/tests/resumable-stop/test-ui.py
-index 00d4754446..cad11ba98d 100755
+index 82df9ff8c5..ee5ddf1ddc 100755
 --- a/tests/resumable-stop/test-ui.py
 +++ b/tests/resumable-stop/test-ui.py
 @@ -24,7 +24,23 @@ def wait_for(predicate, message, timeout=10.0, poll_interval=0.02):
@@ -510,7 +509,7 @@ index 00d4754446..cad11ba98d 100755
  def run_rapid_resume_without_at_speed_test():
      hal.set_p("spindle.0.at-speed", "false")
      open_auto_program("rapid-then-feed.ngc")
-@@ -696,6 +749,49 @@ def run_tapered_g76_single_step_test():
+@@ -700,6 +753,49 @@ def run_tapered_g76_single_step_test():
      )
  
  
@@ -538,7 +537,7 @@ index 00d4754446..cad11ba98d 100755
 +        and abs(s.current_vel) < 0.001
 +        and s.position[2] <= -4.90
 +        and math.isclose(s.position[0], 10.4, abs_tol=0.01),
-+        "in-flight G76 Single Step did not finish the active pass",
++        "in-flight G76 Single Step did not finish the active thread and clearance",
 +        timeout=20.0,
 +    )
 +
@@ -550,7 +549,7 @@ index 00d4754446..cad11ba98d 100755
 +        not math.isclose(s.position[0], stepped_x, abs_tol=0.001)
 +        or not math.isclose(s.position[2], stepped_z, abs_tol=0.001)
 +    ):
-+        fail("in-flight G76 Single Step advanced into the next pass")
++        fail("in-flight G76 Single Step advanced into the next approach")
 +
 +    c.auto(linuxcnc.AUTO_RESUME)
 +    wait_for_program_complete(20.0, expected_z=-5.0, timeout=20.0)
@@ -558,9 +557,9 @@ index 00d4754446..cad11ba98d 100755
 +
 +
  def run_g76_stop_then_single_step_program(
-     program, first_cut_x, expected_clearances, label
+     program, first_cut_x, expected_steps, label
  ):
-@@ -1087,6 +1183,7 @@ def run_css_stop_resume_test():
+@@ -1093,6 +1189,7 @@ def run_css_stop_resume_test():
  SCENARIOS = {
      "ordinary": run_ordinary_stop_resume_test,
      "single-step": run_stop_single_step_test,
@@ -568,7 +567,7 @@ index 00d4754446..cad11ba98d 100755
      "rapid-no-atspeed": run_rapid_resume_without_at_speed_test,
      "zero-speed-spindle": run_zero_speed_spindle_stop_resume_test,
      "paused-resume": lambda: run_stop_while_program_paused_test(False),
-@@ -1100,6 +1197,7 @@ SCENARIOS = {
+@@ -1106,6 +1203,7 @@ SCENARIOS = {
      "g76-tapered": run_tapered_g76_stop_resume_test,
      "g76-single-step": run_g76_single_step_test,
      "g76-tapered-single-step": run_tapered_g76_single_step_test,
