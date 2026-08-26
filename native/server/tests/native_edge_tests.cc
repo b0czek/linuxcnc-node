@@ -23,7 +23,6 @@
 #include "linuxcnc_grpc/position/history.hpp"
 #include "linuxcnc_grpc/program/workspace.hpp"
 #include "linuxcnc_grpc/scope/manager.hpp"
-#include "linuxcnc_grpc/status_hub.hpp"
 
 namespace fs = std::filesystem;
 using namespace linuxcnc::server;
@@ -338,43 +337,6 @@ void command_validation_test() {
   command.tool.offset.values.back() =
       std::numeric_limits<double>::quiet_NaN();
   assert(!validate_nml_command(command, &configuration));
-}
-
-void status_replay_rollover_test() {
-  StatusHub hub(2);
-  assert(hub.publish({StatusField{1, std::int32_t{10}},
-                      StatusField{2, std::string("cold")}}) == 1);
-  assert(hub.publish({StatusField{1, std::int32_t{11}}}) == 2);
-  assert(hub.publish({StatusField{3, true}}) == 3);
-
-  const auto replay_from_one = hub.replay_after(1);
-  assert(!replay_from_one.snapshot_required);
-  assert(replay_from_one.deltas.size() == 2);
-  assert(replay_from_one.deltas[0].sequence == 2);
-  assert(replay_from_one.deltas[1].sequence == 3);
-  assert(std::get<std::int32_t>(replay_from_one.deltas[0].fields[0].value) ==
-         11);
-
-  const auto replay_from_two = hub.replay_after(2);
-  assert(!replay_from_two.snapshot_required);
-  assert(replay_from_two.deltas.size() == 1);
-  assert(replay_from_two.deltas.front().sequence == 3);
-  assert(std::get<bool>(replay_from_two.deltas.front().fields.front().value));
-  assert(hub.replay_after(3).deltas.empty());
-
-  // Sequence zero has fallen out of the two-delta replay window.
-  const auto rolled = hub.replay_after(0);
-  assert(rolled.snapshot_required);
-  assert(rolled.snapshot.sequence == 3);
-  assert(rolled.snapshot.fields.size() == 3);
-  assert(std::get<std::int32_t>(rolled.snapshot.fields[0].value) == 11);
-
-  hub.replace_snapshot({StatusField{9, std::string("replacement")}});
-  const auto replacement = hub.replay_after(3);
-  assert(replacement.snapshot_required);
-  assert(replacement.snapshot.sequence == 4);
-  assert(replacement.snapshot.fields.size() == 1);
-  assert(replacement.deltas.empty());
 }
 
 PositionSample position(double x, std::int32_t motion = 0) {
@@ -753,7 +715,6 @@ int main() {
   command_priority_and_reserved_capacity_test();
   deferred_command_completion_test();
   command_validation_test();
-  status_replay_rollover_test();
   position_cursor_generation_and_replacement_test();
   position_collinear_compaction_test();
   hal_value_telemetry_test();

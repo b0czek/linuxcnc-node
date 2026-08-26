@@ -14,7 +14,6 @@
 #include "linuxcnc_grpc/position/history.hpp"
 #include "linuxcnc_grpc/program/workspace.hpp"
 #include "linuxcnc_grpc/scope/manager.hpp"
-#include "linuxcnc_grpc/status_hub.hpp"
 
 namespace fs = std::filesystem;
 using namespace linuxcnc::server;
@@ -300,19 +299,6 @@ void daemon_config_test() {
   fs::remove_all(base, filesystem_error);
 }
 
-void status_hub_test() {
-  StatusHub hub(2);
-  hub.replace_snapshot({StatusField{1, std::int32_t{10}}});
-  const auto first = hub.sequence();
-  hub.publish({StatusField{1, std::int32_t{11}}});
-  hub.publish({StatusField{1, std::int32_t{12}}});
-  const auto replay = hub.replay_after(first);
-  assert(!replay.snapshot_required);
-  assert(replay.deltas.size() == 2);
-  const auto stale = hub.replay_after(0);
-  assert(stale.snapshot_required);
-}
-
 void position_history_test() {
   PositionHistory history(2);
   PositionSample first;
@@ -398,7 +384,6 @@ int main() {
   nml_command_catalog_test();
   command_coordinator_test();
   daemon_config_test();
-  status_hub_test();
   position_history_test();
   hal_repository_test();
   scope_manager_test();
