@@ -19,6 +19,7 @@
 
 #include "linuxcnc_grpc/command_coordinator.hpp"
 #include "linuxcnc_grpc/hal/value_telemetry.hpp"
+#include "linuxcnc_grpc/linuxcnc/command_validation.hpp"
 #include "linuxcnc_grpc/position/history.hpp"
 #include "linuxcnc_grpc/program/workspace.hpp"
 #include "linuxcnc_grpc/scope/manager.hpp"
@@ -181,6 +182,95 @@ void command_failure_wait_test() {
   assert(result.error == "synthetic failure");
   assert(ticket.wait().state == CommandState::Failed);
   coordinator.shutdown();
+}
+
+void command_validation_test() {
+  NmlStatusSnapshot configuration;
+  configuration.motion_stat.traj.joints = 3;
+  configuration.motion_stat.traj.spindles = 2;
+  configuration.motion_stat.traj.available_axes = {0, 2, 8};
+
+  NmlCommand command;
+  command.kind = NmlCommandKind::HomeJoint;
+  for (const auto valid : {-1, 0, 2}) {
+    command.integer = valid;
+    assert(validate_nml_command(command, &configuration));
+  }
+  for (const auto invalid : {-2, 3, std::numeric_limits<std::int32_t>::max()}) {
+    command.integer = invalid;
+    assert(!validate_nml_command(command, &configuration));
+  }
+
+  command.kind = NmlCommandKind::UnhomeJoint;
+  command.integer = -2;
+  assert(validate_nml_command(command, &configuration));
+  command.integer = 3;
+  assert(!validate_nml_command(command, &configuration));
+
+  command.kind = NmlCommandKind::JogStop;
+  command.boolean = false;
+  command.integer = 2;
+  assert(validate_nml_command(command, &configuration));
+  command.integer = 1;
+  assert(!validate_nml_command(command, &configuration));
+  command.boolean = true;
+  command.integer = -1;
+  assert(!validate_nml_command(command, &configuration));
+  command.integer = 3;
+  assert(!validate_nml_command(command, &configuration));
+
+  command.kind = NmlCommandKind::SpindleOff;
+  for (const auto valid : {0, 1}) {
+    command.integer = valid;
+    assert(validate_nml_command(command, &configuration));
+  }
+  for (const auto invalid : {-2, -1, 2,
+                             std::numeric_limits<std::int32_t>::max()}) {
+    command.integer = invalid;
+    assert(!validate_nml_command(command, &configuration));
+  }
+  assert(validate_nml_command(command, nullptr).code ==
+         NmlCommandValidationCode::StatusUnavailable);
+
+  const std::array<double, 3> malformed{
+      std::numeric_limits<double>::quiet_NaN(),
+      std::numeric_limits<double>::infinity(),
+      -std::numeric_limits<double>::infinity()};
+  const std::array<NmlCommandKind, 8> physical_commands{
+      NmlCommandKind::SetMaxVelocity, NmlCommandKind::SetFeedRate,
+      NmlCommandKind::SetRapidRate, NmlCommandKind::SetSpindleOverride,
+      NmlCommandKind::JogContinuous, NmlCommandKind::SetMinPositionLimit,
+      NmlCommandKind::SpindleOn, NmlCommandKind::SetAnalogOutput};
+  for (const auto kind : physical_commands) {
+    command = {};
+    command.kind = kind;
+    command.integer = 0;
+    command.boolean = true;
+    for (const auto value : malformed) {
+      command.number = value;
+      assert(!validate_nml_command(command, &configuration));
+    }
+  }
+
+  command = {};
+  command.kind = NmlCommandKind::JogIncrement;
+  command.boolean = true;
+  command.integer = 0;
+  command.number = 1.0;
+  command.number2 = 0.0;
+  assert(!validate_nml_command(command, &configuration));
+  command.number2 = 1.0;
+  assert(validate_nml_command(command, &configuration));
+  command.number2 = std::numeric_limits<double>::infinity();
+  assert(!validate_nml_command(command, &configuration));
+
+  command = {};
+  command.kind = NmlCommandKind::SetTool;
+  command.tool.has_offset = true;
+  command.tool.offset_values = command.tool.offset.values.size();
+  command.tool.offset.values.back() =
+      std::numeric_limits<double>::quiet_NaN();
+  assert(!validate_nml_command(command, &configuration));
 }
 
 void status_replay_rollover_test() {
@@ -593,6 +683,7 @@ int main() {
   command_cancellation_and_acceptance_test();
   command_cancellation_before_worker_start_test();
   command_failure_wait_test();
+  command_validation_test();
   status_replay_rollover_test();
   position_cursor_generation_and_replacement_test();
   position_collinear_compaction_test();

@@ -24,6 +24,7 @@
 #include "linuxcnc_grpc/callback_runtime.hpp"
 #include "linuxcnc_grpc/command_coordinator.hpp"
 #include "linuxcnc_grpc/daemon/config.hpp"
+#include "linuxcnc_grpc/linuxcnc/command_validation.hpp"
 #include "linuxcnc_grpc/linuxcnc/nml_adapter.hpp"
 #include "linuxcnc_grpc/position/telemetry.hpp"
 #include "linuxcnc_grpc/program/workspace.hpp"
@@ -554,6 +555,21 @@ class MachineServiceImpl final : public MachineCallbackBase,
       default:
         return Invalid("execute_command requires a supported command oneof");
     }
+    NmlStatusSnapshot configuration;
+    const NmlStatusSnapshot* configuration_ptr = nullptr;
+    {
+      std::lock_guard lock(status_mutex_);
+      if (have_latest_) {
+        configuration = latest_;
+        configuration_ptr = &configuration;
+      }
+    }
+    const auto validation =
+        validate_nml_command(command, configuration_ptr);
+    if (validation.code == NmlCommandValidationCode::StatusUnavailable) {
+      return {::grpc::StatusCode::UNAVAILABLE, validation.message};
+    }
+    if (!validation) return Invalid(validation.message);
     if (!nml_.connect())
       return {::grpc::StatusCode::UNAVAILABLE,
               "LinuxCNC NML command channel is unavailable"};
@@ -822,7 +838,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
             if (gate)
               gate->invoke([](ErrorReactor& reactor) { reactor.wake(); });
           });
-      wake();
+      gate_->invoke([](ErrorReactor& reactor) { reactor.wake(); });
     }
 
     void OnWriteDone(bool ok) override {

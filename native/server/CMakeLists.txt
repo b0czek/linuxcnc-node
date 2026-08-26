@@ -27,6 +27,7 @@ set(LINUXCNC_GRPC_DOMAIN_SOURCES
     src/program/workspace.cc
     src/scope/manager.cc
     src/status_hub.cc
+    src/linuxcnc/command_validation.cc
     src/linuxcnc/nml_adapter.cc
 )
 
@@ -342,6 +343,18 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
             -Wall -Wextra -Wpedantic)
         add_test(NAME linuxcnc-grpc-component-outbox-tests
                  COMMAND linuxcnc-grpc-component-outbox-tests)
+        add_executable(linuxcnc-grpc-callback-runtime-tests
+            tests/callback_runtime_tests.cc)
+        target_compile_features(linuxcnc-grpc-callback-runtime-tests PRIVATE
+            cxx_std_17)
+        target_link_libraries(linuxcnc-grpc-callback-runtime-tests PRIVATE
+            linuxcnc-grpc-proto Threads::Threads)
+        target_include_directories(linuxcnc-grpc-callback-runtime-tests PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include")
+        target_compile_options(linuxcnc-grpc-callback-runtime-tests PRIVATE
+            -Wall -Wextra -Wpedantic)
+        add_test(NAME linuxcnc-grpc-callback-runtime-tests
+                 COMMAND linuxcnc-grpc-callback-runtime-tests)
     endif()
 endif()
 
