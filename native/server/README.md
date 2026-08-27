@@ -1,6 +1,6 @@
 # Native LinuxCNC gRPC server foundation
 
-`linuxcnc-grpc-domain` contains transport-neutral C++17 building blocks for
+`linuxcnc-grpc-domain` contains transport-neutral C++20 building blocks for
 the standalone daemon: serialized command coordination, typed status replay,
 bounded position history, exact-width HAL values, secure program workspaces,
 and exclusive/coalesced scope frames. These classes do not include Node,

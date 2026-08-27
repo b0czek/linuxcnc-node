@@ -88,9 +88,9 @@ class HalUnaryService : public HalUnaryCallbackBase {
   void shutdown_callbacks() { callbacks_.shutdown(); }
   virtual ::grpc::Status do_get_topology(const GetHalTopologyRequest*,
                                          GetHalTopologyResponse*) = 0;
-  virtual ::grpc::Status do_read(const CancellationToken&,
-                                 const HalReadRequest*, HalReadResponse*) = 0;
-  virtual ::grpc::Status do_write(const CancellationToken&, const HalWrite*,
+  virtual ::grpc::Status do_read(std::stop_token, const HalReadRequest*,
+                                 HalReadResponse*) = 0;
+  virtual ::grpc::Status do_write(std::stop_token, const HalWrite*,
                                   HalWriteResponse*) = 0;
   virtual ::grpc::Status do_create_value_subscription(
       const CreateHalValueSubscriptionRequest*, HalValueSubscription*) = 0;
@@ -116,11 +116,7 @@ class HalUnaryService : public HalUnaryCallbackBase {
     return new detail::UnaryTaskReactor<Response>(
         worker_, callbacks_, response,
         [this, owned_request = std::move(owned_request), method](
-            const CancellationToken& token, Response* task_response) {
-          if (token.cancelled()) {
-            return ::grpc::Status(::grpc::StatusCode::CANCELLED,
-                                  "RPC cancelled");
-          }
+            std::stop_token, Response* task_response) {
           return (this->*method)(owned_request.get(), task_response);
         });
   }
@@ -128,17 +124,13 @@ class HalUnaryService : public HalUnaryCallbackBase {
   template <typename Request, typename Response>
   ::grpc::ServerUnaryReactor* cancellable_task(
       const Request* request, Response* response,
-      ::grpc::Status (HalUnaryService::*method)(const CancellationToken&,
-                                                const Request*, Response*)) {
+      ::grpc::Status (HalUnaryService::*method)(std::stop_token, const Request*,
+                                                Response*)) {
     auto owned_request = std::make_shared<Request>(*request);
     return new detail::UnaryTaskReactor<Response>(
         worker_, callbacks_, response,
         [this, owned_request = std::move(owned_request), method](
-            const CancellationToken& token, Response* task_response) {
-          if (token.cancelled()) {
-            return ::grpc::Status(::grpc::StatusCode::CANCELLED,
-                                  "RPC cancelled");
-          }
+            std::stop_token token, Response* task_response) {
           return (this->*method)(token, owned_request.get(), task_response);
         });
   }

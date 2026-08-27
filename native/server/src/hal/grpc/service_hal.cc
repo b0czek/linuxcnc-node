@@ -128,8 +128,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     return new TopologyReactor(*this, request->after_sequence());
   }
 
-  ::grpc::Status do_read(const CancellationToken& token,
-                         const HalReadRequest* request,
+  ::grpc::Status do_read(std::stop_token token, const HalReadRequest* request,
                          HalReadResponse* response) override {
     if (request->items_size() > kMaxHalBatchItems)
       return {::grpc::StatusCode::RESOURCE_EXHAUSTED,
@@ -139,7 +138,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
       std::unordered_set<std::string> unique;
       references.reserve(request->items_size());
       for (const auto& item : request->items()) {
-        if (token.cancelled())
+        if (token.stop_requested())
           return {::grpc::StatusCode::CANCELLED, "RPC cancelled"};
         auto decoded = decode_hal_reference(item);
         if (!decoded)
@@ -148,8 +147,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
           return Invalid("HAL read contains a duplicate item reference");
         references.push_back(std::move(*decoded));
       }
-      const auto values = adapter_.read_many(
-          references, [&token] { return token.cancelled(); });
+      const auto values = adapter_.read_many(references, token);
       for (std::size_t index = 0; index < values.size(); ++index) {
         const auto& value = values[index];
         if (!value) {
@@ -166,8 +164,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     }
   }
 
-  ::grpc::Status do_write(const CancellationToken& token,
-                          const HalWrite* request,
+  ::grpc::Status do_write(std::stop_token token, const HalWrite* request,
                           HalWriteResponse* response) override {
     if (request->writes_size() > kMaxHalBatchItems)
       return {::grpc::StatusCode::RESOURCE_EXHAUSTED,
@@ -177,7 +174,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
       std::unordered_set<std::string> unique;
       updates.reserve(request->writes_size());
       for (const auto& write : request->writes()) {
-        if (token.cancelled())
+        if (token.stop_requested())
           return {::grpc::StatusCode::CANCELLED, "RPC cancelled"};
         auto reference = decode_hal_reference(write.item());
         auto value = decode_hal_scalar(write.value());
@@ -190,9 +187,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
         updates.emplace_back(std::move(reference.value()), value.value());
       }
       std::vector<HalAdapterValue> written;
-      if (adapter_.write_many(updates, &written, [&token] {
-            return token.cancelled();
-          }) != updates.size()) {
+      if (adapter_.write_many(updates, &written, token) != updates.size()) {
         return {::grpc::StatusCode::FAILED_PRECONDITION,
                 "one or more HAL items are missing, mistyped, or not writable"};
       }

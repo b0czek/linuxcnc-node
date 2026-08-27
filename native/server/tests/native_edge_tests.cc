@@ -119,15 +119,17 @@ void command_queue_bounds_and_wait_test() {
 void command_cancellation_and_acceptance_test() {
   CommandCoordinator coordinator(1);
   Gate action;
+  std::stop_source stop_source;
+  stop_source.request_stop();
   std::atomic<bool> cancellation_seen{false};
   auto ticket = coordinator.submit_with_context(
       [&](CommandContext& context) {
-        cancellation_seen = context.cancelled && context.cancelled();
+        cancellation_seen = context.stop_token.stop_requested();
         action.arrive();
         context.mark_accepted(101);
         action.wait_until_open();
       },
-      [] { return true; });
+      stop_source.get_token());
   action.wait_for_arrival();
 
   CommandResult result;
@@ -155,14 +157,15 @@ void command_cancellation_before_worker_start_test() {
     blocker.wait_until_open();
   });
   blocker.wait_for_arrival();
-  std::atomic<bool> cancelled{true};
+  std::stop_source stop_source;
+  stop_source.request_stop();
   std::atomic<bool> observed{false};
   auto queued = coordinator.submit_with_context(
       [&](CommandContext& context) {
-        observed = context.cancelled && context.cancelled();
+        observed = context.stop_token.stop_requested();
         context.mark_accepted(202);
       },
-      [&] { return cancelled.load(); });
+      stop_source.get_token());
   blocker.open();
   CommandResult result;
   assert(first.wait_for(std::chrono::seconds(1), &result));

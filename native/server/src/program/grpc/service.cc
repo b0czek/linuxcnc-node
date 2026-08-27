@@ -96,9 +96,9 @@ class ProgramServiceImpl final : public ProgramCallbackBase,
     return new detail::UnaryTaskReactor<CreateWorkspaceResponse>(
         blocking_, callbacks_, response,
         [this, owned_request = std::move(owned_request)](
-            const CancellationToken& cancelled,
+            std::stop_token stop_token,
             CreateWorkspaceResponse* task_response) {
-          if (cancelled.cancelled()) {
+          if (stop_token.stop_requested()) {
             return ::grpc::Status(::grpc::StatusCode::CANCELLED,
                                   "RPC cancelled");
           }
@@ -140,8 +140,8 @@ class ProgramServiceImpl final : public ProgramCallbackBase,
     return new detail::UnaryTaskReactor<google::protobuf::Empty>(
         blocking_, callbacks_, response,
         [this, owned_request = std::move(owned_request)](
-            const CancellationToken& cancelled, google::protobuf::Empty*) {
-          if (cancelled.cancelled()) {
+            std::stop_token stop_token, google::protobuf::Empty*) {
+          if (stop_token.stop_requested()) {
             return ::grpc::Status(::grpc::StatusCode::CANCELLED,
                                   "RPC cancelled");
           }
@@ -209,7 +209,7 @@ class ProgramServiceImpl final : public ProgramCallbackBase,
     }
 
     void OnCancel() override {
-      token_->cancel();
+      stop_source_.request_stop();
       gate_->invoke([](UploadReactor& reactor) {
         reactor.finish({::grpc::StatusCode::CANCELLED, "upload cancelled"});
       });
@@ -223,7 +223,7 @@ class ProgramServiceImpl final : public ProgramCallbackBase,
     }
 
     void shutdown() {
-      token_->cancel();
+      stop_source_.request_stop();
       finish({::grpc::StatusCode::UNAVAILABLE, "server shutting down"});
     }
 
@@ -236,12 +236,14 @@ class ProgramServiceImpl final : public ProgramCallbackBase,
       auto message = request_;
       request_.Clear();
       const auto state = state_;
-      const auto token = token_;
+      const auto stop_token = stop_source_.get_token();
       const auto max_upload_bytes = service_.max_upload_bytes_;
       const std::weak_ptr<LifetimeGate<UploadReactor>> weak_gate = gate_;
-      if (!service_.blocking_.submit([weak_gate, state, token, max_upload_bytes,
+      if (!service_.blocking_.submit([weak_gate, state, stop_token,
+                                      max_upload_bytes,
                                       message = std::move(message)]() mutable {
-            Result result = consume(*state, message, *token, max_upload_bytes);
+            Result result =
+                consume(*state, message, stop_token, max_upload_bytes);
             auto gate = weak_gate.lock();
             if (gate) {
               gate->invoke([&](UploadReactor& reactor) {
@@ -255,9 +257,9 @@ class ProgramServiceImpl final : public ProgramCallbackBase,
     }
 
     static Result consume(State& state, const UploadWorkspaceRequest& request,
-                          const CancellationToken& token,
+                          std::stop_token stop_token,
                           std::size_t max_upload_bytes) {
-      if (token.cancelled()) {
+      if (stop_token.stop_requested()) {
         return {{::grpc::StatusCode::CANCELLED, "upload cancelled"}, true};
       }
       if (request.content_case() == UploadWorkspaceRequest::kFinish) {
@@ -337,8 +339,7 @@ class ProgramServiceImpl final : public ProgramCallbackBase,
     bool admitted_ = false;
     UploadWorkspaceRequest request_;
     std::shared_ptr<State> state_;
-    std::shared_ptr<CancellationToken> token_ =
-        std::make_shared<CancellationToken>();
+    std::stop_source stop_source_;
     std::shared_ptr<LifetimeGate<UploadReactor>> gate_;
     ActiveCallbackRegistry::Registration registration_;
   };

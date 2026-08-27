@@ -10,21 +10,13 @@
 #include <mutex>
 #include <optional>
 #include <stdexcept>
+#include <stop_token>
 #include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
 namespace linuxcnc::server {
-
-class CancellationToken {
- public:
-  bool cancel() noexcept;
-  bool cancelled() const noexcept;
-
- private:
-  std::atomic<bool> cancelled_{false};
-};
 
 // Fixed-size executor with strict admission. Reserved submissions are used only
 // for native cleanup and cannot be starved by ordinary RPC work.

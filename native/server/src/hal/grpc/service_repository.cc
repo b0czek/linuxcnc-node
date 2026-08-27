@@ -168,8 +168,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     return ::grpc::Status::OK;
   }
 
-  ::grpc::Status do_read(const CancellationToken& token,
-                         const HalReadRequest* request,
+  ::grpc::Status do_read(std::stop_token token, const HalReadRequest* request,
                          HalReadResponse* response) override {
     if (request->items_size() > kMaxHalBatchItems)
       return {::grpc::StatusCode::RESOURCE_EXHAUSTED,
@@ -178,7 +177,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     std::unordered_set<std::string> unique;
     names.reserve(request->items_size());
     for (const auto& item : request->items()) {
-      if (token.cancelled())
+      if (token.stop_requested())
         return {::grpc::StatusCode::CANCELLED, "RPC cancelled"};
       const auto key =
           std::to_string(static_cast<int>(item.kind())) + ":" + item.name();
@@ -195,8 +194,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     return ::grpc::Status::OK;
   }
 
-  ::grpc::Status do_write(const CancellationToken& token,
-                          const HalWrite* request,
+  ::grpc::Status do_write(std::stop_token token, const HalWrite* request,
                           HalWriteResponse* response) override {
     if (request->writes_size() > kMaxHalBatchItems)
       return {::grpc::StatusCode::RESOURCE_EXHAUSTED,
@@ -205,7 +203,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     std::unordered_set<std::string> unique;
     updates.reserve(request->writes_size());
     for (const auto& write : request->writes()) {
-      if (token.cancelled())
+      if (token.stop_requested())
         return {::grpc::StatusCode::CANCELLED, "RPC cancelled"};
       const auto key = std::to_string(static_cast<int>(write.item().kind())) +
                        ":" + write.item().name();

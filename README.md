@@ -17,7 +17,7 @@ WebSocket data plane for position, selected HAL values, and G-code preview. See 
 
 - **`proto/linuxcnc/v1`**: Versioned protobuf wire contract for machine,
   program, HAL, and scope services.
-- **`native/server`**: C++17 domain library and `linuxcnc-grpc-server` daemon.
+- **`native/server`**: C++20 domain library and `linuxcnc-grpc-server` daemon.
 - **`packages/grpc-client`**: Raw generated Node gRPC clients and protobuf
   message types, without convenience wrappers. [README](./packages/grpc-client/README.md)
 - **`packages/types`**: Transport-independent constants and domain models used
@@ -92,7 +92,7 @@ flow.
    - LinuxCNC headers and libraries must be available when building it.
 2. **Node.js 24.15 or later and pnpm**
 3. **Native build tools**
-   - A C++17 compiler, CMake, Python development headers, protobuf, and gRPC.
+   - A C++20 compiler, CMake, Python development headers, protobuf, and gRPC.
    - On Debian-family systems the contract build uses `libgrpc++-dev`,
      `libgrpc-dev`, `libprotobuf-dev`, `protobuf-compiler`, and
      `protobuf-compiler-grpc`.

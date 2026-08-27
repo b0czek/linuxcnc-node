@@ -4,13 +4,6 @@
 
 namespace linuxcnc::server {
 
-bool CancellationToken::cancel() noexcept {
-  bool expected = false;
-  return cancelled_.compare_exchange_strong(expected, true);
-}
-
-bool CancellationToken::cancelled() const noexcept { return cancelled_.load(); }
-
 BoundedExecutor::BoundedExecutor(std::size_t threads, std::size_t capacity,
                                  std::size_t cleanup_reserve)
     : thread_count_(threads),

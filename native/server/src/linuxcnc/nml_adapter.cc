@@ -741,7 +741,7 @@ CommandTicket NmlAdapter::submit(
     // NOLINTNEXTLINE(performance-unnecessary-value-param): ownership transfer
     NmlCommand command,
     // NOLINTNEXTLINE(performance-unnecessary-value-param): see above.
-    std::function<bool()> cancelled) {
+    std::stop_token stop_token) {
 #ifdef LINUXCNC_GRPC_HAS_NML
   const bool safety_command = command.kind == NmlCommandKind::Stop ||
                               command.kind == NmlCommandKind::Pause ||
@@ -752,7 +752,7 @@ CommandTicket NmlAdapter::submit(
         // A request cancelled while it was still queued has not reached
         // LinuxCNC and can be dropped safely. After the first NML write below,
         // cancellation no longer participates in command completion.
-        if (!safety_command && context.cancelled && context.cancelled()) {
+        if (!safety_command && context.stop_token.stop_requested()) {
           throw std::runtime_error(
               "command cancelled before LinuxCNC acceptance");
         }
@@ -1150,11 +1150,11 @@ CommandTicket NmlAdapter::submit(
             },
             context.mark_failed);
       },
-      std::move(cancelled), safety_command ? CommandPriority::Safety
-                                           : CommandPriority::Normal);
+      stop_token, safety_command ? CommandPriority::Safety
+                                 : CommandPriority::Normal);
 #else
   (void)command;
-  (void)cancelled;
+  (void)stop_token;
   throw std::runtime_error("LinuxCNC NML support was not built");
 #endif
 }

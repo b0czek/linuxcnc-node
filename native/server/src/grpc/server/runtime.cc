@@ -148,7 +148,7 @@ void ServerRuntime::wake_control_thread() noexcept {
   }
   // If the owner reaches finalize() because Wait() returned without the
   // signal waiter receiving SIGINT/SIGTERM, give sigwait() a wake-up event so
-  // joining the C++17 control thread cannot hang indefinitely. Both signals
+  // joining the dedicated control thread cannot hang indefinitely. Both signals
   // are blocked process-wide before this thread is started and are therefore
   // consumed by sigwait rather than invoking a process signal handler.
   // process-wide and consumed synchronously by sigwait() as a wake-up event.

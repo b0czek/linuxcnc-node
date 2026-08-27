@@ -7,6 +7,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <stop_token>
 #include <string>
 #include <thread>
 #include <vector>
@@ -45,7 +46,7 @@ struct CommandContext {
   // command channel, passing the channel's identifier. An RPC cancellation
   // never invokes it or removes work.
   std::function<void(std::uint64_t)> mark_accepted;
-  std::function<bool()> cancelled;
+  std::stop_token stop_token;
   // A writer calls defer_completion after a successful external write. The
   // status multiplexer later resolves the ticket through these callbacks.
   std::function<void()> defer_completion;
@@ -108,10 +109,9 @@ class CommandCoordinator {
   CommandTicket submit(CommandAction action,
                        CommandPriority priority = CommandPriority::Normal);
   CommandTicket submit_with_context(ContextCommandAction action);
-  CommandTicket submit_with_context(ContextCommandAction action,
-                                    std::function<bool()> cancelled,
-                                    CommandPriority priority =
-                                        CommandPriority::Normal);
+  CommandTicket submit_with_context(
+      ContextCommandAction action, std::stop_token stop_token,
+      CommandPriority priority = CommandPriority::Normal);
   void shutdown();
   std::size_t queued() const;
 

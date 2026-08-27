@@ -263,8 +263,8 @@ using Operation =
                  ToolChangeOp, FeedRateChangeOp>;
 
 // A parser can stream bounded operation batches to the ProgramService
-// adapter. A false return requests cancellation; the interpreter loop checks
-// that request between read/execute steps.
+// adapter. Cancellation is requested independently through the parser's
+// stop token and observed between read/execute steps.
 using OperationBatch = std::vector<Operation>;
 
 // Helper to get OperationType from variant

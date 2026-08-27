@@ -7,6 +7,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <stop_token>
 #include <string>
 #include <vector>
 
@@ -327,8 +328,7 @@ class NmlAdapter {
   // materializing joints, axes, spindles, I/O, and the tool table.
   NmlStatusPoll poll_position(NmlPositionSnapshot* snapshot);
   std::optional<NmlErrorEvent> poll_error();
-  CommandTicket submit(NmlCommand command,
-                       std::function<bool()> cancelled = {});
+  CommandTicket submit(NmlCommand command, std::stop_token stop_token = {});
 
  private:
   struct Impl;

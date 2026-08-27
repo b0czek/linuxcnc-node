@@ -194,10 +194,7 @@ class Session final : public std::enable_shared_from_this<Session> {
   void run() { read_upgrade(); }
 
   void stop() {
-    {
-      std::lock_guard lock(preview_flow_->mutex);
-      preview_flow_->cancelled = true;
-    }
+    preview_flow_->stop_source.request_stop();
     preview_flow_->condition.notify_all();
     abort_socket();
     fail();
@@ -398,10 +395,10 @@ class Session final : public std::enable_shared_from_this<Session> {
   }
 
   struct PreviewFlow {
+    std::stop_source stop_source;
     std::mutex mutex;
     std::condition_variable condition;
     std::size_t outstanding_batches = 0;
-    bool cancelled = false;
   };
 
   struct PreviewMessage {
@@ -473,10 +470,7 @@ class Session final : public std::enable_shared_from_this<Session> {
             options.ini_path = ini_file.string();
             options.program_prefix = (store->root() / workspace_id).string();
             options.batch_size = batch_size;
-            options.is_cancelled = [flow] {
-              std::lock_guard lock(flow->mutex);
-              return flow->cancelled;
-            };
+            options.stop_token = flow->stop_source.get_token();
             options.on_progress = [send](const gcode::ParseProgress& progress) {
               linuxcnc::v1::ProgramPreviewEvent event;
               auto* encoded = event.mutable_progress();
@@ -488,14 +482,15 @@ class Session final : public std::enable_shared_from_this<Session> {
               send(std::move(event), false, false, true);
             };
             options.on_batch = [flow, send](gcode::OperationBatch&& batch) {
-              if (batch.empty()) return true;
+              if (batch.empty()) return;
               const auto send_batch =
                   [flow, send](linuxcnc::v1::ProgramPreviewEvent&& event) {
                     std::unique_lock lock(flow->mutex);
                     flow->condition.wait(lock, [flow] {
-                      return flow->cancelled || flow->outstanding_batches < 2;
+                      return flow->stop_source.stop_requested() ||
+                             flow->outstanding_batches < 2;
                     });
-                    if (flow->cancelled) return false;
+                    if (flow->stop_source.stop_requested()) return false;
                     ++flow->outstanding_batches;
                     lock.unlock();
                     send(std::move(event), true, false);
@@ -512,7 +507,7 @@ class Session final : public std::enable_shared_from_this<Session> {
                 if (event.batch().operations().empty())
                   throw std::runtime_error(
                       "G-code operation exceeds preview frame byte limit");
-                if (!send_batch(std::move(event))) return false;
+                if (!send_batch(std::move(event))) return;
                 event.Clear();
                 encode_gcode_operation(operation,
                                        event.mutable_batch()->add_operations());
@@ -520,14 +515,11 @@ class Session final : public std::enable_shared_from_this<Session> {
                   throw std::runtime_error(
                       "G-code operation exceeds preview frame byte limit");
               }
-              return event.batch().operations().empty() ||
-                     send_batch(std::move(event));
+              if (!event.batch().operations().empty())
+                (void)send_batch(std::move(event));
             };
             const auto result = gcode::parse_file(source.string(), options);
-            {
-              std::lock_guard lock(flow->mutex);
-              if (flow->cancelled || result.cancelled) return;
-            }
+            if (result.cancelled) return;
             linuxcnc::v1::ProgramPreviewEvent event;
             auto* summary = event.mutable_summary();
             encode_gcode_extents(result.extents, summary->mutable_extents());
@@ -600,10 +592,7 @@ class Session final : public std::enable_shared_from_this<Session> {
   void fail() {
     if (closed_) return;
     closed_ = true;
-    {
-      std::lock_guard lock(preview_flow_->mutex);
-      preview_flow_->cancelled = true;
-    }
+    preview_flow_->stop_source.request_stop();
     preview_flow_->condition.notify_all();
     position_delivery_timer_.cancel();
     write_deadline_.cancel();

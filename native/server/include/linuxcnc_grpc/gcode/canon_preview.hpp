@@ -4,6 +4,7 @@
 #define LINUXCNC_GRPC_GCODE_CANON_PREVIEW_HPP
 
 #include <functional>
+#include <stop_token>
 
 #include "linuxcnc_grpc/gcode/operation_types.hpp"
 
@@ -34,19 +35,17 @@ struct ParseContext {
 
   // Progress callback
   std::function<void(const ParseProgress&)> progressCallback;
-  std::function<bool(OperationBatch&&)> batchCallback;
-  std::function<bool()> cancellationCallback;
+  std::function<void(OperationBatch&&)> batchCallback;
+  std::stop_token stopToken;
   std::size_t batchSize = 128;
   std::size_t operationCount = 0;
-  bool cancelled = false;
   size_t totalBytes = 0;
   size_t linesProcessed = 0;
 
   // Helper methods
   void addOperation(Operation&& op);
-  bool flushReadyBatch();
-  bool flushBatch();
-  bool cancellationRequested();
+  void flushReadyBatch();
+  void flushBatch();
   void updateExtents(const Position& pos);
   void reportProgress(size_t bytesRead);
 };

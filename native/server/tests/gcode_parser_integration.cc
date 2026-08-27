@@ -57,7 +57,6 @@ int main(int argc, char** argv) {
     assert(batch.size() <= options.batch_size);
     operations += batch.size();
     ++delivered;
-    return true;
   };
 
   const auto parsed = parser.parse_file(argv[2], options);
@@ -75,7 +74,6 @@ int main(int argc, char** argv) {
     preview_operations.insert(preview_operations.end(),
                               std::make_move_iterator(batch.begin()),
                               std::make_move_iterator(batch.end()));
-    return true;
   };
   const auto preview = parser.parse_file(argv[3], preview_options);
   assert(!preview.cancelled);
@@ -114,7 +112,6 @@ int main(int argc, char** argv) {
     compensated_operations.insert(compensated_operations.end(),
                                   std::make_move_iterator(batch.begin()),
                                   std::make_move_iterator(batch.end()));
-    return true;
   };
   const auto compensated = parser.parse_file(argv[4], compensated_options);
   assert(!compensated.cancelled);
@@ -146,7 +143,6 @@ int main(int argc, char** argv) {
     remap_operations.insert(remap_operations.end(),
                             std::make_move_iterator(batch.begin()),
                             std::make_move_iterator(batch.end()));
-    return true;
   };
   const auto remapped = parser.parse_file(argv[5], remap_options);
   assert(!remapped.cancelled);
@@ -174,7 +170,6 @@ int main(int argc, char** argv) {
     modal_free_operations.insert(modal_free_operations.end(),
                                  std::make_move_iterator(batch.begin()),
                                  std::make_move_iterator(batch.end()));
-    return true;
   };
   parser.parse_file(argv[6], modal_free_options);
   const auto metric_move = std::find_if(
@@ -188,15 +183,16 @@ int main(int argc, char** argv) {
   // A callback can cancel after a bounded batch. Cancellation is observed
   // before the next rs274 read/execute step and never removes that batch.
   std::size_t cancelled_batches = 0;
+  std::stop_source stop_source;
   ParseOptions cancelled_options;
   cancelled_options.ini_path = argv[1];
   cancelled_options.batch_size = 1;
   cancelled_options.on_batch = [&](OperationBatch&& batch) {
     assert(batch.size() == 1);
     ++cancelled_batches;
-    return true;
+    stop_source.request_stop();
   };
-  cancelled_options.is_cancelled = [&] { return cancelled_batches >= 1; };
+  cancelled_options.stop_token = stop_source.get_token();
   const auto cancelled = parser.parse_file(argv[2], cancelled_options);
   assert(cancelled.cancelled);
   // A single interpreter execute step may emit more than one canonical

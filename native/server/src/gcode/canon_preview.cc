@@ -431,7 +431,7 @@ void consume(ParseContext& context, const canon::ToolChange& event) {
 }  // namespace
 
 void ParseContext::addOperation(Operation&& operation) {
-  if (cancelled) return;
+  if (stopToken.stop_requested()) return;
   std::visit(
       [](const auto& value) {
         using T = std::decay_t<decltype(value)>;
@@ -482,17 +482,17 @@ void ParseContext::addOperation(Operation&& operation) {
   ++operationCount;
 }
 
-bool ParseContext::flushReadyBatch() {
+void ParseContext::flushReadyBatch() {
   if (!batchCallback || batchSize == 0 || operations.size() < batchSize)
-    return !cancelled;
-  return flushBatch();
+    return;
+  flushBatch();
 }
 
-bool ParseContext::flushBatch() {
-  if (!batchCallback || operations.empty()) return !cancelled;
+void ParseContext::flushBatch() {
+  if (!batchCallback || operations.empty()) return;
   const std::size_t max_batch = batchSize == 0 ? operations.size() : batchSize;
   std::size_t offset = 0;
-  while (offset < operations.size() && !cancelled) {
+  while (offset < operations.size() && !stopToken.stop_requested()) {
     std::size_t count = 0;
     std::size_t bytes = 0;
     while (offset + count < operations.size() && count < max_batch) {
@@ -509,17 +509,10 @@ bool ParseContext::flushBatch() {
     for (std::size_t index = 0; index < count; ++index)
       batch.push_back(std::move(operations[offset + index]));
     offset += count;
-    if (!batchCallback(std::move(batch))) cancelled = true;
+    batchCallback(std::move(batch));
   }
   operations.erase(operations.begin(),
                    operations.begin() + static_cast<std::ptrdiff_t>(offset));
-  return !cancelled;
-}
-
-bool ParseContext::cancellationRequested() {
-  if (cancelled) return true;
-  if (cancellationCallback && cancellationCallback()) cancelled = true;
-  return cancelled;
 }
 
 void ParseContext::updateExtents(const Position& position) {

@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <stop_token>
 #include <string>
 
 #include "linuxcnc_grpc/gcode/operation_types.hpp"
@@ -33,16 +34,16 @@ class ParseError : public std::runtime_error {
 
 // Callbacks are invoked by the parser worker, never by realtime LinuxCNC
 // code. The batch callback owns at most batch_size operations at a time and
-// returns false to stop delivery. Cancellation is checked between each
-// interpreter read/execute step.
+// receives ownership of each batch. Cancellation is checked between each
+// interpreter read/execute step through stop_token.
 struct ParseOptions {
   std::string ini_path;
   std::string program_prefix;
   std::size_t batch_size = 128;
   int progress_updates = 40;
-  std::function<bool(OperationBatch&&)> on_batch;
+  std::function<void(OperationBatch&&)> on_batch;
   std::function<void(const ParseProgress&)> on_progress;
-  std::function<bool()> is_cancelled;
+  std::stop_token stop_token;
 };
 
 // LinuxCNC's rs274 interpreter is not reentrant. Instances share a process

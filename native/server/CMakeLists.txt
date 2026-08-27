@@ -31,7 +31,7 @@ set(LINUXCNC_GRPC_DOMAIN_SOURCES
 )
 
 add_library(linuxcnc-grpc-domain STATIC ${LINUXCNC_GRPC_DOMAIN_SOURCES})
-target_compile_features(linuxcnc-grpc-domain PUBLIC cxx_std_17)
+target_compile_features(linuxcnc-grpc-domain PUBLIC cxx_std_20)
 target_include_directories(linuxcnc-grpc-domain
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -169,7 +169,7 @@ if(EXISTS "${LINUXCNC_ROOT}/lib")
 endif()
 
 add_executable(linuxcnc-grpc-server src/daemon/main.cc)
-target_compile_features(linuxcnc-grpc-server PRIVATE cxx_std_17)
+target_compile_features(linuxcnc-grpc-server PRIVATE cxx_std_20)
 target_link_libraries(linuxcnc-grpc-server PRIVATE linuxcnc-grpc-domain Threads::Threads)
 target_compile_options(linuxcnc-grpc-server PRIVATE -Wall -Wextra -Wpedantic)
 
@@ -283,17 +283,17 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
         "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_link_libraries(linuxcnc-grpc-server PRIVATE linuxcnc-grpc-wire)
     add_executable(linuxcnc-grpc-health-check src/health_check_main.cc)
-    target_compile_features(linuxcnc-grpc-health-check PRIVATE cxx_std_17)
+    target_compile_features(linuxcnc-grpc-health-check PRIVATE cxx_std_20)
     target_link_libraries(linuxcnc-grpc-health-check PRIVATE linuxcnc-grpc-proto)
     target_compile_options(linuxcnc-grpc-health-check PRIVATE -Wall -Wextra -Wpedantic)
     add_executable(linuxcnc-grpc-integration tests/grpc_integration.cc)
-    target_compile_features(linuxcnc-grpc-integration PRIVATE cxx_std_17)
+    target_compile_features(linuxcnc-grpc-integration PRIVATE cxx_std_20)
     target_compile_definitions(linuxcnc-grpc-integration PRIVATE BOOST_ERROR_CODE_HEADER_ONLY=1)
     target_include_directories(linuxcnc-grpc-integration PRIVATE ${Boost_INCLUDE_DIRS})
     target_link_libraries(linuxcnc-grpc-integration PRIVATE linuxcnc-grpc-proto)
     if(LINUXCNC_GRPC_HAS_NML AND LINUXCNC_GRPC_HAS_HAL)
         add_executable(linuxcnc-grpc-live-integration tests/grpc_live_integration.cc)
-        target_compile_features(linuxcnc-grpc-live-integration PRIVATE cxx_std_17)
+        target_compile_features(linuxcnc-grpc-live-integration PRIVATE cxx_std_20)
         target_compile_definitions(linuxcnc-grpc-live-integration PRIVATE BOOST_ERROR_CODE_HEADER_ONLY=1)
         target_include_directories(linuxcnc-grpc-live-integration PRIVATE ${Boost_INCLUDE_DIRS})
         target_link_libraries(linuxcnc-grpc-live-integration PRIVATE linuxcnc-grpc-proto)
@@ -318,13 +318,13 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
                 TIMEOUT 120)
         endif()
         add_executable(linuxcnc-protobuf-gcode-mapping-tests tests/protobuf_gcode_mapping_tests.cc)
-        target_compile_features(linuxcnc-protobuf-gcode-mapping-tests PRIVATE cxx_std_17)
+        target_compile_features(linuxcnc-protobuf-gcode-mapping-tests PRIVATE cxx_std_20)
         target_link_libraries(linuxcnc-protobuf-gcode-mapping-tests PRIVATE linuxcnc-grpc-wire)
         add_test(NAME linuxcnc-protobuf-gcode-mapping-tests
                  COMMAND linuxcnc-protobuf-gcode-mapping-tests)
         add_executable(linuxcnc-grpc-mapping-edge-tests
             tests/grpc_mapping_edge_tests.cc)
-        target_compile_features(linuxcnc-grpc-mapping-edge-tests PRIVATE cxx_std_17)
+        target_compile_features(linuxcnc-grpc-mapping-edge-tests PRIVATE cxx_std_20)
         target_link_libraries(linuxcnc-grpc-mapping-edge-tests PRIVATE linuxcnc-grpc-wire)
         target_compile_options(linuxcnc-grpc-mapping-edge-tests PRIVATE
             -Wall -Wextra -Wpedantic)
@@ -333,7 +333,7 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
         add_executable(linuxcnc-grpc-component-outbox-tests
             tests/component_outbox_tests.cc)
         target_compile_features(linuxcnc-grpc-component-outbox-tests PRIVATE
-            cxx_std_17)
+            cxx_std_20)
         target_include_directories(linuxcnc-grpc-component-outbox-tests PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/src")
         target_link_libraries(linuxcnc-grpc-component-outbox-tests PRIVATE
@@ -345,7 +345,7 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
         add_executable(linuxcnc-grpc-callback-runtime-tests
             tests/callback_runtime_tests.cc)
         target_compile_features(linuxcnc-grpc-callback-runtime-tests PRIVATE
-            cxx_std_17)
+            cxx_std_20)
         target_link_libraries(linuxcnc-grpc-callback-runtime-tests PRIVATE
             linuxcnc-grpc-proto Threads::Threads)
         target_include_directories(linuxcnc-grpc-callback-runtime-tests PRIVATE
@@ -371,12 +371,12 @@ install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 if(LINUXCNC_GRPC_BUILD_TESTS)
     enable_testing()
     add_executable(linuxcnc-grpc-domain-tests tests/domain_tests.cc)
-    target_compile_features(linuxcnc-grpc-domain-tests PRIVATE cxx_std_17)
+    target_compile_features(linuxcnc-grpc-domain-tests PRIVATE cxx_std_20)
     target_link_libraries(linuxcnc-grpc-domain-tests PRIVATE linuxcnc-grpc-domain Threads::Threads)
     target_compile_options(linuxcnc-grpc-domain-tests PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME linuxcnc-grpc-domain-tests COMMAND linuxcnc-grpc-domain-tests)
     add_executable(linuxcnc-grpc-native-edge-tests tests/native_edge_tests.cc)
-    target_compile_features(linuxcnc-grpc-native-edge-tests PRIVATE cxx_std_17)
+    target_compile_features(linuxcnc-grpc-native-edge-tests PRIVATE cxx_std_20)
     target_link_libraries(linuxcnc-grpc-native-edge-tests PRIVATE
         linuxcnc-grpc-domain Threads::Threads)
     target_compile_options(linuxcnc-grpc-native-edge-tests PRIVATE
@@ -410,7 +410,7 @@ if(LINUXCNC_GRPC_BUILD_TESTS)
                 ${LINUXCNC_GRPC_CALLBACK_SOURCES})
     add_executable(linuxcnc-grpc-hal-adapter-contract-tests
         tests/hal_adapter_contract_tests.cc)
-    target_compile_features(linuxcnc-grpc-hal-adapter-contract-tests PRIVATE cxx_std_17)
+    target_compile_features(linuxcnc-grpc-hal-adapter-contract-tests PRIVATE cxx_std_20)
     target_link_libraries(linuxcnc-grpc-hal-adapter-contract-tests PRIVATE linuxcnc-grpc-domain)
     target_compile_options(linuxcnc-grpc-hal-adapter-contract-tests PRIVATE
         -Wall -Wextra -Wpedantic)
@@ -419,7 +419,7 @@ if(LINUXCNC_GRPC_BUILD_TESTS)
 
     if(LINUXCNC_GRPC_HAS_RS274)
         add_executable(linuxcnc-grpc-gcode-parser-integration tests/gcode_parser_integration.cc)
-        target_compile_features(linuxcnc-grpc-gcode-parser-integration PRIVATE cxx_std_17)
+        target_compile_features(linuxcnc-grpc-gcode-parser-integration PRIVATE cxx_std_20)
         target_link_libraries(linuxcnc-grpc-gcode-parser-integration PRIVATE linuxcnc-grpc-domain)
         add_test(NAME linuxcnc-grpc-gcode-parser-integration
             COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_gcode_parser_integration.sh"
@@ -429,7 +429,7 @@ if(LINUXCNC_GRPC_BUILD_TESTS)
     if(LINUXCNC_GRPC_HAS_SCOPE)
         add_executable(linuxcnc-grpc-scope-controller-contract-tests
             tests/scope_controller_contract_tests.cc)
-        target_compile_features(linuxcnc-grpc-scope-controller-contract-tests PRIVATE cxx_std_17)
+        target_compile_features(linuxcnc-grpc-scope-controller-contract-tests PRIVATE cxx_std_20)
         target_link_libraries(linuxcnc-grpc-scope-controller-contract-tests PRIVATE
             linuxcnc-grpc-domain)
         target_compile_definitions(linuxcnc-grpc-scope-controller-contract-tests PRIVATE ULAPI)

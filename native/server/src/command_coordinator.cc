@@ -97,7 +97,7 @@ CommandTicket CommandCoordinator::submit_with_context(
 }
 
 CommandTicket CommandCoordinator::submit_with_context(
-    ContextCommandAction action, std::function<bool()> cancelled,
+    ContextCommandAction action, std::stop_token stop_token,
     CommandPriority priority) {
   if (!action) throw std::invalid_argument("command action must not be empty");
   auto state = std::make_shared<CommandTicket::State>();
@@ -113,9 +113,8 @@ CommandTicket CommandCoordinator::submit_with_context(
   queue.push_back(
       Item{sequence,
            {},
-           [action = std::move(action),
-            cancelled = std::move(cancelled)](CommandContext& context) {
-             context.cancelled = cancelled;
+           [action = std::move(action), stop_token](CommandContext& context) {
+             context.stop_token = stop_token;
              action(context);
            },
            state});

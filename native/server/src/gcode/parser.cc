@@ -111,7 +111,7 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
   context.extents.reset();
   context.progressCallback = options.on_progress;
   context.batchCallback = options.on_batch;
-  context.cancellationCallback = options.is_cancelled;
+  context.stopToken = options.stop_token;
   context.batchSize = options.batch_size;
 
   const auto preview_state = load_preview_state(options.ini_path);
@@ -197,10 +197,10 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
       // This check is deliberately before read() and after execute(). It lets
       // RPC cancellation stop the wait without undoing an already accepted
       // interpreter step.
-      if (context.cancellationRequested()) break;
+      if (context.stopToken.stop_requested()) break;
 
       result = interpreter_->read();
-      if (context.cancellationRequested()) break;
+      if (context.stopToken.stop_requested()) break;
       if (!result_ok(result)) break;
 
       result = interpreter_->execute();
@@ -208,13 +208,13 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
       consumeRecordingEvents(recording_session, context);
       if (recording_session.limit_exceeded())
         throw std::runtime_error("G-code preview resource limit exceeded");
-      if (!context.cancellationRequested()) {
+      if (!context.stopToken.stop_requested()) {
         // Delivery happens after execute returns, outside canonical callback
         // code, so a gRPC adapter can enqueue work without doing network I/O
         // from the interpreter/canonical path.
-        if (!context.flushReadyBatch()) break;
+        context.flushReadyBatch();
       }
-      if (context.cancellationRequested()) break;
+      if (context.stopToken.stop_requested()) break;
 
       if (context.progressCallback && line_count % progress_interval == 0) {
         std::size_t estimated_bytes =
@@ -225,9 +225,8 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
       }
     }
 
-    const bool cancelled = context.cancellationRequested();
-    if (!cancelled && result != INTERP_ENDFILE && result != INTERP_EXIT &&
-        !result_ok(result)) {
+    if (!context.stopToken.stop_requested() && result != INTERP_ENDFILE &&
+        result != INTERP_EXIT && !result_ok(result)) {
       char error_buffer[256]{};
       interpreter_->error_text(result, error_buffer, sizeof(error_buffer));
       const int line = interpreter_->sequence_number();
@@ -238,11 +237,13 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
 
     interpreter_->close();
     opened = false;
-    consumeRecordingEvents(recording_session, context);
 
     // Flush the final partial batch only if the consumer is still connected.
     // A cancelled stream must not retain or deliver an unbounded tail.
-    if (!context.cancelled) context.flushBatch();
+    if (!context.stopToken.stop_requested()) {
+      consumeRecordingEvents(recording_session, context);
+      context.flushBatch();
+    }
     if (context.progressCallback) context.reportProgress(context.totalBytes);
   } catch (const std::domain_error& error) {
     const int line = interpreter_ ? interpreter_->sequence_number() : 0;
@@ -263,7 +264,7 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
   result.operations = std::move(context.operations);
   result.extents = context.extents;
   result.operationCount = context.operationCount;
-  result.cancelled = context.cancelled;
+  result.cancelled = context.stopToken.stop_requested();
   return result;
 }
 

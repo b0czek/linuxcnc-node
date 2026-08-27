@@ -167,11 +167,6 @@ void callback_runtime_test() {
   assert(!racing_gate->invoke([](RacingTarget&) { assert(false); }));
   racing_gate->detach();
 
-  CancellationToken token;
-  assert(!token.cancelled());
-  assert(token.cancel());
-  assert(!token.cancel());
-  assert(token.cancelled());
 }
 
 void cleanup_reserve_saturation_test() {

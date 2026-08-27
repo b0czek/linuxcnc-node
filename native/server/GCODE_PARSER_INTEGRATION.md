@@ -14,7 +14,7 @@ native/server/include/linuxcnc_grpc/gcode/canon_preview.hpp
 native/server/include/linuxcnc_grpc/gcode/operation_types.hpp
 ```
 
-Compile as C++17 with `-DULAPI`. The LinuxCNC include roots required by the
+Compile as C++20 with `-DULAPI`. The LinuxCNC include roots required by the
 implementation files are:
 
 ```text
@@ -69,10 +69,11 @@ and installed as LinuxCNC's serialized `INI_FILE_NAME` environment convention,
 which is how interpreter initialization discovers `[PYTHON]` and `REMAP`
 settings. Callers should use the daemon's configured INI for every workspace
 parse. `batch_size` bounds each `OperationBatch` delivered to
-`on_batch`. Returning `false` from that callback or returning `true` from
-`is_cancelled` stops the parser at the next read/execute boundary. A callback
-never performs network I/O from canonical/realtime code: it runs on the parser
-worker thread after the interpreter step.
+`on_batch`. Callers request cancellation through the `std::stop_source`
+associated with `ParseOptions::stop_token`; the parser stops at the next
+read/execute boundary. A callback never performs network I/O from
+canonical/realtime code: it runs on the parser worker thread after the
+interpreter step.
 
 The optional `gcode_parser_integration` test checks complete batching, extents,
 cutter-compensated geometry, Python remap motion through both `self.execute()`

@@ -45,9 +45,8 @@ constexpr std::size_t kErrorBatchSize = 32;
 
 class CommandTaskReactor final : public ::grpc::ServerUnaryReactor {
  public:
-  using Submit =
-      std::function<::grpc::Status(const std::shared_ptr<CancellationToken>&,
-                                   CommandTicket*, CommandWaitPolicy*)>;
+  using Submit = std::function<::grpc::Status(std::stop_token, CommandTicket*,
+                                              CommandWaitPolicy*)>;
 
   CommandTaskReactor(BoundedExecutor& executor,
                      ActiveCallbackRegistry& registry,
@@ -63,39 +62,38 @@ class CommandTaskReactor final : public ::grpc::ServerUnaryReactor {
       shutdown();
       return;
     }
-    if (!executor.submit(
-            [weak_gate, submit = std::move(submit), token = token_]() mutable {
-              CommandTicket ticket;
-              CommandWaitPolicy policy = CommandWaitPolicy::Completed;
-              ::grpc::Status status;
-              try {
-                status = submit(token, &ticket, &policy);
-              } catch (const std::exception& error) {
-                status = {::grpc::StatusCode::INTERNAL, error.what()};
-              }
-              auto gate = weak_gate.lock();
-              if (!gate) return;
-              if (!status.ok()) {
-                gate->invoke([&](CommandTaskReactor& reactor) {
-                  reactor.finish(std::move(status));
-                });
-                return;
-              }
-              ticket.observe(policy, [weak_gate](const CommandResult& result) {
-                auto observed_gate = weak_gate.lock();
-                if (!observed_gate) return;
-                observed_gate->invoke([&](CommandTaskReactor& reactor) {
-                  reactor.complete(result);
-                });
-              });
-            })) {
+    if (!executor.submit([weak_gate, submit = std::move(submit),
+                          stop_token = stop_source_.get_token()]() mutable {
+          CommandTicket ticket;
+          CommandWaitPolicy policy = CommandWaitPolicy::Completed;
+          ::grpc::Status status;
+          try {
+            status = submit(stop_token, &ticket, &policy);
+          } catch (const std::exception& error) {
+            status = {::grpc::StatusCode::INTERNAL, error.what()};
+          }
+          auto gate = weak_gate.lock();
+          if (!gate) return;
+          if (!status.ok()) {
+            gate->invoke([&](CommandTaskReactor& reactor) {
+              reactor.finish(std::move(status));
+            });
+            return;
+          }
+          ticket.observe(policy, [weak_gate](const CommandResult& result) {
+            auto observed_gate = weak_gate.lock();
+            if (!observed_gate) return;
+            observed_gate->invoke(
+                [&](CommandTaskReactor& reactor) { reactor.complete(result); });
+          });
+        })) {
       finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
               "blocking work queue is full"});
     }
   }
 
   void OnCancel() override {
-    token_->cancel();
+    stop_source_.request_stop();
     finish({::grpc::StatusCode::CANCELLED,
             "command wait cancelled; any accepted work continues"});
   }
@@ -107,7 +105,7 @@ class CommandTaskReactor final : public ::grpc::ServerUnaryReactor {
   }
 
   void shutdown() {
-    token_->cancel();
+    stop_source_.request_stop();
     finish({::grpc::StatusCode::UNAVAILABLE,
             "server shutting down; any accepted command continues"});
   }
@@ -137,8 +135,7 @@ class CommandTaskReactor final : public ::grpc::ServerUnaryReactor {
   }
 
   ExecuteCommandResponse* response_;
-  std::shared_ptr<CancellationToken> token_ =
-      std::make_shared<CancellationToken>();
+  std::stop_source stop_source_;
   std::shared_ptr<LifetimeGate<CommandTaskReactor>> gate_;
   ActiveCallbackRegistry::Registration registration_;
 };
@@ -218,9 +215,8 @@ class MachineServiceImpl final : public MachineCallbackBase,
                                         GetStatusResponse* response) override {
     return new detail::UnaryTaskReactor<GetStatusResponse>(
         blocking_, callbacks_, response,
-        [this](const CancellationToken& cancelled,
-               GetStatusResponse* task_response) {
-          if (cancelled.cancelled()) {
+        [this](std::stop_token stop_token, GetStatusResponse* task_response) {
+          if (stop_token.stop_requested()) {
             return ::grpc::Status(::grpc::StatusCode::CANCELLED,
                                   "RPC cancelled");
           }
@@ -252,16 +248,17 @@ class MachineServiceImpl final : public MachineCallbackBase,
     return new CommandTaskReactor(
         control_, callbacks_, response,
         [this, owned_request = std::move(owned_request)](
-            const std::shared_ptr<CancellationToken>& cancelled,
-            CommandTicket* ticket, CommandWaitPolicy* policy) {
-          return submit_command(cancelled, owned_request.get(), ticket, policy);
+            std::stop_token stop_token, CommandTicket* ticket,
+            CommandWaitPolicy* policy) {
+          return submit_command(stop_token, owned_request.get(), ticket,
+                                policy);
         });
   }
 
-  ::grpc::Status submit_command(
-      const std::shared_ptr<CancellationToken>& cancelled,
-      const ExecuteCommandRequest* request, CommandTicket* ticket,
-      CommandWaitPolicy* policy) {
+  ::grpc::Status submit_command(std::stop_token stop_token,
+                                const ExecuteCommandRequest* request,
+                                CommandTicket* ticket,
+                                CommandWaitPolicy* policy) {
     NmlCommand command;
     switch (request->command_case()) {
       case ExecuteCommandRequest::kSetTaskMode:
@@ -573,8 +570,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
     }
     if (!validation) return Invalid(validation.message);
     try {
-      *ticket = nml_.submit(std::move(command),
-                            [cancelled] { return cancelled->cancelled(); });
+      *ticket = nml_.submit(std::move(command), stop_token);
     } catch (const std::exception& error) {
       const auto message = std::string(error.what());
       const auto code = message.find("queue is full") != std::string::npos
@@ -601,8 +597,8 @@ class MachineServiceImpl final : public MachineCallbackBase,
     return new detail::UnaryTaskReactor<google::protobuf::Empty>(
         blocking_, callbacks_, response,
         [this, owned_request = std::move(owned_request)](
-            const CancellationToken& cancelled, google::protobuf::Empty*) {
-          if (cancelled.cancelled()) {
+            std::stop_token stop_token, google::protobuf::Empty*) {
+          if (stop_token.stop_requested()) {
             return ::grpc::Status(::grpc::StatusCode::CANCELLED,
                                   "RPC cancelled");
           }
@@ -638,8 +634,8 @@ class MachineServiceImpl final : public MachineCallbackBase,
       google::protobuf::Empty* response) override {
     return new detail::UnaryTaskReactor<google::protobuf::Empty>(
         blocking_, callbacks_, response,
-        [this](const CancellationToken& cancelled, google::protobuf::Empty*) {
-          if (cancelled.cancelled()) {
+        [this](std::stop_token stop_token, google::protobuf::Empty*) {
+          if (stop_token.stop_requested()) {
             return ::grpc::Status(::grpc::StatusCode::CANCELLED,
                                   "RPC cancelled");
           }

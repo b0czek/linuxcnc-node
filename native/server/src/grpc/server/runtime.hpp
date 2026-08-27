@@ -48,7 +48,7 @@ class ServerRuntime {
   ServerRuntime(const ServerRuntime&) = delete;
   ServerRuntime& operator=(const ServerRuntime&) = delete;
 
-  // Starts a C++17-compatible signal waiter. The caller must block the same
+  // Starts the dedicated signal waiter. The caller must block the same
   // signal set in the thread that calls this method before starting it.
   void start_control_thread(const sigset_t& shutdown_signals);
 

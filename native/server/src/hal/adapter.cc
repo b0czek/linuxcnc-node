@@ -643,12 +643,12 @@ std::optional<HalAdapterValue> LinuxCncHalAdapter::read(
 
 std::vector<std::optional<HalAdapterValue>> LinuxCncHalAdapter::read_many(
     const std::vector<HalAdapterReference>& references,
-    const std::function<bool()>& cancelled) const {
+    std::stop_token stop_token) const {
   HalMutex lock;
   std::vector<std::optional<HalAdapterValue>> result;
   result.reserve(references.size());
   for (const auto& reference : references) {
-    if (cancelled && cancelled())
+    if (stop_token.stop_requested())
       throw HalAdapterError("HAL read cancelled", -ECANCELED);
     const auto item = resolve_unlocked(reference);
     result.push_back(item ? std::optional<HalAdapterValue>(
@@ -675,13 +675,12 @@ bool LinuxCncHalAdapter::write(const HalAdapterReference& reference,
 
 std::size_t LinuxCncHalAdapter::write_many(
     const std::vector<std::pair<HalAdapterReference, HalAdapterValue>>& updates,
-    std::vector<HalAdapterValue>* written,
-    const std::function<bool()>& cancelled) {
+    std::vector<HalAdapterValue>* written, std::stop_token stop_token) {
   HalMutex lock;
   std::vector<ResolvedItem> resolved;
   resolved.reserve(updates.size());
   for (const auto& [reference, value] : updates) {
-    if (cancelled && cancelled())
+    if (stop_token.stop_requested())
       throw HalAdapterError("HAL write cancelled", -ECANCELED);
     const auto item = resolve_unlocked(reference);
     if (!item || !item->data || !same_type(item->type, value)) return 0;
@@ -694,7 +693,7 @@ std::size_t LinuxCncHalAdapter::write_many(
     written->clear();
     written->reserve(updates.size());
   }
-  if (cancelled && cancelled())
+  if (stop_token.stop_requested())
     throw HalAdapterError("HAL write cancelled", -ECANCELED);
   for (std::size_t index = 0; index < updates.size(); ++index) {
     const auto& value = updates[index].second;
