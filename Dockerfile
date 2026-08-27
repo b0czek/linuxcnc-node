@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       cmake \
       dpkg-dev \
       git \
+      libarchive-dev \
       libboost-dev \
       libgrpc++-dev \
       libgrpc-dev \
