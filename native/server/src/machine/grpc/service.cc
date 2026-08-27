@@ -521,8 +521,13 @@ class MachineServiceImpl final : public MachineCallbackBase,
         command.kind = NmlCommandKind::LoadToolTable;
         break;
       case ExecuteCommandRequest::kSetTool: {
+        if (!request->set_tool().has_tool())
+          return Invalid("set_tool.tool is required");
         command.kind = NmlCommandKind::SetTool;
         const auto& source = request->set_tool().tool();
+        if (source.offset().values_size() > 9 ||
+            source.wear_offset().values_size() > 9)
+          return Invalid("tool offsets must contain at most 9 axes");
         command.tool.tool_no = source.tool_no();
         command.tool.has_pocket_no = source.has_pocket_no();
         command.tool.pocket_no = source.pocket_no();

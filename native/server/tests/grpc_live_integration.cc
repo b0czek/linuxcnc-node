@@ -721,7 +721,91 @@ int main(int argc, char** argv) {
   }
   assert(tool_updated);
 
+  ExecuteCommandRequest create_tool;
+  auto* created_tool = create_tool.mutable_set_tool()->mutable_tool();
+  created_tool->set_tool_no(77);
+  created_tool->set_pocket_no(42);
+  created_tool->set_diameter(7.7);
+  auto create_response =
+      execute_completed(machine.get(), std::move(create_tool));
+  assert(create_response.command_sequence() != 0);
+  const auto created_deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  bool tool_created = false;
+  while (std::chrono::steady_clock::now() < created_deadline && !tool_created) {
+    const auto status = get_status_with_retry(machine.get());
+    if (status.status().tool_table_size() > 42) {
+      const auto& tool = status.status().tool_table(42);
+      tool_created = tool.tool_no() == 77 && tool.pocket_no() == 42 &&
+                     tool.diameter() == 7.7;
+    }
+    if (!tool_created)
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+  assert(tool_created);
+
+  ExecuteCommandRequest move_tool;
+  auto* moved_tool = move_tool.mutable_set_tool()->mutable_tool();
+  moved_tool->set_tool_no(77);
+  moved_tool->set_pocket_no(43);
+  (void)execute_completed(machine.get(), std::move(move_tool));
+  const auto moved_status = get_status_with_retry(machine.get());
+  assert(moved_status.status().tool_table_size() > 43);
+  assert(moved_status.status().tool_table(42).tool_no() == -1);
+  assert(moved_status.status().tool_table(43).tool_no() == 77);
+
+  ExecuteCommandRequest load_created_tool;
+  load_created_tool.mutable_mdi()->set_command("T77 M6");
+  (void)execute_completed(machine.get(), std::move(load_created_tool));
+  const auto loaded_deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  bool tool_loaded = false;
+  while (std::chrono::steady_clock::now() < loaded_deadline && !tool_loaded) {
+    const auto status = get_status_with_retry(machine.get());
+    tool_loaded = status.status().io().tool().tool_in_spindle() == 77 &&
+                  status.status().tool_table(0).tool_no() == 77;
+    if (!tool_loaded)
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+  assert(tool_loaded);
+
+  ExecuteCommandRequest update_loaded_tool;
+  auto* loaded_tool = update_loaded_tool.mutable_set_tool()->mutable_tool();
+  loaded_tool->set_tool_no(77);
+  loaded_tool->set_diameter(8.8);
+  loaded_tool->set_comment("updated while loaded");
+  (void)execute_completed(machine.get(), std::move(update_loaded_tool));
+  const auto updated_loaded_status = get_status_with_retry(machine.get());
+  assert(updated_loaded_status.status().tool_table(0).tool_no() == 77);
+  assert(updated_loaded_status.status().tool_table(0).diameter() == 8.8);
+  assert(updated_loaded_status.status().tool_table(0).comment() ==
+         "updated while loaded");
+
+  ExecuteCommandRequest unload_created_tool;
+  unload_created_tool.mutable_mdi()->set_command("T0 M6");
+  (void)execute_completed(machine.get(), std::move(unload_created_tool));
+  ExecuteCommandRequest delete_tool;
+  delete_tool.mutable_delete_tool()->set_tool_no(77);
+  const auto delete_response =
+      execute_completed(machine.get(), std::move(delete_tool));
+  assert(delete_response.command_sequence() != 0);
+  const auto deleted_status = get_status_with_retry(machine.get());
+  assert(deleted_status.status().tool_table_size() <= 43 ||
+         deleted_status.status().tool_table(43).tool_no() == -1);
+
   expect_command_error(machine.get(), ExecuteCommandRequest{},
+                       grpc::StatusCode::INVALID_ARGUMENT);
+  ExecuteCommandRequest missing_tool;
+  missing_tool.mutable_set_tool();
+  expect_command_error(machine.get(), std::move(missing_tool),
+                       grpc::StatusCode::INVALID_ARGUMENT);
+  ExecuteCommandRequest oversized_tool;
+  auto* oversized = oversized_tool.mutable_set_tool()->mutable_tool();
+  oversized->set_tool_no(88);
+  oversized->set_pocket_no(88);
+  for (int axis = 0; axis < 10; ++axis)
+    oversized->mutable_offset()->add_values(axis);
+  expect_command_error(machine.get(), std::move(oversized_tool),
                        grpc::StatusCode::INVALID_ARGUMENT);
 
   grpc::ClientContext clear_position_context;

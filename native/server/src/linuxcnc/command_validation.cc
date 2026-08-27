@@ -44,6 +44,12 @@ bool has_axis(const NmlStatusSnapshot& status, std::int32_t index) {
 }
 
 NmlCommandValidation validate_tool(const NmlToolEntry& tool) {
+  if (tool.tool_no <= 0) return invalid("tool number must be positive");
+  if (tool.has_pocket_no && (tool.pocket_no <= 0 || tool.pocket_no > 1000))
+    return invalid("tool pocket must be between 1 and 1000");
+  if (tool.offset_values > tool.offset.values.size() ||
+      tool.wear_offset_values > tool.wear_offset.values.size())
+    return invalid("tool offsets must contain at most 9 axes");
   if (tool.has_offset) {
     for (std::size_t index = 0; index < tool.offset_values; ++index) {
       auto result = finite(tool.offset.values[index], "tool offset");
@@ -57,7 +63,7 @@ NmlCommandValidation validate_tool(const NmlToolEntry& tool) {
     }
   }
   if (tool.has_diameter) {
-    auto result = finite(tool.diameter, "tool diameter");
+    auto result = nonnegative(tool.diameter, "tool diameter");
     if (!result) return result;
   }
   if (tool.has_front_angle) {
@@ -68,6 +74,12 @@ NmlCommandValidation validate_tool(const NmlToolEntry& tool) {
     auto result = finite(tool.back_angle, "tool back angle");
     if (!result) return result;
   }
+  if (tool.has_orientation && (tool.orientation < 0 || tool.orientation > 9))
+    return invalid("tool orientation must be between 0 and 9");
+  if (tool.has_comment && (tool.comment.size() >= 40 ||
+                           tool.comment.find('\n') != std::string::npos ||
+                           tool.comment.find('\r') != std::string::npos))
+    return invalid("tool comment must be at most 39 bytes without newlines");
   return {};
 }
 
@@ -154,6 +166,9 @@ NmlCommandValidation validate_nml_command(
       return finite(command.number, "analog output value");
     case NmlCommandKind::SetTool:
       return validate_tool(command.tool);
+    case NmlCommandKind::DeleteTool:
+      return command.integer > 0 ? NmlCommandValidation{}
+                                 : invalid("tool number must be positive");
     default:
       return {};
   }

@@ -5,7 +5,6 @@
 #include <condition_variable>
 #include <cstdio>
 #include <cstring>
-#include <filesystem>
 #include <mutex>
 #include <stdexcept>
 #include <thread>
@@ -15,7 +14,6 @@
 #include "cms.hh"
 #include "emc.hh"
 #include "emc_nml.hh"
-#include "inifile.h"
 #include "nml.hh"
 #include "nml_oi.hh"
 #include "rcs.hh"
@@ -361,9 +359,6 @@ struct NmlAdapter::Impl {
   OwnedChannel<RCS_STAT_CHANNEL> status_channel;
   OwnedChannel<NML> error_channel;
   CommandCompletionTracker completions{command_completion_timeout};
-  mutable std::mutex tool_mutex;
-  bool tool_mmap_ready = false;
-  std::string tool_table_filename;
 
   void fail_status_channel() {
     status_channel.failed();
@@ -379,85 +374,6 @@ struct NmlAdapter::Impl {
     return false;
   }
 
-  bool ensure_tool_mmap_unlocked() {
-    if (tool_mmap_ready) return true;
-    tool_mmap_ready = tool_mmap_user() == 0;
-    return tool_mmap_ready;
-  }
-
-  std::optional<int> update_tool_data(NmlToolEntry* source) {
-    std::lock_guard lock(tool_mutex);
-    if (!ensure_tool_mmap_unlocked()) return std::nullopt;
-    int index = tooldata_find_index_for_tool(source->tool_no);
-    bool is_new = false;
-    if (index < 0) {
-      const int next_index = tooldata_last_index_get() + 1;
-      const int first_index = tool_mmap_is_random_toolchanger() ? 0 : 1;
-      for (int candidate = first_index; candidate < next_index; ++candidate) {
-        CANON_TOOL_TABLE candidate_entry;
-        if (tooldata_get(&candidate_entry, candidate) == IDX_OK &&
-            candidate_entry.toolno < 0) {
-          index = candidate;
-          is_new = true;
-          break;
-        }
-      }
-      if (index < 0) {
-        index = next_index;
-        is_new = true;
-      }
-      if (index >= CANON_POCKETS_MAX) return std::nullopt;
-    }
-    CANON_TOOL_TABLE entry = tooldata_entry_init();
-    if (!is_new && tooldata_get(&entry, index) != IDX_OK) return std::nullopt;
-    entry.toolno = source->tool_no;
-    if (source->has_pocket_no) entry.pocketno = source->pocket_no;
-    if (source->has_offset) {
-      auto values = from_emc_pose(entry.offset);
-      std::copy_n(source->offset.values.begin(), source->offset_values,
-                  values.values.begin());
-      entry.offset = to_emc_pose(values);
-    }
-    if (source->has_wear_offset) {
-      auto values = from_emc_pose(entry.wear_offset);
-      std::copy_n(source->wear_offset.values.begin(),
-                  source->wear_offset_values, values.values.begin());
-      entry.wear_offset = to_emc_pose(values);
-    }
-    if (source->has_diameter) entry.diameter = source->diameter;
-    if (source->has_front_angle) entry.frontangle = source->front_angle;
-    if (source->has_back_angle) entry.backangle = source->back_angle;
-    if (source->has_orientation) entry.orientation = source->orientation;
-    if (source->has_comment) {
-      std::strncpy(entry.comment, source->comment.c_str(),
-                   sizeof(entry.comment) - 1);
-      entry.comment[sizeof(entry.comment) - 1] = '\0';
-    }
-    if (tooldata_put(entry, index) == IDX_FAIL) return std::nullopt;
-    if (!tool_table_filename.empty() &&
-        tooldata_save(tool_table_filename.c_str()) != 0)
-      return std::nullopt;
-    fill_tool(entry, source);
-    return index;
-  }
-
-  void read_tool_table_path(const std::string& ini_filename) {
-    {
-      std::lock_guard lock(tool_mutex);
-      if (!tool_table_filename.empty()) return;
-    }
-    if (ini_filename.empty()) return;
-    char filename[LINELEN] = {};
-    if (iniFindString(ini_filename.c_str(), "TOOL_TABLE", "EMCIO", filename,
-                      sizeof(filename)) != 0 ||
-        filename[0] == '\0')
-      return;
-    std::filesystem::path path(filename);
-    if (path.is_relative())
-      path = std::filesystem::path(ini_filename).parent_path() / path;
-    std::lock_guard lock(tool_mutex);
-    tool_table_filename = std::filesystem::absolute(path).string();
-  }
 #endif
 };
 
@@ -625,19 +541,15 @@ NmlStatusPoll NmlAdapter::poll_status(NmlStatusSnapshot* snapshot) {
   snapshot->io_stat.flood = status->io.coolant.flood;
   snapshot->io_stat.estop = status->io.aux.estop;
   snapshot->tool_table.clear();
-  impl_->read_tool_table_path(snapshot->ini_filename);
-  {
-    std::lock_guard tool_lock(impl_->tool_mutex);
-    if (impl_->ensure_tool_mmap_unlocked()) {
-      const int last =
-          std::min(CANON_POCKETS_MAX - 1, tooldata_last_index_get());
+  if (tool_mmap_user() == 0) {
+    CANON_TOOL_TABLE table[CANON_POCKETS_MAX];
+    int last = 0;
+    if (tooldata_snapshot(table, &last) == 0) {
+      last = std::min(CANON_POCKETS_MAX - 1, last);
       for (int index = 0; index <= last; ++index) {
-        CANON_TOOL_TABLE entry{};
-        if (tooldata_get(&entry, index) == IDX_OK) {
-          NmlToolEntry value;
-          fill_tool(entry, &value);
-          snapshot->tool_table.push_back(std::move(value));
-        }
+        NmlToolEntry value;
+        fill_tool(table[index], &value);
+        snapshot->tool_table.push_back(std::move(value));
       }
     }
   }
@@ -762,7 +674,6 @@ CommandTicket NmlAdapter::submit(
         }
         if (command.prepare) command.prepare(command);
         std::unique_ptr<RCS_CMD_MSG> message;
-        bool direct_tool_mutation = false;
         bool composite_accepted = false;
         switch (command.kind) {
           case NmlCommandKind::SetTaskMode: {
@@ -1025,41 +936,55 @@ CommandTicket NmlAdapter::submit(
             break;
           }
           case NmlCommandKind::SetTool: {
-            // Keep the shared tool table (including comment and wear data)
-            // coherent before sending the corresponding NML offset command.
-            const auto tooldata_index = impl_->update_tool_data(&command.tool);
-            if (!tooldata_index) {
-              throw std::runtime_error("unable to update LinuxCNC tool table");
-            }
-            auto value = std::make_unique<EMC_TOOL_SET_OFFSET>();
-            value->pocket = *tooldata_index;
+            auto value = std::make_unique<EMC_TOOL_UPDATE>();
             value->toolno = command.tool.tool_no;
+            if (command.tool.has_pocket_no) {
+              value->fields |= EMC_TOOL_UPDATE_POCKET;
+              value->pocket = command.tool.pocket_no;
+            }
+            if (command.tool.has_offset) {
+              value->fields |= EMC_TOOL_UPDATE_OFFSET;
+              value->offset_axes = command.tool.offset_values == 9
+                                       ? 0x1ff
+                                       : (1 << command.tool.offset_values) - 1;
+            }
+            if (command.tool.has_wear_offset) {
+              value->fields |= EMC_TOOL_UPDATE_WEAR_OFFSET;
+              value->wear_offset_axes =
+                  command.tool.wear_offset_values == 9
+                      ? 0x1ff
+                      : (1 << command.tool.wear_offset_values) - 1;
+            }
             value->offset = to_emc_pose(command.tool.offset);
             value->wear_offset = to_emc_pose(command.tool.wear_offset);
-            value->wear_offset_valid = true;
-            value->diameter = command.tool.diameter;
-            value->frontangle = command.tool.front_angle;
-            value->backangle = command.tool.back_angle;
-            value->orientation = command.tool.orientation;
+            if (command.tool.has_diameter) {
+              value->fields |= EMC_TOOL_UPDATE_DIAMETER;
+              value->diameter = command.tool.diameter;
+            }
+            if (command.tool.has_front_angle) {
+              value->fields |= EMC_TOOL_UPDATE_FRONTANGLE;
+              value->frontangle = command.tool.front_angle;
+            }
+            if (command.tool.has_back_angle) {
+              value->fields |= EMC_TOOL_UPDATE_BACKANGLE;
+              value->backangle = command.tool.back_angle;
+            }
+            if (command.tool.has_orientation) {
+              value->fields |= EMC_TOOL_UPDATE_ORIENTATION;
+              value->orientation = command.tool.orientation;
+            }
+            if (command.tool.has_comment) {
+              value->fields |= EMC_TOOL_UPDATE_COMMENT;
+              std::strncpy(value->comment, command.tool.comment.c_str(),
+                           sizeof(value->comment) - 1);
+            }
             message = std::move(value);
             break;
           }
           case NmlCommandKind::DeleteTool: {
-            std::lock_guard tool_lock(impl_->tool_mutex);
-            if (!impl_->ensure_tool_mmap_unlocked())
-              throw std::runtime_error("LinuxCNC tool table is unavailable");
-            const auto index = tooldata_find_index_for_tool(command.integer);
-            if (index < 0)
-              throw std::runtime_error("tool is not present in the tool table");
-            if (tooldata_put(tooldata_entry_init(), index) == IDX_FAIL)
-              throw std::runtime_error(
-                  "failed to delete tool from LinuxCNC tool table");
-            if (impl_->tool_table_filename.empty() ||
-                tooldata_save(impl_->tool_table_filename.c_str()) != 0) {
-              throw std::runtime_error(
-                  "failed to save LinuxCNC tool table after deletion");
-            }
-            direct_tool_mutation = true;
+            auto value = std::make_unique<EMC_TOOL_DELETE>();
+            value->toolno = command.integer;
+            message = std::move(value);
             break;
           }
           case NmlCommandKind::SetDigitalOutput: {
@@ -1121,11 +1046,6 @@ CommandTicket NmlAdapter::submit(
             message = std::move(value);
             break;
           }
-        }
-        if (direct_tool_mutation) {
-          context.mark_accepted(0);
-          if (command.on_completed) command.on_completed();
-          return;
         }
         if (!message) throw std::runtime_error("unsupported LinuxCNC command");
         auto* command_message = message.get();

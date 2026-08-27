@@ -339,10 +339,40 @@ void command_validation_test() {
 
   command = {};
   command.kind = NmlCommandKind::SetTool;
+  command.tool.tool_no = 1;
   command.tool.has_offset = true;
   command.tool.offset_values = command.tool.offset.values.size();
   command.tool.offset.values.back() = std::numeric_limits<double>::quiet_NaN();
   assert(!validate_nml_command(command, &configuration));
+
+  command = {};
+  command.kind = NmlCommandKind::SetTool;
+  assert(!validate_nml_command(command, &configuration));
+  command.tool.tool_no = 7;
+  command.tool.has_pocket_no = true;
+  command.tool.pocket_no = 42;
+  command.tool.has_diameter = true;
+  command.tool.diameter = 5.0;
+  assert(validate_nml_command(command, &configuration));
+  command.tool.pocket_no = 0;
+  assert(!validate_nml_command(command, &configuration));
+  command.tool.pocket_no = 42;
+  command.tool.diameter = -1.0;
+  assert(!validate_nml_command(command, &configuration));
+  command.tool.diameter = 5.0;
+  command.tool.has_orientation = true;
+  command.tool.orientation = 10;
+  assert(!validate_nml_command(command, &configuration));
+  command.tool.orientation = 3;
+  command.tool.has_comment = true;
+  command.tool.comment = "unsafe\nT8 P8";
+  assert(!validate_nml_command(command, &configuration));
+
+  command = {};
+  command.kind = NmlCommandKind::DeleteTool;
+  assert(!validate_nml_command(command, &configuration));
+  command.integer = 7;
+  assert(validate_nml_command(command, &configuration));
 }
 
 void nml_serial_wrap_test() {

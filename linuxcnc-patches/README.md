@@ -293,3 +293,23 @@ bringing the resumable-stop suite to twenty-seven scenarios. During an
 in-flight step, `single_stepping` reports the armed/active state while task and
 motion remain unpaused; both paused flags become true only after motion reaches
 the boundary.
+
+### 0012 — LinuxCNC-owned transactional tool CRUD
+
+Adds explicit NML commands for partial tool upserts and deletion. The task
+process validates changer state, stages complete table snapshots, persists
+file-backed tables through an fsync-and-rename save, and only then atomically
+publishes the resulting mmap contents. Random changer pockets address their
+exact mmap slots, while nonrandom loaded tools keep spindle slot zero
+synchronized.
+
+Remote CRUD supports LinuxCNC's native random and nonrandom table models for
+file-backed configurations. Random support covers ATC-addressable pockets and
+the spindle; it does not model off-machine tool inventory. This patched build
+rejects `[EMCIO]DB_PROGRAM` during IO initialization and requires file-backed
+`[EMCIO]TOOL_TABLE` configuration for managed tool data.
+
+Tool-table reload now preserves the live table when opening, parsing, or
+validation fails. Read-only mmap clients detect inode replacement after a
+LinuxCNC restart and remap under the same process lock used by all mmap
+readers.

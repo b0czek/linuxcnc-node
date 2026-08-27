@@ -68,6 +68,7 @@ if(LINUXCNC_GRPC_ENABLE_NML)
                 "${LINUXCNC_ROOT}/src/emc/nml_intf"
                 "${LINUXCNC_ROOT}/src/emc/rs274ngc"
                 "${LINUXCNC_ROOT}/src/emc/ini"
+                "${LINUXCNC_ROOT}/src/emc/tooldata"
                 "${LINUXCNC_ROOT}/src/emc/kinematics"
                 "${LINUXCNC_ROOT}/src/libnml/buffer"
                 "${LINUXCNC_ROOT}/src/libnml/cms"

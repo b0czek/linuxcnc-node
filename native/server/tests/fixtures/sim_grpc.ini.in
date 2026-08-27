@@ -23,6 +23,7 @@ SERVO_PERIOD = 1000000
 
 [EMCIO]
 TOOL_TABLE = sim_mm.tbl
+RANDOM_TOOLCHANGER = 1
 
 [HAL]
 HALFILE = LIB:core_sim.hal

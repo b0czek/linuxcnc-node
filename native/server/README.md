@@ -21,6 +21,14 @@ client-component cleanup, and exclusive scope ownership. The harness refuses
 to start when another LinuxCNC/HAL runtime exists and reclaims only the runtime
 and NML resources it created.
 
+## Tool table mutation support
+
+`setTool` and `deleteTool` use LinuxCNC-owned transactional NML commands. They
+support file-backed nonrandom tables and LinuxCNC's native random toolchanger
+model. For random changers, pockets are ATC-addressable machine positions.
+The pinned patched LinuxCNC rejects `[EMCIO]DB_PROGRAM` during IO
+initialization; managed tool data must use a file-backed `[EMCIO]TOOL_TABLE`.
+
 ## Protobuf WebSocket data plane
 
 Position-history configuration and clearing remain on `MachineService` through
