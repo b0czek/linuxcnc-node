@@ -75,6 +75,8 @@ struct HalTelemetryDueSample {
 
 class HalValueTelemetry {
  public:
+  // 1,024 distinct references at the minimum 50 ms period.
+  static constexpr std::size_t kMaxSamplesPerSecond = 20'480;
   using Subscription = SubscriptionHub<std::uint64_t>::Subscription;
 
   explicit HalValueTelemetry(
@@ -109,6 +111,10 @@ class HalValueTelemetry {
   static std::string key(const HalTelemetryReference& item);
   HalTelemetryDescriptor describe(const State& state) const;
   void expire_locked(std::chrono::steady_clock::time_point now);
+  bool within_sampling_budget_locked(
+      const std::string* replacing_subscription,
+      const std::vector<HalTelemetryResolvedItem>& items,
+      std::chrono::milliseconds sample_period) const;
 
   const std::size_t capacity_;
   const std::chrono::seconds attachment_ttl_;

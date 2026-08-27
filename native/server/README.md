@@ -61,7 +61,7 @@ Position history keeps its acquisition cadence while coalescing mutations into
 latest-state deltas rather than every sampled transition. Client WebSocket
 messages are forbidden on both telemetry routes.
 
-The HAL service uses the pinned LinuxCNC HAL repository for topology, exact
+The HAL service uses the pinned LinuxCNC HAL runtime for topology, exact
 scalar reads/writes, signals, and session-owned components. The scope service
 loads `scope_rt` on first use when needed, attaches its sampling function to
 the configured thread, and keeps shared-memory polling off the realtime path.
@@ -69,14 +69,12 @@ Workspace paths are validated and materialized on the serialized NML command
 worker into the configured active program directory, with active-workspace
 pinning reconciled against LinuxCNC status.
 
-With wire generation disabled, the same executable is a configuration-check
-harness. It validates endpoint/TLS policy and `[DISPLAY] PROGRAM_PREFIX` when
-invoked with `--ini`, then returns status 78 rather than pretending to listen.
+With wire generation disabled, CMake builds the transport-neutral domain
+library without creating a server executable.
 
-To generate build-tree protobuf/gRPC C++ sources once the standard imports and
-development tools are available, configure with
-`-DLINUXCNC_GRPC_BUILD_WIRE=ON`. Wire generation is the default; pass
-`-DLINUXCNC_GRPC_BUILD_WIRE=OFF` for an explicit domain-only build.
+Wire generation is the default and requires the complete pinned LinuxCNC NML,
+rs274, HAL, and scope integrations. Pass `-DLINUXCNC_GRPC_BUILD_WIRE=OFF` for
+an explicit domain-only build.
 
 ## Native code quality
 
@@ -91,11 +89,11 @@ pnpm check:native:format
 
 Clang-Tidy consumes a CMake compilation database, so configure and build the
 same feature set that you want to analyze before invoking it. For example, the
-contract-only workflow is:
+domain-only workflow is:
 
 ```sh
 cmake -S . -B build/native-grpc \
-  -DLINUXCNC_GRPC_BUILD_WIRE=ON \
+  -DLINUXCNC_GRPC_BUILD_WIRE=OFF \
   -DLINUXCNC_GRPC_ENABLE_NML=OFF \
   -DLINUXCNC_GRPC_BUILD_TESTS=ON \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \

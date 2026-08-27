@@ -185,8 +185,8 @@ async function refreshTopology(send = false): Promise<TopologySnapshot> {
   const previous = topology;
   const next = await client.getTopology();
   markConnected();
-  topologyRevision = Math.max(topologyRevision + 1, next.revision);
-  topology = { ...next, revision: topologyRevision };
+  topologyRevision = next.revision;
+  topology = next;
   const shape = (value: TopologySnapshot) =>
     JSON.stringify({
       c: value.components.map(({ id, name, kind, ready }) => [
@@ -579,9 +579,11 @@ async function initialize(): Promise<void> {
     client = candidate;
     candidate = null;
     topology = next;
-    topologyRevision = Math.max(topologyRevision, next.revision);
+    topologyRevision = next.revision;
     topologyOff = client.watchTopology((nextTopology) => {
-      topology = { ...nextTopology, revision: ++topologyRevision };
+      if (nextTopology.revision < topologyRevision) return;
+      topologyRevision = nextTopology.revision;
+      topology = nextTopology;
       markConnected();
       api.send("topology/changed", topology);
     });

@@ -377,22 +377,29 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
   }
 
   void sample_telemetry() {
-    for (const auto& due : telemetry_->due(std::chrono::steady_clock::now())) {
-      std::vector<HalAdapterReference> references;
-      references.reserve(due.bindings.size());
-      for (const auto& binding : due.bindings)
-        references.push_back(adapter_reference(binding.item));
-      auto values = adapter_.read_many(references);
+    const auto samples = telemetry_->due(std::chrono::steady_clock::now());
+    std::vector<HalAdapterReference> references;
+    std::unordered_map<std::string, std::size_t> reference_indexes;
+    for (const auto& due : samples)
+      for (const auto& binding : due.bindings) {
+        const auto key = std::to_string(static_cast<int>(binding.item.kind)) +
+                         ":" + binding.item.name;
+        if (reference_indexes.emplace(key, references.size()).second)
+          references.push_back(adapter_reference(binding.item));
+      }
+    const auto values = adapter_.read_many(references);
+    for (const auto& due : samples) {
       std::vector<std::optional<HalTelemetryValue>> published;
-      published.reserve(values.size());
-      for (std::size_t index = 0; index < values.size(); ++index) {
-        const auto& value = values[index];
+      published.reserve(due.bindings.size());
+      for (const auto& binding : due.bindings) {
+        const auto key = std::to_string(static_cast<int>(binding.item.kind)) +
+                         ":" + binding.item.name;
+        const auto& value = values[reference_indexes.at(key)];
         if (!value) {
           published.emplace_back();
           continue;
         }
-        if (value->index() + 1 !=
-            static_cast<std::size_t>(due.bindings[index].type)) {
+        if (value->index() + 1 != static_cast<std::size_t>(binding.type)) {
           published.emplace_back();
           continue;
         }
@@ -422,9 +429,12 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
    public:
     TopologyReactor(HalServiceImpl& service, std::uint64_t after)
         : service_(service),
-          after_(after),
+          after_(0),
           admitted_(service_.stream_admission_.acquire()),
           gate_(std::make_shared<LifetimeGate<TopologyReactor>>(this)) {
+      // Cursors are scoped to a daemon epoch, which is not represented on the
+      // wire. Establish every stream with a replacement snapshot.
+      (void)after;
       const std::weak_ptr<LifetimeGate<TopologyReactor>> weak = gate_;
       registration_ = service_.callback_registry().register_callback([weak] {
         if (auto gate = weak.lock())
@@ -872,6 +882,15 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     for (auto& parameter : *structural.mutable_params())
       parameter.clear_value();
     for (auto& signal : *structural.mutable_signals()) signal.clear_value();
+    for (auto& function : *structural.mutable_functions()) {
+      function.clear_runtime();
+      function.clear_max_runtime();
+      function.clear_max_runtime_increased();
+    }
+    for (auto& thread : *structural.mutable_threads()) {
+      thread.clear_runtime();
+      thread.clear_max_runtime();
+    }
     const auto serialized = structural.SerializeAsString();
     std::lock_guard lock(topology_mutex_);
     if (!topology_snapshot_ || serialized != topology_serialized_) {

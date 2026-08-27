@@ -462,8 +462,7 @@ export async function createHalScopeClient(): Promise<HalScopeClient> {
   });
   const hal = clients.hal;
   const scope = clients.scope;
-  let revision = 0;
-  let topology = mapTopology({}, revision);
+  let topology = mapTopology({}, 0);
   const topologyListeners = new Set<(value: TopologySnapshot) => void>();
   let watchStarted = false;
   let topologyStream: { cancel?: () => void; destroy?: () => void } | null =
@@ -511,7 +510,12 @@ export async function createHalScopeClient(): Promise<HalScopeClient> {
         };
         topologyStream = stream;
         for await (const event of stream) {
-          topology = mapTopology(event, ++revision);
+          const next = mapTopology(
+            event,
+            toNumber(event?.sequence, "HAL topology sequence"),
+          );
+          if (next.revision < topology.revision) continue;
+          topology = next;
           topologyRetryMs = 250;
           for (const listener of topologyListeners) listener(topology);
         }
@@ -526,13 +530,15 @@ export async function createHalScopeClient(): Promise<HalScopeClient> {
   };
   const client: HalScopeClient = {
     async getTopology() {
-      topology = mapTopology(
-        await unary<any>(
-          (request, callback) => hal.getTopology(request, callback),
-          EMPTY,
-        ),
-        ++revision,
+      const response = await unary<any>(
+        (request, callback) => hal.getTopology(request, callback),
+        EMPTY,
       );
+      const next = mapTopology(
+        response,
+        toNumber(response?.sequence, "HAL topology sequence"),
+      );
+      if (next.revision >= topology.revision) topology = next;
       startTopologyWatch();
       return topology;
     },

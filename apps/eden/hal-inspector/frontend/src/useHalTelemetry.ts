@@ -98,6 +98,10 @@ export function useHalTelemetry(options: HalTelemetryOptions): void {
   const registerSubscription = (descriptor: HalValueSubscriptionDescriptor) => {
     const slots = new Map(descriptor.slots.map((slot) => [slot.slot, slot]));
     slotMaps.set(descriptor.revision, slots);
+    for (const revision of slotMaps.keys())
+      if (revision < descriptor.revision - 1) slotMaps.delete(revision);
+    for (const revision of pendingFrames.keys())
+      if (revision < descriptor.revision) pendingFrames.delete(revision);
     const queued = pendingFrames.get(descriptor.revision) ?? [];
     pendingFrames.delete(descriptor.revision);
     for (const frame of queued) applyFrame(frame);

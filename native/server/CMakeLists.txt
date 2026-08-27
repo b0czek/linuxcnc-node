@@ -84,14 +84,14 @@ if(LINUXCNC_GRPC_ENABLE_NML)
                 "${LINUXCNC_TOOLDATA_LIBRARY}")
             message(STATUS "LinuxCNC NML adapter enabled from ${LINUXCNC_ROOT}")
         else()
-            message(STATUS "LinuxCNC libraries not found; building contract-only native server")
+            message(STATUS "LinuxCNC NML libraries not found")
         endif()
     else()
-        message(STATUS "LinuxCNC checkout not found; building contract-only native server")
+        message(STATUS "LinuxCNC checkout not found")
     endif()
 endif()
 
-# The rs274 interpreter and HAL repository are native LinuxCNC boundaries,
+# The rs274 interpreter and HAL adapter are native LinuxCNC boundaries,
 # built only when the pinned checkout and its development libraries exist.
 # Their public domain headers remain independent of protobuf, gRPC, and Node.
 if(LINUXCNC_GRPC_ENABLE_NML AND
@@ -135,7 +135,7 @@ if(LINUXCNC_GRPC_ENABLE_NML AND
             "${CMAKE_DL_LIBS}")
         message(STATUS "LinuxCNC rs274 parser enabled from ${LINUXCNC_ROOT}")
     else()
-        message(STATUS "LinuxCNC rs274 dependencies not found; program preview will be unavailable")
+        message(STATUS "LinuxCNC rs274 dependencies not found")
     endif()
 endif()
 
@@ -159,8 +159,15 @@ if(LINUXCNC_GRPC_ENABLE_NML AND EXISTS "${LINUXCNC_ROOT}/src/hal/hal_priv.h")
         target_link_libraries(linuxcnc-grpc-domain PUBLIC "${LINUXCNC_HAL_LIBRARY}")
         message(STATUS "LinuxCNC HAL adapter enabled from ${LINUXCNC_ROOT}")
     else()
-        message(STATUS "LinuxCNC HAL library not found; building contract HAL repository")
+        message(STATUS "LinuxCNC HAL library not found")
     endif()
+endif()
+
+if(LINUXCNC_GRPC_BUILD_WIRE AND
+   (NOT LINUXCNC_GRPC_HAS_NML OR NOT LINUXCNC_GRPC_HAS_RS274 OR
+    NOT LINUXCNC_GRPC_HAS_HAL OR NOT LINUXCNC_GRPC_HAS_SCOPE))
+    message(FATAL_ERROR
+        "linuxcnc-grpc-server requires the complete LinuxCNC NML, rs274, HAL, and scope integrations; use LINUXCNC_GRPC_BUILD_WIRE=OFF for a domain-only build")
 endif()
 
 if(EXISTS "${LINUXCNC_ROOT}/lib")
@@ -168,14 +175,15 @@ if(EXISTS "${LINUXCNC_ROOT}/lib")
         BUILD_RPATH "${LINUXCNC_ROOT}/lib")
 endif()
 
-add_executable(linuxcnc-grpc-server src/daemon/main.cc)
-target_compile_features(linuxcnc-grpc-server PRIVATE cxx_std_20)
-target_link_libraries(linuxcnc-grpc-server PRIVATE linuxcnc-grpc-domain Threads::Threads)
-target_compile_options(linuxcnc-grpc-server PRIVATE -Wall -Wextra -Wpedantic)
-
 # Generated files live only in the build tree and are never hand-edited or
 # checked in. Pass LINUXCNC_GRPC_BUILD_WIRE=OFF for a domain-only build.
 if(LINUXCNC_GRPC_BUILD_WIRE)
+    add_executable(linuxcnc-grpc-server src/daemon/main.cc)
+    target_compile_features(linuxcnc-grpc-server PRIVATE cxx_std_20)
+    target_link_libraries(linuxcnc-grpc-server PRIVATE
+        linuxcnc-grpc-domain Threads::Threads)
+    target_compile_options(linuxcnc-grpc-server PRIVATE
+        -Wall -Wextra -Wpedantic)
     find_package(Boost REQUIRED)
     find_package(Protobuf REQUIRED)
     find_package(gRPC REQUIRED)
@@ -264,16 +272,9 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
         src/program/grpc/service.cc
         src/hal/grpc/service.cc
         src/scope/grpc/service.cc)
-    if(LINUXCNC_GRPC_HAS_HAL)
-        list(APPEND LINUXCNC_GRPC_SERVER_SOURCES src/hal/grpc/service_hal.cc)
-    else()
-        list(APPEND LINUXCNC_GRPC_SERVER_SOURCES src/hal/grpc/service_repository.cc)
-    endif()
-    if(LINUXCNC_GRPC_HAS_SCOPE)
-        list(APPEND LINUXCNC_GRPC_SERVER_SOURCES src/scope/grpc/service_controller.cc)
-    else()
-        list(APPEND LINUXCNC_GRPC_SERVER_SOURCES src/scope/grpc/service_manager.cc)
-    endif()
+    list(APPEND LINUXCNC_GRPC_SERVER_SOURCES
+        src/hal/grpc/service_hal.cc
+        src/scope/grpc/service_controller.cc)
     target_sources(linuxcnc-grpc-server PRIVATE ${LINUXCNC_GRPC_SERVER_SOURCES})
     target_sources(linuxcnc-grpc-server PRIVATE src/telemetry_websocket_server.cc)
     target_compile_definitions(linuxcnc-grpc-server PRIVATE LINUXCNC_GRPC_BUILD_WIRE=1)
@@ -291,32 +292,22 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
     target_compile_definitions(linuxcnc-grpc-integration PRIVATE BOOST_ERROR_CODE_HEADER_ONLY=1)
     target_include_directories(linuxcnc-grpc-integration PRIVATE ${Boost_INCLUDE_DIRS})
     target_link_libraries(linuxcnc-grpc-integration PRIVATE linuxcnc-grpc-proto)
-    if(LINUXCNC_GRPC_HAS_NML AND LINUXCNC_GRPC_HAS_HAL)
-        add_executable(linuxcnc-grpc-live-integration tests/grpc_live_integration.cc)
-        target_compile_features(linuxcnc-grpc-live-integration PRIVATE cxx_std_20)
-        target_compile_definitions(linuxcnc-grpc-live-integration PRIVATE BOOST_ERROR_CODE_HEADER_ONLY=1)
-        target_include_directories(linuxcnc-grpc-live-integration PRIVATE ${Boost_INCLUDE_DIRS})
-        target_link_libraries(linuxcnc-grpc-live-integration PRIVATE linuxcnc-grpc-proto)
-        target_compile_options(linuxcnc-grpc-live-integration PRIVATE
-            -Wall -Wextra -Wpedantic)
-    endif()
+    add_executable(linuxcnc-grpc-live-integration tests/grpc_live_integration.cc)
+    target_compile_features(linuxcnc-grpc-live-integration PRIVATE cxx_std_20)
+    target_compile_definitions(linuxcnc-grpc-live-integration PRIVATE BOOST_ERROR_CODE_HEADER_ONLY=1)
+    target_include_directories(linuxcnc-grpc-live-integration PRIVATE ${Boost_INCLUDE_DIRS})
+    target_link_libraries(linuxcnc-grpc-live-integration PRIVATE linuxcnc-grpc-proto)
+    target_compile_options(linuxcnc-grpc-live-integration PRIVATE
+        -Wall -Wextra -Wpedantic)
     if(LINUXCNC_GRPC_BUILD_TESTS)
-        if(NOT LINUXCNC_GRPC_HAS_HAL)
-            add_test(NAME linuxcnc-grpc-integration
-                COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_grpc_integration.sh"
-                        "$<TARGET_FILE:linuxcnc-grpc-server>"
-                        "$<TARGET_FILE:linuxcnc-grpc-integration>")
-        endif()
-        if(LINUXCNC_GRPC_HAS_NML AND LINUXCNC_GRPC_HAS_HAL)
-            add_test(NAME linuxcnc-grpc-live-integration
-                COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_grpc_live_integration.sh"
-                        "$<TARGET_FILE:linuxcnc-grpc-server>"
-                        "$<TARGET_FILE:linuxcnc-grpc-live-integration>"
-                        "${LINUXCNC_ROOT}")
-            set_tests_properties(linuxcnc-grpc-live-integration PROPERTIES
-                SKIP_RETURN_CODE 77
-                TIMEOUT 120)
-        endif()
+        add_test(NAME linuxcnc-grpc-live-integration
+            COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_grpc_live_integration.sh"
+                    "$<TARGET_FILE:linuxcnc-grpc-server>"
+                    "$<TARGET_FILE:linuxcnc-grpc-live-integration>"
+                    "${LINUXCNC_ROOT}")
+        set_tests_properties(linuxcnc-grpc-live-integration PROPERTIES
+            SKIP_RETURN_CODE 77
+            TIMEOUT 120)
         add_executable(linuxcnc-protobuf-gcode-mapping-tests tests/protobuf_gcode_mapping_tests.cc)
         target_compile_features(linuxcnc-protobuf-gcode-mapping-tests PRIVATE cxx_std_20)
         target_link_libraries(linuxcnc-protobuf-gcode-mapping-tests PRIVATE linuxcnc-grpc-wire)
@@ -357,10 +348,14 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
     endif()
 endif()
 
-install(TARGETS linuxcnc-grpc-server linuxcnc-grpc-domain
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+install(TARGETS linuxcnc-grpc-domain
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+
+if(TARGET linuxcnc-grpc-server)
+    install(TARGETS linuxcnc-grpc-server
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
 
 if(TARGET linuxcnc-grpc-health-check)
     install(TARGETS linuxcnc-grpc-health-check
@@ -391,20 +386,9 @@ if(LINUXCNC_GRPC_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/src/program/grpc/service.cc"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/hal/grpc/service.cc"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/scope/grpc/service.cc")
-    if(LINUXCNC_GRPC_HAS_HAL)
-        list(APPEND LINUXCNC_GRPC_CALLBACK_SOURCES
-            "${CMAKE_CURRENT_SOURCE_DIR}/src/hal/grpc/service_hal.cc")
-    else()
-        list(APPEND LINUXCNC_GRPC_CALLBACK_SOURCES
-            "${CMAKE_CURRENT_SOURCE_DIR}/src/hal/grpc/service_repository.cc")
-    endif()
-    if(LINUXCNC_GRPC_HAS_SCOPE)
-        list(APPEND LINUXCNC_GRPC_CALLBACK_SOURCES
-            "${CMAKE_CURRENT_SOURCE_DIR}/src/scope/grpc/service_controller.cc")
-    else()
-        list(APPEND LINUXCNC_GRPC_CALLBACK_SOURCES
-            "${CMAKE_CURRENT_SOURCE_DIR}/src/scope/grpc/service_manager.cc")
-    endif()
+    list(APPEND LINUXCNC_GRPC_CALLBACK_SOURCES
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/hal/grpc/service_hal.cc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/scope/grpc/service_controller.cc")
     add_test(NAME linuxcnc-grpc-callback-source-assertion
         COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/tests/assert_callback_server.sh"
                 ${LINUXCNC_GRPC_CALLBACK_SOURCES})

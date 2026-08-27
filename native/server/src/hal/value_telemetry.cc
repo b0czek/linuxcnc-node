@@ -66,6 +66,35 @@ void HalValueTelemetry::expire_locked(
   }
 }
 
+bool HalValueTelemetry::within_sampling_budget_locked(
+    const std::string* replacing_subscription,
+    const std::vector<HalTelemetryResolvedItem>& items,
+    std::chrono::milliseconds sample_period) const {
+  std::unordered_map<std::string, std::chrono::milliseconds> fastest;
+  const auto include = [&fastest](const auto& bindings, const auto period) {
+    for (const auto& binding : bindings) {
+      const auto item_key = key(binding.item);
+      const auto found = fastest.find(item_key);
+      if (found == fastest.end() || period < found->second)
+        fastest[item_key] = period;
+    }
+  };
+  for (const auto& [id, state] : states_) {
+    if (replacing_subscription && id == *replacing_subscription) continue;
+    include(state->bindings, state->sample_period);
+  }
+  include(items, sample_period);
+  std::size_t cost = 0;
+  for (const auto& [unused, period] : fastest) {
+    (void)unused;
+    const auto milliseconds = static_cast<std::size_t>(period.count());
+    const auto rate = (1000U + milliseconds - 1U) / milliseconds;
+    if (rate > kMaxSamplesPerSecond - cost) return false;
+    cost += rate;
+  }
+  return true;
+}
+
 std::optional<HalTelemetryDescriptor> HalValueTelemetry::create(
     std::vector<HalTelemetryResolvedItem> items,
     std::chrono::milliseconds sample_period) {
@@ -73,6 +102,8 @@ std::optional<HalTelemetryDescriptor> HalValueTelemetry::create(
   if (closed_) return std::nullopt;
   expire_locked(std::chrono::steady_clock::now());
   if (states_.size() >= capacity_) return std::nullopt;
+  if (!within_sampling_budget_locked(nullptr, items, sample_period))
+    return std::nullopt;
   auto state = std::make_shared<State>();
   do state->id = token();
   while (states_.count(state->id));
@@ -97,12 +128,15 @@ std::optional<HalTelemetryDescriptor> HalValueTelemetry::update(
     std::chrono::milliseconds sample_period) {
   std::shared_ptr<State> state;
   HalTelemetryDescriptor result;
+  std::uint64_t published_sequence = 0;
   {
     std::lock_guard lock(mutex_);
     const auto found = states_.find(subscription_id);
     if (closed_ || found == states_.end()) return std::nullopt;
     state = found->second;
     if (state->revision != expected_revision) return std::nullopt;
+    if (!within_sampling_budget_locked(&subscription_id, items, sample_period))
+      return std::nullopt;
     std::unordered_map<std::string, std::size_t> previous;
     for (std::size_t index = 0; index < state->bindings.size(); ++index)
       previous.emplace(key(state->bindings[index].item), index);
@@ -127,9 +161,10 @@ std::optional<HalTelemetryDescriptor> HalValueTelemetry::update(
     state->sampled = state->bindings.empty();
     ++state->revision;
     ++state->sequence;
+    published_sequence = state->sequence;
     result = describe(*state);
   }
-  state->wakes.publish(state->sequence);
+  state->wakes.publish(published_sequence);
   return result;
 }
 
@@ -208,6 +243,7 @@ void HalValueTelemetry::publish(
     std::vector<std::optional<HalTelemetryValue>> values) {
   std::shared_ptr<State> state;
   bool changed = false;
+  std::uint64_t published_sequence = 0;
   {
     std::lock_guard lock(mutex_);
     const auto found = states_.find(subscription_id);
@@ -220,8 +256,9 @@ void HalValueTelemetry::publish(
     state->values = std::move(values);
     state->sampled = true;
     ++state->sequence;
+    published_sequence = state->sequence;
   }
-  state->wakes.publish(state->sequence);
+  state->wakes.publish(published_sequence);
 }
 
 std::optional<HalTelemetrySnapshot> HalValueTelemetry::snapshot(

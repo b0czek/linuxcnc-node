@@ -543,6 +543,19 @@ void hal_value_telemetry_test() {
   assert(updated->bindings[1].slot > created->bindings[1].slot);
   assert(telemetry.erase(created->subscription_id));
   assert(!telemetry.snapshot(created->subscription_id));
+
+  HalValueTelemetry budgeted(4);
+  std::vector<HalTelemetryResolvedItem> full_budget;
+  for (std::size_t index = 0; index < 1024; ++index)
+    full_budget.push_back(
+        {{HalTelemetryItemKind::Pin, "budget." + std::to_string(index)},
+         HalTelemetryType::Bit});
+  const auto full = budgeted.create(full_budget, std::chrono::milliseconds(50));
+  assert(full);
+  assert(budgeted.create({full_budget.front()}, std::chrono::milliseconds(50)));
+  assert(!budgeted.create(
+      {{{HalTelemetryItemKind::Pin, "budget.extra"}, HalTelemetryType::Bit}},
+      std::chrono::milliseconds(50)));
 }
 
 std::vector<std::uint8_t> bytes(std::string value) {
