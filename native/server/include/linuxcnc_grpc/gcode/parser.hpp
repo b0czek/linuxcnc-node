@@ -18,11 +18,9 @@ enum class ParseErrorCode { InvalidEntry, Interpreter, Internal };
 
 class ParseError : public std::runtime_error {
  public:
-  ParseError(ParseErrorCode code, std::string message,
+  ParseError(ParseErrorCode code, const std::string& message,
              std::optional<int> line_number = std::nullopt)
-      : std::runtime_error(std::move(message)),
-        code_(code),
-        line_number_(line_number) {}
+      : std::runtime_error(message), code_(code), line_number_(line_number) {}
 
   ParseErrorCode code() const noexcept { return code_; }
   std::optional<int> line_number() const noexcept { return line_number_; }

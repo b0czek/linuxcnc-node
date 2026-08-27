@@ -53,8 +53,15 @@ HalTelemetryReference telemetry_reference(const HalAdapterReference& source) {
 }
 
 HalAdapterReference adapter_reference(const HalTelemetryReference& source) {
-  return {static_cast<HalAdapterItemKind>(static_cast<int>(source.kind) - 1),
-          source.name};
+  switch (source.kind) {
+    case HalTelemetryItemKind::Pin:
+      return {HalAdapterItemKind::Pin, source.name};
+    case HalTelemetryItemKind::Param:
+      return {HalAdapterItemKind::Param, source.name};
+    case HalTelemetryItemKind::Signal:
+      return {HalAdapterItemKind::Signal, source.name};
+  }
+  throw HalAdapterError("invalid HAL telemetry item kind", -EINVAL);
 }
 
 void encode_subscription(const HalTelemetryDescriptor& source,

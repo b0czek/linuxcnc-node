@@ -220,7 +220,8 @@ class MachineServiceImpl final : public MachineCallbackBase,
                                         GetStatusResponse* response) override {
     return new detail::UnaryTaskReactor<GetStatusResponse>(
         blocking_, callbacks_, response,
-        [this](std::stop_token stop_token, GetStatusResponse* task_response) {
+        [this](const std::stop_token& stop_token,
+               GetStatusResponse* task_response) {
           if (stop_token.stop_requested()) {
             return ::grpc::Status(::grpc::StatusCode::CANCELLED,
                                   "RPC cancelled");
@@ -259,8 +260,8 @@ class MachineServiceImpl final : public MachineCallbackBase,
         [this, owned_request = std::move(owned_request)](
             std::stop_token stop_token, CommandTicket* ticket,
             CommandWaitPolicy* policy) {
-          return submit_command(stop_token, owned_request.get(), ticket,
-                                policy);
+          return submit_command(std::move(stop_token), owned_request.get(),
+                                ticket, policy);
         });
   }
 
@@ -329,6 +330,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
                 } catch (...) {
                   // Startup reconciliation removes an orphan if cleanup
                   // admission itself cannot allocate.
+                  return;
                 }
               });
           if (!revision) {
@@ -620,7 +622,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
     }
     if (!validation) return Invalid(validation.message);
     try {
-      *ticket = nml_.submit(std::move(command), stop_token);
+      *ticket = nml_.submit(std::move(command), std::move(stop_token));
     } catch (const std::exception& error) {
       const auto message = std::string(error.what());
       const auto code = message.find("queue is full") != std::string::npos
@@ -647,7 +649,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
     return new detail::UnaryTaskReactor<google::protobuf::Empty>(
         blocking_, callbacks_, response,
         [this, owned_request = std::move(owned_request)](
-            std::stop_token stop_token, google::protobuf::Empty*) {
+            const std::stop_token& stop_token, google::protobuf::Empty*) {
           if (stop_token.stop_requested()) {
             return ::grpc::Status(::grpc::StatusCode::CANCELLED,
                                   "RPC cancelled");
@@ -684,7 +686,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
       google::protobuf::Empty* response) override {
     return new detail::UnaryTaskReactor<google::protobuf::Empty>(
         blocking_, callbacks_, response,
-        [this](std::stop_token stop_token, google::protobuf::Empty*) {
+        [this](const std::stop_token& stop_token, google::protobuf::Empty*) {
           if (stop_token.stop_requested()) {
             return ::grpc::Status(::grpc::StatusCode::CANCELLED,
                                   "RPC cancelled");

@@ -15,8 +15,8 @@ namespace fs = std::filesystem;
 
 namespace {
 
-fs::path absolute_path(fs::path path) {
-  return fs::absolute(std::move(path)).lexically_normal();
+fs::path absolute_path(const fs::path& path) {
+  return fs::absolute(path).lexically_normal();
 }
 
 bool path_contains(const fs::path& parent, const fs::path& child) {
@@ -80,11 +80,11 @@ void publish_active_link(const fs::path& active, const fs::path& target) {
 
 }  // namespace
 
-ProgramWorkspaceStore::ProgramWorkspaceStore(fs::path root,
-                                             fs::path active_directory,
+ProgramWorkspaceStore::ProgramWorkspaceStore(const fs::path& root,
+                                             const fs::path& active_directory,
                                              WorkspaceLimits limits)
-    : root_(absolute_path(std::move(root))),
-      active_directory_(absolute_path(std::move(active_directory))),
+    : root_(absolute_path(root)),
+      active_directory_(absolute_path(active_directory)),
       staging_root_(root_ / ".uploads"),
       empty_active_directory_(
           active_directory_.parent_path() /
@@ -311,6 +311,7 @@ void ProgramWorkspaceStore::clear_active_link() {
     publish_active_link(active_directory_, empty_active_directory_);
   } catch (...) {
     // A stale link is safe: startup recovery pins its target again.
+    return;
   }
 }
 

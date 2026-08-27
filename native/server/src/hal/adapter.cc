@@ -643,7 +643,7 @@ std::optional<HalAdapterValue> LinuxCncHalAdapter::read(
 
 std::vector<std::optional<HalAdapterValue>> LinuxCncHalAdapter::read_many(
     const std::vector<HalAdapterReference>& references,
-    std::stop_token stop_token) const {
+    const std::stop_token& stop_token) const {
   HalMutex lock;
   std::vector<std::optional<HalAdapterValue>> result;
   result.reserve(references.size());
@@ -675,7 +675,7 @@ bool LinuxCncHalAdapter::write(const HalAdapterReference& reference,
 
 std::size_t LinuxCncHalAdapter::write_many(
     const std::vector<std::pair<HalAdapterReference, HalAdapterValue>>& updates,
-    std::vector<HalAdapterValue>* written, std::stop_token stop_token) {
+    std::vector<HalAdapterValue>* written, const std::stop_token& stop_token) {
   HalMutex lock;
   std::vector<ResolvedItem> resolved;
   resolved.reserve(updates.size());

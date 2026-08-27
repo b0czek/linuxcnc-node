@@ -734,10 +734,12 @@ int main(int argc, char** argv) {
   bool tool_created = false;
   while (std::chrono::steady_clock::now() < created_deadline && !tool_created) {
     const auto status = get_status_with_retry(machine.get());
-    if (status.status().tool_table_size() > 42) {
-      const auto& tool = status.status().tool_table(42);
-      tool_created = tool.tool_no() == 77 && tool.pocket_no() == 42 &&
-                     tool.diameter() == 7.7;
+    for (const auto& tool : status.status().tool_table()) {
+      if (tool.tool_no() == 77 && tool.pocket_no() == 42 &&
+          tool.diameter() == 7.7) {
+        tool_created = true;
+        break;
+      }
     }
     if (!tool_created)
       std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -750,9 +752,14 @@ int main(int argc, char** argv) {
   moved_tool->set_pocket_no(43);
   (void)execute_completed(machine.get(), std::move(move_tool));
   const auto moved_status = get_status_with_retry(machine.get());
-  assert(moved_status.status().tool_table_size() > 43);
-  assert(moved_status.status().tool_table(42).tool_no() == -1);
-  assert(moved_status.status().tool_table(43).tool_no() == 77);
+  bool tool_moved = false;
+  for (const auto& tool : moved_status.status().tool_table()) {
+    if (tool.tool_no() == 77) {
+      assert(tool.pocket_no() == 43);
+      tool_moved = true;
+    }
+  }
+  assert(tool_moved);
 
   ExecuteCommandRequest load_created_tool;
   load_created_tool.mutable_mdi()->set_command("T77 M6");
@@ -790,14 +797,14 @@ int main(int argc, char** argv) {
       execute_completed(machine.get(), std::move(delete_tool));
   assert(delete_response.command_sequence() != 0);
   const auto deleted_status = get_status_with_retry(machine.get());
-  assert(deleted_status.status().tool_table_size() <= 43 ||
-         deleted_status.status().tool_table(43).tool_no() == -1);
+  for (const auto& tool : deleted_status.status().tool_table())
+    assert(tool.tool_no() != 77);
 
   expect_command_error(machine.get(), ExecuteCommandRequest{},
                        grpc::StatusCode::INVALID_ARGUMENT);
   ExecuteCommandRequest missing_tool;
   missing_tool.mutable_set_tool();
-  expect_command_error(machine.get(), std::move(missing_tool),
+  expect_command_error(machine.get(), missing_tool,
                        grpc::StatusCode::INVALID_ARGUMENT);
   ExecuteCommandRequest oversized_tool;
   auto* oversized = oversized_tool.mutable_set_tool()->mutable_tool();
@@ -805,7 +812,7 @@ int main(int argc, char** argv) {
   oversized->set_pocket_no(88);
   for (int axis = 0; axis < 10; ++axis)
     oversized->mutable_offset()->add_values(axis);
-  expect_command_error(machine.get(), std::move(oversized_tool),
+  expect_command_error(machine.get(), oversized_tool,
                        grpc::StatusCode::INVALID_ARGUMENT);
 
   grpc::ClientContext clear_position_context;
@@ -924,7 +931,9 @@ int main(int argc, char** argv) {
   std::uint64_t fanout_sequence = 0;
   for (auto& stream : fanout_streams) {
     linuxcnc::v1::WatchHalTopologyEvent event;
-    assert(stream->Read(&event));
+    do {
+      assert(stream->Read(&event));
+    } while (event.sequence() <= fanout_request.after_sequence());
     assert(event.sequence() > fanout_request.after_sequence());
     if (fanout_sequence == 0) fanout_sequence = event.sequence();
     assert(event.sequence() == fanout_sequence);

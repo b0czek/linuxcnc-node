@@ -388,10 +388,11 @@ void workspace_test() {
   fs::path resolved;
   assert(store.pin_entry(id, "program/main.ngc", &resolved));
   assert(fs::is_regular_file(resolved));
-  auto activation = store.stage(id, "program/main.ngc", [](fs::path path) {
-    std::error_code cleanup_error;
-    fs::remove(path, cleanup_error);
-  });
+  auto activation =
+      store.stage(id, "program/main.ngc", [](const fs::path& path) {
+        std::error_code cleanup_error;
+        fs::remove(path, cleanup_error);
+      });
   assert(activation && activation->commit());
   assert(fs::is_symlink(fs::symlink_status(store.active_directory())));
   assert(fs::is_regular_file(store.active_directory() / "program/main.ngc"));

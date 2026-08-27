@@ -116,7 +116,7 @@ class HalUnaryService : public HalUnaryCallbackBase {
     return new detail::UnaryTaskReactor<Response>(
         worker_, callbacks_, response,
         [this, owned_request = std::move(owned_request), method](
-            std::stop_token, Response* task_response) {
+            const std::stop_token&, Response* task_response) {
           return (this->*method)(owned_request.get(), task_response);
         });
   }
@@ -131,7 +131,8 @@ class HalUnaryService : public HalUnaryCallbackBase {
         worker_, callbacks_, response,
         [this, owned_request = std::move(owned_request), method](
             std::stop_token token, Response* task_response) {
-          return (this->*method)(token, owned_request.get(), task_response);
+          return (this->*method)(std::move(token), owned_request.get(),
+                                 task_response);
         });
   }
 

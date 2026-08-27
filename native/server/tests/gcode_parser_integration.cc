@@ -201,12 +201,12 @@ int main(int argc, char** argv) {
                                  std::make_move_iterator(batch.end()));
   };
   parser.parse_file(argv[6], modal_free_options);
-  const auto metric_move = std::find_if(
-      modal_free_operations.begin(), modal_free_operations.end(),
-      [](const auto& op) {
-        const auto* traverse = std::get_if<TraverseOp>(&op);
-        return traverse && nearly_equal(traverse->pos.x, 1.0);
-      });
+  const auto metric_move =
+      std::find_if(modal_free_operations.begin(), modal_free_operations.end(),
+                   [](const auto& op) {
+                     const auto* traverse = std::get_if<TraverseOp>(&op);
+                     return traverse && nearly_equal(traverse->pos.x, 1.0);
+                   });
   assert(metric_move != modal_free_operations.end());
 
   // A callback can cancel after a bounded batch. Cancellation is observed

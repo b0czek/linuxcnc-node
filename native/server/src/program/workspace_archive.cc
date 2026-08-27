@@ -89,7 +89,8 @@ WorkspaceArchiveResult extract_workspace_archive(
     return fail(WorkspaceArchiveStatus::IoError,
                 "libarchive tar support is unavailable");
   if (archive_read_open_filename(reader.get(), archive_path.c_str(),
-                                 64U * 1024U) != ARCHIVE_OK) {
+                                 static_cast<std::size_t>(64U) * 1024U) !=
+      ARCHIVE_OK) {
     return fail(archive_status(reader.get()),
                 archive_error_or(reader.get(), "invalid archive"));
   }

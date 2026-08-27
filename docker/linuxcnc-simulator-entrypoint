@@ -10,6 +10,7 @@ if [[ "$(id -u)" == 0 ]]; then
   fi
   mkdir -p /var/lib/linuxcnc-grpc/workspaces
   chown -R "$runtime_uid:$runtime_gid" /var/lib/linuxcnc-grpc
+  chmod 0700 /var/lib/linuxcnc-grpc/workspaces
   export HOME=/var/lib/linuxcnc-grpc
   exec setpriv --reuid="$runtime_uid" --regid="$runtime_gid" --clear-groups "$0" "$@"
 fi

@@ -79,8 +79,8 @@ CommandTicket CommandCoordinator::submit(CommandAction action,
   std::unique_lock lock(mutex_);
   if (stopping_) throw std::runtime_error("command coordinator is stopped");
   auto& queue = priority == CommandPriority::Safety ? safety_queue_ : queue_;
-  const auto capacity = priority == CommandPriority::Safety ? safety_capacity_
-                                                             : capacity_;
+  const auto capacity =
+      priority == CommandPriority::Safety ? safety_capacity_ : capacity_;
   if (queue.size() >= capacity)
     throw std::runtime_error("command queue is full");
   const auto sequence = next_sequence_++;
@@ -97,15 +97,15 @@ CommandTicket CommandCoordinator::submit_with_context(
 }
 
 CommandTicket CommandCoordinator::submit_with_context(
-    ContextCommandAction action, std::stop_token stop_token,
+    ContextCommandAction action, const std::stop_token& stop_token,
     CommandPriority priority) {
   if (!action) throw std::invalid_argument("command action must not be empty");
   auto state = std::make_shared<CommandTicket::State>();
   std::unique_lock lock(mutex_);
   if (stopping_) throw std::runtime_error("command coordinator is stopped");
   auto& queue = priority == CommandPriority::Safety ? safety_queue_ : queue_;
-  const auto capacity = priority == CommandPriority::Safety ? safety_capacity_
-                                                             : capacity_;
+  const auto capacity =
+      priority == CommandPriority::Safety ? safety_capacity_ : capacity_;
   if (queue.size() >= capacity)
     throw std::runtime_error("command queue is full");
   const auto sequence = next_sequence_++;
@@ -160,16 +160,16 @@ void CommandCoordinator::run() {
     try {
       if (item.context_action) {
         bool deferred = false;
-        CommandContext context{
-            mark_accepted,
-            {},
-            [&deferred] { deferred = true; },
-            [state = item.state] {
-              transition(state, CommandState::Completed);
-            },
-            [state = item.state](std::string error) {
-              transition(state, CommandState::Failed, std::move(error));
-            }};
+        CommandContext context{mark_accepted,
+                               {},
+                               [&deferred] { deferred = true; },
+                               [state = item.state] {
+                                 transition(state, CommandState::Completed);
+                               },
+                               [state = item.state](std::string error) {
+                                 transition(state, CommandState::Failed,
+                                            std::move(error));
+                               }};
         item.context_action(context);
         if (!deferred) transition(item.state, CommandState::Completed);
       } else {

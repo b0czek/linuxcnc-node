@@ -10,7 +10,8 @@
 
 inline std::string workspace_archive_fixture(const std::string& path,
                                              const std::string& contents) {
-  std::vector<char> output(contents.size() + 64U * 1024U);
+  std::vector<char> output(contents.size() +
+                           static_cast<std::size_t>(64U) * 1024U);
   std::size_t used = 0;
   auto* writer = archive_write_new();
   assert(writer);

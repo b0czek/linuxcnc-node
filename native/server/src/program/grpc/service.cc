@@ -151,7 +151,7 @@ class ProgramServiceImpl final : public ProgramService::Service,
     try {
       store_->prune_expired();
       StagedArchive staged(store_->staging_root());
-      const auto open_status = staged.open();
+      auto open_status = staged.open();
       if (!open_status.ok()) return open_status;
 
       UploadWorkspaceRequest request;
@@ -170,7 +170,7 @@ class ProgramServiceImpl final : public ProgramService::Service,
       }
       if (context->IsCancelled()) return cancelled();
       if (staged.bytes() == 0) return invalid("workspace upload is empty");
-      const auto close_status = staged.close();
+      auto close_status = staged.close();
       if (!close_status.ok()) return close_status;
 
       const auto revision = staged.revision();

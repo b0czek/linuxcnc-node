@@ -12,10 +12,9 @@ using linuxcnc::v1::HAL_ITEM_KIND_PARAM;
 using linuxcnc::v1::HAL_ITEM_KIND_PIN;
 using linuxcnc::v1::HAL_TYPE_S32;
 
-ComponentSessionMessage delta(std::uint64_t sequence, std::string name,
-                              std::int32_t value,
-                              linuxcnc::v1::HalItemKind kind =
-                                  HAL_ITEM_KIND_PIN) {
+ComponentSessionMessage delta(
+    std::uint64_t sequence, std::string name, std::int32_t value,
+    linuxcnc::v1::HalItemKind kind = HAL_ITEM_KIND_PIN) {
   ComponentSessionMessage message;
   message.mutable_delta()->set_sequence(sequence);
   auto* component_value = message.mutable_delta()->add_values();
@@ -26,8 +25,7 @@ ComponentSessionMessage delta(std::uint64_t sequence, std::string name,
   return message;
 }
 
-ComponentSessionMessage acknowledgement(std::string name,
-                                        std::int32_t value) {
+ComponentSessionMessage acknowledgement(std::string name, std::int32_t value) {
   ComponentSessionMessage message;
   message.mutable_value()->mutable_item()->set_kind(HAL_ITEM_KIND_PIN);
   message.mutable_value()->mutable_item()->set_name(std::move(name));

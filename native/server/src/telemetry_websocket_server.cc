@@ -327,17 +327,16 @@ class Session final : public std::enable_shared_from_this<Session> {
   void write_frame(std::string frame) {
     write_frame_ = std::move(frame);
     write_deadline_.expires_after(kWriteDeadline);
-    write_deadline_.async_wait([self = this->shared_from_this()](
-                                   beast::error_code error) {
-      if (!error) {
-        self->abort_socket();
-        self->fail();
-      }
-    });
-    websocket_.async_write(
-        asio::buffer(write_frame_),
-        beast::bind_front_handler(&Session::on_write,
-                                  this->shared_from_this()));
+    write_deadline_.async_wait(
+        [self = this->shared_from_this()](beast::error_code error) {
+          if (!error) {
+            self->abort_socket();
+            self->fail();
+          }
+        });
+    websocket_.async_write(asio::buffer(write_frame_),
+                           beast::bind_front_handler(&Session::on_write,
+                                                     this->shared_from_this()));
   }
 
   void on_write(beast::error_code error, std::size_t) {
@@ -457,7 +456,7 @@ class Session final : public std::enable_shared_from_this<Session> {
             error->set_code(
                 linuxcnc::v1::PROGRAM_PREVIEW_ERROR_CODE_INVALID_ENTRY);
             error->set_message("program workspace entry is missing or unsafe");
-            send(std::move(event), false, true);
+            send(event, false, true);
             return;
           }
           struct Lease {
@@ -479,7 +478,7 @@ class Session final : public std::enable_shared_from_this<Session> {
               encoded->set_percent(static_cast<std::uint32_t>(
                   std::clamp(progress.percent, 0.0, 100.0)));
               encoded->set_operation_count(progress.operationCount);
-              send(std::move(event), false, false, true);
+              send(event, false, false, true);
             };
             options.on_batch = [flow, send](gcode::OperationBatch&& batch) {
               if (batch.empty()) return;
@@ -493,11 +492,11 @@ class Session final : public std::enable_shared_from_this<Session> {
                     if (flow->stop_source.stop_requested()) return false;
                     ++flow->outstanding_batches;
                     lock.unlock();
-                    send(std::move(event), true, false);
+                    send(event, true, false);
                     return true;
                   };
               constexpr std::size_t max_preview_frame_bytes =
-                  4U * 1024U * 1024U;
+                  static_cast<std::size_t>(4U) * 1024U * 1024U;
               linuxcnc::v1::ProgramPreviewEvent event;
               for (const auto& operation : batch) {
                 encode_gcode_operation(operation,
@@ -524,7 +523,7 @@ class Session final : public std::enable_shared_from_this<Session> {
             auto* summary = event.mutable_summary();
             encode_gcode_extents(result.extents, summary->mutable_extents());
             summary->set_operation_count(result.operationCount);
-            send(std::move(event), false, true);
+            send(event, false, true);
           } catch (const gcode::ParseError& exception) {
             linuxcnc::v1::ProgramPreviewEvent event;
             auto* error = event.mutable_error();
@@ -545,13 +544,13 @@ class Session final : public std::enable_shared_from_this<Session> {
             error->set_message(exception.what());
             if (exception.line_number())
               error->set_line_number(*exception.line_number());
-            send(std::move(event), false, true);
+            send(event, false, true);
           } catch (const std::exception& exception) {
             linuxcnc::v1::ProgramPreviewEvent event;
             auto* error = event.mutable_error();
             error->set_code(linuxcnc::v1::PROGRAM_PREVIEW_ERROR_CODE_INTERNAL);
             error->set_message(exception.what());
-            send(std::move(event), false, true);
+            send(event, false, true);
           }
 #else
           if (const auto self = weak.lock()) {

@@ -51,10 +51,9 @@ class ComponentOutbox {
                           linuxcnc::v1::ComponentDelta* target) {
     for (const auto& incoming : source.values()) {
       auto* values = target->mutable_values();
-      const auto existing =
-          std::find_if(values->begin(), values->end(), [&](const auto& value) {
-            return same_item(value, incoming);
-          });
+      const auto existing = std::find_if(
+          values->begin(), values->end(),
+          [&](const auto& value) { return same_item(value, incoming); });
       if (existing == values->end()) {
         *target->add_values() = incoming;
       } else {

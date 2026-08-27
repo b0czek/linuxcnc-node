@@ -39,7 +39,7 @@ IniPreviewState load_preview_state(const std::string& path) {
   while (std::getline(input, line)) {
     const auto comment = line.find_first_of(";#");
     if (comment != std::string::npos) line.erase(comment);
-    const auto trim = [](std::string value) {
+    const auto trim = [](const std::string& value) {
       const auto first = value.find_first_not_of(" \t\r");
       if (first == std::string::npos) return std::string{};
       const auto last = value.find_last_not_of(" \t\r");
@@ -62,11 +62,14 @@ IniPreviewState load_preview_state(const std::string& path) {
         return std::tolower(character);
       };
       std::transform(value.begin(), value.end(), value.begin(), lower);
-      if (value == "mm" || value == "metric") state.units = CANON_UNITS_MM;
-      else if (value == "cm") state.units = CANON_UNITS_CM;
+      if (value == "mm" || value == "metric")
+        state.units = CANON_UNITS_MM;
+      else if (value == "cm")
+        state.units = CANON_UNITS_CM;
       else if (value == "inch" || value == "in" || value == "imperial")
         state.units = CANON_UNITS_INCHES;
-      else throw std::runtime_error("unsupported [TRAJ]LINEAR_UNITS: " + value);
+      else
+        throw std::runtime_error("unsupported [TRAJ]LINEAR_UNITS: " + value);
     } else if (section == "RS274NGC" && key == "RS274NGC_STARTUP_CODE") {
       state.startup_code = value;
     }
@@ -172,8 +175,8 @@ ParseResult SerializedRs274Parser::parse_file(const std::string& filepath,
         char error_buffer[256]{};
         interpreter_->error_text(startup_result, error_buffer,
                                  sizeof(error_buffer));
-        throw std::runtime_error(std::string("invalid RS274NGC_STARTUP_CODE: ") +
-                                 error_buffer);
+        throw std::runtime_error(
+            std::string("invalid RS274NGC_STARTUP_CODE: ") + error_buffer);
       }
     }
 

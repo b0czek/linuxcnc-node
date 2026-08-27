@@ -26,8 +26,7 @@ NmlCommandValidation finite(double value, const char* field) {
 NmlCommandValidation nonnegative(double value, const char* field) {
   auto result = finite(value, field);
   if (!result) return result;
-  if (value < 0.0)
-    return invalid(std::string(field) + " must not be negative");
+  if (value < 0.0) return invalid(std::string(field) + " must not be negative");
   return {};
 }
 

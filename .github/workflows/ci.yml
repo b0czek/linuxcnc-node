@@ -46,8 +46,8 @@ jobs:
       - name: Test patch stack tooling
         run: ./linuxcnc-patches/test-stack.sh
 
-  native-contract:
-    name: Native gRPC contract
+  native-format:
+    name: Native format
     runs-on: ubuntu-24.04
 
     steps:
@@ -57,49 +57,24 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
       - name: Install LLVM and Clang 21
         uses: KyleMayes/install-llvm-action@v2
         with:
           version: "21"
 
-      - name: Install C++ gRPC and Clang toolchains
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            cmake \
-            libboost-dev \
-            libgrpc++-dev \
-            libgrpc-dev \
-            libprotobuf-dev \
-            protobuf-compiler \
-            protobuf-compiler-grpc
-
       - name: Check native formatting
         run: pnpm check:native:format
         env:
           CLANG_FORMAT: clang-format
-
-      - name: Configure
-        run: |
-          cmake -S . -B build/native-grpc \
-            -DLINUXCNC_GRPC_BUILD_WIRE=ON \
-            -DLINUXCNC_GRPC_ENABLE_NML=OFF \
-            -DLINUXCNC_GRPC_BUILD_TESTS=ON \
-            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-            -DCMAKE_BUILD_TYPE=Debug
-
-      - name: Build
-        run: cmake --build build/native-grpc --parallel 2
-
-      - name: Lint native sources
-        run: pnpm lint:native build/native-grpc
-        env:
-          CLANG_TIDY: clang-tidy
-          RUN_CLANG_TIDY: run-clang-tidy
-
-      - name: Test
-        run: ctest --test-dir build/native-grpc --output-on-failure
 
   typecheck:
     name: Typecheck
@@ -158,6 +133,7 @@ jobs:
             build-essential \
             cmake \
             libboost-dev \
+            libarchive-dev \
             libgrpc++-dev \
             libgrpc-dev \
             libprotobuf-dev \
@@ -173,6 +149,9 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Restore LinuxCNC build
         id: linuxcnc-cache
@@ -318,9 +297,6 @@ jobs:
         with:
           path: .cache/linuxcnc/${{ steps.linuxcnc-baseline.outputs.revision }}/linuxcnc
           key: linuxcnc-${{ runner.os }}-${{ runner.arch }}-${{ steps.linuxcnc-baseline.outputs.revision }}-${{ env.LINUXCNC_CACHE_VERSION }}-${{ hashFiles('linuxcnc-patches/*.patch') }}
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
 
       - name: Test
         run: pnpm test

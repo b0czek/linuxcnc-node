@@ -538,7 +538,7 @@ void preview_non_finite_rejection_test() {
   operation.pos.x = std::numeric_limits<double>::infinity();
   bool rejected = false;
   try {
-    context.addOperation(std::move(operation));
+    context.addOperation(gcode::Operation{operation});
   } catch (const std::domain_error&) {
     rejected = true;
   }
@@ -578,6 +578,7 @@ void hal_value_telemetry_test() {
 
   HalValueTelemetry budgeted(4);
   std::vector<HalTelemetryResolvedItem> full_budget;
+  full_budget.reserve(1024);
   for (std::size_t index = 0; index < 1024; ++index)
     full_budget.push_back(
         {{HalTelemetryItemKind::Pin, "budget." + std::to_string(index)},
@@ -713,7 +714,8 @@ void workspace_expiration_and_recovery_test() {
     interrupted_id = publish_test_workspace(store, "interrupted");
     fs::path resolved;
     assert(store.pin_entry(active_id, "program.ngc", &resolved));
-    auto activation = store.stage(active_id, "program.ngc", [](fs::path) {});
+    auto activation =
+        store.stage(active_id, "program.ngc", [](const fs::path&) {});
     assert(activation && activation->commit());
     activation->complete();
     fs::create_directory_symlink(root / interrupted_id,
@@ -798,7 +800,7 @@ void workspace_traversal_quota_ttl_and_materialization_test() {
   assert(store.pin_entry(first_id, "program/main.ngc", &resolved));
   assert(read_file(resolved) == "G0 X1\n");
   auto first_activation =
-      store.stage(first_id, "program/main.ngc", [](fs::path path) {
+      store.stage(first_id, "program/main.ngc", [](const fs::path& path) {
         std::error_code cleanup_error;
         fs::remove(path, cleanup_error);
       });
@@ -823,7 +825,7 @@ void workspace_traversal_quota_ttl_and_materialization_test() {
   assert(store.pin_entry(second_id, "program/main.ngc", &resolved));
 
   auto rejected_activation =
-      store.stage(second_id, "program/main.ngc", [](fs::path path) {
+      store.stage(second_id, "program/main.ngc", [](const fs::path& path) {
         std::error_code cleanup_error;
         fs::remove(path, cleanup_error);
       });

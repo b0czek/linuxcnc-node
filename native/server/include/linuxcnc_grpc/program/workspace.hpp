@@ -29,8 +29,8 @@ enum class WorkspacePublishStatus { Ok, Invalid, ResourceExhausted, IoError };
 // leased active revision through a server-owned symlink at PROGRAM_PREFIX.
 class ProgramWorkspaceStore {
  public:
-  ProgramWorkspaceStore(std::filesystem::path root,
-                        std::filesystem::path active_directory,
+  ProgramWorkspaceStore(const std::filesystem::path& root,
+                        const std::filesystem::path& active_directory,
                         WorkspaceLimits limits = {});
 
   WorkspacePublishStatus publish_revision(

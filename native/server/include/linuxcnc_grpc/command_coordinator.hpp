@@ -110,7 +110,7 @@ class CommandCoordinator {
                        CommandPriority priority = CommandPriority::Normal);
   CommandTicket submit_with_context(ContextCommandAction action);
   CommandTicket submit_with_context(
-      ContextCommandAction action, std::stop_token stop_token,
+      ContextCommandAction action, const std::stop_token& stop_token,
       CommandPriority priority = CommandPriority::Normal);
   void shutdown();
   std::size_t queued() const;

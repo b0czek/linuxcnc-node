@@ -12,11 +12,11 @@
 #include <utility>
 #include <vector>
 
-#include "scope/grpc/service_impl.hpp"
 #include "linuxcnc/v1/scope.grpc.pb.h"
 #include "linuxcnc_grpc/callback_runtime.hpp"
 #include "linuxcnc_grpc/daemon/config.hpp"
 #include "linuxcnc_grpc/scope/controller.hpp"
+#include "scope/grpc/service_impl.hpp"
 
 namespace linuxcnc::server::detail {
 namespace {

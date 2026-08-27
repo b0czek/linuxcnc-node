@@ -12,7 +12,8 @@ namespace {
 
 namespace canon = ::linuxcnc::recording;
 constexpr double pi = 3.14159265358979323846;
-constexpr std::size_t max_batch_bytes = 4U * 1024U * 1024U;
+constexpr std::size_t max_batch_bytes =
+    static_cast<std::size_t>(4U) * 1024U * 1024U;
 
 std::size_t operation_size(const Operation& operation) {
   return std::visit(
@@ -501,8 +502,7 @@ void ParseContext::addOperation(Operation&& operation) {
 }
 
 void ParseContext::flushReadyBatch() {
-  if (!batchCallback || batchSize == 0 || operations.size() < batchSize)
-    return;
+  if (!batchCallback || batchSize == 0 || operations.size() < batchSize) return;
   flushBatch();
 }
 

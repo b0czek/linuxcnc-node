@@ -57,6 +57,7 @@ void DirectoryTransaction::cleanup(fs::path path) noexcept {
   } catch (...) {
     // Callers reconcile orphaned sibling directories on startup. Cleanup must
     // not change the outcome of the external operation being committed.
+    return;
   }
 }
 
