@@ -133,6 +133,23 @@ test("preview decoder maps positions to Float64Array operations", () => {
   assert.deepEqual(event.operations[0].pos, new Float64Array([1, 2, 3]));
 });
 
+test("preview decoder delivers cutter-compensation state changes", () => {
+  const compensation = message(18, field(1, 0, varint(2)));
+  const operation = concat(field(1, 0, varint(18)), compensation);
+  const socket = new FakeSocket();
+  let event;
+  openProgramPreview("ws://localhost", {
+    entry: { workspaceId: "workspace", relativePath: "preview.ngc" },
+    createWebSocket: () => socket,
+    onEvent: (value) => (event = value),
+  });
+
+  socket.receive(concat(message(2, message(1, operation))).buffer);
+
+  assert.equal(event.type, "batch");
+  assert.deepEqual(event.operations, [{ type: 18, mode: 2 }]);
+});
+
 test("preview decoder rejects non-finite canonical values", () => {
   const position = message(3, message(1, fixed64(Number.NaN)));
   const operation = concat(field(1, 0, varint(1)), position);

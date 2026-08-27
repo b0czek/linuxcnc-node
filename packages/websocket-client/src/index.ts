@@ -1,5 +1,6 @@
 import { fromBinary } from "@bufbuild/protobuf";
 import type {
+  CutterCompensationMode,
   GCodeOperation,
   HalValue,
   OperationType,
@@ -319,6 +320,14 @@ function domainOperation(operation: WireOperation): GCodeOperation {
       return {
         type: WireOperationType.FEED_RATE_CHANGE as OperationType.FEED_RATE_CHANGE,
         feedRate: finite(data.value.feedRate, "feed rate"),
+      };
+    case WireOperationType.CUTTER_COMPENSATION_CHANGE:
+      if (data.case !== "cutterCompensationChange")
+        throw new Error("cutter-compensation operation is missing data");
+      return {
+        type: WireOperationType.CUTTER_COMPENSATION_CHANGE as
+          OperationType.CUTTER_COMPENSATION_CHANGE,
+        mode: data.value.mode as CutterCompensationMode,
       };
     default:
       throw new Error(`unknown G-code operation type ${operation.type}`);
