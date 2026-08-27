@@ -115,6 +115,11 @@ void encode_gcode_operation(const gcode::Operation& source,
           target->mutable_tool_change()->set_tool_number(operation.toolNumber);
         } else if constexpr (std::is_same_v<T, gcode::FeedRateChangeOp>) {
           target->mutable_feed_rate_change()->set_feed_rate(operation.feedRate);
+        } else if constexpr (std::is_same_v<
+                                 T, gcode::CutterCompensationChangeOp>) {
+          target->mutable_cutter_compensation_change()->set_mode(
+              static_cast<linuxcnc::v1::CutterCompensationMode>(
+                  operation.mode));
         }
       },
       source);

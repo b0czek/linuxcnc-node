@@ -10,6 +10,8 @@
 #include "linuxcnc_grpc/gcode/parser.hpp"
 
 using linuxcnc::server::gcode::ArcOp;
+using linuxcnc::server::gcode::CutterCompensationChangeOp;
+using linuxcnc::server::gcode::CutterCompensationMode;
 using linuxcnc::server::gcode::DwellOp;
 using linuxcnc::server::gcode::FeedOp;
 using linuxcnc::server::gcode::FeedRateChangeOp;
@@ -132,6 +134,33 @@ int main(int argc, char** argv) {
                    });
   assert(compensated_horizontal != compensated_operations.end());
   assert(compensated_vertical != compensated_operations.end());
+  const auto compensation_on = std::find_if(
+      compensated_operations.begin(), compensated_operations.end(),
+      [](const auto& op) {
+        const auto* change = std::get_if<CutterCompensationChangeOp>(&op);
+        return change && change->mode == CutterCompensationMode::LEFT;
+      });
+  const auto compensation_off = std::find_if(
+      compensation_on, compensated_operations.end(), [](const auto& op) {
+        const auto* change = std::get_if<CutterCompensationChangeOp>(&op);
+        return change && change->mode == CutterCompensationMode::OFF;
+      });
+  assert(compensation_on != compensated_operations.end());
+  assert(compensation_on < compensated_horizontal);
+  assert(compensated_vertical < compensation_off);
+  assert(compensation_off != compensated_operations.end());
+  const auto compensation_right = std::find_if(
+      compensation_off, compensated_operations.end(), [](const auto& op) {
+        const auto* change = std::get_if<CutterCompensationChangeOp>(&op);
+        return change && change->mode == CutterCompensationMode::RIGHT;
+      });
+  const auto final_compensation_off = std::find_if(
+      compensation_right, compensated_operations.end(), [](const auto& op) {
+        const auto* change = std::get_if<CutterCompensationChangeOp>(&op);
+        return change && change->mode == CutterCompensationMode::OFF;
+      });
+  assert(compensation_right != compensated_operations.end());
+  assert(final_compensation_off != compensated_operations.end());
 
   // Both self.execute() and direct emccanon calls in a Python remap use the
   // same recording canon as ordinary G-code. No callback into the RPC adapter

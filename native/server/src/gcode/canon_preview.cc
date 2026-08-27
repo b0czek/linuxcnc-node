@@ -62,6 +62,18 @@ Plane preview_plane(CANON_PLANE plane) {
   return Plane::XY;
 }
 
+CutterCompensationMode preview_cutter_compensation(CANON_SIDE side) {
+  switch (side) {
+    case CANON_SIDE_LEFT:
+      return CutterCompensationMode::LEFT;
+    case CANON_SIDE_RIGHT:
+      return CutterCompensationMode::RIGHT;
+    case CANON_SIDE_OFF:
+      return CutterCompensationMode::OFF;
+  }
+  return CutterCompensationMode::OFF;
+}
+
 double linear_value(const ParseContext& context, double value) {
   return value * context.linearUnitScale;
 }
@@ -412,6 +424,12 @@ void consume(ParseContext& context, const canon::FeedRate& event) {
   context.lastFeedRate = rate;
   FeedRateChangeOp operation;
   operation.feedRate = rate;
+  context.addOperation(operation);
+}
+
+void consume(ParseContext& context, const canon::CutterCompensation& event) {
+  CutterCompensationChangeOp operation;
+  operation.mode = preview_cutter_compensation(event.side);
   context.addOperation(operation);
 }
 

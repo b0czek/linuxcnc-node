@@ -127,6 +127,7 @@ const stableEnums = [
   "EmcDebug",
   "OperationType",
   "Plane",
+  "CutterCompensationMode",
 ];
 for (const name of stableEnums) {
   const wire = parseEnum(proto, name);
@@ -452,6 +453,7 @@ const operationWireTypes = {
   tool_offset: "ToolOffsetOperation",
   tool_change: "ToolChangeOperation",
   feed_rate_change: "FeedRateChangeOperation",
+  cutter_compensation_change: "CutterCompensationChangeOperation",
 };
 const actualOperationVariants = parseOneofFields("GCodeOperation", "data")
   .map((field) => field.wireName)

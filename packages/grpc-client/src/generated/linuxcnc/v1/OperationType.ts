@@ -18,6 +18,7 @@ export const OperationType = {
   OPERATION_TYPE_TOOL_OFFSET: 15,
   OPERATION_TYPE_TOOL_CHANGE: 16,
   OPERATION_TYPE_FEED_RATE_CHANGE: 17,
+  OPERATION_TYPE_CUTTER_COMPENSATION_CHANGE: 18,
 } as const;
 
 export type OperationType =
@@ -55,5 +56,7 @@ export type OperationType =
   | 16
   | 'OPERATION_TYPE_FEED_RATE_CHANGE'
   | 17
+  | 'OPERATION_TYPE_CUTTER_COMPENSATION_CHANGE'
+  | 18
 
 export type OperationType__Output = typeof OperationType[keyof typeof OperationType]

@@ -24,6 +24,7 @@ import type { CreateHalSignalResponse as _linuxcnc_v1_CreateHalSignalResponse, C
 import type { CreateHalValueSubscriptionRequest as _linuxcnc_v1_CreateHalValueSubscriptionRequest, CreateHalValueSubscriptionRequest__Output as _linuxcnc_v1_CreateHalValueSubscriptionRequest__Output } from './linuxcnc/v1/CreateHalValueSubscriptionRequest';
 import type { CreateWorkspaceRequest as _linuxcnc_v1_CreateWorkspaceRequest, CreateWorkspaceRequest__Output as _linuxcnc_v1_CreateWorkspaceRequest__Output } from './linuxcnc/v1/CreateWorkspaceRequest';
 import type { CreateWorkspaceResponse as _linuxcnc_v1_CreateWorkspaceResponse, CreateWorkspaceResponse__Output as _linuxcnc_v1_CreateWorkspaceResponse__Output } from './linuxcnc/v1/CreateWorkspaceResponse';
+import type { CutterCompensationData as _linuxcnc_v1_CutterCompensationData, CutterCompensationData__Output as _linuxcnc_v1_CutterCompensationData__Output } from './linuxcnc/v1/CutterCompensationData';
 import type { DeleteHalValueSubscriptionRequest as _linuxcnc_v1_DeleteHalValueSubscriptionRequest, DeleteHalValueSubscriptionRequest__Output as _linuxcnc_v1_DeleteHalValueSubscriptionRequest__Output } from './linuxcnc/v1/DeleteHalValueSubscriptionRequest';
 import type { DeleteWorkspaceRequest as _linuxcnc_v1_DeleteWorkspaceRequest, DeleteWorkspaceRequest__Output as _linuxcnc_v1_DeleteWorkspaceRequest__Output } from './linuxcnc/v1/DeleteWorkspaceRequest';
 import type { DigitalOutput as _linuxcnc_v1_DigitalOutput, DigitalOutput__Output as _linuxcnc_v1_DigitalOutput__Output } from './linuxcnc/v1/DigitalOutput';
@@ -188,6 +189,8 @@ export interface ProtoGrpcType {
       CreateHalValueSubscriptionRequest: MessageTypeDefinition<_linuxcnc_v1_CreateHalValueSubscriptionRequest, _linuxcnc_v1_CreateHalValueSubscriptionRequest__Output>
       CreateWorkspaceRequest: MessageTypeDefinition<_linuxcnc_v1_CreateWorkspaceRequest, _linuxcnc_v1_CreateWorkspaceRequest__Output>
       CreateWorkspaceResponse: MessageTypeDefinition<_linuxcnc_v1_CreateWorkspaceResponse, _linuxcnc_v1_CreateWorkspaceResponse__Output>
+      CutterCompensationData: MessageTypeDefinition<_linuxcnc_v1_CutterCompensationData, _linuxcnc_v1_CutterCompensationData__Output>
+      CutterCompensationMode: EnumTypeDefinition
       DeleteHalValueSubscriptionRequest: MessageTypeDefinition<_linuxcnc_v1_DeleteHalValueSubscriptionRequest, _linuxcnc_v1_DeleteHalValueSubscriptionRequest__Output>
       DeleteWorkspaceRequest: MessageTypeDefinition<_linuxcnc_v1_DeleteWorkspaceRequest, _linuxcnc_v1_DeleteWorkspaceRequest__Output>
       DigitalOutput: MessageTypeDefinition<_linuxcnc_v1_DigitalOutput, _linuxcnc_v1_DigitalOutput__Output>

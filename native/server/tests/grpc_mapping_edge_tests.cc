@@ -186,6 +186,16 @@ void gcode_mapping_all_variants_test() {
   assert(encoded.data_case() == linuxcnc::v1::GCodeOperation::kFeedRateChange);
   assert(encoded.feed_rate_change().feed_rate() == 123.75);
 
+  gcode::CutterCompensationChangeOp cutter_compensation;
+  cutter_compensation.mode = gcode::CutterCompensationMode::LEFT;
+  encode_gcode_operation(cutter_compensation, &encoded);
+  assert(encoded.type() ==
+         linuxcnc::v1::OPERATION_TYPE_CUTTER_COMPENSATION_CHANGE);
+  assert(encoded.data_case() ==
+         linuxcnc::v1::GCodeOperation::kCutterCompensationChange);
+  assert(encoded.cutter_compensation_change().mode() ==
+         linuxcnc::v1::CUTTER_COMPENSATION_MODE_LEFT);
+
   linuxcnc::v1::Position position;
   encode_gcode_position(full_position(), &position);
   assert_position(position, {1.0, -2.0, 3.0, -4.0, 5.0, -6.0, 7.0, -8.0, 9.0});

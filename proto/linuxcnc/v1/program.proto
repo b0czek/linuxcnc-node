@@ -23,6 +23,7 @@ enum OperationType {
   OPERATION_TYPE_TOOL_OFFSET = 15;
   OPERATION_TYPE_TOOL_CHANGE = 16;
   OPERATION_TYPE_FEED_RATE_CHANGE = 17;
+  OPERATION_TYPE_CUTTER_COMPENSATION_CHANGE = 18;
 }
 
 enum Plane {
@@ -33,6 +34,13 @@ enum Plane {
   PLANE_UV = 4;
   PLANE_VW = 5;
   PLANE_UW = 6;
+}
+
+enum CutterCompensationMode {
+  CUTTER_COMPENSATION_MODE_UNSPECIFIED = 0;
+  CUTTER_COMPENSATION_MODE_OFF = 1;
+  CUTTER_COMPENSATION_MODE_LEFT = 2;
+  CUTTER_COMPENSATION_MODE_RIGHT = 3;
 }
 
 message CreateWorkspaceRequest { uint64 ttl_seconds = 1; }
@@ -78,6 +86,7 @@ message GCodeOperation {
     OffsetData tool_offset = 15;
     ToolChangeData tool_change = 16;
     FeedRateData feed_rate_change = 17;
+    CutterCompensationData cutter_compensation_change = 18;
   }
 }
 
@@ -116,6 +125,8 @@ message RotationData { double rotation = 1; }
 message ToolChangeData { int32 tool_number = 1; ToolEntry tool = 2; }
 
 message FeedRateData { double feed_rate = 1; }
+
+message CutterCompensationData { CutterCompensationMode mode = 1; }
 
 service ProgramService {
   rpc CreateWorkspace(CreateWorkspaceRequest) returns (CreateWorkspaceResponse);

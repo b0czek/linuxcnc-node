@@ -273,6 +273,7 @@ export const PROTO_DOMAIN_FIELDS = {
     toolOffset: { number: 15, wireName: "tool_offset" },
     toolChange: { number: 16, wireName: "tool_change" },
     feedRateChange: { number: 17, wireName: "feed_rate_change" },
+    cutterCompensationChange: { number: 18, wireName: "cutter_compensation_change" },
   },
   HalItemRef: {
     kind: { number: 1, wireName: "kind" },
@@ -422,6 +423,7 @@ export const PROTO_GCODE_OPERATION_VARIANTS = [
   { name: "toolOffset", wireName: "tool_offset", number: 15 },
   { name: "toolChange", wireName: "tool_change", number: 16 },
   { name: "feedRateChange", wireName: "feed_rate_change", number: 17 },
+  { name: "cutterCompensationChange", wireName: "cutter_compensation_change", number: 18 },
 ] as const;
 
 export const PROTO_HAL_SCALAR_VARIANTS = [

@@ -26,6 +26,8 @@ export * from "./linuxcnc/v1/CreateHalSignalResponse";
 export * from "./linuxcnc/v1/CreateHalValueSubscriptionRequest";
 export * from "./linuxcnc/v1/CreateWorkspaceRequest";
 export * from "./linuxcnc/v1/CreateWorkspaceResponse";
+export * from "./linuxcnc/v1/CutterCompensationData";
+export * from "./linuxcnc/v1/CutterCompensationMode";
 export * from "./linuxcnc/v1/DeleteHalValueSubscriptionRequest";
 export * from "./linuxcnc/v1/DeleteWorkspaceRequest";
 export * from "./linuxcnc/v1/DigitalOutput";

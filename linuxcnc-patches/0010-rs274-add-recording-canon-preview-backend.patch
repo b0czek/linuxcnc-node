@@ -4,19 +4,51 @@ Date: Sun, 23 Aug 2026 22:34:37 +0200
 Subject: [PATCH] rs274: add recording canon preview backend
 
 ---
- src/emc/rs274ngc/recordingcanon.cc | 618 +++++++++++++++++++++++++++++
- src/emc/rs274ngc/recordingcanon.hh | 143 +++++++
+ src/emc/rs274ngc/interp_convert.cc |   6 +
+ src/emc/rs274ngc/recordingcanon.cc | 626 +++++++++++++++++++++++++++++
+ src/emc/rs274ngc/recordingcanon.hh | 147 +++++++
  src/emc/tooldata/tooldata_mmap.cc  |   5 +
- 3 files changed, 766 insertions(+)
+ 4 files changed, 784 insertions(+)
  create mode 100644 src/emc/rs274ngc/recordingcanon.cc
  create mode 100644 src/emc/rs274ngc/recordingcanon.hh
 
+diff --git a/src/emc/rs274ngc/interp_convert.cc b/src/emc/rs274ngc/interp_convert.cc
+index 33a35bda2e..e0c95f83cb 100644
+--- a/src/emc/rs274ngc/interp_convert.cc
++++ b/src/emc/rs274ngc/interp_convert.cc
+@@ -2495,6 +2495,7 @@ Called by: convert_cutter_compensation
+ 
+ int Interp::convert_cutter_compensation_off(setup_pointer settings)      //!< pointer to machine settings
+ {
++  const bool was_enabled = settings->cutter_comp_side != CUTTER_COMP::OFF;
+ #ifdef DEBUG_EMC
+   enqueue_COMMENT("interpreter: cutter radius compensation off");
+ #endif
+@@ -2511,6 +2512,9 @@ int Interp::convert_cutter_compensation_off(setup_pointer settings)      //!< po
+   }
+   settings->cutter_comp_side = CUTTER_COMP::OFF;
+   settings->cutter_comp_firstmove = true;
++  if (was_enabled) {
++    STOP_CUTTER_RADIUS_COMPENSATION();
++  }
+   return INTERP_OK;
+ }
+ 
+@@ -2619,6 +2623,8 @@ int Interp::convert_cutter_compensation_on(CUTTER_COMP side,     //!< side of pa
+   settings->cutter_comp_radius = radius;
+   settings->cutter_comp_orientation = orientation;
+   settings->cutter_comp_side = side;
++  START_CUTTER_RADIUS_COMPENSATION(
++      side == CUTTER_COMP::LEFT ? CANON_SIDE_LEFT : CANON_SIDE_RIGHT);
+   return INTERP_OK;
+ }
+ 
 diff --git a/src/emc/rs274ngc/recordingcanon.cc b/src/emc/rs274ngc/recordingcanon.cc
 new file mode 100644
-index 0000000000..6684d37278
+index 0000000000..235da9b7ea
 --- /dev/null
 +++ b/src/emc/rs274ngc/recordingcanon.cc
-@@ -0,0 +1,618 @@
+@@ -0,0 +1,626 @@
 +#include "recordingcanon.hh"
 +
 +#include <algorithm>
@@ -397,8 +429,16 @@ index 0000000000..6684d37278
 +}
 +
 +void SET_CUTTER_RADIUS_COMPENSATION(double) {}
-+void START_CUTTER_RADIUS_COMPENSATION(int) {}
-+void STOP_CUTTER_RADIUS_COMPENSATION() {}
++void START_CUTTER_RADIUS_COMPENSATION(int side)
++{
++    recording::record(recording::CutterCompensation{
++        static_cast<CANON_SIDE>(side)});
++}
++
++void STOP_CUTTER_RADIUS_COMPENSATION()
++{
++    recording::record(recording::CutterCompensation{CANON_SIDE_OFF});
++}
 +void START_SPEED_FEED_SYNCH(int, double, bool) {}
 +void STOP_SPEED_FEED_SYNCH() {}
 +void STOP() {}
@@ -637,10 +677,10 @@ index 0000000000..6684d37278
 +void INTERP_ABORT(int, const char *) {}
 diff --git a/src/emc/rs274ngc/recordingcanon.hh b/src/emc/rs274ngc/recordingcanon.hh
 new file mode 100644
-index 0000000000..a9f1a33750
+index 0000000000..dca1242649
 --- /dev/null
 +++ b/src/emc/rs274ngc/recordingcanon.hh
-@@ -0,0 +1,143 @@
+@@ -0,0 +1,147 @@
 +#ifndef RECORDING_CANON_HH
 +#define RECORDING_CANON_HH
 +
@@ -746,6 +786,10 @@ index 0000000000..a9f1a33750
 +    double rate;
 +};
 +
++struct CutterCompensation {
++    CANON_SIDE side;
++};
++
 +struct ToolOffset {
 +    EmcPose offset;
 +};
@@ -758,7 +802,7 @@ index 0000000000..a9f1a33750
 +                           StraightProbe, RigidTap, Dwell, NurbsG5Feed,
 +                           NurbsG6Feed, LengthUnits, Plane, G5xOffset,
 +                           G92Offset, XyRotation, FeedRate, ToolOffset,
-+                           ToolChange>;
++                           ToolChange, CutterCompensation>;
 +
 +// A Session selects this canon implementation for one interpreter run and
 +// owns the resulting event stream. Canon calls without an active Session are

@@ -16,6 +16,7 @@ coverage
 /native/server/src/generated/
 /native/server/src/*.a
 /native/server/src/linuxcnc-grpc-*
+/native/server/src/linuxcnc-protobuf-*
 
 *.edenite
 *.expanded

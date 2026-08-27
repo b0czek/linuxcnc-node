@@ -2,6 +2,7 @@
 // the proto/linuxcnc/v1 schema set; this compatibility barrel preserves the
 // long-standing import path used by downstream consumers.
 export {
+  CutterCompensationMode,
   EmcDebug,
   ExecState,
   InterpState,

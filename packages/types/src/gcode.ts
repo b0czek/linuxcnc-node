@@ -5,10 +5,15 @@
  * LinuxCNC rs274ngc interpreter.
  */
 
-import type { OperationType, Plane, ProgramUnits } from "./constants";
+import type {
+  CutterCompensationMode,
+  OperationType,
+  Plane,
+  ProgramUnits,
+} from "./constants";
 import type { Position, Position3 } from "./core";
 
-export { OperationType, Plane } from "./constants";
+export { CutterCompensationMode, OperationType, Plane } from "./constants";
 
 // ============================================================================
 // Motion Operations
@@ -233,6 +238,15 @@ export interface FeedRateChangeOperation {
   feedRate: number;
 }
 
+/**
+ * G40/G41/G42 cutter-radius compensation state change.
+ */
+export interface CutterCompensationChangeOperation {
+  type: OperationType.CUTTER_COMPENSATION_CHANGE;
+  /** Active compensation mode for subsequent path operations. */
+  mode: CutterCompensationMode;
+}
+
 // ============================================================================
 // Union Types
 // ============================================================================
@@ -256,7 +270,8 @@ export type GCodeOperation =
   | XYRotationOperation
   | ToolOffsetOperation
   | ToolChangeOperation
-  | FeedRateChangeOperation;
+  | FeedRateChangeOperation
+  | CutterCompensationChangeOperation;
 
 // ============================================================================
 // Result Types

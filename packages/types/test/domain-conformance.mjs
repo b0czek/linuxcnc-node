@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  CutterCompensationMode,
   ExecState,
   InterpState,
   JointType,
@@ -29,6 +30,9 @@ assert.equal(TrajMode.TELEOP, 3);
 assert.equal(JointType.ANGULAR, 2);
 assert.equal(POSITION_STRIDE, 10);
 assert.equal(PositionLoggerIndex.MotionType, 9);
+assert.equal(CutterCompensationMode.OFF, 1);
+assert.equal(CutterCompensationMode.LEFT, 2);
+assert.equal(CutterCompensationMode.RIGHT, 3);
 assert.deepEqual(Object.keys(PROTO_DOMAIN_FIELDS.LinuxCNCStat), [
   "echoSerialNumber",
   "state",
@@ -55,6 +59,7 @@ assert.deepEqual(
     "tool_offset",
     "tool_change",
     "feed_rate_change",
+    "cutter_compensation_change",
   ],
 );
 assert.deepEqual(

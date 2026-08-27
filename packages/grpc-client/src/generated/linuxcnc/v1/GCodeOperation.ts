@@ -15,6 +15,7 @@ import type { OffsetData as _linuxcnc_v1_OffsetData, OffsetData__Output as _linu
 import type { RotationData as _linuxcnc_v1_RotationData, RotationData__Output as _linuxcnc_v1_RotationData__Output } from '../../linuxcnc/v1/RotationData';
 import type { ToolChangeData as _linuxcnc_v1_ToolChangeData, ToolChangeData__Output as _linuxcnc_v1_ToolChangeData__Output } from '../../linuxcnc/v1/ToolChangeData';
 import type { FeedRateData as _linuxcnc_v1_FeedRateData, FeedRateData__Output as _linuxcnc_v1_FeedRateData__Output } from '../../linuxcnc/v1/FeedRateData';
+import type { CutterCompensationData as _linuxcnc_v1_CutterCompensationData, CutterCompensationData__Output as _linuxcnc_v1_CutterCompensationData__Output } from '../../linuxcnc/v1/CutterCompensationData';
 
 export interface GCodeOperation {
   'type'?: (_linuxcnc_v1_OperationType);
@@ -34,7 +35,8 @@ export interface GCodeOperation {
   'toolOffset'?: (_linuxcnc_v1_OffsetData | null);
   'toolChange'?: (_linuxcnc_v1_ToolChangeData | null);
   'feedRateChange'?: (_linuxcnc_v1_FeedRateData | null);
-  'data'?: "arc"|"probe"|"rigidTap"|"dwell"|"nurbsG5"|"nurbsG6"|"unitsChange"|"planeChange"|"g5xOffset"|"g92Offset"|"xyRotation"|"toolOffset"|"toolChange"|"feedRateChange";
+  'cutterCompensationChange'?: (_linuxcnc_v1_CutterCompensationData | null);
+  'data'?: "arc"|"probe"|"rigidTap"|"dwell"|"nurbsG5"|"nurbsG6"|"unitsChange"|"planeChange"|"g5xOffset"|"g92Offset"|"xyRotation"|"toolOffset"|"toolChange"|"feedRateChange"|"cutterCompensationChange";
 }
 
 export interface GCodeOperation__Output {
@@ -55,5 +57,6 @@ export interface GCodeOperation__Output {
   'toolOffset'?: (_linuxcnc_v1_OffsetData__Output);
   'toolChange'?: (_linuxcnc_v1_ToolChangeData__Output);
   'feedRateChange'?: (_linuxcnc_v1_FeedRateData__Output);
-  'data'?: "arc"|"probe"|"rigidTap"|"dwell"|"nurbsG5"|"nurbsG6"|"unitsChange"|"planeChange"|"g5xOffset"|"g92Offset"|"xyRotation"|"toolOffset"|"toolChange"|"feedRateChange";
+  'cutterCompensationChange'?: (_linuxcnc_v1_CutterCompensationData__Output);
+  'data'?: "arc"|"probe"|"rigidTap"|"dwell"|"nurbsG5"|"nurbsG6"|"unitsChange"|"planeChange"|"g5xOffset"|"g92Offset"|"xyRotation"|"toolOffset"|"toolChange"|"feedRateChange"|"cutterCompensationChange";
 }

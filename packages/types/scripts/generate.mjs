@@ -63,6 +63,7 @@ const stableEnums = [
   "EmcDebug",
   "OperationType",
   "Plane",
+  "CutterCompensationMode",
 ];
 const prefixFor = (name) =>
   name

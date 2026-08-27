@@ -40,6 +40,7 @@ enum class OperationType {
   TOOL_OFFSET = 15,
   TOOL_CHANGE = 16,
   FEED_RATE_CHANGE = 17,
+  CUTTER_COMPENSATION_CHANGE = 18,
 };
 
 enum class Plane {
@@ -55,6 +56,12 @@ enum class Units {
   INCHES = 1,
   MM = 2,
   CM = 3,
+};
+
+enum class CutterCompensationMode {
+  OFF = 1,
+  LEFT = 2,
+  RIGHT = 3,
 };
 
 // ============================================================================
@@ -252,6 +259,12 @@ struct FeedRateChangeOp {
   double feedRate = 0.0;
 };
 
+struct CutterCompensationChangeOp {
+  static constexpr OperationType type =
+      OperationType::CUTTER_COMPENSATION_CHANGE;
+  CutterCompensationMode mode = CutterCompensationMode::OFF;
+};
+
 // ============================================================================
 // Operation Variant
 // ============================================================================
@@ -260,7 +273,7 @@ using Operation =
     std::variant<TraverseOp, FeedOp, ArcOp, ProbeOp, RigidTapOp, DwellOp,
                  NurbsG5Op, NurbsG6Op, UnitsChangeOp, PlaneChangeOp,
                  G5xOffsetOp, G92OffsetOp, XYRotationOp, ToolOffsetOp,
-                 ToolChangeOp, FeedRateChangeOp>;
+                 ToolChangeOp, FeedRateChangeOp, CutterCompensationChangeOp>;
 
 // A parser can stream bounded operation batches to the ProgramService
 // adapter. Cancellation is requested independently through the parser's

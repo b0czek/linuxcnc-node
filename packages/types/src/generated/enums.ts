@@ -131,6 +131,7 @@ export enum OperationType {
   TOOL_OFFSET = 15,
   TOOL_CHANGE = 16,
   FEED_RATE_CHANGE = 17,
+  CUTTER_COMPENSATION_CHANGE = 18,
 }
 
 export enum Plane {
@@ -140,6 +141,12 @@ export enum Plane {
   UV = 4,
   VW = 5,
   UW = 6,
+}
+
+export enum CutterCompensationMode {
+  OFF = 1,
+  LEFT = 2,
+  RIGHT = 3,
 }
 
 export const POSITION_STRIDE = 10;
