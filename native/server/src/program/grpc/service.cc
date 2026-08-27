@@ -121,7 +121,6 @@ class ProgramServiceImpl final : public ProgramService::Service,
                      AdmissionCounter& upload_admission)
       : store_(std::move(store)),
         upload_admission_(upload_admission),
-        workspace_ttl_(config.workspace_ttl),
         max_upload_bytes_(config.workspace_quota_bytes),
         archive_limits_{config.workspace_quota_bytes,
                         config.max_workspace_entries,
@@ -186,9 +185,10 @@ class ProgramServiceImpl final : public ProgramService::Service,
       if (context->IsCancelled()) return cancelled();
 
       std::string workspace_id;
+      std::chrono::system_clock::time_point expires_at;
       const auto published = store_->publish_revision(
-          revision, extracted.extracted_bytes, extracted.entries,
-          std::chrono::seconds::zero(), &workspace_id);
+          revision, extracted.extracted_bytes, extracted.entries, &workspace_id,
+          &expires_at);
       if (published != WorkspacePublishStatus::Ok)
         return publish_failure(published);
 
@@ -197,8 +197,7 @@ class ProgramServiceImpl final : public ProgramService::Service,
       response->set_extracted_bytes(extracted.extracted_bytes);
       response->set_entries(extracted.entries);
       const auto expires =
-          std::chrono::time_point_cast<std::chrono::milliseconds>(
-              std::chrono::system_clock::now() + workspace_ttl_)
+          std::chrono::time_point_cast<std::chrono::milliseconds>(expires_at)
               .time_since_epoch()
               .count();
       response->set_expires_at_unix_ms(static_cast<std::uint64_t>(expires));
@@ -246,7 +245,6 @@ class ProgramServiceImpl final : public ProgramService::Service,
 
   std::shared_ptr<ProgramWorkspaceStore> store_;
   AdmissionCounter& upload_admission_;
-  const std::chrono::seconds workspace_ttl_;
   const std::size_t max_upload_bytes_;
   const WorkspaceArchiveLimits archive_limits_;
   const std::chrono::seconds upload_timeout_;

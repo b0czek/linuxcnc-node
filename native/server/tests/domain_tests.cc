@@ -262,6 +262,9 @@ void daemon_config_test() {
   char* ttl_arguments[] = {program, ttl};
   assert(parse_config(2, ttl_arguments, &config, nullptr, &error));
   assert(config.workspace_ttl == std::chrono::seconds(90));
+  char excessive_ttl[] = "--workspace-ttl-seconds=2592001";
+  char* excessive_ttl_arguments[] = {program, excessive_ttl};
+  assert(!parse_config(2, excessive_ttl_arguments, &config, nullptr, &error));
   char scope_samples[] = "--scope-samples=64000";
   char* scope_arguments[] = {program, scope_samples};
   assert(parse_config(2, scope_arguments, &config, nullptr, &error));
@@ -293,16 +296,26 @@ void daemon_config_test() {
     certificate << "certificate";
     private_key << "private key";
     config.endpoint = "0.0.0.0:50051";
-    config.unsafe_non_loopback = false;
+    config.allow_plaintext_non_loopback = false;
     config.tls = true;
     config.tls_certificate = base / "server.crt";
     config.tls_private_key = base / "server.key";
     assert(validate_config(config, &error));
     config.telemetry_endpoint = "0.0.0.0:50052";
     assert(!validate_config(config, &error));
-    config.unsafe_non_loopback = true;
+    config.allow_plaintext_non_loopback = true;
     assert(validate_config(config, &error));
   }
+  const auto workspace_root = config.workspace_root;
+  const auto active_directory = config.active_program_directory;
+  config.workspace_root = base / "storage";
+  config.active_program_directory = base / "storage/active";
+  assert(!validate_config(config, &error));
+  config.workspace_root = base / "program/workspaces";
+  config.active_program_directory = base / "program";
+  assert(!validate_config(config, &error));
+  config.workspace_root = workspace_root;
+  config.active_program_directory = active_directory;
   fs::remove_all(base, filesystem_error);
 }
 
@@ -370,7 +383,7 @@ void workspace_test() {
     output << "G0 X0\n";
   }
   std::string id;
-  assert(store.publish_revision(revision, 6, 2, {}, &id) ==
+  assert(store.publish_revision(revision, 6, 2, &id) ==
          WorkspacePublishStatus::Ok);
   fs::path resolved;
   assert(store.pin_entry(id, "program/main.ngc", &resolved));

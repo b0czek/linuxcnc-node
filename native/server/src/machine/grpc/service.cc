@@ -343,6 +343,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
           command.on_completed = [activation = workspace_activation_, workspace,
                                   revision, lease] {
             revision->complete();
+            activation->store->release_recovered_leases();
             std::lock_guard lock(activation->mutex);
             activation->opening = false;
             if (activation->active == workspace) {
@@ -360,11 +361,15 @@ class MachineServiceImpl final : public MachineCallbackBase,
       case ExecuteCommandRequest::kProgramClose:
         command.kind = NmlCommandKind::ProgramClose;
         command.on_completed = [activation = workspace_activation_] {
-          std::lock_guard lock(activation->mutex);
-          if (!activation->active.empty()) {
-            activation->store->unpin_entry(activation->active);
-            activation->active.clear();
+          activation->store->release_recovered_leases();
+          {
+            std::lock_guard lock(activation->mutex);
+            if (!activation->active.empty()) {
+              activation->store->unpin_entry(activation->active);
+              activation->active.clear();
+            }
           }
+          activation->store->clear_active_link();
         };
         break;
       case ExecuteCommandRequest::kRunProgram:
@@ -1125,12 +1130,18 @@ class MachineServiceImpl final : public MachineCallbackBase,
     // from authoritative LinuxCNC status so TTL cleanup resumes once no file
     // is open, regardless of which client initiated the close.
     if (fresh.task_stat.file.empty() && fresh.file.empty()) {
-      std::lock_guard activation_lock(workspace_activation_->mutex);
-      if (!workspace_activation_->active.empty()) {
-        workspace_activation_->store->unpin_entry(
-            workspace_activation_->active);
-        workspace_activation_->active.clear();
+      bool clear_active =
+          workspace_activation_->store->release_recovered_leases();
+      {
+        std::lock_guard activation_lock(workspace_activation_->mutex);
+        if (!workspace_activation_->active.empty()) {
+          workspace_activation_->store->unpin_entry(
+              workspace_activation_->active);
+          workspace_activation_->active.clear();
+          clear_active = true;
+        }
       }
+      if (clear_active) workspace_activation_->store->clear_active_link();
     }
     std::uint64_t published = 0;
     std::unique_lock lock(status_mutex_);

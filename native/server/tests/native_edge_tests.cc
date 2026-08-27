@@ -663,6 +663,108 @@ void workspace_restart_cleanup_test() {
   assert(!error);
 }
 
+std::string publish_test_workspace(ProgramWorkspaceStore& store,
+                                   const std::string& staging_name) {
+  std::error_code error;
+  const auto revision = store.staging_root() / staging_name / "revision";
+  fs::create_directories(revision, error);
+  assert(!error);
+  {
+    std::ofstream program(revision / "program.ngc");
+    program << "M2\n";
+  }
+  std::string id;
+  assert(store.publish_revision(revision, 3, 1, &id) ==
+         WorkspacePublishStatus::Ok);
+  return id;
+}
+
+void workspace_expiration_and_recovery_test() {
+  const auto base =
+      fs::temp_directory_path() /
+      ("linuxcnc-grpc-workspace-recovery-tests-" + std::to_string(::getpid()));
+  const auto root = base / "workspaces";
+  const auto active = base / "active-program";
+  std::error_code error;
+  fs::remove_all(base, error);
+
+  std::string expired_id;
+  {
+    ProgramWorkspaceStore store(root, active);
+    expired_id = publish_test_workspace(store, "expires");
+  }
+  fs::last_write_time(
+      root / expired_id,
+      fs::file_time_type::clock::now() - std::chrono::seconds(1), error);
+  assert(!error);
+  {
+    ProgramWorkspaceStore restarted(root, active);
+    fs::path resolved;
+    assert(!restarted.pin_entry(expired_id, "program.ngc", &resolved));
+    assert(restarted.prune_expired() == 1);
+    assert(!fs::exists(root / expired_id));
+  }
+
+  std::string active_id;
+  std::string interrupted_id;
+  {
+    ProgramWorkspaceStore store(root, active);
+    active_id = publish_test_workspace(store, "active");
+    interrupted_id = publish_test_workspace(store, "interrupted");
+    fs::path resolved;
+    assert(store.pin_entry(active_id, "program.ngc", &resolved));
+    auto activation = store.stage(active_id, "program.ngc", [](fs::path) {});
+    assert(activation && activation->commit());
+    activation->complete();
+    fs::create_directory_symlink(root / interrupted_id,
+                                 base / ".active-program.next-crash", error);
+    assert(!error);
+  }
+  {
+    ProgramWorkspaceStore restarted(root, active);
+    assert(!restarted.erase(active_id));
+    assert(!restarted.erase(interrupted_id));
+    assert(restarted.release_recovered_leases());
+    assert(!fs::exists(base / ".active-program.next-crash"));
+    restarted.clear_active_link();
+    assert(restarted.erase(active_id));
+    assert(restarted.erase(interrupted_id));
+  }
+
+  fs::remove_all(base, error);
+  assert(!error);
+}
+
+void workspace_path_safety_test() {
+  const auto base =
+      fs::temp_directory_path() /
+      ("linuxcnc-grpc-workspace-path-tests-" + std::to_string(::getpid()));
+  std::error_code error;
+  fs::remove_all(base, error);
+  fs::create_directories(base / "insecure", error);
+  assert(!error);
+  fs::permissions(base / "insecure", fs::perms::all, fs::perm_options::replace,
+                  error);
+  assert(!error);
+  bool rejected = false;
+  try {
+    ProgramWorkspaceStore store(base / "insecure", base / "active");
+  } catch (const std::runtime_error&) {
+    rejected = true;
+  }
+  assert(rejected);
+
+  rejected = false;
+  try {
+    ProgramWorkspaceStore store(base / "overlap", base / "overlap/active");
+  } catch (const std::runtime_error&) {
+    rejected = true;
+  }
+  assert(rejected);
+  fs::remove_all(base, error);
+  assert(!error);
+}
+
 void workspace_traversal_quota_ttl_and_materialization_test() {
   const auto base =
       fs::temp_directory_path() /
@@ -689,7 +791,7 @@ void workspace_traversal_quota_ttl_and_materialization_test() {
 
   std::string first_id;
   assert(store.publish_revision(first_revision, first_extract.extracted_bytes,
-                                first_extract.entries, {},
+                                first_extract.entries,
                                 &first_id) == WorkspacePublishStatus::Ok);
   fs::path resolved;
   assert(!store.pin_entry(first_id, "../main.ngc", &resolved));
@@ -716,7 +818,7 @@ void workspace_traversal_quota_ttl_and_materialization_test() {
   assert(second_extract.status == WorkspaceArchiveStatus::Ok);
   std::string second_id;
   assert(store.publish_revision(second_revision, second_extract.extracted_bytes,
-                                second_extract.entries, {},
+                                second_extract.entries,
                                 &second_id) == WorkspacePublishStatus::Ok);
   assert(store.pin_entry(second_id, "program/main.ngc", &resolved));
 
@@ -841,6 +943,8 @@ int main() {
   preview_non_finite_rejection_test();
   hal_value_telemetry_test();
   workspace_restart_cleanup_test();
+  workspace_expiration_and_recovery_test();
+  workspace_path_safety_test();
   workspace_traversal_quota_ttl_and_materialization_test();
   scope_coalescing_and_conflict_accounting_test();
   return 0;

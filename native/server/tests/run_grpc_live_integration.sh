@@ -107,6 +107,7 @@ if [[ ! -x "$linuxcnc_root/scripts/rip-environment" ]]; then
 fi
 
 mkdir -p "$root/active" "$root/workspaces"
+chmod 700 "$root/workspaces"
 cp "$fixture_dir/sim_mm.var" "$root/sim_mm.var"
 cp "$fixture_dir/sim_mm.tbl" "$root/sim_mm.tbl"
 cp "$linuxcnc_root/configs/common/linuxcnc.nml" "$root/live.nml"

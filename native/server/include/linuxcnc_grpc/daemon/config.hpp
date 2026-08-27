@@ -8,6 +8,9 @@
 
 namespace linuxcnc::server {
 
+inline constexpr std::chrono::seconds kMaxWorkspaceTtl =
+    std::chrono::hours(24 * 30);
+
 struct DaemonConfig {
   std::string endpoint = "127.0.0.1:50051";
   std::string telemetry_endpoint = "127.0.0.1:50052";
@@ -41,7 +44,7 @@ struct DaemonConfig {
   bool tls = false;
   bool mtls = false;
   bool reflection = false;
-  bool unsafe_non_loopback = false;
+  bool allow_plaintext_non_loopback = false;
 };
 
 // Parses the daemon's intentionally small process-level configuration. gRPC

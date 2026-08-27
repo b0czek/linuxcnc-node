@@ -75,21 +75,26 @@ loads `scope_rt` on first use when needed, attaches its sampling function to
 the configured thread, and keeps shared-memory polling off the realtime path.
 Each upload is one Zstandard-compressed tar archive and creates one immutable
 workspace. Compressed chunks are spooled to bounded staging storage, safely
-extracted by libarchive on the filesystem executor, and atomically published
-only after the client cleanly closes its upload stream. Errors and cancellation
-discard the entire staged revision.
+extracted synchronously by libarchive after upload EOF, and atomically published
+only after validation succeeds. Errors and cancellation discard the entire
+staged revision. One upload is admitted at a time, matching the single-machine
+GUI workload without involving the serialized machine-command worker.
 
 LinuxCNC's fixed program prefix is a server-owned symlink. Program Open
 atomically exchanges it with a link to the selected immutable workspace; the
 previous link and both workspace leases are retained until LinuxCNC accepts
-the open, and the exchange is rolled back on failure. Safety commands therefore
-never wait for recursive workspace copying.
+the open, and the exchange is rolled back on failure. Active and interrupted
+exchange links are recovered and pinned after daemon restart. Safety commands
+therefore never wait for recursive workspace copying.
 
 Workspace count, archive entries, upload metadata, and upload duration are
 bounded by `--max-workspaces`, `--max-workspace-entries`,
 `--max-upload-metadata`, and `--upload-timeout-seconds`, respectively. Byte
 storage remains bounded by `--workspace-quota` and `--total-quota`. The GUI
-sets a deadline within the upload timeout, and only one upload may be active.
+sets a deadline within the upload timeout. Workspace expiry is fixed at publish
+time, persists across restart, defaults to 24 hours, and is capped at 30 days.
+The workspace root must be private to the daemon user and must not overlap the
+active program path.
 
 With wire generation disabled, CMake builds the transport-neutral domain
 library without creating a server executable.

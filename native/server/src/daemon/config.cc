@@ -1,5 +1,6 @@
 #include "linuxcnc_grpc/daemon/config.hpp"
 
+#include <algorithm>
 #include <cctype>
 #include <charconv>
 #include <fstream>
@@ -58,6 +59,21 @@ bool loopback_host(const std::string& host) {
          host == "[::1]";
 }
 
+bool path_contains(const std::filesystem::path& parent,
+                   const std::filesystem::path& child) {
+  const auto mismatch =
+      std::mismatch(parent.begin(), parent.end(), child.begin(), child.end());
+  return mismatch.first == parent.end();
+}
+
+std::filesystem::path configured_location(const std::filesystem::path& path,
+                                          std::error_code& error) {
+  const auto absolute = std::filesystem::absolute(path).lexically_normal();
+  const auto parent =
+      std::filesystem::weakly_canonical(absolute.parent_path(), error);
+  return error ? std::filesystem::path{} : parent / absolute.filename();
+}
+
 }  // namespace
 
 bool validate_config(const DaemonConfig& config, std::string* error) {
@@ -73,11 +89,12 @@ bool validate_config(const DaemonConfig& config, std::string* error) {
       if (error) *error = std::string(name) + " must be HOST:PORT";
       return false;
     }
-    if (!tls_protected && !config.unsafe_non_loopback &&
+    if (!tls_protected && !config.allow_plaintext_non_loopback &&
         !loopback_host(endpoint_host(endpoint))) {
       if (error)
         *error = std::string(name) +
-                 " on a non-loopback host requires --unsafe-non-loopback";
+                 " on a non-loopback host requires "
+                 "--allow-plaintext-non-loopback";
       return false;
     }
     return true;
@@ -107,6 +124,16 @@ bool validate_config(const DaemonConfig& config, std::string* error) {
       !std::filesystem::is_regular_file(config.nml_file)) {
     return fail("NML configuration must be a regular file");
   }
+  std::error_code path_error;
+  const auto workspace_root =
+      configured_location(config.workspace_root, path_error);
+  if (path_error) return fail("workspace root cannot be resolved");
+  const auto active_directory =
+      configured_location(config.active_program_directory, path_error);
+  if (path_error) return fail("active program directory cannot be resolved");
+  if (path_contains(workspace_root, active_directory) ||
+      path_contains(active_directory, workspace_root))
+    return fail("workspace root and active program directory must not overlap");
   if (config.workspace_quota_bytes == 0 || config.total_quota_bytes == 0 ||
       config.max_workspaces == 0 || config.max_workspace_entries == 0 ||
       config.max_upload_metadata_bytes == 0) {
@@ -123,6 +150,7 @@ bool validate_config(const DaemonConfig& config, std::string* error) {
     return fail("scope sample count must be between 1000 and 1000000");
   }
   if (config.workspace_ttl <= std::chrono::seconds::zero() ||
+      config.workspace_ttl > kMaxWorkspaceTtl ||
       config.upload_timeout <= std::chrono::seconds::zero() ||
       config.status_period <= std::chrono::milliseconds::zero() ||
       config.error_period <= std::chrono::milliseconds::zero() ||
@@ -265,7 +293,8 @@ bool parse_config(int argc, char* argv[], DaemonConfig* config, bool* show_help,
       }
     } else if (option_value(argument, "--workspace-ttl-seconds", &value)) {
       std::size_t seconds = 0;
-      if (!parse_size(value, &seconds) || seconds == 0) {
+      if (!parse_size(value, &seconds) || seconds == 0 ||
+          seconds > static_cast<std::size_t>(kMaxWorkspaceTtl.count())) {
         if (error) *error = "invalid --workspace-ttl-seconds";
         return false;
       }

@@ -8,6 +8,8 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 #include "linuxcnc_grpc/filesystem/directory_transaction.hpp"
 
@@ -33,7 +35,8 @@ class ProgramWorkspaceStore {
 
   WorkspacePublishStatus publish_revision(
       const std::filesystem::path& staged_revision, std::size_t bytes,
-      std::size_t entries, std::chrono::seconds ttl, std::string* workspace_id);
+      std::size_t entries, std::string* workspace_id,
+      std::chrono::system_clock::time_point* expires_at = nullptr);
   bool erase(const std::string& workspace_id);
   bool pin_entry(const std::string& workspace_id, const std::string& entry_path,
                  std::filesystem::path* resolved_entry);
@@ -42,6 +45,8 @@ class ProgramWorkspaceStore {
       const std::string& workspace_id, const std::string& entry_path,
       DirectoryTransaction::Cleanup cleanup);
   std::size_t prune_expired();
+  bool release_recovered_leases();
+  void clear_active_link();
 
   const std::filesystem::path& root() const noexcept { return root_; }
   const std::filesystem::path& staging_root() const noexcept {
@@ -53,8 +58,7 @@ class ProgramWorkspaceStore {
 
  private:
   struct Workspace {
-    std::chrono::steady_clock::time_point touched;
-    std::chrono::seconds ttl;
+    std::filesystem::file_time_type expires_at;
     std::size_t bytes = 0;
     std::size_t entries = 0;
     std::size_t leases = 0;
@@ -67,10 +71,10 @@ class ProgramWorkspaceStore {
                                     const std::filesystem::path& stop);
   static std::pair<std::size_t, std::size_t> directory_usage(
       const std::filesystem::path& directory);
+  std::string linked_workspace_id(const std::filesystem::path& link) const;
   std::filesystem::path workspace_path(const std::string& workspace_id) const;
   bool workspace_exists(const std::string& workspace_id) const;
   std::size_t total_size_locked() const;
-  void touch_locked(const std::string& workspace_id);
 
   const std::filesystem::path root_;
   const std::filesystem::path active_directory_;
@@ -79,6 +83,8 @@ class ProgramWorkspaceStore {
   const WorkspaceLimits limits_;
   mutable std::mutex mutex_;
   std::unordered_map<std::string, Workspace> workspaces_;
+  std::unordered_set<std::string> recovered_leases_;
+  std::vector<std::filesystem::path> recovered_links_;
   std::uint64_t next_id_ = 1;
 };
 

@@ -30,6 +30,7 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "$root/workspaces" "$root/active"
+chmod 700 "$root/workspaces"
 cat > "$root/linuxcnc.ini" <<EOF
 [DISPLAY]
 PROGRAM_PREFIX = $root/active

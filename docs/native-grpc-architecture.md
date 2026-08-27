@@ -42,13 +42,14 @@ already accepted.
 `ProgramService` accepts tar.zst byte chunks and treats a clean client
 half-close as the end of one upload. It publishes a new immutable opaque
 workspace only after complete validation. Uploads use a bounded synchronous
-handler, require a client deadline, and are limited to one at a time. Archive paths
-must be relative; links, sparse files, special files, xattrs, and traversal are
-rejected. Defaults are a sliding 24-hour TTL, 256 MiB compressed and extracted
-per workspace, and 1 GiB total published storage. The active workspace is
-pinned until LinuxCNC closes its program. `[DISPLAY]PROGRAM_PREFIX` names a
-server-owned symlink that is atomically exchanged on Program Open and restored
-if LinuxCNC rejects the command. Preview parsing belongs to
+handler, require a client deadline, and are limited to one at a time. Archive
+paths must be relative; links, sparse files, special files, xattrs, and traversal
+are rejected. Defaults are a fixed, restart-persistent 24-hour TTL, 256 MiB
+compressed and extracted per workspace, and 1 GiB total published storage. The
+active workspace is pinned until LinuxCNC closes its program, including across
+daemon restarts. `[DISPLAY]PROGRAM_PREFIX` names a server-owned symlink that is
+atomically exchanged on Program Open and restored if LinuxCNC rejects the
+command. Preview parsing belongs to
 `TelemetryWebSocketServer`, uses the daemon INI, and streams progress, bounded
 operation batches, and one final summary over `/v1/program-preview`.
 
