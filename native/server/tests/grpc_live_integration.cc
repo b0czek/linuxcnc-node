@@ -455,7 +455,14 @@ int hold_shutdown(const std::string& endpoint) {
   }
   require_shutdown_status(topology->Finish(), "WatchTopology");
   upload->WritesDone();
-  require_shutdown_status(upload->Finish(), "UploadWorkspace");
+  const auto upload_status = upload->Finish();
+  if (upload_status.ok()) {
+    // The archive chunk is complete, so a graceful shutdown may let the
+    // upload commit before the stream cancellation reaches this RPC.
+    assert(!upload_response.workspace_id().empty());
+  } else {
+    require_shutdown_status(upload_status, "UploadWorkspace");
+  }
   component->WritesDone();
   while (component->Read(&component_response)) {
   }

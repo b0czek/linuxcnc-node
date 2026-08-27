@@ -650,6 +650,8 @@ void workspace_restart_cleanup_test() {
   fs::remove_all(base, error);
   fs::create_directories(root / ".uploads/orphan", error);
   fs::create_directories(active, error);
+  fs::permissions(root, fs::perms::owner_all, fs::perm_options::replace, error);
+  assert(!error);
   {
     std::ofstream stale(active / "stale.ngc");
     stale << "stale";
