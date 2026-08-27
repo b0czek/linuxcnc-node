@@ -6,9 +6,9 @@ class Service;
 
 namespace linuxcnc::server::detail {
 
-// Common ownership and lifecycle seam for callback-based gRPC services. The
-// concrete generated callback bases stay private to their implementation
-// translation units; the server runner only needs this small boundary.
+// Common ownership and lifecycle seam for gRPC services. Concrete generated
+// service bases stay private to their implementation translation units; the
+// server runner only needs this small boundary.
 class ManagedGrpcService {
  public:
   virtual ~ManagedGrpcService() = default;

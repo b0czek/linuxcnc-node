@@ -22,8 +22,6 @@ import type { CoolantIoStat as _linuxcnc_v1_CoolantIoStat, CoolantIoStat__Output
 import type { CreateHalSignalRequest as _linuxcnc_v1_CreateHalSignalRequest, CreateHalSignalRequest__Output as _linuxcnc_v1_CreateHalSignalRequest__Output } from './linuxcnc/v1/CreateHalSignalRequest';
 import type { CreateHalSignalResponse as _linuxcnc_v1_CreateHalSignalResponse, CreateHalSignalResponse__Output as _linuxcnc_v1_CreateHalSignalResponse__Output } from './linuxcnc/v1/CreateHalSignalResponse';
 import type { CreateHalValueSubscriptionRequest as _linuxcnc_v1_CreateHalValueSubscriptionRequest, CreateHalValueSubscriptionRequest__Output as _linuxcnc_v1_CreateHalValueSubscriptionRequest__Output } from './linuxcnc/v1/CreateHalValueSubscriptionRequest';
-import type { CreateWorkspaceRequest as _linuxcnc_v1_CreateWorkspaceRequest, CreateWorkspaceRequest__Output as _linuxcnc_v1_CreateWorkspaceRequest__Output } from './linuxcnc/v1/CreateWorkspaceRequest';
-import type { CreateWorkspaceResponse as _linuxcnc_v1_CreateWorkspaceResponse, CreateWorkspaceResponse__Output as _linuxcnc_v1_CreateWorkspaceResponse__Output } from './linuxcnc/v1/CreateWorkspaceResponse';
 import type { CutterCompensationData as _linuxcnc_v1_CutterCompensationData, CutterCompensationData__Output as _linuxcnc_v1_CutterCompensationData__Output } from './linuxcnc/v1/CutterCompensationData';
 import type { DeleteHalValueSubscriptionRequest as _linuxcnc_v1_DeleteHalValueSubscriptionRequest, DeleteHalValueSubscriptionRequest__Output as _linuxcnc_v1_DeleteHalValueSubscriptionRequest__Output } from './linuxcnc/v1/DeleteHalValueSubscriptionRequest';
 import type { DeleteWorkspaceRequest as _linuxcnc_v1_DeleteWorkspaceRequest, DeleteWorkspaceRequest__Output as _linuxcnc_v1_DeleteWorkspaceRequest__Output } from './linuxcnc/v1/DeleteWorkspaceRequest';
@@ -34,7 +32,6 @@ import type { ExecuteCommandRequest as _linuxcnc_v1_ExecuteCommandRequest, Execu
 import type { ExecuteCommandResponse as _linuxcnc_v1_ExecuteCommandResponse, ExecuteCommandResponse__Output as _linuxcnc_v1_ExecuteCommandResponse__Output } from './linuxcnc/v1/ExecuteCommandResponse';
 import type { Extents as _linuxcnc_v1_Extents, Extents__Output as _linuxcnc_v1_Extents__Output } from './linuxcnc/v1/Extents';
 import type { FeedRateData as _linuxcnc_v1_FeedRateData, FeedRateData__Output as _linuxcnc_v1_FeedRateData__Output } from './linuxcnc/v1/FeedRateData';
-import type { FileChunk as _linuxcnc_v1_FileChunk, FileChunk__Output as _linuxcnc_v1_FileChunk__Output } from './linuxcnc/v1/FileChunk';
 import type { G5xOffsetData as _linuxcnc_v1_G5xOffsetData, G5xOffsetData__Output as _linuxcnc_v1_G5xOffsetData__Output } from './linuxcnc/v1/G5xOffsetData';
 import type { GCodeOperation as _linuxcnc_v1_GCodeOperation, GCodeOperation__Output as _linuxcnc_v1_GCodeOperation__Output } from './linuxcnc/v1/GCodeOperation';
 import type { GetHalTopologyRequest as _linuxcnc_v1_GetHalTopologyRequest, GetHalTopologyRequest__Output as _linuxcnc_v1_GetHalTopologyRequest__Output } from './linuxcnc/v1/GetHalTopologyRequest';
@@ -187,8 +184,6 @@ export interface ProtoGrpcType {
       CreateHalSignalRequest: MessageTypeDefinition<_linuxcnc_v1_CreateHalSignalRequest, _linuxcnc_v1_CreateHalSignalRequest__Output>
       CreateHalSignalResponse: MessageTypeDefinition<_linuxcnc_v1_CreateHalSignalResponse, _linuxcnc_v1_CreateHalSignalResponse__Output>
       CreateHalValueSubscriptionRequest: MessageTypeDefinition<_linuxcnc_v1_CreateHalValueSubscriptionRequest, _linuxcnc_v1_CreateHalValueSubscriptionRequest__Output>
-      CreateWorkspaceRequest: MessageTypeDefinition<_linuxcnc_v1_CreateWorkspaceRequest, _linuxcnc_v1_CreateWorkspaceRequest__Output>
-      CreateWorkspaceResponse: MessageTypeDefinition<_linuxcnc_v1_CreateWorkspaceResponse, _linuxcnc_v1_CreateWorkspaceResponse__Output>
       CutterCompensationData: MessageTypeDefinition<_linuxcnc_v1_CutterCompensationData, _linuxcnc_v1_CutterCompensationData__Output>
       CutterCompensationMode: EnumTypeDefinition
       DeleteHalValueSubscriptionRequest: MessageTypeDefinition<_linuxcnc_v1_DeleteHalValueSubscriptionRequest, _linuxcnc_v1_DeleteHalValueSubscriptionRequest__Output>
@@ -202,7 +197,6 @@ export interface ProtoGrpcType {
       ExecuteCommandResponse: MessageTypeDefinition<_linuxcnc_v1_ExecuteCommandResponse, _linuxcnc_v1_ExecuteCommandResponse__Output>
       Extents: MessageTypeDefinition<_linuxcnc_v1_Extents, _linuxcnc_v1_Extents__Output>
       FeedRateData: MessageTypeDefinition<_linuxcnc_v1_FeedRateData, _linuxcnc_v1_FeedRateData__Output>
-      FileChunk: MessageTypeDefinition<_linuxcnc_v1_FileChunk, _linuxcnc_v1_FileChunk__Output>
       FrameKind: EnumTypeDefinition
       G5xOffsetData: MessageTypeDefinition<_linuxcnc_v1_G5xOffsetData, _linuxcnc_v1_G5xOffsetData__Output>
       GCodeOperation: MessageTypeDefinition<_linuxcnc_v1_GCodeOperation, _linuxcnc_v1_GCodeOperation__Output>

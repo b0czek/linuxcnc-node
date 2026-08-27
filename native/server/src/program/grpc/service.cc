@@ -1,36 +1,29 @@
+#include <fcntl.h>
 #include <google/protobuf/empty.pb.h>
 #include <grpcpp/grpcpp.h>
+#include <unistd.h>
 
-#include <algorithm>
-#include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <filesystem>
 #include <memory>
-#include <mutex>
-#include <optional>
-#include <stdexcept>
 #include <string>
-#include <unordered_map>
+#include <system_error>
 #include <utility>
-#include <vector>
 
 #include "grpc/server/service_factories.hpp"
-#include "grpc/server/unary_task_reactor.hpp"
 #include "linuxcnc/v1/program.grpc.pb.h"
 #include "linuxcnc_grpc/callback_runtime.hpp"
 #include "linuxcnc_grpc/daemon/config.hpp"
-#include "linuxcnc_grpc/gcode/parser.hpp"
 #include "linuxcnc_grpc/program/workspace.hpp"
-#include "linuxcnc_grpc/protobuf_gcode_mapping.hpp"
+#include "linuxcnc_grpc/program/workspace_archive.hpp"
 
 namespace linuxcnc::server::detail {
 namespace {
 
 using namespace linuxcnc::v1;
+namespace fs = std::filesystem;
 
 constexpr std::size_t kMaxUploadChunk = std::size_t{16} * 1024U * 1024U;
 
@@ -38,332 +31,234 @@ constexpr std::size_t kMaxUploadChunk = std::size_t{16} * 1024U * 1024U;
   return {::grpc::StatusCode::INVALID_ARGUMENT, message};
 }
 
-using ProgramCallbackBase = ProgramService::WithCallbackMethod_CreateWorkspace<
-    ProgramService::WithCallbackMethod_UploadWorkspace<
-        ProgramService::WithCallbackMethod_DeleteWorkspace<
-            ProgramService::Service>>>;
+::grpc::Status io_failure(int error, const char* message) {
+  return {error == ENOSPC || error == ENOMEM
+              ? ::grpc::StatusCode::RESOURCE_EXHAUSTED
+              : ::grpc::StatusCode::INTERNAL,
+          message};
+}
 
-class ProgramServiceImpl final : public ProgramCallbackBase,
-                                 public ManagedGrpcService {
-  class UploadReactor;
-  class ParseReactor;
-
+class UploadSlot {
  public:
-  explicit ProgramServiceImpl(const DaemonConfig& config,
-                              std::shared_ptr<ProgramWorkspaceStore> store,
-                              BoundedExecutor& blocking,
-                              AdmissionCounter& upload_admission)
-      : store_(std::move(store)),
-        blocking_(blocking),
-        upload_admission_(upload_admission),
-        default_ttl_(config.workspace_ttl),
-        max_upload_bytes_(config.workspace_quota_bytes),
-        prune_period_(
-            std::max(std::chrono::seconds(1),
-                     std::min(config.workspace_ttl,
-                              std::chrono::duration_cast<std::chrono::seconds>(
-                                  std::chrono::hours(1))))),
-        stopping_(false),
-        pruner_([this] {
-          std::unique_lock lock(prune_mutex_);
-          while (!stopping_.load(std::memory_order_relaxed)) {
-            if (prune_condition_.wait_for(lock, prune_period_, [this] {
-                  return stopping_.load(std::memory_order_relaxed);
-                })) {
-              break;
-            }
-            lock.unlock();
-            store_->prune_expired();
-            lock.lock();
-          }
-        }) {}
+  explicit UploadSlot(AdmissionCounter& admission)
+      : admission_(admission), acquired_(admission_.acquire()) {}
+  ~UploadSlot() {
+    if (acquired_) admission_.release();
+  }
 
-  ~ProgramServiceImpl() override { shutdown(); }
+  explicit operator bool() const noexcept { return acquired_; }
+
+ private:
+  AdmissionCounter& admission_;
+  bool acquired_;
+};
+
+class StagedArchive {
+ public:
+  explicit StagedArchive(const fs::path& staging_root)
+      : directory_(staging_root / "current"),
+        archive_(directory_ / "workspace.tar.zst") {}
+
+  ~StagedArchive() {
+    if (descriptor_ >= 0) ::close(descriptor_);
+    std::error_code error;
+    fs::remove_all(directory_, error);
+  }
+
+  ::grpc::Status open() {
+    std::error_code error;
+    fs::remove_all(directory_, error);
+    if (error)
+      return io_failure(error.value(), "failed to clear upload staging");
+    fs::create_directory(directory_, error);
+    if (error)
+      return io_failure(error.value(), "failed to create upload staging");
+    descriptor_ = ::open(archive_.c_str(),
+                         O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
+                         S_IRUSR | S_IWUSR);
+    if (descriptor_ < 0)
+      return io_failure(errno, "failed to create staged archive");
+    return ::grpc::Status::OK;
+  }
+
+  ::grpc::Status append(const std::string& chunk) {
+    std::size_t offset = 0;
+    while (offset < chunk.size()) {
+      const auto written =
+          ::write(descriptor_, chunk.data() + offset, chunk.size() - offset);
+      if (written < 0 && errno == EINTR) continue;
+      if (written <= 0)
+        return io_failure(errno, "failed to stage archive data");
+      offset += static_cast<std::size_t>(written);
+    }
+    bytes_ += chunk.size();
+    return ::grpc::Status::OK;
+  }
+
+  ::grpc::Status close() {
+    const int descriptor = std::exchange(descriptor_, -1);
+    if (descriptor < 0 || ::close(descriptor) != 0)
+      return io_failure(errno, "failed to close staged archive");
+    return ::grpc::Status::OK;
+  }
+
+  std::size_t bytes() const noexcept { return bytes_; }
+  const fs::path& archive() const noexcept { return archive_; }
+  fs::path revision() const { return directory_ / "revision"; }
+
+ private:
+  fs::path directory_;
+  fs::path archive_;
+  int descriptor_ = -1;
+  std::size_t bytes_ = 0;
+};
+
+class ProgramServiceImpl final : public ProgramService::Service,
+                                 public ManagedGrpcService {
+ public:
+  ProgramServiceImpl(const DaemonConfig& config,
+                     std::shared_ptr<ProgramWorkspaceStore> store,
+                     AdmissionCounter& upload_admission)
+      : store_(std::move(store)),
+        upload_admission_(upload_admission),
+        workspace_ttl_(config.workspace_ttl),
+        max_upload_bytes_(config.workspace_quota_bytes),
+        archive_limits_{config.workspace_quota_bytes,
+                        config.max_workspace_entries,
+                        config.max_upload_metadata_bytes},
+        upload_timeout_(config.upload_timeout) {}
 
   ::grpc::Service* service() noexcept override { return this; }
+  void shutdown() override {}
 
-  void shutdown() override {
-    if (stopping_.exchange(true, std::memory_order_relaxed)) return;
-    prune_condition_.notify_all();
-    if (pruner_.joinable()) pruner_.join();
-    callbacks_.shutdown();
-  }
+  ::grpc::Status UploadWorkspace(
+      ::grpc::ServerContext* context,
+      ::grpc::ServerReader<UploadWorkspaceRequest>* reader,
+      UploadWorkspaceResponse* response) override {
+    UploadSlot slot(upload_admission_);
+    if (!slot)
+      return {::grpc::StatusCode::RESOURCE_EXHAUSTED,
+              "a workspace upload is already in progress"};
 
-  ::grpc::ServerUnaryReactor* CreateWorkspace(
-      ::grpc::CallbackServerContext*, const CreateWorkspaceRequest* request,
-      CreateWorkspaceResponse* response) override {
-    auto owned_request = std::make_shared<CreateWorkspaceRequest>(*request);
-    return new detail::UnaryTaskReactor<CreateWorkspaceResponse>(
-        blocking_, callbacks_, response,
-        [this, owned_request = std::move(owned_request)](
-            std::stop_token stop_token,
-            CreateWorkspaceResponse* task_response) {
-          if (stop_token.stop_requested()) {
-            return ::grpc::Status(::grpc::StatusCode::CANCELLED,
-                                  "RPC cancelled");
-          }
-          return create_workspace(*owned_request, task_response);
-        });
-  }
+    const auto deadline = context->deadline();
+    const auto now = std::chrono::system_clock::now();
+    if (deadline == std::chrono::system_clock::time_point::max() ||
+        deadline - now > upload_timeout_)
+      return invalid("upload requires a deadline within the configured limit");
+    if (deadline <= now)
+      return {::grpc::StatusCode::DEADLINE_EXCEEDED,
+              "workspace upload deadline expired"};
 
-  ::grpc::Status create_workspace(const CreateWorkspaceRequest& request,
-                                  CreateWorkspaceResponse* response) {
     try {
-      const auto ttl = request.ttl_seconds() == 0
-                           ? std::chrono::seconds::zero()
-                           : std::chrono::seconds(request.ttl_seconds());
-      response->set_workspace_id(store_->create(ttl));
-      const auto effective_ttl =
-          ttl == std::chrono::seconds::zero() ? default_ttl_ : ttl;
+      store_->prune_expired();
+      StagedArchive staged(store_->staging_root());
+      const auto open_status = staged.open();
+      if (!open_status.ok()) return open_status;
+
+      UploadWorkspaceRequest request;
+      while (reader->Read(&request)) {
+        if (context->IsCancelled()) return cancelled();
+        const auto& chunk = request.archive_chunk();
+        if (chunk.empty() || chunk.size() > kMaxUploadChunk)
+          return invalid("empty or oversized archive chunk");
+        if (chunk.size() > max_upload_bytes_ ||
+            staged.bytes() > max_upload_bytes_ - chunk.size())
+          return {::grpc::StatusCode::RESOURCE_EXHAUSTED,
+                  "compressed workspace archive exceeds its quota"};
+        const auto append_status = staged.append(chunk);
+        if (!append_status.ok()) return append_status;
+        request.Clear();
+      }
+      if (context->IsCancelled()) return cancelled();
+      if (staged.bytes() == 0) return invalid("workspace upload is empty");
+      const auto close_status = staged.close();
+      if (!close_status.ok()) return close_status;
+
+      const auto revision = staged.revision();
+      std::error_code error;
+      fs::create_directory(revision, error);
+      if (error)
+        return io_failure(error.value(), "failed to create workspace revision");
+      const auto extracted = extract_workspace_archive(
+          staged.archive(), revision, archive_limits_);
+      if (extracted.status != WorkspaceArchiveStatus::Ok)
+        return archive_failure(extracted);
+      if (context->IsCancelled()) return cancelled();
+
+      std::string workspace_id;
+      const auto published = store_->publish_revision(
+          revision, extracted.extracted_bytes, extracted.entries,
+          std::chrono::seconds::zero(), &workspace_id);
+      if (published != WorkspacePublishStatus::Ok)
+        return publish_failure(published);
+
+      response->set_workspace_id(std::move(workspace_id));
+      response->set_archive_bytes(staged.bytes());
+      response->set_extracted_bytes(extracted.extracted_bytes);
+      response->set_entries(extracted.entries);
       const auto expires =
           std::chrono::time_point_cast<std::chrono::milliseconds>(
-              std::chrono::system_clock::now() + effective_ttl)
+              std::chrono::system_clock::now() + workspace_ttl_)
               .time_since_epoch()
               .count();
       response->set_expires_at_unix_ms(static_cast<std::uint64_t>(expires));
       return ::grpc::Status::OK;
+    } catch (const std::bad_alloc&) {
+      return {::grpc::StatusCode::RESOURCE_EXHAUSTED,
+              "upload allocation failed"};
     } catch (const std::exception& error) {
       return {::grpc::StatusCode::INTERNAL, error.what()};
     }
   }
 
-  ::grpc::ServerReadReactor<UploadWorkspaceRequest>* UploadWorkspace(
-      ::grpc::CallbackServerContext*,
-      UploadWorkspaceResponse* response) override {
-    return new UploadReactor(*this, response);
-  }
-
-  ::grpc::ServerUnaryReactor* DeleteWorkspace(
-      ::grpc::CallbackServerContext*, const DeleteWorkspaceRequest* request,
-      google::protobuf::Empty* response) override {
-    auto owned_request = std::make_shared<DeleteWorkspaceRequest>(*request);
-    return new detail::UnaryTaskReactor<google::protobuf::Empty>(
-        blocking_, callbacks_, response,
-        [this, owned_request = std::move(owned_request)](
-            std::stop_token stop_token, google::protobuf::Empty*) {
-          if (stop_token.stop_requested()) {
-            return ::grpc::Status(::grpc::StatusCode::CANCELLED,
-                                  "RPC cancelled");
-          }
-          if (!store_->erase(owned_request->workspace_id())) {
-            return invalid("workspace not found or leased");
-          }
-          return ::grpc::Status::OK;
-        });
+  ::grpc::Status DeleteWorkspace(::grpc::ServerContext* context,
+                                 const DeleteWorkspaceRequest* request,
+                                 google::protobuf::Empty*) override {
+    if (context->IsCancelled()) return cancelled();
+    store_->prune_expired();
+    if (!store_->erase(request->workspace_id()))
+      return invalid("workspace not found or leased");
+    return ::grpc::Status::OK;
   }
 
  private:
-  class UploadReactor final
-      : public ::grpc::ServerReadReactor<UploadWorkspaceRequest> {
-    struct State {
-      explicit State(std::shared_ptr<ProgramWorkspaceStore> value)
-          : store(std::move(value)) {}
-      ~State() {
-        if (leased) store->unpin(workspace_id);
-      }
-      std::shared_ptr<ProgramWorkspaceStore> store;
-      bool leased = false;
-      std::string workspace_id;
-      std::unordered_map<std::string, std::vector<std::uint8_t>> pending;
-      std::size_t pending_bytes = 0;
-    };
+  static ::grpc::Status cancelled() {
+    return {::grpc::StatusCode::CANCELLED, "upload cancelled"};
+  }
 
-    struct Result {
-      Result() = default;
-      Result(::grpc::Status value, bool end)
-          : status(std::move(value)), finish(end) {}
-      ::grpc::Status status;
-      bool finish = false;
-      std::size_t bytes = 0;
-      std::string file;
-    };
+  static ::grpc::Status archive_failure(const WorkspaceArchiveResult& result) {
+    const auto code = result.status == WorkspaceArchiveStatus::ResourceExhausted
+                          ? ::grpc::StatusCode::RESOURCE_EXHAUSTED
+                      : result.status == WorkspaceArchiveStatus::Invalid
+                          ? ::grpc::StatusCode::INVALID_ARGUMENT
+                          : ::grpc::StatusCode::INTERNAL;
+    return {code, result.error};
+  }
 
-   public:
-    UploadReactor(ProgramServiceImpl& service,
-                  UploadWorkspaceResponse* response)
-        : service_(service),
-          response_(response),
-          admitted_(service_.upload_admission_.acquire()),
-          state_(std::make_shared<State>(service_.store_)),
-          gate_(std::make_shared<LifetimeGate<UploadReactor>>(this)) {
-      const std::weak_ptr<LifetimeGate<UploadReactor>> weak_gate = gate_;
-      registration_ = service_.callbacks_.register_callback([weak_gate] {
-        if (auto gate = weak_gate.lock()) {
-          gate->invoke([](UploadReactor& reactor) { reactor.shutdown(); });
-        }
-      });
-      if (!registration_) {
-        shutdown();
-        return;
-      }
-      if (!admitted_) {
-        finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
-                "workspace upload limit reached"});
-      } else {
-        StartRead(&request_);
-      }
-    }
-
-    void OnReadDone(bool ok) override {
-      gate_->invoke([ok](UploadReactor& reactor) { reactor.read_done(ok); });
-    }
-
-    void OnCancel() override {
-      stop_source_.request_stop();
-      gate_->invoke([](UploadReactor& reactor) {
-        reactor.finish({::grpc::StatusCode::CANCELLED, "upload cancelled"});
-      });
-    }
-
-    void OnDone() override {
-      gate_->detach();
-      registration_.reset();
-      if (admitted_) service_.upload_admission_.release();
-      delete this;
-    }
-
-    void shutdown() {
-      stop_source_.request_stop();
-      finish({::grpc::StatusCode::UNAVAILABLE, "server shutting down"});
-    }
-
-   private:
-    void read_done(bool ok) {
-      if (!ok) {
-        finish(validate_end(*state_));
-        return;
-      }
-      auto message = request_;
-      request_.Clear();
-      const auto state = state_;
-      const auto stop_token = stop_source_.get_token();
-      const auto max_upload_bytes = service_.max_upload_bytes_;
-      const std::weak_ptr<LifetimeGate<UploadReactor>> weak_gate = gate_;
-      if (!service_.blocking_.submit([weak_gate, state, stop_token,
-                                      max_upload_bytes,
-                                      message = std::move(message)]() mutable {
-            Result result =
-                consume(*state, message, stop_token, max_upload_bytes);
-            auto gate = weak_gate.lock();
-            if (gate) {
-              gate->invoke([&](UploadReactor& reactor) {
-                reactor.consumed(std::move(result));
-              });
-            }
-          })) {
-        finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
-                "filesystem work queue is full"});
-      }
-    }
-
-    static Result consume(State& state, const UploadWorkspaceRequest& request,
-                          std::stop_token stop_token,
-                          std::size_t max_upload_bytes) {
-      if (stop_token.stop_requested()) {
-        return {{::grpc::StatusCode::CANCELLED, "upload cancelled"}, true};
-      }
-      if (request.content_case() == UploadWorkspaceRequest::kFinish) {
-        return {validate_end(state), true};
-      }
-      if (request.content_case() != UploadWorkspaceRequest::kFile) {
-        return {invalid("file chunk required"), true};
-      }
-      const auto& file = request.file();
-      if (state.workspace_id.empty()) {
-        state.workspace_id = request.workspace_id();
-        if (state.workspace_id.empty() ||
-            !state.store->pin(state.workspace_id)) {
-          return {invalid("workspace not found"), true};
-        }
-        state.leased = true;
-      }
-      if (request.workspace_id() != state.workspace_id) {
-        return {invalid("all chunks must address one workspace"), true};
-      }
-      if (file.data().size() > kMaxUploadChunk ||
-          file.relative_path().empty()) {
-        return {invalid("invalid or oversized file chunk"), true};
-      }
-      if (file.data().size() > max_upload_bytes ||
-          state.pending_bytes > max_upload_bytes - file.data().size()) {
-        return {{::grpc::StatusCode::RESOURCE_EXHAUSTED,
-                 "workspace upload exceeds its bounded quota"},
-                true};
-      }
-      auto& buffer = state.pending[file.relative_path()];
-      state.pending_bytes += file.data().size();
-      buffer.insert(buffer.end(), file.data().begin(), file.data().end());
-      if (file.eof()) {
-        if (!state.store->write_file(state.workspace_id, file.relative_path(),
-                                     buffer)) {
-          return {invalid("workspace path or quota rejected"), true};
-        }
-        Result result;
-        result.bytes = buffer.size();
-        result.file = file.relative_path();
-        state.pending_bytes -= buffer.size();
-        state.pending.erase(file.relative_path());
-        return result;
-      }
-      return {};
-    }
-
-    static ::grpc::Status validate_end(const State& state) {
-      if (!state.pending.empty()) {
-        return invalid("workspace upload ended before file eof");
-      }
-      if (state.workspace_id.empty()) {
-        return invalid("workspace upload requires at least one file");
-      }
-      return ::grpc::Status::OK;
-    }
-
-    void consumed(Result result) {
-      if (result.bytes) {
-        response_->set_bytes_written(response_->bytes_written() + result.bytes);
-      }
-      if (!result.file.empty()) response_->add_files(std::move(result.file));
-      if (result.finish) {
-        finish(std::move(result.status));
-      } else {
-        StartRead(&request_);
-      }
-    }
-
-    void finish(::grpc::Status status) {
-      gate_->finish([&](UploadReactor& reactor) { reactor.Finish(status); });
-    }
-
-    ProgramServiceImpl& service_;
-    UploadWorkspaceResponse* response_;
-    bool admitted_ = false;
-    UploadWorkspaceRequest request_;
-    std::shared_ptr<State> state_;
-    std::stop_source stop_source_;
-    std::shared_ptr<LifetimeGate<UploadReactor>> gate_;
-    ActiveCallbackRegistry::Registration registration_;
-  };
+  static ::grpc::Status publish_failure(WorkspacePublishStatus status) {
+    const auto code = status == WorkspacePublishStatus::ResourceExhausted
+                          ? ::grpc::StatusCode::RESOURCE_EXHAUSTED
+                      : status == WorkspacePublishStatus::Invalid
+                          ? ::grpc::StatusCode::INVALID_ARGUMENT
+                          : ::grpc::StatusCode::INTERNAL;
+    return {code, "failed to publish workspace revision"};
+  }
 
   std::shared_ptr<ProgramWorkspaceStore> store_;
-  BoundedExecutor& blocking_;
   AdmissionCounter& upload_admission_;
-  const std::chrono::seconds default_ttl_;
+  const std::chrono::seconds workspace_ttl_;
   const std::size_t max_upload_bytes_;
-  const std::chrono::seconds prune_period_;
-  std::mutex prune_mutex_;
-  std::condition_variable prune_condition_;
-  std::atomic<bool> stopping_;
-  std::thread pruner_;
-  ActiveCallbackRegistry callbacks_;
+  const WorkspaceArchiveLimits archive_limits_;
+  const std::chrono::seconds upload_timeout_;
 };
 
 }  // namespace
 
 std::unique_ptr<ManagedGrpcService> make_program_service(
     const DaemonConfig& config, std::shared_ptr<ProgramWorkspaceStore> store,
-    BoundedExecutor& blocking, AdmissionCounter& upload_admission) {
+    AdmissionCounter& upload_admission) {
   return std::make_unique<ProgramServiceImpl>(config, std::move(store),
-                                              blocking, upload_admission);
+                                              upload_admission);
 }
 
 }  // namespace linuxcnc::server::detail

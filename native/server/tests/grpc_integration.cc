@@ -1,5 +1,6 @@
 #include <google/protobuf/empty.pb.h>
 #include <grpcpp/grpcpp.h>
+#include <unistd.h>
 
 #include <boost/asio/connect.hpp>
 #include <boost/asio/ip/tcp.hpp>
@@ -18,6 +19,7 @@
 #include "linuxcnc/v1/program.grpc.pb.h"
 #include "linuxcnc/v1/scope.grpc.pb.h"
 #include "linuxcnc/v1/websocket.pb.h"
+#include "workspace_archive_fixture.hpp"
 
 namespace asio = boost::asio;
 namespace beast = boost::beast;
@@ -96,18 +98,14 @@ int main(int argc, char** argv) {
       terminal_ok(stream->Finish());
     });
     holders.emplace_back([&] {
-      grpc::ClientContext create_context;
-      linuxcnc::v1::CreateWorkspaceResponse workspace;
-      assert(program->CreateWorkspace(&create_context, {}, &workspace).ok());
       grpc::ClientContext context;
       context.set_deadline(std::chrono::system_clock::now() +
                            std::chrono::seconds(10));
       linuxcnc::v1::UploadWorkspaceResponse response;
       auto stream = program->UploadWorkspace(&context, &response);
       linuxcnc::v1::UploadWorkspaceRequest request;
-      request.set_workspace_id(workspace.workspace_id());
-      request.mutable_file()->set_relative_path("held.ngc");
-      request.mutable_file()->set_data("G0 X0\n");
+      request.set_archive_chunk(
+          workspace_archive_fixture("held.ngc", "G0 X0\n"));
       assert(stream->Write(request));
       std::this_thread::sleep_for(std::chrono::seconds(1));
       terminal_ok(stream->Finish());
@@ -211,8 +209,16 @@ int main(int argc, char** argv) {
 
   auto program = linuxcnc::v1::ProgramService::NewStub(channel);
   grpc::ClientContext context4;
-  linuxcnc::v1::CreateWorkspaceResponse workspace;
-  assert(program->CreateWorkspace(&context4, {}, &workspace).ok());
+  context4.set_deadline(std::chrono::system_clock::now() +
+                        std::chrono::seconds(10));
+  linuxcnc::v1::UploadWorkspaceResponse workspace;
+  auto upload = program->UploadWorkspace(&context4, &workspace);
+  linuxcnc::v1::UploadWorkspaceRequest upload_request;
+  upload_request.set_archive_chunk(
+      workspace_archive_fixture("program.ngc", "M2\n"));
+  assert(upload->Write(upload_request));
+  upload->WritesDone();
+  assert(upload->Finish().ok());
   assert(!workspace.workspace_id().empty());
 
   grpc::ClientContext context5;
@@ -222,7 +228,9 @@ int main(int argc, char** argv) {
 
   grpc::ClientContext create_signal_context;
   linuxcnc::v1::CreateHalSignalRequest create_signal;
-  create_signal.set_name("integration.telemetry");
+  const auto signal_name =
+      "integration.telemetry." + std::to_string(static_cast<long>(::getpid()));
+  create_signal.set_name(signal_name);
   create_signal.set_type(linuxcnc::v1::HAL_TYPE_BIT);
   linuxcnc::v1::CreateHalSignalResponse created_signal;
   assert(
@@ -233,7 +241,7 @@ int main(int argc, char** argv) {
   create_subscription.set_sample_period_ms(50);
   auto* requested_item = create_subscription.add_items();
   requested_item->set_kind(linuxcnc::v1::HAL_ITEM_KIND_SIGNAL);
-  requested_item->set_name("integration.telemetry");
+  requested_item->set_name(signal_name);
   linuxcnc::v1::HalValueSubscription value_subscription;
   assert(hal->CreateValueSubscription(&create_subscription_context,
                                       create_subscription, &value_subscription)

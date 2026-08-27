@@ -21,7 +21,11 @@ struct DaemonConfig {
   std::filesystem::path tls_client_ca;
   std::size_t workspace_quota_bytes = std::size_t{256} * 1024U * 1024U;
   std::size_t total_quota_bytes = std::size_t{1024} * 1024U * 1024U;
+  std::size_t max_workspaces = 64;
+  std::size_t max_workspace_entries = 4096;
+  std::size_t max_upload_metadata_bytes = std::size_t{1024} * 1024U;
   std::chrono::seconds workspace_ttl{24 * 60 * 60};
+  std::chrono::seconds upload_timeout{5 * 60};
   std::size_t command_queue_capacity = 128;
   std::size_t status_replay_capacity = 256;
   std::size_t gcode_batch_size = 128;

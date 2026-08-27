@@ -19,8 +19,9 @@ if grep -Eq 'grpc::Service\b|public [A-Za-z0-9_:]+::Service\b' -- "$control_sour
   exit 1
 fi
 
-# RPC implementations may use callback reactors only. Fixed daemon-owned
-# runtime/control threads are reviewed separately by name.
+# The listed RPC implementations use callback reactors. Program upload is a
+# separately reviewed bounded synchronous service and is intentionally omitted.
+# Fixed daemon-owned runtime/control threads are reviewed separately by name.
 unexpected_threads="$(grep -En 'std::thread ' "${source_files[@]}" |
   grep -Ev 'std::thread (position_poller_|pruner_|timer_|control_thread_)([ (;]|$)' || true)"
 if [[ -n "$unexpected_threads" ]]; then
@@ -29,7 +30,7 @@ if [[ -n "$unexpected_threads" ]]; then
   exit 1
 fi
 
-for reviewed_thread in position_poller_ pruner_ control_thread_; do
+for reviewed_thread in position_poller_ control_thread_; do
   count="$(grep -Eho "std::thread ${reviewed_thread}([ (;]|$)" "${source_files[@]}" | wc -l)"
   if [[ "$count" -ne 1 ]]; then
     echo "reviewed fixed thread ${reviewed_thread} must appear exactly once" >&2

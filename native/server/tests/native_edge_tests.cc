@@ -1,3 +1,5 @@
+#include <archive.h>
+#include <archive_entry.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -23,6 +25,7 @@
 #include "linuxcnc_grpc/linuxcnc/command_validation.hpp"
 #include "linuxcnc_grpc/position/history.hpp"
 #include "linuxcnc_grpc/program/workspace.hpp"
+#include "linuxcnc_grpc/program/workspace_archive.hpp"
 #include "linuxcnc_grpc/scope/manager.hpp"
 
 namespace fs = std::filesystem;
@@ -294,8 +297,8 @@ void command_validation_test() {
     command.integer = valid;
     assert(validate_nml_command(command, &configuration));
   }
-  for (const auto invalid : {-2, -1, 2,
-                             std::numeric_limits<std::int32_t>::max()}) {
+  for (const auto invalid :
+       {-2, -1, 2, std::numeric_limits<std::int32_t>::max()}) {
     command.integer = invalid;
     assert(!validate_nml_command(command, &configuration));
   }
@@ -308,9 +311,9 @@ void command_validation_test() {
       -std::numeric_limits<double>::infinity()};
   const std::array<NmlCommandKind, 8> physical_commands{
       NmlCommandKind::SetMaxVelocity, NmlCommandKind::SetFeedRate,
-      NmlCommandKind::SetRapidRate, NmlCommandKind::SetSpindleOverride,
-      NmlCommandKind::JogContinuous, NmlCommandKind::SetMinPositionLimit,
-      NmlCommandKind::SpindleOn, NmlCommandKind::SetAnalogOutput};
+      NmlCommandKind::SetRapidRate,   NmlCommandKind::SetSpindleOverride,
+      NmlCommandKind::JogContinuous,  NmlCommandKind::SetMinPositionLimit,
+      NmlCommandKind::SpindleOn,      NmlCommandKind::SetAnalogOutput};
   for (const auto kind : physical_commands) {
     command = {};
     command.kind = kind;
@@ -338,8 +341,7 @@ void command_validation_test() {
   command.kind = NmlCommandKind::SetTool;
   command.tool.has_offset = true;
   command.tool.offset_values = command.tool.offset.values.size();
-  command.tool.offset.values.back() =
-      std::numeric_limits<double>::quiet_NaN();
+  command.tool.offset.values.back() = std::numeric_limits<double>::quiet_NaN();
   assert(!validate_nml_command(command, &configuration));
 }
 
@@ -558,14 +560,53 @@ void hal_value_telemetry_test() {
       std::chrono::milliseconds(50)));
 }
 
-std::vector<std::uint8_t> bytes(std::string value) {
-  return {value.begin(), value.end()};
-}
-
 std::string read_file(const fs::path& path) {
   std::ifstream input(path, std::ios::binary);
   return {std::istreambuf_iterator<char>(input),
           std::istreambuf_iterator<char>()};
+}
+
+void write_workspace_archive(
+    const fs::path& path,
+    const std::vector<std::pair<std::string, std::string>>& files,
+    bool compressed = true) {
+  auto* writer = archive_write_new();
+  assert(writer);
+  assert(archive_write_set_format_pax_restricted(writer) == ARCHIVE_OK);
+  if (compressed) assert(archive_write_add_filter_zstd(writer) == ARCHIVE_OK);
+  assert(archive_write_open_filename(writer, path.c_str()) == ARCHIVE_OK);
+  for (const auto& [name, contents] : files) {
+    auto* entry = archive_entry_new();
+    assert(entry);
+    archive_entry_set_pathname(entry, name.c_str());
+    archive_entry_set_filetype(entry, AE_IFREG);
+    archive_entry_set_perm(entry, 0600);
+    archive_entry_set_size(entry, static_cast<la_int64_t>(contents.size()));
+    assert(archive_write_header(writer, entry) == ARCHIVE_OK);
+    assert(archive_write_data(writer, contents.data(), contents.size()) ==
+           static_cast<la_ssize_t>(contents.size()));
+    archive_entry_free(entry);
+  }
+  assert(archive_write_close(writer) == ARCHIVE_OK);
+  assert(archive_write_free(writer) == ARCHIVE_OK);
+}
+
+void write_symlink_archive(const fs::path& path) {
+  auto* writer = archive_write_new();
+  assert(writer);
+  assert(archive_write_set_format_pax_restricted(writer) == ARCHIVE_OK);
+  assert(archive_write_add_filter_zstd(writer) == ARCHIVE_OK);
+  assert(archive_write_open_filename(writer, path.c_str()) == ARCHIVE_OK);
+  auto* entry = archive_entry_new();
+  assert(entry);
+  archive_entry_set_pathname(entry, "linked.ngc");
+  archive_entry_set_filetype(entry, AE_IFLNK);
+  archive_entry_set_perm(entry, 0777);
+  archive_entry_set_symlink(entry, "../outside.ngc");
+  assert(archive_write_header(writer, entry) == ARCHIVE_OK);
+  archive_entry_free(entry);
+  assert(archive_write_close(writer) == ARCHIVE_OK);
+  assert(archive_write_free(writer) == ARCHIVE_OK);
 }
 
 void workspace_restart_cleanup_test() {
@@ -576,54 +617,18 @@ void workspace_restart_cleanup_test() {
   const auto active = base / "active-program";
   std::error_code error;
   fs::remove_all(base, error);
-
+  fs::create_directories(root / ".uploads/orphan", error);
   fs::create_directories(active, error);
-  assert(!error);
   {
-    std::ofstream output(active / "current.ngc");
-    output << "current";
-  }
-  fs::create_directories(base / ".active-program.staging-7", error);
-  fs::create_directories(base / ".active-program.previous-7", error);
-  fs::create_directories(base / ".other.staging-7", error);
-  fs::create_directories(base / ".active-program.staging-not-ours", error);
-  {
-    std::ofstream output(base / ".active-program.staging-not-a-directory");
-    output << "unrelated";
+    std::ofstream stale(active / "stale.ngc");
+    stale << "stale";
   }
   {
-    ProgramWorkspaceStore restarted(root, active);
-    assert(read_file(restarted.active_directory() / "current.ngc") ==
-           "current");
+    ProgramWorkspaceStore store(root, active);
+    assert(fs::is_symlink(fs::symlink_status(active)));
+    assert(!fs::exists(active / "stale.ngc"));
+    assert(fs::is_empty(store.staging_root()));
   }
-  assert(!fs::exists(base / ".active-program.staging-7"));
-  assert(!fs::exists(base / ".active-program.previous-7"));
-  assert(fs::is_directory(base / ".other.staging-7"));
-  assert(fs::is_directory(base / ".active-program.staging-not-ours"));
-  assert(read_file(base / ".active-program.staging-not-a-directory") ==
-         "unrelated");
-
-  fs::remove_all(active, error);
-  fs::create_directories(base / ".active-program.previous-8", error);
-  assert(!error);
-  {
-    std::ofstream output(base / ".active-program.previous-8" / "old.ngc");
-    output << "last known good";
-  }
-  fs::create_directories(base / ".active-program.staging-8", error);
-  assert(!error);
-  {
-    std::ofstream output(base / ".active-program.staging-8" / "new.ngc");
-    output << "incomplete";
-  }
-  {
-    ProgramWorkspaceStore restarted(root, active);
-    assert(read_file(restarted.active_directory() / "old.ngc") ==
-           "last known good");
-  }
-  assert(!fs::exists(base / ".active-program.previous-8"));
-  assert(!fs::exists(base / ".active-program.staging-8"));
-
   fs::remove_all(base, error);
   assert(!error);
 }
@@ -631,102 +636,120 @@ void workspace_restart_cleanup_test() {
 void workspace_traversal_quota_ttl_and_materialization_test() {
   const auto base =
       fs::temp_directory_path() /
-      ("linuxcnc-grpc-native-edge-tests-" + std::to_string(::getpid()));
+      ("linuxcnc-grpc-workspace-archive-tests-" + std::to_string(::getpid()));
   std::error_code error;
   fs::remove_all(base, error);
 
-  {
-    ProgramWorkspaceStore store(base / "quota-workspaces",
-                                base / "quota-active",
-                                WorkspaceLimits{8, 10, std::chrono::hours(24)});
-    const auto first = store.create();
-    assert(store.write_file(first, "one.ngc", bytes("1234")));
-    assert(store.write_file(first, "one.ngc", bytes("5678")));
-    assert(store.write_file(first, "one.ngc", bytes("1234567")));
-    assert(!store.write_file(first, "two.ngc", bytes("12345")));
-    const auto second = store.create();
-    assert(store.write_file(second, "two.ngc", bytes("xy")));
-    assert(!store.write_file(second, "three.ngc", bytes("12345")));
-    assert(store.remove_file(first, "one.ngc"));
-    assert(store.write_file(second, "three.ngc", bytes("12345")));
-    assert(!store.remove_file(second, "missing.ngc"));
-    assert(!store.write_file(first, "../escape.ngc", bytes("x")));
-    assert(!store.write_file(first, "/absolute.ngc", bytes("x")));
-    fs::path rejected;
-    assert(!store.resolve_entry(first, "../escape.ngc", &rejected));
-    assert(!store.resolve_entry(first, "/absolute.ngc", &rejected));
-    assert(!store.resolve_entry(first, "./one.ngc", &rejected));
-    assert(store.erase(first));
-    assert(store.erase(second));
-  }
+  ProgramWorkspaceStore store(
+      base / "workspaces", base / "active-program",
+      WorkspaceLimits{64, 128, std::chrono::hours(24), 2, 4});
 
-  {
-    ProgramWorkspaceStore store(
-        base / "workspace", base / "active",
-        WorkspaceLimits{1024, 2048, std::chrono::hours(24)});
-    const auto id = store.create();
-    assert(store.write_file(id, ".upload-2", bytes("user data")));
-    assert(store.write_file(id, "program/main.ngc", bytes("G0 X1\n")));
-    assert(read_file(store.root() / id / ".upload-2") == "user data");
-    assert(store.write_file(id, "program/main.tbl", bytes("tool companion\n")));
-    assert(store.write_file(id, "subdir/notes.txt", bytes("notes")));
-    fs::create_directories(store.active_directory() / "stale", error);
-    {
-      std::ofstream stale(store.active_directory() / "stale" / "old.ngc");
-      stale << "stale";
-    }
-    fs::path resolved;
-    assert(store.resolve_entry(id, "program/main.ngc", &resolved));
-    assert(resolved == store.root() / id / "program/main.ngc");
-    assert(read_file(resolved) == "G0 X1\n");
-    fs::path materialized;
-    assert(store.materialize(id, "program/main.ngc", &materialized));
-    assert(materialized == store.active_directory() / "program/main.ngc");
-    assert(read_file(materialized) == "G0 X1\n");
-    assert(read_file(store.active_directory() / "program/main.tbl") ==
-           "tool companion\n");
-    assert(read_file(store.active_directory() / "subdir/notes.txt") == "notes");
-    assert(!fs::exists(store.active_directory() / "stale"));
+  const auto first_upload = store.staging_root() / "first";
+  const auto first_revision = first_upload / "revision";
+  fs::create_directories(first_revision, error);
+  assert(!error);
+  const auto first_archive = first_upload / "workspace.tar.zst";
+  write_workspace_archive(first_archive, {{"program/main.ngc", "G0 X1\n"},
+                                          {"sub/companion.ngc", "M2\n"}});
+  const auto first_extract = extract_workspace_archive(
+      first_archive, first_revision, WorkspaceArchiveLimits{64, 4, 128});
+  assert(first_extract.status == WorkspaceArchiveStatus::Ok);
+  assert(first_extract.extracted_bytes == 9);
+  assert(first_extract.entries == 2);
 
-    const auto outside = base / "outside.txt";
-    const auto outside_directory = base / "outside-directory";
-    {
-      std::ofstream output(outside);
-      output << "outside";
-    }
-    fs::create_directories(outside_directory, error);
-    fs::create_symlink(outside, store.root() / id / "linked.txt", error);
-    assert(!error);
-    fs::create_symlink(outside_directory, store.root() / id / "linked", error);
-    assert(!error);
-    assert(!store.resolve_entry(id, "linked.txt", &resolved));
-    assert(!store.write_file(id, "linked/evil.ngc", bytes("evil")));
-    assert(!store.materialize(id, "linked.txt"));
-    assert(read_file(store.active_directory() / "program/main.ngc") ==
-           "G0 X1\n");
-    assert(store.write_file(id, "unsafe.sh", bytes("#!/bin/sh\n")));
-    fs::permissions(store.root() / id / "unsafe.sh", fs::perms::owner_exec,
-                    fs::perm_options::add, error);
-    assert(!error);
-    assert(!store.materialize(id, "program/main.ngc"));
-    assert(read_file(store.active_directory() / "program/main.ngc") ==
-           "G0 X1\n");
-    assert(store.erase(id));
-  }
+  std::string first_id;
+  assert(store.publish_revision(first_revision, first_extract.extracted_bytes,
+                                first_extract.entries, {},
+                                &first_id) == WorkspacePublishStatus::Ok);
+  fs::path resolved;
+  assert(!store.pin_entry(first_id, "../main.ngc", &resolved));
+  assert(store.pin_entry(first_id, "program/main.ngc", &resolved));
+  assert(read_file(resolved) == "G0 X1\n");
+  auto first_activation =
+      store.stage(first_id, "program/main.ngc", [](fs::path path) {
+        std::error_code cleanup_error;
+        fs::remove(path, cleanup_error);
+      });
+  assert(first_activation && first_activation->commit());
+  first_activation->complete();
+  assert(fs::is_symlink(fs::symlink_status(store.active_directory())));
+  assert(read_file(store.active_directory() / "program/main.ngc") == "G0 X1\n");
 
-  {
-    ProgramWorkspaceStore store(
-        base / "ttl-workspaces", base / "ttl-active",
-        WorkspaceLimits{1024, 2048, std::chrono::hours(24)});
-    const auto expired = store.create(std::chrono::seconds(-1));
-    assert(store.prune_expired() == 1);
-    assert(!store.erase(expired));
-    const auto pinned = store.create(std::chrono::seconds(-1));
-    assert(store.pin(pinned));
-    assert(store.prune_expired() == 0);
-    assert(store.unpin(pinned));
-    assert(store.prune_expired() == 1);
-  }
+  const auto second_upload = store.staging_root() / "second";
+  const auto second_revision = second_upload / "revision";
+  fs::create_directories(second_revision, error);
+  assert(!error);
+  const auto second_archive = second_upload / "workspace.tar.zst";
+  write_workspace_archive(second_archive, {{"program/main.ngc", "G1 X2\n"}});
+  const auto second_extract = extract_workspace_archive(
+      second_archive, second_revision, WorkspaceArchiveLimits{64, 4, 128});
+  assert(second_extract.status == WorkspaceArchiveStatus::Ok);
+  std::string second_id;
+  assert(store.publish_revision(second_revision, second_extract.extracted_bytes,
+                                second_extract.entries, {},
+                                &second_id) == WorkspacePublishStatus::Ok);
+  assert(store.pin_entry(second_id, "program/main.ngc", &resolved));
+
+  auto rejected_activation =
+      store.stage(second_id, "program/main.ngc", [](fs::path path) {
+        std::error_code cleanup_error;
+        fs::remove(path, cleanup_error);
+      });
+  assert(rejected_activation && rejected_activation->commit());
+  assert(read_file(store.active_directory() / "program/main.ngc") == "G1 X2\n");
+  rejected_activation->rollback();
+  assert(read_file(store.active_directory() / "program/main.ngc") == "G0 X1\n");
+  assert(store.unpin_entry(second_id));
+
+  assert(!store.erase(first_id));
+  assert(store.unpin_entry(first_id));
+  assert(store.erase(first_id));
+  assert(store.erase(second_id));
+
+  const auto unsafe_root = base / "unsafe";
+  fs::create_directories(unsafe_root / "revision", error);
+  write_workspace_archive(unsafe_root / "traversal.tar.zst",
+                          {{"../escape.ngc", "bad"}});
+  const auto unsafe = extract_workspace_archive(
+      unsafe_root / "traversal.tar.zst", unsafe_root / "revision",
+      WorkspaceArchiveLimits{64, 4, 128});
+  assert(unsafe.status == WorkspaceArchiveStatus::Invalid);
+  assert(!fs::exists(base / "escape.ngc"));
+
+  fs::remove_all(unsafe_root / "revision", error);
+  fs::create_directory(unsafe_root / "revision", error);
+  write_workspace_archive(unsafe_root / "plain.tar", {{"program.ngc", "M2\n"}},
+                          false);
+  const auto plain = extract_workspace_archive(
+      unsafe_root / "plain.tar", unsafe_root / "revision",
+      WorkspaceArchiveLimits{64, 4, 128});
+  assert(plain.status == WorkspaceArchiveStatus::Invalid);
+
+  fs::remove_all(unsafe_root / "revision", error);
+  fs::create_directory(unsafe_root / "revision", error);
+  write_symlink_archive(unsafe_root / "link.tar.zst");
+  const auto linked = extract_workspace_archive(
+      unsafe_root / "link.tar.zst", unsafe_root / "revision",
+      WorkspaceArchiveLimits{64, 4, 128});
+  assert(linked.status == WorkspaceArchiveStatus::Invalid);
+
+  fs::remove_all(unsafe_root / "revision", error);
+  fs::create_directory(unsafe_root / "revision", error);
+  write_workspace_archive(unsafe_root / "entries.tar.zst",
+                          {{"one.ngc", "1"}, {"two.ngc", "2"}});
+  const auto entries = extract_workspace_archive(
+      unsafe_root / "entries.tar.zst", unsafe_root / "revision",
+      WorkspaceArchiveLimits{64, 1, 128});
+  assert(entries.status == WorkspaceArchiveStatus::ResourceExhausted);
+
+  fs::remove_all(unsafe_root / "revision", error);
+  fs::create_directory(unsafe_root / "revision", error);
+  write_workspace_archive(unsafe_root / "large.tar.zst",
+                          {{"program.ngc", "12345"}});
+  const auto large = extract_workspace_archive(
+      unsafe_root / "large.tar.zst", unsafe_root / "revision",
+      WorkspaceArchiveLimits{4, 4, 128});
+  assert(large.status == WorkspaceArchiveStatus::ResourceExhausted);
 
   fs::remove_all(base, error);
   assert(!error);

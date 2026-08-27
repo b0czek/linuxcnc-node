@@ -15,6 +15,9 @@
 
 namespace linuxcnc::server {
 
+// LinuxCNC's EMC_TASK_PLAN_OPEN::file is a LINELEN-sized C string.
+inline constexpr std::size_t kNmlProgramPathCapacity = 255;
+
 namespace detail {
 constexpr bool nml_serial_after(std::int32_t lhs, std::int32_t rhs) {
   return static_cast<std::int32_t>(static_cast<std::uint32_t>(lhs) -
@@ -257,11 +260,11 @@ struct NmlCommand {
   NmlPose pose;
   NmlPose wear_pose;
   NmlToolEntry tool;
-  // Preparation and completion stay on the serialized command worker. This
-  // lets callers stage filesystem state immediately before the matching NML
-  // write without teaching the adapter about workspaces or transports.
+  // Preparation is restricted to bounded handoff work on the serialized
+  // command worker. Completion/failure callbacks finalize external state.
   std::function<void(NmlCommand&)> prepare;
   std::function<void()> on_completed;
+  std::function<void()> on_failed;
 };
 
 struct NmlStatusSnapshot {

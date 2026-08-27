@@ -749,6 +749,10 @@ CommandTicket NmlAdapter::submit(
   return impl_->commands.submit_with_context(
       [this, command = std::move(command),
        safety_command](CommandContext& context) mutable {
+        const auto rollback = [&command] {
+          if (command.on_failed) command.on_failed();
+        };
+        try {
         // A request cancelled while it was still queued has not reached
         // LinuxCNC and can be dropped safely. After the first NML write below,
         // cancellation no longer participates in command completion.
@@ -781,7 +785,7 @@ CommandTicket NmlAdapter::submit(
             break;
           case NmlCommandKind::ProgramOpen: {
             auto value = std::make_unique<EMC_TASK_PLAN_OPEN>();
-            if (command.path.size() >= sizeof(value->file))
+            if (command.path.size() >= kNmlProgramPathCapacity)
               throw std::runtime_error("program path too long");
             std::strncpy(value->file, command.path.c_str(),
                          sizeof(value->file) - 1);
@@ -1148,7 +1152,23 @@ CommandTicket NmlAdapter::submit(
                 failed("command completion callback failed");
               }
             },
-            context.mark_failed);
+            [failed = context.mark_failed,
+             on_failed = std::move(command.on_failed)](
+                std::string error) mutable {
+              try {
+                if (on_failed) on_failed();
+              } catch (const std::exception& rollback_error) {
+                error += "; rollback failed: ";
+                error += rollback_error.what();
+              } catch (...) {
+                error += "; rollback failed";
+              }
+              failed(std::move(error));
+            });
+        } catch (...) {
+          rollback();
+          throw;
+        }
       },
       stop_token, safety_command ? CommandPriority::Safety
                                  : CommandPriority::Normal);

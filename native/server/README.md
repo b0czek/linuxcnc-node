@@ -11,7 +11,7 @@ it registers the generated `linuxcnc.v1` Machine, Program, HAL, and Scope
 services, enables standard gRPC health, optionally enables reflection, and
 supports plaintext/TLS/mTLS credentials. The NML adapter mechanically maps all
 51 command oneof cases, including spindle indices, tool offsets/wear, operator
-messages, and workspace-materialized program opens. It publishes the complete
+messages, and immutable-workspace program opens. It publishes the complete
 status surface extracted from the pinned LinuxCNC status structures and emits
 typed task, trajectory, joint/axis/spindle, I/O, and tool-table deltas. Live
 CTest validation launches an isolated pinned-LinuxCNC simulation and exercises
@@ -65,9 +65,23 @@ The HAL service uses the pinned LinuxCNC HAL runtime for topology, exact
 scalar reads/writes, signals, and session-owned components. The scope service
 loads `scope_rt` on first use when needed, attaches its sampling function to
 the configured thread, and keeps shared-memory polling off the realtime path.
-Workspace paths are validated and materialized on the serialized NML command
-worker into the configured active program directory, with active-workspace
-pinning reconciled against LinuxCNC status.
+Each upload is one Zstandard-compressed tar archive and creates one immutable
+workspace. Compressed chunks are spooled to bounded staging storage, safely
+extracted by libarchive on the filesystem executor, and atomically published
+only after the client cleanly closes its upload stream. Errors and cancellation
+discard the entire staged revision.
+
+LinuxCNC's fixed program prefix is a server-owned symlink. Program Open
+atomically exchanges it with a link to the selected immutable workspace; the
+previous link and both workspace leases are retained until LinuxCNC accepts
+the open, and the exchange is rolled back on failure. Safety commands therefore
+never wait for recursive workspace copying.
+
+Workspace count, archive entries, upload metadata, and upload duration are
+bounded by `--max-workspaces`, `--max-workspace-entries`,
+`--max-upload-metadata`, and `--upload-timeout-seconds`, respectively. Byte
+storage remains bounded by `--workspace-quota` and `--total-quota`. The GUI
+sets a deadline within the upload timeout, and only one upload may be active.
 
 With wire generation disabled, CMake builds the transport-neutral domain
 library without creating a server executable.
@@ -136,6 +150,11 @@ two encoded batches ahead of the active write, so a slow client applies
 backpressure to the serialized interpreter instead of growing an unbounded
 preview in daemon memory. Progress may be coalesced under load; operation
 batches are never coalesced or discarded.
+
+G41/G42 and G40 are relayed as ordered
+`CUTTER_COMPENSATION_CHANGE` operations. Clients can track the `OFF`, `LEFT`,
+or `RIGHT` mode and style the following compensated tool-center path
+independently.
 
 Clients should append `batch.operations` as events arrive and use the summary
 to finalize camera fitting or other whole-program state. Cancelling or closing

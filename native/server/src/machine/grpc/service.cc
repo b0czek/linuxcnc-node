@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "grpc/server/service_factories.hpp"
+#include "grpc/server/unary_task_reactor.hpp"
 #include "linuxcnc/v1/machine.grpc.pb.h"
 #include "linuxcnc_grpc/callback_runtime.hpp"
 #include "linuxcnc_grpc/command_coordinator.hpp"
@@ -29,7 +30,6 @@
 #include "linuxcnc_grpc/position/telemetry.hpp"
 #include "linuxcnc_grpc/program/workspace.hpp"
 #include "machine/grpc/status_codec.hpp"
-#include "grpc/server/unary_task_reactor.hpp"
 
 namespace linuxcnc::server::detail {
 namespace {
@@ -151,24 +151,27 @@ using MachineCallbackBase =
 
 class MachineServiceImpl final : public MachineCallbackBase,
                                  public ManagedGrpcService {
-  struct PendingWorkspaceLease {
-    PendingWorkspaceLease(std::shared_ptr<ProgramWorkspaceStore> value,
-                          std::string id)
-        : store(std::move(value)), workspace(std::move(id)) {}
-    ~PendingWorkspaceLease() {
-      if (release) store->unpin(workspace);
-    }
-    std::shared_ptr<ProgramWorkspaceStore> store;
-    std::string workspace;
-    bool release = true;
-  };
-
   struct WorkspaceActivation {
     explicit WorkspaceActivation(std::shared_ptr<ProgramWorkspaceStore> value)
         : store(std::move(value)) {}
     std::mutex mutex;
     std::string active;
+    bool opening = false;
     std::shared_ptr<ProgramWorkspaceStore> store;
+  };
+
+  struct PendingWorkspaceLease {
+    PendingWorkspaceLease(std::shared_ptr<WorkspaceActivation> value,
+                          std::string id)
+        : activation(std::move(value)), workspace(std::move(id)) {}
+    ~PendingWorkspaceLease() {
+      std::lock_guard lock(activation->mutex);
+      activation->opening = false;
+      if (release) activation->store->unpin_entry(workspace);
+    }
+    std::shared_ptr<WorkspaceActivation> activation;
+    std::string workspace;
+    bool release = true;
   };
 
  public:
@@ -180,6 +183,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
       : nml_(config.nml_file, config.command_queue_capacity,
              config.command_completion_timeout),
         control_(1, config.command_queue_capacity),
+        filesystem_(1, 16, 4),
         blocking_(blocking),
         stream_admission_(stream_admission),
         workspaces_(std::move(workspaces)),
@@ -205,6 +209,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
     status_wakes_.close();
     error_wakes_.close();
     callbacks_.shutdown();
+    filesystem_.shutdown();
     control_.shutdown();
     position_condition_.notify_all();
     if (position_poller_.joinable()) position_poller_.join();
@@ -245,8 +250,12 @@ class MachineServiceImpl final : public MachineCallbackBase,
       ::grpc::CallbackServerContext*, const ExecuteCommandRequest* request,
       ExecuteCommandResponse* response) override {
     auto owned_request = std::make_shared<ExecuteCommandRequest>(*request);
+    auto& executor =
+        request->command_case() == ExecuteCommandRequest::kProgramOpen
+            ? filesystem_
+            : control_;
     return new CommandTaskReactor(
-        control_, callbacks_, response,
+        executor, callbacks_, response,
         [this, owned_request = std::move(owned_request)](
             std::stop_token stop_token, CommandTicket* ticket,
             CommandWaitPolicy* policy) {
@@ -286,34 +295,66 @@ class MachineServiceImpl final : public MachineCallbackBase,
           const auto workspace = request->program_open().entry().workspace_id();
           const auto relative_path =
               request->program_open().entry().relative_path();
+          {
+            std::lock_guard lock(workspace_activation_->mutex);
+            if (workspace_activation_->opening) {
+              return ::grpc::Status(::grpc::StatusCode::RESOURCE_EXHAUSTED,
+                                    "a program open is already pending");
+            }
+            workspace_activation_->opening = true;
+          }
           std::filesystem::path resolved_entry;
-          if (!workspaces_->resolve_entry(workspace, relative_path,
-                                          &resolved_entry)) {
+          if (!workspaces_->pin_entry(workspace, relative_path,
+                                      &resolved_entry)) {
+            std::lock_guard lock(workspace_activation_->mutex);
+            workspace_activation_->opening = false;
             return Invalid("program workspace entry is missing or unsafe");
           }
-          if (!workspaces_->pin(workspace)) {
-            return Invalid("program workspace became unavailable");
+          auto lease = std::make_shared<PendingWorkspaceLease>(
+              workspace_activation_, workspace);
+          const auto final_entry =
+              workspaces_->active_directory() /
+              std::filesystem::path(relative_path).lexically_normal();
+          if (final_entry.string().size() >= kNmlProgramPathCapacity) {
+            return Invalid("program path exceeds LinuxCNC's path limit");
           }
-          auto lease =
-              std::make_shared<PendingWorkspaceLease>(workspaces_, workspace);
-          command.prepare = [store = workspaces_, workspace, relative_path,
-                             lease](NmlCommand& prepared) {
-            std::filesystem::path materialized;
-            if (!store->materialize(workspace, relative_path, &materialized)) {
-              throw std::runtime_error(
-                  "program workspace entry became unavailable or unsafe");
-            }
-            prepared.path = materialized.string();
+          auto revision = workspaces_->stage(
+              workspace, relative_path, [executor = &filesystem_](auto path) {
+                auto cleanup = [path = std::move(path)] {
+                  std::error_code error;
+                  std::filesystem::remove_all(path, error);
+                };
+                try {
+                  (void)executor->submit_cleanup(std::move(cleanup));
+                } catch (...) {
+                  // Startup reconciliation removes an orphan if cleanup
+                  // admission itself cannot allocate.
+                }
+              });
+          if (!revision) {
+            return Invalid(
+                "program workspace entry became unavailable or unsafe");
+          }
+          command.path = final_entry.string();
+          command.prepare = [revision, lease](NmlCommand&) {
+            if (!revision->commit())
+              throw std::runtime_error("failed to activate staged program");
           };
           command.on_completed = [activation = workspace_activation_, workspace,
-                                  lease] {
+                                  revision, lease] {
+            revision->complete();
             std::lock_guard lock(activation->mutex);
-            if (activation->active == workspace) return;
+            activation->opening = false;
+            if (activation->active == workspace) {
+              lease->release = true;
+              return;
+            }
             lease->release = false;  // temporary lease becomes the active lease
             if (!activation->active.empty())
-              activation->store->unpin(activation->active);
+              activation->store->unpin_entry(activation->active);
             activation->active = workspace;
           };
+          command.on_failed = [revision] { revision->rollback(); };
         }
         break;
       case ExecuteCommandRequest::kProgramClose:
@@ -321,7 +362,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
         command.on_completed = [activation = workspace_activation_] {
           std::lock_guard lock(activation->mutex);
           if (!activation->active.empty()) {
-            activation->store->unpin(activation->active);
+            activation->store->unpin_entry(activation->active);
             activation->active.clear();
           }
         };
@@ -563,8 +604,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
         configuration_ptr = &configuration;
       }
     }
-    const auto validation =
-        validate_nml_command(command, configuration_ptr);
+    const auto validation = validate_nml_command(command, configuration_ptr);
     if (validation.code == NmlCommandValidationCode::StatusUnavailable) {
       return {::grpc::StatusCode::UNAVAILABLE, validation.message};
     }
@@ -1074,14 +1114,16 @@ class MachineServiceImpl final : public MachineCallbackBase,
     }
   }
 
-  void observe_status(const NmlStatusSnapshot& fresh, bool force_rebase = false) {
+  void observe_status(const NmlStatusSnapshot& fresh,
+                      bool force_rebase = false) {
     // ProgramClose may originate outside this RPC service. Reconcile the pin
     // from authoritative LinuxCNC status so TTL cleanup resumes once no file
     // is open, regardless of which client initiated the close.
     if (fresh.task_stat.file.empty() && fresh.file.empty()) {
       std::lock_guard activation_lock(workspace_activation_->mutex);
       if (!workspace_activation_->active.empty()) {
-        workspace_activation_->store->unpin(workspace_activation_->active);
+        workspace_activation_->store->unpin_entry(
+            workspace_activation_->active);
         workspace_activation_->active.clear();
       }
     }
@@ -1112,6 +1154,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
 
   NmlAdapter nml_;
   BoundedExecutor control_;
+  BoundedExecutor filesystem_;
   BoundedExecutor& blocking_;
   AdmissionCounter& stream_admission_;
   std::shared_ptr<ProgramWorkspaceStore> workspaces_;

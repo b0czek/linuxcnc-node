@@ -107,9 +107,13 @@ bool validate_config(const DaemonConfig& config, std::string* error) {
       !std::filesystem::is_regular_file(config.nml_file)) {
     return fail("NML configuration must be a regular file");
   }
-  if (config.workspace_quota_bytes == 0 || config.total_quota_bytes == 0) {
-    return fail("workspace quotas must be non-zero");
+  if (config.workspace_quota_bytes == 0 || config.total_quota_bytes == 0 ||
+      config.max_workspaces == 0 || config.max_workspace_entries == 0 ||
+      config.max_upload_metadata_bytes == 0) {
+    return fail("workspace and upload limits must be non-zero");
   }
+  if (config.workspace_quota_bytes > config.total_quota_bytes)
+    return fail("workspace quota must not exceed total quota");
   if (config.command_queue_capacity == 0)
     return fail("command queue capacity must be non-zero");
   if (config.status_replay_capacity == 0 || config.gcode_batch_size == 0) {
@@ -119,13 +123,15 @@ bool validate_config(const DaemonConfig& config, std::string* error) {
     return fail("scope sample count must be between 1000 and 1000000");
   }
   if (config.workspace_ttl <= std::chrono::seconds::zero() ||
+      config.upload_timeout <= std::chrono::seconds::zero() ||
       config.status_period <= std::chrono::milliseconds::zero() ||
       config.error_period <= std::chrono::milliseconds::zero() ||
       config.position_period <= std::chrono::milliseconds::zero() ||
       config.topology_period <= std::chrono::milliseconds::zero() ||
       config.scope_period <= std::chrono::milliseconds::zero() ||
       config.scope_heartbeat <= std::chrono::milliseconds::zero()) {
-    return fail("daemon periods and workspace TTL must be positive");
+    return fail(
+        "daemon periods, upload timeout, and workspace TTL must be positive");
   }
   return true;
 }
@@ -242,6 +248,21 @@ bool parse_config(int argc, char* argv[], DaemonConfig* config, bool* show_help,
         if (error) *error = "invalid --total-quota";
         return false;
       }
+    } else if (option_value(argument, "--max-workspaces", &value)) {
+      if (!parse_size(value, &config->max_workspaces)) {
+        if (error) *error = "invalid --max-workspaces";
+        return false;
+      }
+    } else if (option_value(argument, "--max-workspace-entries", &value)) {
+      if (!parse_size(value, &config->max_workspace_entries)) {
+        if (error) *error = "invalid --max-workspace-entries";
+        return false;
+      }
+    } else if (option_value(argument, "--max-upload-metadata", &value)) {
+      if (!parse_size(value, &config->max_upload_metadata_bytes)) {
+        if (error) *error = "invalid --max-upload-metadata";
+        return false;
+      }
     } else if (option_value(argument, "--workspace-ttl-seconds", &value)) {
       std::size_t seconds = 0;
       if (!parse_size(value, &seconds) || seconds == 0) {
@@ -249,6 +270,13 @@ bool parse_config(int argc, char* argv[], DaemonConfig* config, bool* show_help,
         return false;
       }
       config->workspace_ttl = std::chrono::seconds(seconds);
+    } else if (option_value(argument, "--upload-timeout-seconds", &value)) {
+      std::size_t seconds = 0;
+      if (!parse_size(value, &seconds) || seconds == 0) {
+        if (error) *error = "invalid --upload-timeout-seconds";
+        return false;
+      }
+      config->upload_timeout = std::chrono::seconds(seconds);
     } else if (option_value(argument, "--command-queue-capacity", &value)) {
       if (!parse_size(value, &config->command_queue_capacity)) {
         if (error) *error = "invalid --command-queue-capacity";
@@ -321,6 +349,8 @@ std::string config_help() {
          "  --workspace-root=PATH --active-program-directory=PATH\n"
          "  --workspace-quota=BYTES --total-quota=BYTES "
          "--workspace-ttl-seconds=N\n"
+         "  --max-workspaces=64 --max-workspace-entries=4096\n"
+         "  --max-upload-metadata=1048576 --upload-timeout-seconds=300\n"
          "  --command-queue-capacity=N\n"
          "  --command-completion-timeout-ms=0     (0 uses RPC deadline)\n"
          "  --tls --tls-certificate=PATH --tls-private-key=PATH (gRPC only)\n"

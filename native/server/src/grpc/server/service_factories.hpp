@@ -25,7 +25,7 @@ std::unique_ptr<ManagedGrpcService> make_machine_service(
 
 std::unique_ptr<ManagedGrpcService> make_program_service(
     const DaemonConfig& config, std::shared_ptr<ProgramWorkspaceStore> store,
-    BoundedExecutor& blocking, AdmissionCounter& upload_admission);
+    AdmissionCounter& upload_admission);
 
 std::unique_ptr<ManagedGrpcService> make_hal_service(
     const DaemonConfig& config, BoundedExecutor& worker,

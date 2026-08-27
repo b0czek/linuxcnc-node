@@ -43,25 +43,15 @@ enum CutterCompensationMode {
   CUTTER_COMPENSATION_MODE_RIGHT = 3;
 }
 
-message CreateWorkspaceRequest { uint64 ttl_seconds = 1; }
+message UploadWorkspaceRequest { bytes archive_chunk = 1; }
 
-message CreateWorkspaceResponse { string workspace_id = 1; uint64 expires_at_unix_ms = 2; }
-
-message UploadWorkspaceRequest {
+message UploadWorkspaceResponse {
   string workspace_id = 1;
-  oneof content {
-    FileChunk file = 2;
-    bool finish = 3;
-  }
+  uint64 expires_at_unix_ms = 2;
+  uint64 archive_bytes = 3;
+  uint64 extracted_bytes = 4;
+  uint64 entries = 5;
 }
-
-message FileChunk {
-  string relative_path = 1;
-  bytes data = 2;
-  bool eof = 3;
-}
-
-message UploadWorkspaceResponse { uint64 bytes_written = 1; repeated string files = 2; }
 
 message DeleteWorkspaceRequest { string workspace_id = 1; }
 
@@ -129,7 +119,6 @@ message FeedRateData { double feed_rate = 1; }
 message CutterCompensationData { CutterCompensationMode mode = 1; }
 
 service ProgramService {
-  rpc CreateWorkspace(CreateWorkspaceRequest) returns (CreateWorkspaceResponse);
   rpc UploadWorkspace(stream UploadWorkspaceRequest) returns (UploadWorkspaceResponse);
   rpc DeleteWorkspace(DeleteWorkspaceRequest) returns (google.protobuf.Empty);
 }

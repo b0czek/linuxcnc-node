@@ -2,23 +2,12 @@
 
 import type * as grpc from '@grpc/grpc-js'
 import type { MethodDefinition } from '@grpc/proto-loader'
-import type { CreateWorkspaceRequest as _linuxcnc_v1_CreateWorkspaceRequest, CreateWorkspaceRequest__Output as _linuxcnc_v1_CreateWorkspaceRequest__Output } from '../../linuxcnc/v1/CreateWorkspaceRequest';
-import type { CreateWorkspaceResponse as _linuxcnc_v1_CreateWorkspaceResponse, CreateWorkspaceResponse__Output as _linuxcnc_v1_CreateWorkspaceResponse__Output } from '../../linuxcnc/v1/CreateWorkspaceResponse';
 import type { DeleteWorkspaceRequest as _linuxcnc_v1_DeleteWorkspaceRequest, DeleteWorkspaceRequest__Output as _linuxcnc_v1_DeleteWorkspaceRequest__Output } from '../../linuxcnc/v1/DeleteWorkspaceRequest';
 import type { Empty as _google_protobuf_Empty, Empty__Output as _google_protobuf_Empty__Output } from '../../google/protobuf/Empty';
 import type { UploadWorkspaceRequest as _linuxcnc_v1_UploadWorkspaceRequest, UploadWorkspaceRequest__Output as _linuxcnc_v1_UploadWorkspaceRequest__Output } from '../../linuxcnc/v1/UploadWorkspaceRequest';
 import type { UploadWorkspaceResponse as _linuxcnc_v1_UploadWorkspaceResponse, UploadWorkspaceResponse__Output as _linuxcnc_v1_UploadWorkspaceResponse__Output } from '../../linuxcnc/v1/UploadWorkspaceResponse';
 
 export interface ProgramServiceClient extends grpc.Client {
-  CreateWorkspace(argument: _linuxcnc_v1_CreateWorkspaceRequest, metadata: grpc.Metadata, options: grpc.CallOptions, callback: grpc.requestCallback<_linuxcnc_v1_CreateWorkspaceResponse__Output>): grpc.ClientUnaryCall;
-  CreateWorkspace(argument: _linuxcnc_v1_CreateWorkspaceRequest, metadata: grpc.Metadata, callback: grpc.requestCallback<_linuxcnc_v1_CreateWorkspaceResponse__Output>): grpc.ClientUnaryCall;
-  CreateWorkspace(argument: _linuxcnc_v1_CreateWorkspaceRequest, options: grpc.CallOptions, callback: grpc.requestCallback<_linuxcnc_v1_CreateWorkspaceResponse__Output>): grpc.ClientUnaryCall;
-  CreateWorkspace(argument: _linuxcnc_v1_CreateWorkspaceRequest, callback: grpc.requestCallback<_linuxcnc_v1_CreateWorkspaceResponse__Output>): grpc.ClientUnaryCall;
-  createWorkspace(argument: _linuxcnc_v1_CreateWorkspaceRequest, metadata: grpc.Metadata, options: grpc.CallOptions, callback: grpc.requestCallback<_linuxcnc_v1_CreateWorkspaceResponse__Output>): grpc.ClientUnaryCall;
-  createWorkspace(argument: _linuxcnc_v1_CreateWorkspaceRequest, metadata: grpc.Metadata, callback: grpc.requestCallback<_linuxcnc_v1_CreateWorkspaceResponse__Output>): grpc.ClientUnaryCall;
-  createWorkspace(argument: _linuxcnc_v1_CreateWorkspaceRequest, options: grpc.CallOptions, callback: grpc.requestCallback<_linuxcnc_v1_CreateWorkspaceResponse__Output>): grpc.ClientUnaryCall;
-  createWorkspace(argument: _linuxcnc_v1_CreateWorkspaceRequest, callback: grpc.requestCallback<_linuxcnc_v1_CreateWorkspaceResponse__Output>): grpc.ClientUnaryCall;
-  
   DeleteWorkspace(argument: _linuxcnc_v1_DeleteWorkspaceRequest, metadata: grpc.Metadata, options: grpc.CallOptions, callback: grpc.requestCallback<_google_protobuf_Empty__Output>): grpc.ClientUnaryCall;
   DeleteWorkspace(argument: _linuxcnc_v1_DeleteWorkspaceRequest, metadata: grpc.Metadata, callback: grpc.requestCallback<_google_protobuf_Empty__Output>): grpc.ClientUnaryCall;
   DeleteWorkspace(argument: _linuxcnc_v1_DeleteWorkspaceRequest, options: grpc.CallOptions, callback: grpc.requestCallback<_google_protobuf_Empty__Output>): grpc.ClientUnaryCall;
@@ -40,8 +29,6 @@ export interface ProgramServiceClient extends grpc.Client {
 }
 
 export interface ProgramServiceHandlers extends grpc.UntypedServiceImplementation {
-  CreateWorkspace: grpc.handleUnaryCall<_linuxcnc_v1_CreateWorkspaceRequest__Output, _linuxcnc_v1_CreateWorkspaceResponse>;
-  
   DeleteWorkspace: grpc.handleUnaryCall<_linuxcnc_v1_DeleteWorkspaceRequest__Output, _google_protobuf_Empty>;
   
   UploadWorkspace: grpc.handleClientStreamingCall<_linuxcnc_v1_UploadWorkspaceRequest__Output, _linuxcnc_v1_UploadWorkspaceResponse>;
@@ -49,7 +36,6 @@ export interface ProgramServiceHandlers extends grpc.UntypedServiceImplementatio
 }
 
 export interface ProgramServiceDefinition extends grpc.ServiceDefinition {
-  CreateWorkspace: MethodDefinition<_linuxcnc_v1_CreateWorkspaceRequest, _linuxcnc_v1_CreateWorkspaceResponse, _linuxcnc_v1_CreateWorkspaceRequest__Output, _linuxcnc_v1_CreateWorkspaceResponse__Output>
   DeleteWorkspace: MethodDefinition<_linuxcnc_v1_DeleteWorkspaceRequest, _google_protobuf_Empty, _linuxcnc_v1_DeleteWorkspaceRequest__Output, _google_protobuf_Empty__Output>
   UploadWorkspace: MethodDefinition<_linuxcnc_v1_UploadWorkspaceRequest, _linuxcnc_v1_UploadWorkspaceResponse, _linuxcnc_v1_UploadWorkspaceRequest__Output, _linuxcnc_v1_UploadWorkspaceResponse__Output>
 }

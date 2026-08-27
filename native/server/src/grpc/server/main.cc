@@ -1,5 +1,3 @@
-#include "linuxcnc_grpc/grpc/server.hpp"
-
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/health_check_service_interface.h>
@@ -17,6 +15,7 @@
 #include "grpc/server/runtime.hpp"
 #include "grpc/server/service_factories.hpp"
 #include "linuxcnc_grpc/callback_runtime.hpp"
+#include "linuxcnc_grpc/grpc/server.hpp"
 #include "linuxcnc_grpc/hal/value_telemetry.hpp"
 #include "linuxcnc_grpc/position/telemetry.hpp"
 #include "linuxcnc_grpc/program/workspace.hpp"
@@ -61,21 +60,22 @@ int run_grpc_server(const DaemonConfig& config) {
     auto workspaces = std::make_shared<ProgramWorkspaceStore>(
         config.workspace_root, config.active_program_directory,
         WorkspaceLimits{config.workspace_quota_bytes, config.total_quota_bytes,
-                        config.workspace_ttl});
+                        config.workspace_ttl, config.max_workspaces,
+                        config.max_workspace_entries});
     BoundedExecutor blocking(4, 128, 8);
     BoundedExecutor parser_worker(1, 8);
     BoundedExecutor hal_worker(1, 128, 16);
     BoundedExecutor scope_worker(1, 128, 8);
     AdmissionCounter stream_admission(128);
-    AdmissionCounter upload_admission(4);
+    AdmissionCounter upload_admission(1);
     AdmissionCounter component_admission(16);
     AdmissionCounter scope_admission(1);
     auto position_telemetry = std::make_shared<PositionTelemetry>(10000);
     auto hal_telemetry = std::make_shared<HalValueTelemetry>(128);
     auto machine = detail::make_machine_service(
         config, workspaces, position_telemetry, blocking, stream_admission);
-    auto program = detail::make_program_service(config, workspaces, blocking,
-                                                upload_admission);
+    auto program =
+        detail::make_program_service(config, workspaces, upload_admission);
     auto hal = detail::make_hal_service(config, hal_worker, component_admission,
                                         stream_admission, hal_telemetry);
     auto scope = detail::make_scope_service(config, scope_worker,

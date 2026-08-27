@@ -11,6 +11,7 @@ option(LINUXCNC_GRPC_BUILD_WIRE "Generate and build linuxcnc.v1 protobuf/gRPC C+
 option(LINUXCNC_GRPC_ENABLE_NML "Build the LinuxCNC NML adapter when a checkout is available" ON)
 
 find_package(Threads REQUIRED)
+find_package(LibArchive REQUIRED)
 
 get_filename_component(LINUXCNC_GRPC_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
 set(LINUXCNC_ROOT "${LINUXCNC_GRPC_REPO_ROOT}/linuxcnc" CACHE PATH
@@ -20,11 +21,13 @@ set(LINUXCNC_GRPC_DOMAIN_SOURCES
     src/callback_runtime.cc
     src/command_coordinator.cc
     src/daemon/config.cc
+    src/filesystem/directory_transaction.cc
     src/hal/repository.cc
     src/hal/value_telemetry.cc
     src/position/history.cc
     src/position/telemetry.cc
     src/program/workspace.cc
+    src/program/workspace_archive.cc
     src/scope/manager.cc
     src/linuxcnc/command_validation.cc
     src/linuxcnc/nml_adapter.cc
@@ -37,7 +40,7 @@ target_include_directories(linuxcnc-grpc-domain
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
-target_link_libraries(linuxcnc-grpc-domain PUBLIC Threads::Threads)
+target_link_libraries(linuxcnc-grpc-domain PUBLIC Threads::Threads LibArchive::LibArchive)
 target_compile_options(linuxcnc-grpc-domain PRIVATE -Wall -Wextra -Wpedantic)
 
 # The domain library intentionally has no protobuf, gRPC,
@@ -291,12 +294,12 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
     target_compile_features(linuxcnc-grpc-integration PRIVATE cxx_std_20)
     target_compile_definitions(linuxcnc-grpc-integration PRIVATE BOOST_ERROR_CODE_HEADER_ONLY=1)
     target_include_directories(linuxcnc-grpc-integration PRIVATE ${Boost_INCLUDE_DIRS})
-    target_link_libraries(linuxcnc-grpc-integration PRIVATE linuxcnc-grpc-proto)
+    target_link_libraries(linuxcnc-grpc-integration PRIVATE linuxcnc-grpc-proto LibArchive::LibArchive)
     add_executable(linuxcnc-grpc-live-integration tests/grpc_live_integration.cc)
     target_compile_features(linuxcnc-grpc-live-integration PRIVATE cxx_std_20)
     target_compile_definitions(linuxcnc-grpc-live-integration PRIVATE BOOST_ERROR_CODE_HEADER_ONLY=1)
     target_include_directories(linuxcnc-grpc-live-integration PRIVATE ${Boost_INCLUDE_DIRS})
-    target_link_libraries(linuxcnc-grpc-live-integration PRIVATE linuxcnc-grpc-proto)
+    target_link_libraries(linuxcnc-grpc-live-integration PRIVATE linuxcnc-grpc-proto LibArchive::LibArchive)
     target_compile_options(linuxcnc-grpc-live-integration PRIVATE
         -Wall -Wextra -Wpedantic)
     if(LINUXCNC_GRPC_BUILD_TESTS)
@@ -383,7 +386,6 @@ if(LINUXCNC_GRPC_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/server/runtime.cc"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/server/runtime.hpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/machine/grpc/service.cc"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/program/grpc/service.cc"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/hal/grpc/service.cc"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/scope/grpc/service.cc")
     list(APPEND LINUXCNC_GRPC_CALLBACK_SOURCES

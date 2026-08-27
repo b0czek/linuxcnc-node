@@ -24,6 +24,7 @@
 #include "linuxcnc/v1/program.grpc.pb.h"
 #include "linuxcnc/v1/scope.grpc.pb.h"
 #include "linuxcnc/v1/websocket.pb.h"
+#include "workspace_archive_fixture.hpp"
 
 namespace {
 
@@ -221,17 +222,6 @@ void require_shutdown_status(const grpc::Status& status, const char* name) {
   }
 }
 
-std::string make_large_gcode() {
-  std::string result{"G21 G90\n"};
-  result.reserve(std::size_t{2} * 1024U * 1024U);
-  for (int index = 0; index < 75000; ++index) {
-    result += "G1 X" + std::to_string(index % 100) + " Y" +
-              std::to_string((index * 7) % 100) + " F100\n";
-  }
-  result += "M2\n";
-  return result;
-}
-
 constexpr std::size_t kChunkedPreviewFeedCount = 257;
 
 std::string make_chunked_preview_gcode() {
@@ -244,28 +234,20 @@ std::string make_chunked_preview_gcode() {
   return result;
 }
 
-linuxcnc::v1::CreateWorkspaceResponse upload_program(
+linuxcnc::v1::UploadWorkspaceResponse upload_program(
     linuxcnc::v1::ProgramService::Stub* program, const std::string& path,
     const std::string& contents) {
-  grpc::ClientContext create_context;
-  linuxcnc::v1::CreateWorkspaceResponse workspace;
-  assert(program->CreateWorkspace(&create_context, {}, &workspace).ok());
   grpc::ClientContext upload_context;
+  upload_context.set_deadline(std::chrono::system_clock::now() +
+                              std::chrono::seconds(15));
   linuxcnc::v1::UploadWorkspaceResponse response;
   auto upload = program->UploadWorkspace(&upload_context, &response);
-  linuxcnc::v1::UploadWorkspaceRequest file;
-  file.set_workspace_id(workspace.workspace_id());
-  file.mutable_file()->set_relative_path(path);
-  file.mutable_file()->set_data(contents);
-  file.mutable_file()->set_eof(true);
-  assert(upload->Write(file));
-  linuxcnc::v1::UploadWorkspaceRequest finish;
-  finish.set_workspace_id(workspace.workspace_id());
-  finish.set_finish(true);
-  assert(upload->Write(finish));
+  linuxcnc::v1::UploadWorkspaceRequest request;
+  request.set_archive_chunk(workspace_archive_fixture(path, contents));
+  assert(upload->Write(request));
   assert(upload->WritesDone());
   assert(upload->Finish().ok());
-  return workspace;
+  return response;
 }
 
 void delete_workspace(linuxcnc::v1::ProgramService::Stub* program,
@@ -404,20 +386,14 @@ int hold_shutdown(const std::string& endpoint) {
                              std::chrono::seconds(15));
   auto errors = machine->WatchErrors(&error_context, {});
 
-  grpc::ClientContext partial_create_context;
-  linuxcnc::v1::CreateWorkspaceResponse partial_workspace;
-  assert(
-      program->CreateWorkspace(&partial_create_context, {}, &partial_workspace)
-          .ok());
   grpc::ClientContext upload_context;
   upload_context.set_deadline(std::chrono::system_clock::now() +
                               std::chrono::seconds(15));
   linuxcnc::v1::UploadWorkspaceResponse upload_response;
   auto upload = program->UploadWorkspace(&upload_context, &upload_response);
   linuxcnc::v1::UploadWorkspaceRequest upload_request;
-  upload_request.set_workspace_id(partial_workspace.workspace_id());
-  upload_request.mutable_file()->set_relative_path("partial.ngc");
-  upload_request.mutable_file()->set_data("G1 X1\n");
+  upload_request.set_archive_chunk(
+      workspace_archive_fixture("partial.ngc", "G1 X1\n"));
   assert(upload->Write(upload_request));
 
   grpc::ClientContext component_context;
@@ -756,33 +732,11 @@ int main(int argc, char** argv) {
   // Upload and parse a repo-owned native fixture through the real workspace
   // store and the serialized rs274 interpreter.
   const auto program = linuxcnc::v1::ProgramService::NewStub(channel);
-  linuxcnc::v1::CreateWorkspaceRequest create_workspace_request;
-  create_workspace_request.set_ttl_seconds(60);
-  linuxcnc::v1::CreateWorkspaceResponse workspace;
-  grpc::ClientContext create_workspace_context;
-  const auto create_workspace_status = program->CreateWorkspace(
-      &create_workspace_context, create_workspace_request, &workspace);
-  assert(create_workspace_status.ok());
+  const auto workspace =
+      upload_program(program.get(), "simple-linear.ngc", gcode);
   assert(!workspace.workspace_id().empty());
-
-  linuxcnc::v1::UploadWorkspaceResponse upload_response;
-  grpc::ClientContext upload_context;
-  auto upload = program->UploadWorkspace(&upload_context, &upload_response);
-  linuxcnc::v1::UploadWorkspaceRequest upload_file;
-  upload_file.set_workspace_id(workspace.workspace_id());
-  upload_file.mutable_file()->set_relative_path("simple-linear.ngc");
-  upload_file.mutable_file()->set_data(gcode);
-  upload_file.mutable_file()->set_eof(true);
-  assert(upload->Write(upload_file));
-  linuxcnc::v1::UploadWorkspaceRequest upload_finish;
-  upload_finish.set_workspace_id(workspace.workspace_id());
-  upload_finish.set_finish(true);
-  assert(upload->Write(upload_finish));
-  assert(upload->WritesDone());
-  const auto upload_status = upload->Finish();
-  assert(upload_status.ok());
-  assert(upload_response.bytes_written() == gcode.size());
-  assert(upload_response.files_size() == 1);
+  assert(workspace.extracted_bytes() == gcode.size());
+  assert(workspace.entries() == 1);
 
   verify_preview_stream(telemetry_endpoint, workspace.workspace_id(),
                         "simple-linear.ngc", batch_limit);

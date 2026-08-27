@@ -39,15 +39,18 @@ process mediation. A single serialized NML queue orders every command.
 Cancelling an RPC only cancels the wait; it cannot undo a command LinuxCNC
 already accepted.
 
-`ProgramService` owns opaque workspaces. Upload paths must be relative and
-cannot traverse, contain symlinks, or identify executables. Defaults are a
-sliding 24-hour TTL, 256 MiB per workspace, and 1 GiB total. The active
-workspace is pinned until LinuxCNC closes its program. Before opening a file,
-the daemon materializes the workspace into its fixed active-program directory.
-At startup it verifies that `[DISPLAY]PROGRAM_PREFIX` resolves to that
-directory. Preview parsing belongs to `TelemetryWebSocketServer`, uses the
-daemon INI, and streams progress, bounded operation batches, and one final
-summary over `/v1/program-preview`.
+`ProgramService` accepts tar.zst byte chunks and treats a clean client
+half-close as the end of one upload. It publishes a new immutable opaque
+workspace only after complete validation. Uploads use a bounded synchronous
+handler, require a client deadline, and are limited to one at a time. Archive paths
+must be relative; links, sparse files, special files, xattrs, and traversal are
+rejected. Defaults are a sliding 24-hour TTL, 256 MiB compressed and extracted
+per workspace, and 1 GiB total published storage. The active workspace is
+pinned until LinuxCNC closes its program. `[DISPLAY]PROGRAM_PREFIX` names a
+server-owned symlink that is atomically exchanged on Program Open and restored
+if LinuxCNC rejects the command. Preview parsing belongs to
+`TelemetryWebSocketServer`, uses the daemon INI, and streams progress, bounded
+operation batches, and one final summary over `/v1/program-preview`.
 
 `HalService` provides topology snapshots and watches, typed batch reads and
 writes, mutable HAL value telemetry subscriptions, signal creation,

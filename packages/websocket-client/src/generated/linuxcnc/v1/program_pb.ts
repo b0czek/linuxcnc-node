@@ -14,29 +14,29 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file linuxcnc/v1/program.proto.
  */
 export const file_linuxcnc_v1_program: GenFile = /*@__PURE__*/
-  fileDesc("ChlsaW51eGNuYy92MS9wcm9ncmFtLnByb3RvEgtsaW51eGNuYy52MSItChZDcmVhdGVXb3Jrc3BhY2VSZXF1ZXN0EhMKC3R0bF9zZWNvbmRzGAEgASgEIksKF0NyZWF0ZVdvcmtzcGFjZVJlc3BvbnNlEhQKDHdvcmtzcGFjZV9pZBgBIAEoCRIaChJleHBpcmVzX2F0X3VuaXhfbXMYAiABKAQicwoWVXBsb2FkV29ya3NwYWNlUmVxdWVzdBIUCgx3b3Jrc3BhY2VfaWQYASABKAkSJgoEZmlsZRgCIAEoCzIWLmxpbnV4Y25jLnYxLkZpbGVDaHVua0gAEhAKBmZpbmlzaBgDIAEoCEgAQgkKB2NvbnRlbnQiPQoJRmlsZUNodW5rEhUKDXJlbGF0aXZlX3BhdGgYASABKAkSDAoEZGF0YRgCIAEoDBILCgNlb2YYAyABKAgiPwoXVXBsb2FkV29ya3NwYWNlUmVzcG9uc2USFQoNYnl0ZXNfd3JpdHRlbhgBIAEoBBINCgVmaWxlcxgCIAMoCSIuChZEZWxldGVXb3Jrc3BhY2VSZXF1ZXN0EhQKDHdvcmtzcGFjZV9pZBgBIAEoCSJRCgdFeHRlbnRzEiIKA21pbhgBIAEoCzIVLmxpbnV4Y25jLnYxLlBvc2l0aW9uEiIKA21heBgCIAEoCzIVLmxpbnV4Y25jLnYxLlBvc2l0aW9uIuMGCg5HQ29kZU9wZXJhdGlvbhIoCgR0eXBlGAEgASgOMhoubGludXhjbmMudjEuT3BlcmF0aW9uVHlwZRITCgtsaW5lX251bWJlchgCIAEoBRIiCgNwb3MYAyABKAsyFS5saW51eGNuYy52MS5Qb3NpdGlvbhIjCgNhcmMYBCABKAsyFC5saW51eGNuYy52MS5BcmNEYXRhSAASJwoFcHJvYmUYBSABKAsyFi5saW51eGNuYy52MS5Qcm9iZURhdGFIABIuCglyaWdpZF90YXAYBiABKAsyGS5saW51eGNuYy52MS5SaWdpZFRhcERhdGFIABInCgVkd2VsbBgHIAEoCzIWLmxpbnV4Y25jLnYxLkR3ZWxsRGF0YUgAEiwKCG51cmJzX2c1GAggASgLMhgubGludXhjbmMudjEuTnVyYnNHNURhdGFIABIsCghudXJic19nNhgJIAEoCzIYLmxpbnV4Y25jLnYxLk51cmJzRzZEYXRhSAASNAoMdW5pdHNfY2hhbmdlGAogASgLMhwubGludXhjbmMudjEuVW5pdHNDaGFuZ2VEYXRhSAASNAoMcGxhbmVfY2hhbmdlGAsgASgLMhwubGludXhjbmMudjEuUGxhbmVDaGFuZ2VEYXRhSAASMAoKZzV4X29mZnNldBgMIAEoCzIaLmxpbnV4Y25jLnYxLkc1eE9mZnNldERhdGFIABItCgpnOTJfb2Zmc2V0GA0gASgLMhcubGludXhjbmMudjEuT2Zmc2V0RGF0YUgAEjAKC3h5X3JvdGF0aW9uGA4gASgLMhkubGludXhjbmMudjEuUm90YXRpb25EYXRhSAASLgoLdG9vbF9vZmZzZXQYDyABKAsyFy5saW51eGNuYy52MS5PZmZzZXREYXRhSAASMgoLdG9vbF9jaGFuZ2UYECABKAsyGy5saW51eGNuYy52MS5Ub29sQ2hhbmdlRGF0YUgAEjUKEGZlZWRfcmF0ZV9jaGFuZ2UYESABKAsyGS5saW51eGNuYy52MS5GZWVkUmF0ZURhdGFIABJJChpjdXR0ZXJfY29tcGVuc2F0aW9uX2NoYW5nZRgSIAEoCzIjLmxpbnV4Y25jLnYxLkN1dHRlckNvbXBlbnNhdGlvbkRhdGFIAEIGCgRkYXRhIoMBCgdBcmNEYXRhEiEKBXBsYW5lGAEgASgOMhIubGludXhjbmMudjEuUGxhbmUSFAoMY2VudGVyX2ZpcnN0GAIgASgBEhUKDWNlbnRlcl9zZWNvbmQYAyABKAESEAoIcm90YXRpb24YBCABKAESFgoOYXhpc19lbmRfcG9pbnQYBSABKAEiCwoJUHJvYmVEYXRhIkEKDFJpZ2lkVGFwRGF0YRIiCgNwb3MYASABKAsyFS5saW51eGNuYy52MS5Qb3NpdGlvbhINCgVzY2FsZRgCIAEoASJACglEd2VsbERhdGESEAoIZHVyYXRpb24YASABKAESIQoFcGxhbmUYAiABKA4yEi5saW51eGNuYy52MS5QbGFuZSJ0CgtOdXJic0c1RGF0YRIhCgVwbGFuZRgBIAEoDjISLmxpbnV4Y25jLnYxLlBsYW5lEg0KBW9yZGVyGAIgASgFEjMKDmNvbnRyb2xfcG9pbnRzGAMgAygLMhsubGludXhjbmMudjEuQ29udHJvbFBvaW50RzUiNgoOQ29udHJvbFBvaW50RzUSCQoBeBgBIAEoARIJCgF5GAIgASgBEg4KBndlaWdodBgDIAEoASKSAQoLTnVyYnNHNkRhdGESIQoFcGxhbmUYASABKA4yEi5saW51eGNuYy52MS5QbGFuZRINCgVvcmRlchgCIAEoBRIzCg5jb250cm9sX3BvaW50cxgDIAMoCzIbLmxpbnV4Y25jLnYxLkNvbnRyb2xQb2ludEc2EhwKFGludGVycG9sYXRpb25fbWV0aG9kGAQgASgFIjwKDkNvbnRyb2xQb2ludEc2EgkKAXgYASABKAESCQoBeRgCIAEoARIJCgFyGAMgASgBEgkKAWsYBCABKAEiOwoPVW5pdHNDaGFuZ2VEYXRhEigKBXVuaXRzGAEgASgOMhkubGludXhjbmMudjEuUHJvZ3JhbVVuaXRzIjQKD1BsYW5lQ2hhbmdlRGF0YRIhCgVwbGFuZRgBIAEoDjISLmxpbnV4Y25jLnYxLlBsYW5lIkYKDUc1eE9mZnNldERhdGESDgoGb3JpZ2luGAEgASgFEiUKBm9mZnNldBgCIAEoCzIVLmxpbnV4Y25jLnYxLlBvc2l0aW9uIjMKCk9mZnNldERhdGESJQoGb2Zmc2V0GAEgASgLMhUubGludXhjbmMudjEuUG9zaXRpb24iIAoMUm90YXRpb25EYXRhEhAKCHJvdGF0aW9uGAEgASgBIksKDlRvb2xDaGFuZ2VEYXRhEhMKC3Rvb2xfbnVtYmVyGAEgASgFEiQKBHRvb2wYAiABKAsyFi5saW51eGNuYy52MS5Ub29sRW50cnkiIQoMRmVlZFJhdGVEYXRhEhEKCWZlZWRfcmF0ZRgBIAEoASJLChZDdXR0ZXJDb21wZW5zYXRpb25EYXRhEjEKBG1vZGUYASABKA4yIy5saW51eGNuYy52MS5DdXR0ZXJDb21wZW5zYXRpb25Nb2RlKr0ECg1PcGVyYXRpb25UeXBlEh4KGk9QRVJBVElPTl9UWVBFX1VOU1BFQ0lGSUVEEAASGwoXT1BFUkFUSU9OX1RZUEVfVFJBVkVSU0UQARIXChNPUEVSQVRJT05fVFlQRV9GRUVEEAISFgoST1BFUkFUSU9OX1RZUEVfQVJDEAMSGAoUT1BFUkFUSU9OX1RZUEVfUFJPQkUQBBIcChhPUEVSQVRJT05fVFlQRV9SSUdJRF9UQVAQBRIYChRPUEVSQVRJT05fVFlQRV9EV0VMTBAGEhsKF09QRVJBVElPTl9UWVBFX05VUkJTX0c1EAcSGwoXT1BFUkFUSU9OX1RZUEVfTlVSQlNfRzYQCBIfChtPUEVSQVRJT05fVFlQRV9VTklUU19DSEFOR0UQChIfChtPUEVSQVRJT05fVFlQRV9QTEFORV9DSEFOR0UQCxIdChlPUEVSQVRJT05fVFlQRV9HNVhfT0ZGU0VUEAwSHQoZT1BFUkFUSU9OX1RZUEVfRzkyX09GRlNFVBANEh4KGk9QRVJBVElPTl9UWVBFX1hZX1JPVEFUSU9OEA4SHgoaT1BFUkFUSU9OX1RZUEVfVE9PTF9PRkZTRVQQDxIeChpPUEVSQVRJT05fVFlQRV9UT09MX0NIQU5HRRAQEiMKH09QRVJBVElPTl9UWVBFX0ZFRURfUkFURV9DSEFOR0UQERItCilPUEVSQVRJT05fVFlQRV9DVVRURVJfQ09NUEVOU0FUSU9OX0NIQU5HRRASKnIKBVBsYW5lEhUKEVBMQU5FX1VOU1BFQ0lGSUVEEAASDAoIUExBTkVfWFkQARIMCghQTEFORV9ZWhACEgwKCFBMQU5FX1haEAMSDAoIUExBTkVfVVYQBBIMCghQTEFORV9WVxAFEgwKCFBMQU5FX1VXEAYqqwEKFkN1dHRlckNvbXBlbnNhdGlvbk1vZGUSKAokQ1VUVEVSX0NPTVBFTlNBVElPTl9NT0RFX1VOU1BFQ0lGSUVEEAASIAocQ1VUVEVSX0NPTVBFTlNBVElPTl9NT0RFX09GRhABEiEKHUNVVFRFUl9DT01QRU5TQVRJT05fTU9ERV9MRUZUEAISIgoeQ1VUVEVSX0NPTVBFTlNBVElPTl9NT0RFX1JJR0hUEAMyngIKDlByb2dyYW1TZXJ2aWNlElwKD0NyZWF0ZVdvcmtzcGFjZRIjLmxpbnV4Y25jLnYxLkNyZWF0ZVdvcmtzcGFjZVJlcXVlc3QaJC5saW51eGNuYy52MS5DcmVhdGVXb3Jrc3BhY2VSZXNwb25zZRJeCg9VcGxvYWRXb3Jrc3BhY2USIy5saW51eGNuYy52MS5VcGxvYWRXb3Jrc3BhY2VSZXF1ZXN0GiQubGludXhjbmMudjEuVXBsb2FkV29ya3NwYWNlUmVzcG9uc2UoARJOCg9EZWxldGVXb3Jrc3BhY2USIy5saW51eGNuYy52MS5EZWxldGVXb3Jrc3BhY2VSZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5YgZwcm90bzM", [file_google_protobuf_empty, file_linuxcnc_v1_common]);
+  fileDesc("ChlsaW51eGNuYy92MS9wcm9ncmFtLnByb3RvEgtsaW51eGNuYy52MSIvChZVcGxvYWRXb3Jrc3BhY2VSZXF1ZXN0EhUKDWFyY2hpdmVfY2h1bmsYASABKAwijAEKF1VwbG9hZFdvcmtzcGFjZVJlc3BvbnNlEhQKDHdvcmtzcGFjZV9pZBgBIAEoCRIaChJleHBpcmVzX2F0X3VuaXhfbXMYAiABKAQSFQoNYXJjaGl2ZV9ieXRlcxgDIAEoBBIXCg9leHRyYWN0ZWRfYnl0ZXMYBCABKAQSDwoHZW50cmllcxgFIAEoBCIuChZEZWxldGVXb3Jrc3BhY2VSZXF1ZXN0EhQKDHdvcmtzcGFjZV9pZBgBIAEoCSJRCgdFeHRlbnRzEiIKA21pbhgBIAEoCzIVLmxpbnV4Y25jLnYxLlBvc2l0aW9uEiIKA21heBgCIAEoCzIVLmxpbnV4Y25jLnYxLlBvc2l0aW9uIuMGCg5HQ29kZU9wZXJhdGlvbhIoCgR0eXBlGAEgASgOMhoubGludXhjbmMudjEuT3BlcmF0aW9uVHlwZRITCgtsaW5lX251bWJlchgCIAEoBRIiCgNwb3MYAyABKAsyFS5saW51eGNuYy52MS5Qb3NpdGlvbhIjCgNhcmMYBCABKAsyFC5saW51eGNuYy52MS5BcmNEYXRhSAASJwoFcHJvYmUYBSABKAsyFi5saW51eGNuYy52MS5Qcm9iZURhdGFIABIuCglyaWdpZF90YXAYBiABKAsyGS5saW51eGNuYy52MS5SaWdpZFRhcERhdGFIABInCgVkd2VsbBgHIAEoCzIWLmxpbnV4Y25jLnYxLkR3ZWxsRGF0YUgAEiwKCG51cmJzX2c1GAggASgLMhgubGludXhjbmMudjEuTnVyYnNHNURhdGFIABIsCghudXJic19nNhgJIAEoCzIYLmxpbnV4Y25jLnYxLk51cmJzRzZEYXRhSAASNAoMdW5pdHNfY2hhbmdlGAogASgLMhwubGludXhjbmMudjEuVW5pdHNDaGFuZ2VEYXRhSAASNAoMcGxhbmVfY2hhbmdlGAsgASgLMhwubGludXhjbmMudjEuUGxhbmVDaGFuZ2VEYXRhSAASMAoKZzV4X29mZnNldBgMIAEoCzIaLmxpbnV4Y25jLnYxLkc1eE9mZnNldERhdGFIABItCgpnOTJfb2Zmc2V0GA0gASgLMhcubGludXhjbmMudjEuT2Zmc2V0RGF0YUgAEjAKC3h5X3JvdGF0aW9uGA4gASgLMhkubGludXhjbmMudjEuUm90YXRpb25EYXRhSAASLgoLdG9vbF9vZmZzZXQYDyABKAsyFy5saW51eGNuYy52MS5PZmZzZXREYXRhSAASMgoLdG9vbF9jaGFuZ2UYECABKAsyGy5saW51eGNuYy52MS5Ub29sQ2hhbmdlRGF0YUgAEjUKEGZlZWRfcmF0ZV9jaGFuZ2UYESABKAsyGS5saW51eGNuYy52MS5GZWVkUmF0ZURhdGFIABJJChpjdXR0ZXJfY29tcGVuc2F0aW9uX2NoYW5nZRgSIAEoCzIjLmxpbnV4Y25jLnYxLkN1dHRlckNvbXBlbnNhdGlvbkRhdGFIAEIGCgRkYXRhIoMBCgdBcmNEYXRhEiEKBXBsYW5lGAEgASgOMhIubGludXhjbmMudjEuUGxhbmUSFAoMY2VudGVyX2ZpcnN0GAIgASgBEhUKDWNlbnRlcl9zZWNvbmQYAyABKAESEAoIcm90YXRpb24YBCABKAESFgoOYXhpc19lbmRfcG9pbnQYBSABKAEiCwoJUHJvYmVEYXRhIkEKDFJpZ2lkVGFwRGF0YRIiCgNwb3MYASABKAsyFS5saW51eGNuYy52MS5Qb3NpdGlvbhINCgVzY2FsZRgCIAEoASJACglEd2VsbERhdGESEAoIZHVyYXRpb24YASABKAESIQoFcGxhbmUYAiABKA4yEi5saW51eGNuYy52MS5QbGFuZSJ0CgtOdXJic0c1RGF0YRIhCgVwbGFuZRgBIAEoDjISLmxpbnV4Y25jLnYxLlBsYW5lEg0KBW9yZGVyGAIgASgFEjMKDmNvbnRyb2xfcG9pbnRzGAMgAygLMhsubGludXhjbmMudjEuQ29udHJvbFBvaW50RzUiNgoOQ29udHJvbFBvaW50RzUSCQoBeBgBIAEoARIJCgF5GAIgASgBEg4KBndlaWdodBgDIAEoASKSAQoLTnVyYnNHNkRhdGESIQoFcGxhbmUYASABKA4yEi5saW51eGNuYy52MS5QbGFuZRINCgVvcmRlchgCIAEoBRIzCg5jb250cm9sX3BvaW50cxgDIAMoCzIbLmxpbnV4Y25jLnYxLkNvbnRyb2xQb2ludEc2EhwKFGludGVycG9sYXRpb25fbWV0aG9kGAQgASgFIjwKDkNvbnRyb2xQb2ludEc2EgkKAXgYASABKAESCQoBeRgCIAEoARIJCgFyGAMgASgBEgkKAWsYBCABKAEiOwoPVW5pdHNDaGFuZ2VEYXRhEigKBXVuaXRzGAEgASgOMhkubGludXhjbmMudjEuUHJvZ3JhbVVuaXRzIjQKD1BsYW5lQ2hhbmdlRGF0YRIhCgVwbGFuZRgBIAEoDjISLmxpbnV4Y25jLnYxLlBsYW5lIkYKDUc1eE9mZnNldERhdGESDgoGb3JpZ2luGAEgASgFEiUKBm9mZnNldBgCIAEoCzIVLmxpbnV4Y25jLnYxLlBvc2l0aW9uIjMKCk9mZnNldERhdGESJQoGb2Zmc2V0GAEgASgLMhUubGludXhjbmMudjEuUG9zaXRpb24iIAoMUm90YXRpb25EYXRhEhAKCHJvdGF0aW9uGAEgASgBIksKDlRvb2xDaGFuZ2VEYXRhEhMKC3Rvb2xfbnVtYmVyGAEgASgFEiQKBHRvb2wYAiABKAsyFi5saW51eGNuYy52MS5Ub29sRW50cnkiIQoMRmVlZFJhdGVEYXRhEhEKCWZlZWRfcmF0ZRgBIAEoASJLChZDdXR0ZXJDb21wZW5zYXRpb25EYXRhEjEKBG1vZGUYASABKA4yIy5saW51eGNuYy52MS5DdXR0ZXJDb21wZW5zYXRpb25Nb2RlKr0ECg1PcGVyYXRpb25UeXBlEh4KGk9QRVJBVElPTl9UWVBFX1VOU1BFQ0lGSUVEEAASGwoXT1BFUkFUSU9OX1RZUEVfVFJBVkVSU0UQARIXChNPUEVSQVRJT05fVFlQRV9GRUVEEAISFgoST1BFUkFUSU9OX1RZUEVfQVJDEAMSGAoUT1BFUkFUSU9OX1RZUEVfUFJPQkUQBBIcChhPUEVSQVRJT05fVFlQRV9SSUdJRF9UQVAQBRIYChRPUEVSQVRJT05fVFlQRV9EV0VMTBAGEhsKF09QRVJBVElPTl9UWVBFX05VUkJTX0c1EAcSGwoXT1BFUkFUSU9OX1RZUEVfTlVSQlNfRzYQCBIfChtPUEVSQVRJT05fVFlQRV9VTklUU19DSEFOR0UQChIfChtPUEVSQVRJT05fVFlQRV9QTEFORV9DSEFOR0UQCxIdChlPUEVSQVRJT05fVFlQRV9HNVhfT0ZGU0VUEAwSHQoZT1BFUkFUSU9OX1RZUEVfRzkyX09GRlNFVBANEh4KGk9QRVJBVElPTl9UWVBFX1hZX1JPVEFUSU9OEA4SHgoaT1BFUkFUSU9OX1RZUEVfVE9PTF9PRkZTRVQQDxIeChpPUEVSQVRJT05fVFlQRV9UT09MX0NIQU5HRRAQEiMKH09QRVJBVElPTl9UWVBFX0ZFRURfUkFURV9DSEFOR0UQERItCilPUEVSQVRJT05fVFlQRV9DVVRURVJfQ09NUEVOU0FUSU9OX0NIQU5HRRASKnIKBVBsYW5lEhUKEVBMQU5FX1VOU1BFQ0lGSUVEEAASDAoIUExBTkVfWFkQARIMCghQTEFORV9ZWhACEgwKCFBMQU5FX1haEAMSDAoIUExBTkVfVVYQBBIMCghQTEFORV9WVxAFEgwKCFBMQU5FX1VXEAYqqwEKFkN1dHRlckNvbXBlbnNhdGlvbk1vZGUSKAokQ1VUVEVSX0NPTVBFTlNBVElPTl9NT0RFX1VOU1BFQ0lGSUVEEAASIAocQ1VUVEVSX0NPTVBFTlNBVElPTl9NT0RFX09GRhABEiEKHUNVVFRFUl9DT01QRU5TQVRJT05fTU9ERV9MRUZUEAISIgoeQ1VUVEVSX0NPTVBFTlNBVElPTl9NT0RFX1JJR0hUEAMywAEKDlByb2dyYW1TZXJ2aWNlEl4KD1VwbG9hZFdvcmtzcGFjZRIjLmxpbnV4Y25jLnYxLlVwbG9hZFdvcmtzcGFjZVJlcXVlc3QaJC5saW51eGNuYy52MS5VcGxvYWRXb3Jrc3BhY2VSZXNwb25zZSgBEk4KD0RlbGV0ZVdvcmtzcGFjZRIjLmxpbnV4Y25jLnYxLkRlbGV0ZVdvcmtzcGFjZVJlcXVlc3QaFi5nb29nbGUucHJvdG9idWYuRW1wdHliBnByb3RvMw", [file_google_protobuf_empty, file_linuxcnc_v1_common]);
 
 /**
- * @generated from message linuxcnc.v1.CreateWorkspaceRequest
+ * @generated from message linuxcnc.v1.UploadWorkspaceRequest
  */
-export type CreateWorkspaceRequest = Message<"linuxcnc.v1.CreateWorkspaceRequest"> & {
+export type UploadWorkspaceRequest = Message<"linuxcnc.v1.UploadWorkspaceRequest"> & {
   /**
-   * @generated from field: uint64 ttl_seconds = 1;
+   * @generated from field: bytes archive_chunk = 1;
    */
-  ttlSeconds: bigint;
+  archiveChunk: Uint8Array;
 };
 
 /**
- * Describes the message linuxcnc.v1.CreateWorkspaceRequest.
- * Use `create(CreateWorkspaceRequestSchema)` to create a new message.
+ * Describes the message linuxcnc.v1.UploadWorkspaceRequest.
+ * Use `create(UploadWorkspaceRequestSchema)` to create a new message.
  */
-export const CreateWorkspaceRequestSchema: GenMessage<CreateWorkspaceRequest> = /*@__PURE__*/
+export const UploadWorkspaceRequestSchema: GenMessage<UploadWorkspaceRequest> = /*@__PURE__*/
   messageDesc(file_linuxcnc_v1_program, 0);
 
 /**
- * @generated from message linuxcnc.v1.CreateWorkspaceResponse
+ * @generated from message linuxcnc.v1.UploadWorkspaceResponse
  */
-export type CreateWorkspaceResponse = Message<"linuxcnc.v1.CreateWorkspaceResponse"> & {
+export type UploadWorkspaceResponse = Message<"linuxcnc.v1.UploadWorkspaceResponse"> & {
   /**
    * @generated from field: string workspace_id = 1;
    */
@@ -46,89 +46,21 @@ export type CreateWorkspaceResponse = Message<"linuxcnc.v1.CreateWorkspaceRespon
    * @generated from field: uint64 expires_at_unix_ms = 2;
    */
   expiresAtUnixMs: bigint;
-};
-
-/**
- * Describes the message linuxcnc.v1.CreateWorkspaceResponse.
- * Use `create(CreateWorkspaceResponseSchema)` to create a new message.
- */
-export const CreateWorkspaceResponseSchema: GenMessage<CreateWorkspaceResponse> = /*@__PURE__*/
-  messageDesc(file_linuxcnc_v1_program, 1);
-
-/**
- * @generated from message linuxcnc.v1.UploadWorkspaceRequest
- */
-export type UploadWorkspaceRequest = Message<"linuxcnc.v1.UploadWorkspaceRequest"> & {
-  /**
-   * @generated from field: string workspace_id = 1;
-   */
-  workspaceId: string;
 
   /**
-   * @generated from oneof linuxcnc.v1.UploadWorkspaceRequest.content
+   * @generated from field: uint64 archive_bytes = 3;
    */
-  content: {
-    /**
-     * @generated from field: linuxcnc.v1.FileChunk file = 2;
-     */
-    value: FileChunk;
-    case: "file";
-  } | {
-    /**
-     * @generated from field: bool finish = 3;
-     */
-    value: boolean;
-    case: "finish";
-  } | { case: undefined; value?: undefined };
-};
-
-/**
- * Describes the message linuxcnc.v1.UploadWorkspaceRequest.
- * Use `create(UploadWorkspaceRequestSchema)` to create a new message.
- */
-export const UploadWorkspaceRequestSchema: GenMessage<UploadWorkspaceRequest> = /*@__PURE__*/
-  messageDesc(file_linuxcnc_v1_program, 2);
-
-/**
- * @generated from message linuxcnc.v1.FileChunk
- */
-export type FileChunk = Message<"linuxcnc.v1.FileChunk"> & {
-  /**
-   * @generated from field: string relative_path = 1;
-   */
-  relativePath: string;
+  archiveBytes: bigint;
 
   /**
-   * @generated from field: bytes data = 2;
+   * @generated from field: uint64 extracted_bytes = 4;
    */
-  data: Uint8Array;
+  extractedBytes: bigint;
 
   /**
-   * @generated from field: bool eof = 3;
+   * @generated from field: uint64 entries = 5;
    */
-  eof: boolean;
-};
-
-/**
- * Describes the message linuxcnc.v1.FileChunk.
- * Use `create(FileChunkSchema)` to create a new message.
- */
-export const FileChunkSchema: GenMessage<FileChunk> = /*@__PURE__*/
-  messageDesc(file_linuxcnc_v1_program, 3);
-
-/**
- * @generated from message linuxcnc.v1.UploadWorkspaceResponse
- */
-export type UploadWorkspaceResponse = Message<"linuxcnc.v1.UploadWorkspaceResponse"> & {
-  /**
-   * @generated from field: uint64 bytes_written = 1;
-   */
-  bytesWritten: bigint;
-
-  /**
-   * @generated from field: repeated string files = 2;
-   */
-  files: string[];
+  entries: bigint;
 };
 
 /**
@@ -136,7 +68,7 @@ export type UploadWorkspaceResponse = Message<"linuxcnc.v1.UploadWorkspaceRespon
  * Use `create(UploadWorkspaceResponseSchema)` to create a new message.
  */
 export const UploadWorkspaceResponseSchema: GenMessage<UploadWorkspaceResponse> = /*@__PURE__*/
-  messageDesc(file_linuxcnc_v1_program, 4);
+  messageDesc(file_linuxcnc_v1_program, 1);
 
 /**
  * @generated from message linuxcnc.v1.DeleteWorkspaceRequest
@@ -153,7 +85,7 @@ export type DeleteWorkspaceRequest = Message<"linuxcnc.v1.DeleteWorkspaceRequest
  * Use `create(DeleteWorkspaceRequestSchema)` to create a new message.
  */
 export const DeleteWorkspaceRequestSchema: GenMessage<DeleteWorkspaceRequest> = /*@__PURE__*/
-  messageDesc(file_linuxcnc_v1_program, 5);
+  messageDesc(file_linuxcnc_v1_program, 2);
 
 /**
  * @generated from message linuxcnc.v1.Extents
@@ -175,7 +107,7 @@ export type Extents = Message<"linuxcnc.v1.Extents"> & {
  * Use `create(ExtentsSchema)` to create a new message.
  */
 export const ExtentsSchema: GenMessage<Extents> = /*@__PURE__*/
-  messageDesc(file_linuxcnc_v1_program, 6);
+  messageDesc(file_linuxcnc_v1_program, 3);
 
 /**
  * @generated from message linuxcnc.v1.GCodeOperation
@@ -297,7 +229,7 @@ export type GCodeOperation = Message<"linuxcnc.v1.GCodeOperation"> & {
  * Use `create(GCodeOperationSchema)` to create a new message.
  */
 export const GCodeOperationSchema: GenMessage<GCodeOperation> = /*@__PURE__*/
-  messageDesc(file_linuxcnc_v1_program, 7);
+  messageDesc(file_linuxcnc_v1_program, 4);
 
 /**
  * @generated from message linuxcnc.v1.ArcData
@@ -334,7 +266,7 @@ export type ArcData = Message<"linuxcnc.v1.ArcData"> & {
  * Use `create(ArcDataSchema)` to create a new message.
  */
 export const ArcDataSchema: GenMessage<ArcData> = /*@__PURE__*/
-  messageDesc(file_linuxcnc_v1_program, 8);
+  messageDesc(file_linuxcnc_v1_program, 5);
 
 /**
  * @generated from message linuxcnc.v1.ProbeData
@@ -347,7 +279,7 @@ export type ProbeData = Message<"linuxcnc.v1.ProbeData"> & {
  * Use `create(ProbeDataSchema)` to create a new message.
  */
 export const ProbeDataSchema: GenMessage<ProbeData> = /*@__PURE__*/
-  messageDesc(file_linuxcnc_v1_program, 9);
+  messageDesc(file_linuxcnc_v1_program, 6);
 
 /**
  * @generated from message linuxcnc.v1.RigidTapData
@@ -369,7 +301,7 @@ export type RigidTapData = Message<"linuxcnc.v1.RigidTapData"> & {
  * Use `create(RigidTapDataSchema)` to create a new message.
  */
 export const RigidTapDataSchema: GenMessage<RigidTapData> = /*@__PURE__*/
-  messageDesc(file_linuxcnc_v1_program, 10);
+  messageDesc(file_linuxcnc_v1_program, 7);
 
 /**
  * @generated from message linuxcnc.v1.DwellData
@@ -391,7 +323,7 @@ export type DwellData = Message<"linuxcnc.v1.DwellData"> & {
  * Use `create(DwellDataSchema)` to create a new message.
  */
 export const DwellDataSchema: GenMessage<DwellData> = /*@__PURE__*/
-  messageDesc(file_linuxcnc_v1_program, 11);
+  messageDesc(file_linuxcnc_v1_program, 8);
 
 /**
  * @generated from message linuxcnc.v1.NurbsG5Data
@@ -418,7 +350,7 @@ export type NurbsG5Data = Message<"linuxcnc.v1.NurbsG5Data"> & {
  * Use `create(NurbsG5DataSchema)` to create a new message.
  */
 export const NurbsG5DataSchema: GenMessage<NurbsG5Data> = /*@__PURE__*/
-  messageDesc(file_linuxcnc_v1_program, 12);
+  messageDesc(file_linuxcnc_v1_program, 9);
 
 /**
  * @generated from message linuxcnc.v1.ControlPointG5
@@ -445,7 +377,7 @@ export type ControlPointG5 = Message<"linuxcnc.v1.ControlPointG5"> & {
  * Use `create(ControlPointG5Schema)` to create a new message.
  */
 export const ControlPointG5Schema: GenMessage<ControlPointG5> = /*@__PURE__*/
-  messageDesc(file_linuxcnc_v1_program, 13);
+  messageDesc(file_linuxcnc_v1_program, 10);
 
 /**
  * @generated from message linuxcnc.v1.NurbsG6Data
@@ -479,7 +411,7 @@ export type NurbsG6Data = Message<"linuxcnc.v1.NurbsG6Data"> & {
  * Use `create(NurbsG6DataSchema)` to create a new message.
  */
 export const NurbsG6DataSchema: GenMessage<NurbsG6Data> = /*@__PURE__*/
-  messageDesc(file_linuxcnc_v1_program, 14);
+  messageDesc(file_linuxcnc_v1_program, 11);
 
 /**
  * @generated from message linuxcnc.v1.ControlPointG6
@@ -511,7 +443,7 @@ export type ControlPointG6 = Message<"linuxcnc.v1.ControlPointG6"> & {
  * Use `create(ControlPointG6Schema)` to create a new message.
  */
 export const ControlPointG6Schema: GenMessage<ControlPointG6> = /*@__PURE__*/
-  messageDesc(file_linuxcnc_v1_program, 15);
+  messageDesc(file_linuxcnc_v1_program, 12);
 
 /**
  * @generated from message linuxcnc.v1.UnitsChangeData
@@ -528,7 +460,7 @@ export type UnitsChangeData = Message<"linuxcnc.v1.UnitsChangeData"> & {
  * Use `create(UnitsChangeDataSchema)` to create a new message.
  */
 export const UnitsChangeDataSchema: GenMessage<UnitsChangeData> = /*@__PURE__*/
-  messageDesc(file_linuxcnc_v1_program, 16);
+  messageDesc(file_linuxcnc_v1_program, 13);
 
 /**
  * @generated from message linuxcnc.v1.PlaneChangeData
@@ -545,7 +477,7 @@ export type PlaneChangeData = Message<"linuxcnc.v1.PlaneChangeData"> & {
  * Use `create(PlaneChangeDataSchema)` to create a new message.
  */
 export const PlaneChangeDataSchema: GenMessage<PlaneChangeData> = /*@__PURE__*/
-  messageDesc(file_linuxcnc_v1_program, 17);
+  messageDesc(file_linuxcnc_v1_program, 14);
 
 /**
  * @generated from message linuxcnc.v1.G5xOffsetData
@@ -567,7 +499,7 @@ export type G5xOffsetData = Message<"linuxcnc.v1.G5xOffsetData"> & {
  * Use `create(G5xOffsetDataSchema)` to create a new message.
  */
 export const G5xOffsetDataSchema: GenMessage<G5xOffsetData> = /*@__PURE__*/
-  messageDesc(file_linuxcnc_v1_program, 18);
+  messageDesc(file_linuxcnc_v1_program, 15);
 
 /**
  * @generated from message linuxcnc.v1.OffsetData
@@ -584,7 +516,7 @@ export type OffsetData = Message<"linuxcnc.v1.OffsetData"> & {
  * Use `create(OffsetDataSchema)` to create a new message.
  */
 export const OffsetDataSchema: GenMessage<OffsetData> = /*@__PURE__*/
-  messageDesc(file_linuxcnc_v1_program, 19);
+  messageDesc(file_linuxcnc_v1_program, 16);
 
 /**
  * @generated from message linuxcnc.v1.RotationData
@@ -601,7 +533,7 @@ export type RotationData = Message<"linuxcnc.v1.RotationData"> & {
  * Use `create(RotationDataSchema)` to create a new message.
  */
 export const RotationDataSchema: GenMessage<RotationData> = /*@__PURE__*/
-  messageDesc(file_linuxcnc_v1_program, 20);
+  messageDesc(file_linuxcnc_v1_program, 17);
 
 /**
  * @generated from message linuxcnc.v1.ToolChangeData
@@ -623,7 +555,7 @@ export type ToolChangeData = Message<"linuxcnc.v1.ToolChangeData"> & {
  * Use `create(ToolChangeDataSchema)` to create a new message.
  */
 export const ToolChangeDataSchema: GenMessage<ToolChangeData> = /*@__PURE__*/
-  messageDesc(file_linuxcnc_v1_program, 21);
+  messageDesc(file_linuxcnc_v1_program, 18);
 
 /**
  * @generated from message linuxcnc.v1.FeedRateData
@@ -640,7 +572,7 @@ export type FeedRateData = Message<"linuxcnc.v1.FeedRateData"> & {
  * Use `create(FeedRateDataSchema)` to create a new message.
  */
 export const FeedRateDataSchema: GenMessage<FeedRateData> = /*@__PURE__*/
-  messageDesc(file_linuxcnc_v1_program, 22);
+  messageDesc(file_linuxcnc_v1_program, 19);
 
 /**
  * @generated from message linuxcnc.v1.CutterCompensationData
@@ -657,7 +589,7 @@ export type CutterCompensationData = Message<"linuxcnc.v1.CutterCompensationData
  * Use `create(CutterCompensationDataSchema)` to create a new message.
  */
 export const CutterCompensationDataSchema: GenMessage<CutterCompensationData> = /*@__PURE__*/
-  messageDesc(file_linuxcnc_v1_program, 23);
+  messageDesc(file_linuxcnc_v1_program, 20);
 
 /**
  * @generated from enum linuxcnc.v1.OperationType
@@ -841,14 +773,6 @@ export const CutterCompensationModeSchema: GenEnum<CutterCompensationMode> = /*@
  * @generated from service linuxcnc.v1.ProgramService
  */
 export const ProgramService: GenService<{
-  /**
-   * @generated from rpc linuxcnc.v1.ProgramService.CreateWorkspace
-   */
-  createWorkspace: {
-    methodKind: "unary";
-    input: typeof CreateWorkspaceRequestSchema;
-    output: typeof CreateWorkspaceResponseSchema;
-  },
   /**
    * @generated from rpc linuxcnc.v1.ProgramService.UploadWorkspace
    */

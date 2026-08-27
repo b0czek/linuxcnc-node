@@ -166,7 +166,6 @@ void callback_runtime_test() {
   assert(racing_target.finishes == 1);
   assert(!racing_gate->invoke([](RacingTarget&) { assert(false); }));
   racing_gate->detach();
-
 }
 
 void cleanup_reserve_saturation_test() {
@@ -236,12 +235,22 @@ void daemon_config_test() {
   char period[] = "--status-period-ms=25";
   char quota[] = "--workspace-quota=64";
   char completion_timeout[] = "--command-completion-timeout-ms=120000";
-  char* arguments[] = {program, period, quota, completion_timeout};
+  char max_workspaces[] = "--max-workspaces=8";
+  char max_files[] = "--max-workspace-entries=32";
+  char max_metadata[] = "--max-upload-metadata=4096";
+  char upload_timeout[] = "--upload-timeout-seconds=45";
+  char* arguments[] = {
+      program,        period,    quota,        completion_timeout,
+      max_workspaces, max_files, max_metadata, upload_timeout};
   std::string error;
-  assert(parse_config(4, arguments, &config, nullptr, &error));
+  assert(parse_config(8, arguments, &config, nullptr, &error));
   assert(config.status_period == std::chrono::milliseconds(25));
   assert(config.workspace_quota_bytes == 64);
   assert(config.command_completion_timeout == std::chrono::minutes(2));
+  assert(config.max_workspaces == 8);
+  assert(config.max_workspace_entries == 32);
+  assert(config.max_upload_metadata_bytes == 4096);
+  assert(config.upload_timeout == std::chrono::seconds(45));
   char telemetry[] = "--telemetry-endpoint=127.0.0.1:51000";
   char* telemetry_arguments[] = {program, telemetry};
   assert(parse_config(2, telemetry_arguments, &config, nullptr, &error));
@@ -350,31 +359,28 @@ void workspace_test() {
   ProgramWorkspaceStore store(
       base / "workspaces", base / "active",
       WorkspaceLimits{1024, 2048, std::chrono::hours(24)});
-  const auto id = store.create();
-  const std::vector<std::uint8_t> contents{'G', '0', ' ', 'X', '0', '\n'};
-  assert(store.write_file(id, "program/main.ngc", contents));
-  assert(!store.write_file(id, "/absolute.ngc", contents));
-  assert(!store.write_file(id, "../escape.ngc", contents));
+  const auto upload = store.staging_root() / "domain-upload";
+  const auto revision = upload / "revision";
+  fs::create_directories(revision / "program", error);
+  {
+    std::ofstream output(revision / "program/main.ngc");
+    output << "G0 X0\n";
+  }
+  std::string id;
+  assert(store.publish_revision(revision, 6, 2, {}, &id) ==
+         WorkspacePublishStatus::Ok);
   fs::path resolved;
-  assert(store.resolve_entry(id, "program/main.ngc", &resolved));
-  assert(fs::is_regular_file(resolved));
-  assert(!store.resolve_entry(id, "../escape.ngc", &resolved));
-  fs::path entry;
-  assert(store.materialize(id, "program/main.ngc", &entry));
-  assert(fs::exists(entry));
   assert(store.pin_entry(id, "program/main.ngc", &resolved));
-  assert(!store.write_file(id, "program/main.ngc", contents));
-  assert(!store.remove_file(id, "program/main.ngc"));
-  assert(!store.unpin(id));
+  assert(fs::is_regular_file(resolved));
+  auto activation = store.stage(id, "program/main.ngc", [](fs::path path) {
+    std::error_code cleanup_error;
+    fs::remove(path, cleanup_error);
+  });
+  assert(activation && activation->commit());
+  assert(fs::is_symlink(fs::symlink_status(store.active_directory())));
+  assert(fs::is_regular_file(store.active_directory() / "program/main.ngc"));
+  activation->rollback();
   assert(store.unpin_entry(id));
-  assert(store.write_file(id, "program/main.ngc", contents));
-  assert(store.pin(id));
-  assert(store.pin(id));
-  assert(!store.erase(id));
-  assert(store.unpin(id));
-  assert(!store.erase(id));
-  assert(store.unpin(id));
-  assert(!store.unpin(id));
   assert(store.erase(id));
   fs::remove_all(base, error);
 }
