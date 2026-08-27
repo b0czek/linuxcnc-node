@@ -1,2 +1,3 @@
+T0 P0 Z0.000 ; empty random-changer spindle sentinel
 T1 P1 Z0.000 ; generic parser integration tool 1
 T2 P2 Z0.000 ; generic parser integration tool 2
