@@ -271,7 +271,10 @@ void daemon_config_test() {
   config.scope_samples = 64000;
   config.endpoint = "0.0.0.0:50051";
   assert(!validate_config(config, &error));
-  config.unsafe_non_loopback = true;
+  char allow_plaintext[] = "--allow-plaintext-non-loopback";
+  char* allow_plaintext_arguments[] = {program, allow_plaintext};
+  assert(parse_config(2, allow_plaintext_arguments, &config, nullptr, &error));
+  assert(config.allow_plaintext_non_loopback);
   assert(validate_config(config, &error));
 
   const auto base = fs::temp_directory_path() / "linuxcnc-grpc-config-test";

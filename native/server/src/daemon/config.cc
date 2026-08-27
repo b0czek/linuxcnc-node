@@ -214,8 +214,8 @@ bool parse_config(int argc, char* argv[], DaemonConfig* config, bool* show_help,
       config->reflection = true;
       continue;
     }
-    if (argument == "--unsafe-non-loopback") {
-      config->unsafe_non_loopback = true;
+    if (argument == "--allow-plaintext-non-loopback") {
+      config->allow_plaintext_non_loopback = true;
       continue;
     }
 
@@ -359,7 +359,7 @@ std::string config_help() {
          "--position-period-ms=10\n"
          "  --topology-period-ms=2000 --scope-samples=32000\n"
          "  --scope-period-ms=20 --scope-heartbeat-ms=100\n"
-         "  --unsafe-non-loopback\n";
+         "  --allow-plaintext-non-loopback\n";
 }
 
 }  // namespace linuxcnc::server

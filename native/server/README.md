@@ -37,7 +37,7 @@ directly to renderers at `ws://127.0.0.1:50052/v1/position-history` by default;
 set `--telemetry-endpoint=HOST:PORT` to change the shared listener. This
 read-only telemetry listener is always a plaintext `ws://` endpoint; `--tls`
 and `--mtls` secure only the gRPC control plane. A non-loopback telemetry bind
-requires `--unsafe-non-loopback`.
+requires `--allow-plaintext-non-loopback`.
 
 The application protocol is server-to-client only. Client data messages close
 the connection with WebSocket policy error 1008. Every binary WebSocket

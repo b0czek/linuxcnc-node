@@ -47,5 +47,5 @@ exec linuxcnc-grpc-server \
   "--nml=$NMLFILE" \
   "--workspace-root=$workspace_root" \
   "--active-program-directory=$program_prefix" \
-  --unsafe-non-loopback \
+  --allow-plaintext-non-loopback \
   "${daemon_args[@]}"
