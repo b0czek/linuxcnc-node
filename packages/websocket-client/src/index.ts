@@ -325,8 +325,7 @@ function domainOperation(operation: WireOperation): GCodeOperation {
       if (data.case !== "cutterCompensationChange")
         throw new Error("cutter-compensation operation is missing data");
       return {
-        type: WireOperationType.CUTTER_COMPENSATION_CHANGE as
-          OperationType.CUTTER_COMPENSATION_CHANGE,
+        type: WireOperationType.CUTTER_COMPENSATION_CHANGE as OperationType.CUTTER_COMPENSATION_CHANGE,
         mode: data.value.mode as CutterCompensationMode,
       };
     default:
