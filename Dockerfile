@@ -74,6 +74,7 @@ FROM ubuntu:24.04 AS runtime
 ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+      libarchive13t64 \
       libboost-python1.83.0 \
       libedit2 \
       libfmt9 \

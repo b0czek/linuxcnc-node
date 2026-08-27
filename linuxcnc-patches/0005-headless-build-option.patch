@@ -14,7 +14,7 @@ Asciidoctor.
  debian/linuxcnc-headless.install.in           |  3 +
  debian/rules.in                               | 14 ++++
  scripts/linuxcnc.in                           | 16 ++--
- src/Makefile                                  | 69 ++++++++++++++++-
+ src/Makefile                                  | 70 ++++++++++++++++-
  src/Makefile.inc.in                           |  3 +-
  src/configure.ac                              | 76 ++++++++++++++++---
  src/emc/usr_intf/Submakefile                  |  4 +-
@@ -23,7 +23,7 @@ Asciidoctor.
  src/emc/usr_intf/emcsh.cc                     |  7 +-
  src/hal/components/Submakefile                |  2 +
  src/hal/user_comps/Submakefile                |  5 ++
- 15 files changed, 249 insertions(+), 77 deletions(-)
+ 15 files changed, 250 insertions(+), 77 deletions(-)
  create mode 100644 debian/linuxcnc-headless.install.in
 
 diff --git a/debian/configure b/debian/configure
@@ -335,7 +335,7 @@ index 789b9de0ec..3eaca77e7b 100644
      true
    elif [ -e "$INI_DIR/$img" ]; then
 diff --git a/src/Makefile b/src/Makefile
-index 482d453198..ba06388947 100644
+index 482d453198..35c77b38ac 100644
 --- a/src/Makefile
 +++ b/src/Makefile
 @@ -24,7 +24,7 @@ default: build-software
@@ -410,7 +410,7 @@ index 482d453198..ba06388947 100644
  
  # And make userspace depend on $(TARGETS)
  userspace: $(TARGETS)
-@@ -678,10 +703,50 @@ install-dirs:
+@@ -678,10 +703,51 @@ install-dirs:
  		$(DESTDIR)$(datadir)/linuxcnc/pncconf/pncconf-help \
  		$(DESTDIR)$(datadir)/linuxcnc/hallib
  
@@ -437,7 +437,8 @@ index 482d453198..ba06388947 100644
 +	$(FILE) ../lib/linuxcnc/canterp.so $(DESTDIR)$(libdir)/linuxcnc/
 +	$(FILE) $(HEADERS) $(DESTDIR)$(includedir)/linuxcnc/
 +	$(FILE) Makefile.modinc $(DESTDIR)$(datadir)/linuxcnc
-+	$(FILE) ../tcl/hal.so ../tcl/linuxcnc.so ../tcl/pkgIndex.tcl $(DESTDIR)$(tcldir)
++	$(FILE) ../tcl/hal.so ../tcl/linuxcnc.so ../tcl/linuxcnc.tcl \
++		../tcl/pkgIndex.tcl ../tcl/twopass.tcl $(DESTDIR)$(tcldir)
 +	$(FILE) ../configs/common/linuxcnc.nml ../configs/common/linuxcnc_big.nml $(DESTDIR)$(datadir)/linuxcnc
 +	$(FILE) ../src/hal/drivers/mesa-hostmot2/modbus/*.tmpl $(DESTDIR)$(datadir)/linuxcnc/
 +	$(DIR) $(DESTDIR)$(SITEPY) $(DESTDIR)$(SITEPY)/rs274
