@@ -55,7 +55,7 @@ RUN cmake -S . -B /build/native-release \
       -DLINUXCNC_GRPC_BUILD_WIRE=ON \
       -DLINUXCNC_GRPC_BUILD_TESTS=OFF \
       -DLINUXCNC_GRPC_ENABLE_NML=ON \
-      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_BUILD_TYPE=MinSizeRel \
     && cmake --build /build/native-release --parallel "$(nproc)" \
       --target linuxcnc-grpc-server linuxcnc-grpc-health-check \
     && cmake --install /build/native-release --prefix /usr/local --strip \
