@@ -37,16 +37,20 @@ void require_owned_directory(const fs::path& path, bool private_directory) {
   }
 }
 
-void create_private_directory(const fs::path& path) {
+void create_owned_directory(const fs::path& path, bool private_directory) {
   std::error_code error;
   const bool created = fs::create_directories(path, error);
-  if (error) throw std::system_error(error, "create private directory");
+  if (error) throw std::system_error(error, "create workspace directory");
   if (created) {
-    fs::permissions(path, fs::perms::owner_all, fs::perm_options::replace,
-                    error);
-    if (error) throw std::system_error(error, "secure private directory");
+    auto permissions = fs::perms::owner_all;
+    if (!private_directory) {
+      permissions |= fs::perms::group_read | fs::perms::group_exec |
+                     fs::perms::others_read | fs::perms::others_exec;
+    }
+    fs::permissions(path, permissions, fs::perm_options::replace, error);
+    if (error) throw std::system_error(error, "secure workspace directory");
   }
-  require_owned_directory(path, true);
+  require_owned_directory(path, private_directory);
 }
 
 std::string opaque_workspace_id() {
@@ -95,20 +99,18 @@ ProgramWorkspaceStore::ProgramWorkspaceStore(const fs::path& root,
       path_contains(active_directory_, root_))
     throw std::runtime_error(
         "workspace root and active program directory must not overlap");
-  create_private_directory(root_);
-  fs::create_directories(active_directory_.parent_path(), error);
-  if (error) throw std::system_error(error, "create active program parent");
-  require_owned_directory(active_directory_.parent_path(), false);
+  create_owned_directory(active_directory_.parent_path(), false);
+  create_owned_directory(root_, true);
   if (has_symlink_component(root_, root_.root_path()) ||
       has_symlink_component(active_directory_.parent_path(),
                             active_directory_.root_path()))
     throw std::runtime_error("workspace parents may not contain symlinks");
   fs::remove_all(staging_root_, error);
   if (error) throw std::system_error(error, "clear upload staging root");
-  create_private_directory(staging_root_);
+  create_owned_directory(staging_root_, true);
   fs::remove_all(empty_active_directory_, error);
   if (error) throw std::system_error(error, "clear empty active workspace");
-  create_private_directory(empty_active_directory_);
+  create_owned_directory(empty_active_directory_, true);
 
   for (const auto& entry : fs::directory_iterator(root_)) {
     std::error_code scan_error;

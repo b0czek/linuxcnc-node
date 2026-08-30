@@ -903,11 +903,11 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
     if (!topology_snapshot_ || serialized != topology_serialized_) {
       ++topology_sequence_;
       topology_serialized_ = serialized;
-      auto snapshot = std::make_shared<TopologySnapshot>();
-      snapshot->sequence = topology_sequence_;
-      snapshot->topology = std::move(current);
-      topology_snapshot_ = std::move(snapshot);
     }
+    auto snapshot = std::make_shared<TopologySnapshot>();
+    snapshot->sequence = topology_sequence_;
+    snapshot->topology = std::move(current);
+    topology_snapshot_ = std::move(snapshot);
     return topology_snapshot_;
   }
 
