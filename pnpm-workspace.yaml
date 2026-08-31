@@ -16,7 +16,7 @@ catalog:
   jest: ^30.4.2
   node-addon-api: ^8.9.0
   node-gyp: ^13.0.1
-  picomatch: ^4.0.5
+  picomatch: ^4.0.7
   ts-jest: ^29.4.12
   tsup: ^8.5.1
   typedoc: ^0.28.20
