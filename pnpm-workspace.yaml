@@ -15,7 +15,7 @@ catalog:
   dset: ^3.1.4
   jest: ^30.4.2
   node-addon-api: ^8.9.0
-  node-gyp: ^13.0.1
+  node-gyp: ^13.0.2
   picomatch: ^4.0.5
   ts-jest: ^29.4.12
   tsup: ^8.5.1
