@@ -1132,18 +1132,18 @@ class MachineServiceImpl final : public MachineCallbackBase,
     // from authoritative LinuxCNC status so TTL cleanup resumes once no file
     // is open, regardless of which client initiated the close.
     if (fresh.task_stat.file.empty() && fresh.file.empty()) {
-      bool clear_active =
-          workspace_activation_->store->release_recovered_leases();
-      {
-        std::lock_guard activation_lock(workspace_activation_->mutex);
+      std::lock_guard activation_lock(workspace_activation_->mutex);
+      if (!workspace_activation_->opening) {
+        bool clear_active =
+            workspace_activation_->store->release_recovered_leases();
         if (!workspace_activation_->active.empty()) {
           workspace_activation_->store->unpin_entry(
               workspace_activation_->active);
           workspace_activation_->active.clear();
           clear_active = true;
         }
+        if (clear_active) workspace_activation_->store->clear_active_link();
       }
-      if (clear_active) workspace_activation_->store->clear_active_link();
     }
     std::uint64_t published = 0;
     std::unique_lock lock(status_mutex_);

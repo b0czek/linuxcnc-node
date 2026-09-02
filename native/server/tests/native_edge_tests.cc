@@ -1,5 +1,6 @@
 #include <archive.h>
 #include <archive_entry.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -650,6 +651,8 @@ void workspace_restart_cleanup_test() {
   fs::remove_all(base, error);
   fs::create_directories(root / ".uploads/orphan", error);
   fs::create_directories(active, error);
+  fs::permissions(base, fs::perms::owner_all, fs::perm_options::replace,
+                  error);
   fs::permissions(root, fs::perms::owner_all, fs::perm_options::replace, error);
   assert(!error);
   {
@@ -765,6 +768,26 @@ void workspace_path_safety_test() {
     rejected = true;
   }
   assert(rejected);
+  fs::remove_all(base, error);
+  assert(!error);
+}
+
+void workspace_active_parent_permissions_test() {
+  const auto base = fs::temp_directory_path() /
+                    ("linuxcnc-grpc-workspace-parent-tests-" +
+                     std::to_string(::getpid()));
+  const auto root = base / "workspaces";
+  const auto active = base / "active";
+  std::error_code error;
+  fs::remove_all(base, error);
+
+  const auto previous_umask = ::umask(0002);
+  ProgramWorkspaceStore store(root, active);
+  ::umask(previous_umask);
+
+  struct stat status {};
+  assert(::lstat(active.parent_path().c_str(), &status) == 0);
+  assert((status.st_mode & (S_IWGRP | S_IWOTH)) == 0);
   fs::remove_all(base, error);
   assert(!error);
 }
@@ -949,6 +972,7 @@ int main() {
   workspace_restart_cleanup_test();
   workspace_expiration_and_recovery_test();
   workspace_path_safety_test();
+  workspace_active_parent_permissions_test();
   workspace_traversal_quota_ttl_and_materialization_test();
   scope_coalescing_and_conflict_accounting_test();
   return 0;
