@@ -29,7 +29,7 @@
     "@linuxcnc-node/grpc-client": "workspace:*",
     "@linuxcnc-node/websocket-client": "workspace:*",
     "@linuxcnc-node/types": "workspace:*",
-    "@tanstack/solid-virtual": "^3.13.12",
+    "@tanstack/solid-virtual": "^3.13.37",
     "solid-icons": "^1.1.0",
     "solid-js": "^1.9.10",
     "webgl-plot": "^1.1.2"
