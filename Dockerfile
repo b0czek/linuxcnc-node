@@ -3,6 +3,7 @@
 FROM ubuntu:24.04 AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG BUILD_JOBS=2
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential \
@@ -24,7 +25,7 @@ COPY linuxcnc-patches /tmp/linuxcnc-patches
 
 RUN git init /src/linuxcnc \
     && git -C /src/linuxcnc remote add origin https://github.com/LinuxCNC/linuxcnc.git \
-    && git -C /src/linuxcnc fetch --depth=1 origin "$(cat /tmp/linuxcnc-patches/base-revision)" \
+    && git -c http.version=HTTP/1.1 -C /src/linuxcnc fetch --depth=1 origin "$(cat /tmp/linuxcnc-patches/base-revision)" \
     && git -C /src/linuxcnc checkout --detach FETCH_HEAD \
     && /tmp/linuxcnc-patches/apply.sh --detach /src/linuxcnc
 
@@ -43,7 +44,7 @@ RUN cd /src/linuxcnc/src \
       --enable-headless \
       --disable-build-documentation \
       --disable-build-manpages \
-    && make -j"$(nproc)" \
+    && make -j"${BUILD_JOBS}" \
     && make DESTDIR=/linuxcnc-root install
 
 WORKDIR /src/linuxcnc-node
@@ -57,7 +58,7 @@ RUN cmake -S . -B /build/native-release \
       -DLINUXCNC_GRPC_BUILD_TESTS=OFF \
       -DLINUXCNC_GRPC_ENABLE_NML=ON \
       -DCMAKE_BUILD_TYPE=MinSizeRel \
-    && cmake --build /build/native-release --parallel "$(nproc)" \
+    && cmake --build /build/native-release --parallel "${BUILD_JOBS}" \
       --target linuxcnc-grpc-server linuxcnc-grpc-health-check \
     && cmake --install /build/native-release --prefix /usr/local --strip \
     && cmake -S . -B /build/native-test \
@@ -66,7 +67,7 @@ RUN cmake -S . -B /build/native-release \
       -DLINUXCNC_GRPC_BUILD_TESTS=ON \
       -DLINUXCNC_GRPC_ENABLE_NML=ON \
       -DCMAKE_BUILD_TYPE=Debug \
-    && cmake --build /build/native-test --parallel "$(nproc)" \
+    && cmake --build /build/native-test --parallel "${BUILD_JOBS}" \
       --target linuxcnc-grpc-live-integration
 
 FROM ubuntu:24.04 AS runtime

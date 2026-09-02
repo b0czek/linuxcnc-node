@@ -335,4 +335,18 @@ Python remap generators are closed during interpreter unwind so their
 `finally` cleanup runs on task or operator abort. The regression also covers
 success, raw failure handling, standard failure policy, timeout, stale
 responses, monotonic request IDs, request release, and cancellation. Headless
-installs now include the curated `stdglue`. 
+installs now include the curated `stdglue`.
+
+### 0014 — Publish modal CSS maximum in spindle status
+
+Publishes the canonical G96 `D` limit through the existing
+`EMC_SPINDLE_STAT.css_maximum` field when spindle mode changes. The value
+survives M5 because it is modal state rather than a running-speed command, and
+G97 clears it. Spindle `enabled` is now derived from the motion controller's
+explicit on/off state instead of commanded speed, so a stopped spindle with a
+nonzero CSS limit remains disabled and is not restarted by resumable Stop.
+
+The `tests/css-status` regression covers G96 while stopped, persistence across
+M5, clearing on G97, and stopped-spindle enabled state. The patch exposes
+`css_maximum` through Python spindle status; the existing Node status adapter
+and schema already carry it, so no Node binding change is required.
