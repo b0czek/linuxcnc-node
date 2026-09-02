@@ -30,7 +30,10 @@ if ! "${CLANG_FORMAT}" --version | grep -Eq 'version 21([.]| )'; then
   exit 1
 fi
 
-mapfile -d '' NATIVE_FILES < <(
+NATIVE_FILES=()
+while IFS= read -r -d '' native_file; do
+  NATIVE_FILES+=("${native_file}")
+done < <(
   git -C "${REPO_ROOT}" ls-files -z -- \
     'native/server/*.cc' 'native/server/**/*.cc' \
     'native/server/*.hpp' 'native/server/**/*.hpp' \

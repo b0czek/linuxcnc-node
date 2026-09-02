@@ -651,8 +651,7 @@ void workspace_restart_cleanup_test() {
   fs::remove_all(base, error);
   fs::create_directories(root / ".uploads/orphan", error);
   fs::create_directories(active, error);
-  fs::permissions(base, fs::perms::owner_all, fs::perm_options::replace,
-                  error);
+  fs::permissions(base, fs::perms::owner_all, fs::perm_options::replace, error);
   fs::permissions(root, fs::perms::owner_all, fs::perm_options::replace, error);
   assert(!error);
   {
@@ -773,9 +772,9 @@ void workspace_path_safety_test() {
 }
 
 void workspace_active_parent_permissions_test() {
-  const auto base = fs::temp_directory_path() /
-                    ("linuxcnc-grpc-workspace-parent-tests-" +
-                     std::to_string(::getpid()));
+  const auto base =
+      fs::temp_directory_path() /
+      ("linuxcnc-grpc-workspace-parent-tests-" + std::to_string(::getpid()));
   const auto root = base / "workspaces";
   const auto active = base / "active";
   std::error_code error;
@@ -785,7 +784,7 @@ void workspace_active_parent_permissions_test() {
   ProgramWorkspaceStore store(root, active);
   ::umask(previous_umask);
 
-  struct stat status {};
+  struct stat status{};
   assert(::lstat(active.parent_path().c_str(), &status) == 0);
   assert((status.st_mode & (S_IWGRP | S_IWOTH)) == 0);
   fs::remove_all(base, error);
