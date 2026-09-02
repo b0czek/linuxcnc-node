@@ -2,7 +2,14 @@
   "$schema": "https://unpkg.com/@changesets/config@3.0.0/schema.json",
   "changelog": "@changesets/cli/changelog",
   "commit": false,
-  "fixed": [["@linuxcnc-node/types", "@linuxcnc-node/hal-inspector"]],
+  "fixed": [
+    [
+      "@linuxcnc-node/types",
+      "@linuxcnc-node/grpc-client",
+      "@linuxcnc-node/websocket-client",
+      "@linuxcnc-node/hal-inspector"
+    ]
+  ],
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
