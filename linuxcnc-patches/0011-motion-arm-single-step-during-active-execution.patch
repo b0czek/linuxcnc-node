@@ -1,0 +1,443 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dariusz Majnert <dariusz.majnert@gmail.com>
+Date: Wed, 26 Aug 2026 20:51:20 +0200
+Subject: [PATCH] motion: arm Single Step during active execution
+
+Forward AUTO_STEP to motion while an AUTO program is already running. The default trajectory planner latches the active source block, or the active G76 safe-approach or infeed-thread-clearance unit, and finishes that unit at an exact boundary before pausing.
+
+Keep later prequeued motion from starting, restore temporary exact boundaries when Step is canceled by Resume or Stop, and report single_stepping while an in-flight step remains armed. Cover ordinary multi-move blocks and an active G76 thread with later passes queued.
+---
+ src/emc/motion/command.c               | 17 +++---
+ src/emc/motion/control.c               |  9 +--
+ src/emc/task/emctaskmain.cc            | 48 ++++++++--------
+ src/emc/tp/tp.c                        | 80 ++++++++++++++++++++------
+ src/emc/tp/tp_types.h                  |  6 +-
+ tests/resumable-stop/README            | 10 +++-
+ tests/resumable-stop/checkresult       |  2 +-
+ tests/resumable-stop/inflight-step.ngc |  7 +++
+ 8 files changed, 125 insertions(+), 54 deletions(-)
+ create mode 100644 tests/resumable-stop/inflight-step.ngc
+
+diff --git a/src/emc/motion/command.c b/src/emc/motion/command.c
+index b6ad9c1..c166af6 100644
+--- a/src/emc/motion/command.c
++++ b/src/emc/motion/command.c
+@@ -1269,26 +1269,29 @@ void emcmotCommandHandler_locked(void *arg, long servo_period)
+ 	    break;
+ 
+ 	case EMCMOT_STEP:
+-	    /* resume paused motion through one G76 pass or until id changes */
++	    /* finish the active/next source block or G76 pass, then pause */
+ 	    /* can happen at any time */
+             rtapi_print_msg(RTAPI_MSG_DBG, "STEP");
+-            if(emcmotStatus->paused) {
++            if (!emcmotStatus->stepping &&
++                    tpQueueDepth(&emcmotInternal->coord_tp) > 0) {
+                 TP_STRUCT *tp = &emcmotInternal->coord_tp;
+-                tpResume(tp);
++                if (emcmotStatus->paused) {
++                    tpResume(tp);
++                }
+                 emcmotStatus->stepping = 1;
+-                tp->stepping_to_pass_clearance = 1;
++                tp->stepping_to_motion_target = 1;
+                 tp->step_target_pending = 0;
+                 tpPause(tp);
+                 if (!tp->step_target_pending) {
+                     tp->step_tc = 0;
+                     tp->step_pass_id = 0;
+-                    tp->stepping_to_pass_clearance = 0;
++                    tp->step_motion_id = 0;
++                    tp->stepping_to_motion_target = 0;
+                     emcmotInternal->idForStep = emcmotStatus->id;
+                     tpResume(tp);
+                 }
+-                emcmotStatus->paused = 1;
+             } else {
+-		reportError(_("MOTION: can't STEP while already executing"));
++		reportError(_("MOTION: can't STEP without queued motion or while already stepping"));
+ 	    }
+ 	    break;
+ 
+diff --git a/src/emc/motion/control.c b/src/emc/motion/control.c
+index 160c2dc..040e534 100644
+--- a/src/emc/motion/control.c
++++ b/src/emc/motion/control.c
+@@ -2225,14 +2225,15 @@ static void update_status(void)
+ 
+     if (emcmotStatus->stepping) {
+         TP_STRUCT *tp = &emcmotInternal->coord_tp;
+-        bool pass_step_done = tp->stepping_to_pass_clearance &&
++        bool targeted_step_done = tp->stepping_to_motion_target &&
+             !tp->step_target_pending;
+-        bool line_step_done = !tp->stepping_to_pass_clearance &&
++        bool line_step_done = !tp->stepping_to_motion_target &&
+             emcmotInternal->idForStep != emcmotStatus->id;
+-        if (pass_step_done || line_step_done) {
++        if (targeted_step_done || line_step_done) {
+             tp->step_tc = 0;
+             tp->step_pass_id = 0;
+-            tp->stepping_to_pass_clearance = 0;
++            tp->step_motion_id = 0;
++            tp->stepping_to_motion_target = 0;
+             tpPause(tp);
+             emcmotStatus->stepping = 0;
+             emcmotStatus->paused = 1;
+diff --git a/src/emc/task/emctaskmain.cc b/src/emc/task/emctaskmain.cc
+index 1addd75..f916833 100644
+--- a/src/emc/task/emctaskmain.cc
++++ b/src/emc/task/emctaskmain.cc
+@@ -463,6 +463,7 @@ static int programStartLine = 0;	// which line to run program from
+ int stepping = 0;
+ int steppingWait = 0;
+ static int steppedLine = 0;
++static bool inFlightStepArmed = false;
+ /*
+  * Pass groups delimit commands that are still owned by task. Motion that was
+  * already queued before resumable Stop is stepped by TP to its marked G76
+@@ -478,6 +479,7 @@ void emcTaskResetSteppingState()
+     steppedLine = 0;
+     currentPassGroup = 0;
+     steppedPassGroup = 0;
++    inFlightStepArmed = false;
+ }
+ 
+ // Variables to handle MDI call interrupts
+@@ -819,6 +821,22 @@ static void emcTaskStepInterpreter()
+     emcStatus->task.task_paused = 1;
+ }
+ 
++static bool emcTaskArmSingleStep()
++{
++    emcStatus->motion.traj.single_stepping = 1;
++    stepping = 1;
++    steppingWait = 0;
++    if (emcStatus->motion.traj.queue == 0) {
++        emcStatus->task.task_paused = 1;
++        return false;
++    }
++
++    inFlightStepArmed = !emcStatus->motion.traj.paused;
++    emcStatus->task.task_paused = !inFlightStepArmed;
++    emcTrajStep();
++    return true;
++}
++
+ static void emcTaskStopClear()
+ {
+     bool was_active = emcStatus &&
+@@ -1433,13 +1451,7 @@ static int emcTaskPlan(void)
+ 		    break;
+ 
+ 		case EMC_TASK_PLAN_STEP_TYPE:
+-		    emcStatus->motion.traj.single_stepping = 1;
+-		    stepping = 1;	// set stepping mode in case it's not
+-		    steppingWait = 0;	// clear the wait
+-		    if (emcStatus->motion.traj.paused &&
+-			emcStatus->motion.traj.queue > 0) {
+-			emcTrajStep();
+-		    }
++		    emcTaskArmSingleStep();
+ 		    break;
+ 
+ 		    // otherwise we can't handle it
+@@ -1513,17 +1525,9 @@ static int emcTaskPlan(void)
+ 		    break;
+ 
+ 		case EMC_TASK_PLAN_STEP_TYPE:
+-		    emcStatus->motion.traj.single_stepping = 1;
+-		    stepping = 1;
+-		    steppingWait = 0;
+-		    if (emcStatus->motion.traj.paused &&
+-			emcStatus->motion.traj.queue > 0) {
+-			// there are pending motions paused; step them
+-			emcTrajStep();
+-		    } else {
++		    if (!emcTaskArmSingleStep()) {
+ 			emcStatus->task.interpState = interpResumeState;
+ 		    }
+-		    emcStatus->task.task_paused = 1;
+ 		    break;
+ 
+ 		    // otherwise we can't handle it
+@@ -1589,13 +1593,7 @@ static int emcTaskPlan(void)
+ 		    break;
+ 
+ 		case EMC_TASK_PLAN_STEP_TYPE:
+-		    emcStatus->motion.traj.single_stepping = 1;
+-		    stepping = 1;	// set stepping mode in case it's not
+-		    steppingWait = 0;	// clear the wait
+-		    if (emcStatus->motion.traj.paused &&
+-			emcStatus->motion.traj.queue > 0) {
+-			emcTrajStep();
+-		    }
++		    emcTaskArmSingleStep();
+ 		    break;
+ 
+ 		    // otherwise we can't handle it
+@@ -3681,6 +3679,10 @@ int main(int argc, char *argv[])
+ 	// update subordinate status
+ 
+ 	emcMotionUpdate(&emcStatus->motion);
++	if (inFlightStepArmed && emcStatus->motion.traj.paused) {
++	    inFlightStepArmed = false;
++	    emcStatus->task.task_paused = 1;
++	}
+ 	// On a motion enabled -> disabled edge (limit switch, amp fault,
+ 	// following error, etc.) unhome joints marked VOLATILE_HOME. The estop
+ 	// and machine-off paths already do their own unhome; this catches the
+diff --git a/src/emc/tp/tp.c b/src/emc/tp/tp.c
+index d4373fd..9091ba7 100644
+--- a/src/emc/tp/tp.c
++++ b/src/emc/tp/tp.c
+@@ -342,9 +342,9 @@ STATIC inline double tpGetRealFinalVel(TP_STRUCT const * const tp,
+      * If the term_cond gets changed out from under us, detect this and force final velocity to zero
+      */
+ 
+-    if ((emcmotStatus->stepping && !tp->stepping_to_pass_clearance) ||
++    if ((emcmotStatus->stepping && !tp->stepping_to_motion_target) ||
+             (tp->stopping && tc == tp->stop_tc) ||
+-            (tp->stepping_to_pass_clearance && tc == tp->step_tc) ||
++            (tp->stepping_to_motion_target && tc == tp->step_tc) ||
+             tc->term_cond != TC_TERM_COND_TANGENT || tp->reverse_run) {
+         return 0.0;
+     }
+@@ -504,7 +504,11 @@ int tpClear(TP_STRUCT * const tp)
+     tp->step_tc = 0;
+     tp->step_target_pending = 0;
+     tp->step_pass_id = 0;
+-    tp->stepping_to_pass_clearance = 0;
++    tp->step_motion_id = 0;
++    tp->stepping_to_motion_target = 0;
++    tp->step_target_term_cond = 0;
++    tp->step_target_finalvel = 0.0;
++    tp->step_target_overridden = 0;
+     tp->reverse_run = 0;
+     tp->synchronized = 0;
+     tp->uu_per_rev = 0.0;
+@@ -1598,7 +1602,7 @@ STATIC inline int tpAddSegmentToQueue(TP_STRUCT * const tp, TC_STRUCT * const tc
+                 tp->stop_pass_id);
+         return TP_ERR_FAIL;
+     }
+-    if (inc_id && tp->stepping_to_pass_clearance &&
++    if (inc_id && tp->stepping_to_motion_target &&
+             tp->step_target_pending && tp->step_pass_id && !tp->step_tc &&
+             tc->g76_pass_id != tp->step_pass_id) {
+         rtapi_print_msg(RTAPI_MSG_ERR,
+@@ -1624,12 +1628,11 @@ STATIC inline int tpAddSegmentToQueue(TP_STRUCT * const tp, TC_STRUCT * const tc
+         }
+     }
+     if (queued_tc && queued_tc->g76_pass_clearance &&
+-            tp->stepping_to_pass_clearance && tp->step_target_pending &&
++            tp->stepping_to_motion_target && tp->step_target_pending &&
+             !tp->step_tc &&
+             queued_tc->g76_pass_id == tp->step_pass_id) {
+         tp->step_tc = queued_tc;
+     }
+-
+     // Store end of current move as new final goal of TP
+     // KLUDGE: endpoint is garbage for rigid tap since it's supposed to retract past the start point.
+     if (tc->motion_type != TC_RIGIDTAP) {
+@@ -3442,10 +3445,11 @@ STATIC int tpCompleteSegment(TP_STRUCT * const tp,
+         tp->stop_tc = 0;
+         tp->stop_pass_id = 0;
+     }
+-    if (tp->stepping_to_pass_clearance && tp->step_target_pending &&
++    if (tp->stepping_to_motion_target && tp->step_target_pending &&
+             tc == tp->step_tc) {
+         tp->step_target_pending = 0;
+         tp->step_tc = 0;
++        tp->step_target_overridden = 0;
+     }
+ 
+     //TODO make progress to match target?
+@@ -4217,7 +4221,7 @@ int tpRunCycle(TP_STRUCT * const tp, long period)
+             }
+             return TP_ERR_WAITING;
+         }
+-        if (tp->stepping_to_pass_clearance && tp->step_target_pending &&
++        if (tp->stepping_to_motion_target && tp->step_target_pending &&
+                 tp->step_pass_id && !tp->step_tc) {
+             tpHandleEmptyQueue(tp);
+             return TP_ERR_WAITING;
+@@ -4372,6 +4376,30 @@ STATIC int tpGetQueuedG76PassId(TP_STRUCT * const tp)
+     return tc ? tc->g76_pass_id : 0;
+ }
+ 
++STATIC TC_STRUCT *tpFindSourceBlockTarget(TP_STRUCT * const tp, int motion_id)
++{
++    TC_STRUCT *target = 0;
++    for (int i = 0; i < tcqLen(&tp->queue); ++i) {
++        TC_STRUCT *candidate = tcqItem(&tp->queue, i);
++        if (!candidate || candidate->id != motion_id) {
++            break;
++        }
++        target = candidate;
++    }
++    return target;
++}
++
++STATIC void tpRestoreStepTarget(TP_STRUCT * const tp)
++{
++    if (tp->step_target_overridden && tp->step_target_pending &&
++            tp->step_tc) {
++        tp->step_tc->term_cond = tp->step_target_term_cond;
++        tp->step_tc->finalvel = tp->step_target_finalvel;
++        tpRunOptimization(tp);
++    }
++    tp->step_target_overridden = 0;
++}
++
+ int tpPause(TP_STRUCT * const tp)
+ {
+     if (0 == tp) {
+@@ -4379,10 +4407,12 @@ int tpPause(TP_STRUCT * const tp)
+     }
+ 
+     if (tp->stopping) {
++        tpRestoreStepTarget(tp);
+         tp->step_tc = 0;
+         tp->step_target_pending = 0;
+         tp->step_pass_id = 0;
+-        tp->stepping_to_pass_clearance = 0;
++        tp->step_motion_id = 0;
++        tp->stepping_to_motion_target = 0;
+         TC_STRUCT *tc = tcqItem(&tp->queue, 0);
+         bool in_g76_cut_or_clearance = tc && tc->g76_pass_id &&
+             (tc->synchronized == TC_SYNC_POSITION ||
+@@ -4413,7 +4443,7 @@ int tpPause(TP_STRUCT * const tp)
+             tp->pausing = 1;
+         }
+     } else if (emcmotStatus->stepping &&
+-            tp->stepping_to_pass_clearance) {
++            tp->stepping_to_motion_target) {
+         /*
+          * EMCMOT_STEP requests default-TP pass targeting through the existing
+          * tpPause ABI. Alternate planners leave step_target_pending clear and
+@@ -4422,15 +4452,25 @@ int tpPause(TP_STRUCT * const tp)
+         int pass_id = tpGetQueuedG76PassId(tp);
+         if (pass_id) {
+             tp->step_pass_id = pass_id;
++            tp->step_motion_id = 0;
+             tp->step_tc = tpFindG76StepTarget(tp, pass_id);
+             tp->step_target_pending = 1;
+             tp->pausing = 0;
+         } else {
+-            tp->step_tc = 0;
+-            tp->step_target_pending = 0;
++            TC_STRUCT *tc = tcqItem(&tp->queue, 0);
+             tp->step_pass_id = 0;
+-            tp->stepping_to_pass_clearance = 0;
+-            tp->pausing = 1;
++            tp->step_motion_id = tc ? tc->id : 0;
++            tp->step_tc = tpFindSourceBlockTarget(tp, tp->step_motion_id);
++            tp->step_target_pending = tp->step_tc != 0;
++            if (tp->step_tc) {
++                /* Finalize the latched block as an exact runnable boundary. */
++                tp->step_target_term_cond = tp->step_tc->term_cond;
++                tp->step_target_finalvel = tp->step_tc->finalvel;
++                tp->step_target_overridden = 1;
++                tp->step_tc->term_cond = TC_TERM_COND_STOP;
++                tp->step_tc->finalvel = 0.0;
++            }
++            tp->pausing = !tp->step_target_pending;
+         }
+     } else {
+         tp->pausing = 1;
+@@ -4443,6 +4483,7 @@ int tpResume(TP_STRUCT * const tp)
+     if (0 == tp) {
+         return TP_ERR_FAIL;
+     }
++    tpRestoreStepTarget(tp);
+     tp->pausing = 0;
+     tp->stopping = 0;
+     tp->stop_tc = 0;
+@@ -4451,7 +4492,10 @@ int tpResume(TP_STRUCT * const tp)
+     tp->step_tc = 0;
+     tp->step_target_pending = 0;
+     tp->step_pass_id = 0;
+-    tp->stepping_to_pass_clearance = 0;
++    tp->step_motion_id = 0;
++    tp->stepping_to_motion_target = 0;
++    tp->step_target_term_cond = 0;
++    tp->step_target_finalvel = 0.0;
+     emcmotStatus->stopped = 0;
+     return TP_ERR_OK;
+ }
+@@ -4467,7 +4511,11 @@ int tpAbort(TP_STRUCT * const tp)
+         tp->step_tc = 0;
+         tp->step_target_pending = 0;
+         tp->step_pass_id = 0;
+-        tp->stepping_to_pass_clearance = 0;
++        tp->step_motion_id = 0;
++        tp->stepping_to_motion_target = 0;
++        tp->step_target_term_cond = 0;
++        tp->step_target_finalvel = 0.0;
++        tp->step_target_overridden = 0;
+         tpPause(tp);
+         tp->aborting = 1;
+     }
+diff --git a/src/emc/tp/tp_types.h b/src/emc/tp/tp_types.h
+index 15be0f3..893a9df 100644
+--- a/src/emc/tp/tp_types.h
++++ b/src/emc/tp/tp_types.h
+@@ -147,7 +147,11 @@ typedef struct {
+     TC_STRUCT *step_tc;
+     int step_target_pending;
+     int step_pass_id;
+-    int stepping_to_pass_clearance;
++    int step_motion_id;
++    int stepping_to_motion_target;
++    int step_target_term_cond;
++    double step_target_finalvel;
++    int step_target_overridden;
+ 
+ } TP_STRUCT;
+ 
+diff --git a/tests/resumable-stop/README b/tests/resumable-stop/README
+index e845030..72607e0 100644
+--- a/tests/resumable-stop/README
++++ b/tests/resumable-stop/README
+@@ -13,11 +13,17 @@ requests across the cut/retract handoff, and a negative G33 test proving that
+ an unrelated following rapid is not executed. Single Step coverage enters the
+ first G76 pass directly and verifies every cylindrical and tapered safe
+ approach step followed by its combined infeed, synchronized-cut, and clearance
+-step. It also starts G76 in normal AUTO_RUN, stops after the first pass with later passes
+-already queued, and verifies that each
++step. It also starts G76 in normal AUTO_RUN, stops after the first pass with
++later passes already queued, and verifies that each
+ following AUTO_STEP reaches exactly one cylindrical or tapered safe approach
+ endpoint, and the next AUTO_STEP completes that pass's infeed, thread, and
+ clearance.
++In-flight Single Step coverage arms during an ordinary source block with three
++later motion blocks already queued and during an active G76 cut with later
++passes queued. It verifies that the active block or thread-plus-clearance unit
++finishes normally and motion remains at its boundary until Resume. While the
++step is armed and the active unit is still moving, both task and motion report
++unpaused; they change to paused only when motion reaches the latched boundary.
+ Arc blending is enabled for all scenarios, so the exact-clearance assertions
+ also prove that a marked G76 retract endpoint is not trimmed by a following
+ rapid. The handoff stress case uses a slow synchronized feed and issues Stop at
+diff --git a/tests/resumable-stop/checkresult b/tests/resumable-stop/checkresult
+index faf35d6..4792b57 100755
+--- a/tests/resumable-stop/checkresult
++++ b/tests/resumable-stop/checkresult
+@@ -1,4 +1,4 @@
+ #!/bin/sh
+ set -e
+-test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 22
++test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 24
+ grep -q '^resumable stop scenarios complete$' "$1"
+diff --git a/tests/resumable-stop/inflight-step.ngc b/tests/resumable-stop/inflight-step.ngc
+new file mode 100644
+index 0000000..1f72544
+--- /dev/null
++++ b/tests/resumable-stop/inflight-step.ngc
+@@ -0,0 +1,7 @@
++G21 G90
++F600
++G1 X10
++G1 X20
++G1 X30
++G1 X40
++M2

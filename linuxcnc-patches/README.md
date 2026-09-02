@@ -11,10 +11,20 @@ The series is based on the LinuxCNC checkout currently used by this workspace:
 - Revision: the commit recorded in [`base-revision`](./base-revision)
 - Version line: LinuxCNC 2.10 development
 
-`base-revision` is the single source of truth used by the application script
-and CI. CI checks out that exact revision, applies every `*.patch` file in
-lexical order, and then builds LinuxCNC and the Node.js bindings. Changing the
-baseline requires validating and, if necessary, rebasing the complete series.
+`base-revision` is the single source of truth used by the stack tooling and
+CI. Patch files remain the reviewable source of truth in this repository, but
+they are materialized into LinuxCNC as a linear Git history with exactly one
+commit per patch. Changing the baseline requires rebasing and validating the
+complete series.
+
+## Continuous integration
+
+Changes under `linuxcnc-patches/` trigger the
+[`LinuxCNC patch tests`](../.github/workflows/linuxcnc-patches.yml) workflow on
+pushes and pull requests. The workflow materializes the complete series on the
+pinned revision, builds LinuxCNC in run-in-place mode with its upstream CI
+tooling, and runs the full LinuxCNC regression suite with failure output
+enabled.
 
 ## Applying the series
 
@@ -24,13 +34,58 @@ From a clean checkout of the baseline revision:
 ./linuxcnc-patches/apply.sh /path/to/linuxcnc
 ```
 
-The script refuses to patch a different LinuxCNC revision and applies every
-`*.patch` file in lexical order. It is safe to run again when the complete
-series is already applied, and it does not discard unrelated working-tree
-changes.
+The script builds the complete series in a temporary worktree first, then
+creates and checks out `linuxcnc-node/patch-stack`. Every patch is applied with
+`git am`, so `git log`, `git show`, rebase, revert, and bisect work normally.
+It is safe to rerun for the exact stack, but refuses dirty, partial, stale, or
+divergent checkouts.
+
+CI and image builds use detached mode while retaining the same commit history:
+
+```sh
+./linuxcnc-patches/apply.sh --detach /path/to/linuxcnc
+```
+
+For a checkout produced by the former uncommitted workflow, `--adopt` is a
+one-time migration. It succeeds only when the complete working tree exactly
+matches a separately materialized series; it never absorbs extra changes:
+
+```sh
+./linuxcnc-patches/apply.sh --adopt /path/to/linuxcnc
+```
+
+If tracked patch files changed while a clean managed branch still contains an
+older stack, rebuild it explicitly. The previous tip is retained under
+`linuxcnc-node/backups/`:
+
+```sh
+./linuxcnc-patches/apply.sh --rebuild /path/to/linuxcnc
+```
+
+## Editing the series
+
+Work on the managed branch and make each logical LinuxCNC patch one commit.
+Append a new commit for a new patch. To change an existing patch, use
+interactive rebase to edit or amend its commit and rebase the later commits.
+Do not accumulate patch changes as an uncommitted tree.
+
+After the branch is clean and tests pass, export its commits back to the
+reviewable patch files:
+
+```sh
+./linuxcnc-patches/refresh.sh /path/to/linuxcnc
+```
+
+`refresh.sh` requires a linear history rooted at `base-revision`, preserves
+existing filenames by ordinal, names newly appended patches from their commit
+subjects, and replays the generated series before replacing any patch file. It
+then normalizes the checked-out branch to those deterministic replayed commit
+IDs, retaining its prior tip under `linuxcnc-node/backups/` when the IDs
+change. It refuses to remove patches implicitly.
 
 Patch filenames begin with a sequence number. New patches must use the next
-number so their application order remains explicit.
+number so their application order remains explicit. The filename order and
+commit order must match.
 
 ## Patch inventory
 
@@ -184,3 +239,114 @@ direction (the default) and `D1` to alternate roughing passes across the final
 thread line; full-depth and spring passes remain centered, and `Q0` keeps every
 pass on the centered line. Both cylindrical and tapered alternating paths are
 covered. No NML or Node.js API changes are required.
+
+### 0009 — Safe G76 Stop clearance and two-stage Single Step
+
+G76 marks each approach, synchronized cut, and particular clearance retract
+with an internal pass ID. When Stop is requested during the cut or clearance,
+the trajectory planner latches that pass and completes exactly its marked
+retract before entering `STOPPED`, binding the target when it reaches motion
+if necessary. This leaves the tool clear instead of cutting a groove at thread
+depth, while ordinary G33, rigid tapping, and unrelated following rapids
+retain their prior Stop boundaries. The clearance is an exact, non-blendable
+endpoint, so arc blending cannot trim it. Synthetic blend arcs within a
+synchronized cut inherit the pass owner, keeping Stop bound to that pass's
+marked clearance.
+
+Each generated cylindrical or tapered G76 pass is split into two Single Step
+units. The first returns to the pass start and stops at the safe clearance
+depth. The second performs
+the infeed, synchronized thread, and marked clearance retract together. These
+internal motion fences are active only while stepping, so uninterrupted
+`AUTO_RUN` retains task readahead. Motion-level targeting preserves the same
+safe-approach/infeed-thread-clearance sequence after Stop when later G76 passes
+were already queued during normal `AUTO_RUN`; ordinary unmarked motion retains
+source-line stepping. Twenty-five
+runtime scenarios cover direct first passes, fresh and prequeued cylindrical
+and tapered safe-approach/thread-clearance pairs, synchronized exit tapers,
+arc-blend clearance endpoints, an unmarked post-G33 rapid, and repeated Stops
+with deterministic cut-side timing near the cut/retract handoff. The internal
+NML and motion fields add no public status field or Node.js binding requirement.
+
+### 0010 — Recording canon backend for native G-code preview
+
+Adds `recordingcanon.cc` and `recordingcanon.hh`, a separate link-selected
+implementation of LinuxCNC's global CANON API for native offline interpreters.
+It follows the same backend boundary already used by task (`emccanon.cc`), Axis
+(`gcodemodule.cc`), and the standalone interpreter (`saicanon.cc`), leaving
+those existing implementations untouched.
+
+### 0011 — In-flight Single Step arming
+
+`AUTO_STEP` is forwarded to motion while an AUTO program is already running.
+The trajectory planner latches the active source block, or the active G76
+approach or thread-plus-clearance unit supplied by patch 0009, and finishes it
+before stopping at an exact boundary. Later motion remains queued and does not
+begin, including when several following blocks or threading passes were
+prequeued by readahead.
+
+The temporary exact boundary is restored if Step is canceled by Resume or Stop.
+Existing paused source-line stepping and two-stage G76 stepping remain intact.
+Two additional runtime scenarios arm Step during an ordinary block with three
+later blocks queued and during an active G76 cut with later passes queued,
+bringing the resumable-stop suite to twenty-seven scenarios. During an
+in-flight step, `single_stepping` reports the armed/active state while task and
+motion remain unpaused; both paused flags become true only after motion reaches
+the boundary.
+
+### 0012 — LinuxCNC-owned transactional tool CRUD
+
+Adds explicit NML commands for partial tool upserts and deletion. The task
+process validates changer state, stages complete table snapshots, persists
+file-backed tables through an fsync-and-rename save, and only then atomically
+publishes the resulting mmap contents. Random changer pockets address their
+exact mmap slots, while nonrandom loaded tools keep spindle slot zero
+synchronized.
+
+Remote CRUD supports LinuxCNC's native random and nonrandom table models for
+file-backed configurations. Random support covers ATC-addressable pockets and
+the spindle; it does not model off-machine tool inventory. This patched build
+rejects `[EMCIO]DB_PROGRAM` during IO initialization and requires file-backed
+`[EMCIO]TOOL_TABLE` configuration for managed tool data.
+
+Tool-table reload now preserves the live table when opening, parsing, or
+validation fails. Read-only mmap clients detect inode replacement after a
+LinuxCNC restart and remap under the same process lock used by all mmap
+readers.
+
+### 0013 — Composable executor standard glue
+
+Adds transport-independent `executor_transact` and `executor_execute`
+generators to LinuxCNC's curated Python `stdglue`. Machine configurations keep
+ordinary, explicitly named remaps and pass an endpoint object into either
+helper. `transact` owns cooperative waiting, timeout, release, and abort
+cancellation while returning the terminal response for machine-specific
+policy. `execute` adds the common policy that only a successful response
+continues program execution. The default timeout is 10 seconds.
+
+The supplied `HalExecutor` endpoint adds namespaced request and response pins
+to a HAL component provided and owned by the machine configuration. It neither
+constructs the component nor calls `ready()`, allowing multiple endpoints and
+machine-specific pins to share one component. HAL remains optional: an
+integration regression exercises the same helpers with both the standard HAL
+endpoint and an in-memory endpoint.
+
+Python remap generators are closed during interpreter unwind so their
+`finally` cleanup runs on task or operator abort. The regression also covers
+success, raw failure handling, standard failure policy, timeout, stale
+responses, monotonic request IDs, request release, and cancellation. Headless
+installs now include the curated `stdglue`.
+
+### 0014 — Publish modal CSS maximum in spindle status
+
+Publishes the canonical G96 `D` limit through the existing
+`EMC_SPINDLE_STAT.css_maximum` field when spindle mode changes. The value
+survives M5 because it is modal state rather than a running-speed command, and
+G97 clears it. Spindle `enabled` is now derived from the motion controller's
+explicit on/off state instead of commanded speed, so a stopped spindle with a
+nonzero CSS limit remains disabled and is not restarted by resumable Stop.
+
+The `tests/css-status` regression covers G96 while stopped, persistence across
+M5, clearing on G97, and stopped-spindle enabled state. The patch exposes
+`css_maximum` through Python spindle status; the existing Node status adapter
+and schema already carry it, so no Node binding change is required.

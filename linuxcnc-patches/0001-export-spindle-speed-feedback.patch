@@ -1,4 +1,4 @@
-From d0d257c147629e9dea89a107c7754e16092c35f3 Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Dariusz Majnert <dariusz@users.noreply.github.com>
 Date: Sat, 27 Jun 2026 17:36:55 +0200
 Subject: [PATCH] emc: expose spindle speed feedback in status
@@ -24,7 +24,7 @@ index df82c4d0d0..fd5b118fba 100644
      cms->update(css_maximum);
      cms->update(css_factor);
 diff --git a/src/emc/nml_intf/emc_nml.hh b/src/emc/nml_intf/emc_nml.hh
-index afd051e27b..633c3c952b 100644
+index afd051e27b..68478559c7 100644
 --- a/src/emc/nml_intf/emc_nml.hh
 +++ b/src/emc/nml_intf/emc_nml.hh
 @@ -1118,7 +1118,8 @@ class EMC_SPINDLE_STAT:public EMC_SPINDLE_STAT_MSG {
@@ -50,7 +50,7 @@ index d58c87c637..6373c42f49 100644
      css_maximum(0.0),
      css_factor(1.0),
 diff --git a/src/emc/task/taskintf.cc b/src/emc/task/taskintf.cc
-index 7aaee75fe7..ccbf7b5128 100644
+index 7aaee75fe7..a37da0ca5f 100644
 --- a/src/emc/task/taskintf.cc
 +++ b/src/emc/task/taskintf.cc
 @@ -2036,6 +2036,7 @@ int emcSpindleUpdate(EMC_SPINDLE_STAT stat[], int num_spindles){

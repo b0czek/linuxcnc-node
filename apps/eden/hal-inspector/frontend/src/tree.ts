@@ -27,10 +27,7 @@ export function formatInlineValue(value: HalValue | undefined): string {
       .replace(/\.0+e/, "e");
   const integerChars =
     Math.trunc(magnitude).toString().length + (value < 0 ? 1 : 0);
-  const decimalPlaces = Math.max(
-    0,
-    MAX_INLINE_VALUE_CHARS - integerChars - 1,
-  );
+  const decimalPlaces = Math.max(0, MAX_INLINE_VALUE_CHARS - integerChars - 1);
   return value.toFixed(decimalPlaces).replace(/\.?0+$/, "");
 }
 
@@ -47,7 +44,12 @@ export function buildTreeRows(
   expanded: Set<string>,
   forceExpanded: boolean,
 ): TreeRow[] {
-  const root: NameNode = { segment: "", path: "", children: new Map(), rows: [] };
+  const root: NameNode = {
+    segment: "",
+    path: "",
+    children: new Map(),
+    rows: [],
+  };
   for (const row of rows) {
     const parts = row.name.split(".").filter(Boolean);
     if (parts.length === 0) {

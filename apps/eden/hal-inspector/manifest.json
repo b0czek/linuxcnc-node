@@ -8,7 +8,7 @@
   "build": { "command": "npm run build" },
   "backend": { "entry": "backend/dist/backend.cjs" },
   "frontend": { "entry": "frontend/dist/index.html" },
-  "include": ["build/Release/hal_addon.node"],
+  "include": ["backend/dist/proto"],
   "window": {
     "mode": "both",
     "defaultMode": "tiled",

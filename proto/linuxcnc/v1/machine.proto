@@ -1,0 +1,604 @@
+syntax = "proto3";
+
+package linuxcnc.v1;
+
+import "google/protobuf/empty.proto";
+import "linuxcnc/v1/common.proto";
+
+enum TaskMode {
+  TASK_MODE_UNSPECIFIED = 0;
+  TASK_MODE_MANUAL = 1;
+  TASK_MODE_AUTO = 2;
+  TASK_MODE_MDI = 3;
+}
+
+enum TaskState {
+  TASK_STATE_UNSPECIFIED = 0;
+  TASK_STATE_ESTOP = 1;
+  TASK_STATE_ESTOP_RESET = 2;
+  TASK_STATE_OFF = 3;
+  TASK_STATE_ON = 4;
+}
+
+enum RcsStatus {
+  RCS_STATUS_UNSPECIFIED = 0;
+  RCS_STATUS_UNINITIALIZED = -1;
+  RCS_STATUS_DONE = 1;
+  RCS_STATUS_EXEC = 2;
+  RCS_STATUS_ERROR = 3;
+}
+
+enum EmcDebug {
+  EMC_DEBUG_UNSPECIFIED = 0;
+  EMC_DEBUG_CONFIG = 2;
+  EMC_DEBUG_VERSIONS = 8;
+  EMC_DEBUG_TASK_ISSUE = 16;
+  EMC_DEBUG_NML = 64;
+  EMC_DEBUG_MOTION_TIME = 128;
+  EMC_DEBUG_INTERP = 256;
+  EMC_DEBUG_RCS = 512;
+  EMC_DEBUG_INTERP_LIST = 2048;
+  EMC_DEBUG_IOCONTROL = 4096;
+  EMC_DEBUG_OWORD = 8192;
+  EMC_DEBUG_REMAP = 16384;
+  EMC_DEBUG_PYTHON = 32768;
+  EMC_DEBUG_NAMEDPARAM = 65536;
+  EMC_DEBUG_GDBONSIGNAL = 131072;
+  EMC_DEBUG_STATE_TAGS = 524288;
+}
+
+enum ExecState {
+  EXEC_STATE_UNSPECIFIED = 0;
+  EXEC_STATE_ERROR = 1;
+  EXEC_STATE_DONE = 2;
+  EXEC_STATE_WAITING_FOR_MOTION = 3;
+  EXEC_STATE_WAITING_FOR_MOTION_QUEUE = 4;
+  EXEC_STATE_WAITING_FOR_IO = 5;
+  EXEC_STATE_WAITING_FOR_MOTION_AND_IO = 7;
+  EXEC_STATE_WAITING_FOR_DELAY = 8;
+  EXEC_STATE_WAITING_FOR_SYSTEM_CMD = 9;
+  EXEC_STATE_WAITING_FOR_SPINDLE_ORIENTED = 10;
+}
+
+enum InterpState {
+  INTERP_STATE_UNSPECIFIED = 0;
+  INTERP_STATE_IDLE = 1;
+  INTERP_STATE_READING = 2;
+  INTERP_STATE_PAUSED = 3;
+  INTERP_STATE_WAITING = 4;
+}
+
+enum StopState {
+  STOP_STATE_IDLE = 0;
+  STOP_STATE_STOPPING = 1;
+  STOP_STATE_STOPPED = 2;
+  STOP_STATE_STARTING = 3;
+}
+
+enum TrajMode {
+  TRAJ_MODE_UNSPECIFIED = 0;
+  TRAJ_MODE_FREE = 1;
+  TRAJ_MODE_COORD = 2;
+  TRAJ_MODE_TELEOP = 3;
+}
+
+enum MotionType {
+  MOTION_TYPE_NONE = 0;
+  MOTION_TYPE_TRAVERSE = 1;
+  MOTION_TYPE_FEED = 2;
+  MOTION_TYPE_ARC = 3;
+  MOTION_TYPE_TOOLCHANGE = 4;
+  MOTION_TYPE_PROBING = 5;
+  MOTION_TYPE_INDEXROTARY = 6;
+}
+
+enum KinematicsType {
+  KINEMATICS_TYPE_UNSPECIFIED = 0;
+  KINEMATICS_TYPE_IDENTITY = 1;
+  KINEMATICS_TYPE_FORWARD_ONLY = 2;
+  KINEMATICS_TYPE_INVERSE_ONLY = 3;
+  KINEMATICS_TYPE_BOTH = 4;
+}
+
+enum JointType {
+  JOINT_TYPE_UNSPECIFIED = 0;
+  JOINT_TYPE_LINEAR = 1;
+  JOINT_TYPE_ANGULAR = 2;
+}
+
+enum OrientState {
+  ORIENT_STATE_NONE = 0;
+  ORIENT_STATE_COMPLETE = 1;
+  ORIENT_STATE_IN_PROGRESS = 2;
+  ORIENT_STATE_FAULTED = 3;
+}
+
+enum AxisName {
+  AXIS_NAME_UNSPECIFIED = 0;
+  AXIS_NAME_X = 1;
+  AXIS_NAME_Y = 2;
+  AXIS_NAME_Z = 3;
+  AXIS_NAME_A = 4;
+  AXIS_NAME_B = 5;
+  AXIS_NAME_C = 6;
+  AXIS_NAME_U = 7;
+  AXIS_NAME_V = 8;
+  AXIS_NAME_W = 9;
+}
+
+enum WaitPolicy {
+  WAIT_POLICY_UNSPECIFIED = 0;
+  WAIT_POLICY_ACCEPTED = 1;
+  WAIT_POLICY_COMPLETED = 2;
+}
+
+message ActiveGCodes {
+  int32 g_mode0 = 1;
+  int32 motion_mode = 2;
+  int32 plane = 3;
+  int32 distance_mode = 4;
+  int32 ijk_distance_mode = 5;
+  int32 feed_rate_mode = 6;
+  int32 units = 7;
+  int32 cutter_comp = 8;
+  int32 tool_length_offset = 9;
+  int32 retract_mode = 10;
+  int32 origin = 11;
+  int32 path_control = 12;
+  int32 spindle_speed_mode = 13;
+  int32 lathe_diameter_mode = 14;
+  int32 g92_applied = 15;
+}
+
+message ActiveMCodes {
+  int32 stopping = 1;
+  int32 tool_change = 2;
+  int32 spindle_control = 3;
+  int32 mist_coolant = 4;
+  int32 flood_coolant = 5;
+  int32 override_control = 6;
+  int32 adaptive_feed_control = 7;
+  int32 feed_hold_control = 8;
+}
+
+message ActiveSettings {
+  double feed_rate = 1;
+  double speed = 2;
+  double blend_tolerance = 3;
+  double naive_cam_tolerance = 4;
+}
+
+message TaskStat {
+  TaskMode mode = 1;
+  TaskState state = 2;
+  ExecState exec_state = 3;
+  InterpState interp_state = 4;
+  StopState stop_state = 5;
+  int32 call_level = 6;
+  int32 motion_line = 7;
+  int32 current_line = 8;
+  int32 read_line = 9;
+  bool optional_stop_state = 10;
+  bool block_delete_state = 11;
+  bool input_timeout = 12;
+  string file = 13;
+  string command = 14;
+  string ini_filename = 15;
+  Position g5x_offset = 16;
+  int32 g5x_index = 17;
+  repeated Position g5x_offsets = 18;
+  repeated double g5x_rotations = 19 [packed = true];
+  Position g92_offset = 20;
+  Position g28_position = 21;
+  Position g30_position = 22;
+  double rotation_xy = 23;
+  Position tool_offset = 24;
+  ActiveGCodes active_g_codes = 25;
+  ActiveMCodes active_m_codes = 26;
+  ActiveSettings active_settings = 27;
+  ProgramUnits program_units = 28;
+  int32 interpreter_error_code = 29;
+  bool task_paused = 30;
+  double delay_left = 31;
+  int32 queued_mdi_commands = 32;
+}
+
+message JointStat {
+  JointType joint_type = 1;
+  double units = 2;
+  double backlash = 3;
+  double min_position_limit = 4;
+  double max_position_limit = 5;
+  double min_ferror = 6;
+  double max_ferror = 7;
+  double ferror_current = 8;
+  double ferror_high_mark = 9;
+  double output = 10;
+  double input = 11;
+  double velocity = 12;
+  bool in_position = 13;
+  bool homing = 14;
+  bool homed = 15;
+  bool fault = 16;
+  bool enabled = 17;
+  bool min_soft_limit = 18;
+  bool max_soft_limit = 19;
+  bool min_hard_limit = 20;
+  bool max_hard_limit = 21;
+  bool override_limits = 22;
+}
+
+message AxisStat {
+  double min_position_limit = 1;
+  double max_position_limit = 2;
+  double velocity = 3;
+}
+
+message SpindleStat {
+  double speed = 1;
+  double feedback = 2;
+  double override = 3;
+  double css_maximum = 4;
+  double css_factor = 5;
+  sint32 direction = 6;
+  bool brake = 7;
+  sint32 increasing = 8;
+  bool enabled = 9;
+  OrientState orient_state = 10;
+  int32 orient_fault = 11;
+  bool spindle_override_enabled = 12;
+  bool homed = 13;
+}
+
+message TrajectoryStat {
+  double linear_units = 1;
+  double angular_units = 2;
+  double cycle_time = 3;
+  int32 joints = 4;
+  int32 spindles = 5;
+  repeated AxisName available_axes = 6;
+  TrajMode mode = 7;
+  bool enabled = 8;
+  bool in_position = 9;
+  int32 queue = 10;
+  int32 active_queue = 11;
+  bool queue_full = 12;
+  int32 id = 13;
+  bool paused = 14;
+  bool single_stepping = 15;
+  double feed_rate_override = 16;
+  double rapid_rate_override = 17;
+  Position position = 18;
+  Position actual_position = 19;
+  double acceleration = 20;
+  double max_velocity = 21;
+  double max_acceleration = 22;
+  Position probed_position = 23;
+  bool probe_tripped = 24;
+  bool probing = 25;
+  double probe_val = 26;
+  KinematicsType kinematics_type = 27;
+  MotionType motion_type = 28;
+  double distance_to_go = 29;
+  Position dtg = 30;
+  double current_velocity = 31;
+  bool feed_override_enabled = 32;
+  bool adaptive_feed_enabled = 33;
+  bool feed_hold_enabled = 34;
+}
+
+message MotionStat {
+  TrajectoryStat traj = 1;
+  repeated JointStat joint = 2;
+  repeated AxisStat axis = 3;
+  repeated SpindleStat spindle = 4;
+  repeated int32 digital_input = 5 [packed = true];
+  repeated int32 digital_output = 6 [packed = true];
+  repeated double analog_input = 7 [packed = true];
+  repeated double analog_output = 8 [packed = true];
+}
+
+message ToolIoStat {
+  int32 pocket_prepped = 1;
+  int32 tool_in_spindle = 2;
+  int32 tool_from_pocket = 3;
+}
+
+message CoolantIoStat {
+  bool mist = 1;
+  bool flood = 2;
+}
+
+message IoStat {
+  ToolIoStat tool = 1;
+  CoolantIoStat coolant = 2;
+  bool estop = 3;
+}
+
+message LinuxCNCStat {
+  int64 echo_serial_number = 1;
+  RcsStatus state = 2;
+  TaskStat task = 3;
+  MotionStat motion = 4;
+  IoStat io = 5;
+  int32 debug = 6;
+  repeated ToolEntry tool_table = 7;
+}
+
+// Status deltas are typed and indexed. There is deliberately no property
+// path, JSON, Any, or generic map in this contract.
+message IndexedJointDelta {
+  uint32 index = 1;
+  JointStat value = 2;
+}
+
+message IndexedAxisDelta {
+  uint32 index = 1;
+  AxisStat value = 2;
+}
+
+message IndexedSpindleDelta {
+  uint32 index = 1;
+  SpindleStat value = 2;
+}
+
+message TaskStatDelta {
+  optional TaskMode mode = 1;
+  optional TaskState state = 2;
+  optional ExecState exec_state = 3;
+  optional InterpState interp_state = 4;
+  optional StopState stop_state = 5;
+  optional int32 call_level = 6;
+  optional int32 motion_line = 7;
+  optional int32 current_line = 8;
+  optional int32 read_line = 9;
+  optional bool optional_stop_state = 10;
+  optional bool block_delete_state = 11;
+  optional bool input_timeout = 12;
+  optional string file = 13;
+  optional string command = 14;
+  optional string ini_filename = 15;
+  Position g5x_offset = 16;
+  optional int32 g5x_index = 17;
+  repeated Position g5x_offsets = 18;
+  bool replace_g5x_offsets = 33;
+  repeated double g5x_rotations = 19 [packed = true];
+  bool replace_g5x_rotations = 34;
+  Position g92_offset = 20;
+  Position g28_position = 21;
+  Position g30_position = 22;
+  optional double rotation_xy = 23;
+  Position tool_offset = 24;
+  ActiveGCodes active_g_codes = 25;
+  ActiveMCodes active_m_codes = 26;
+  ActiveSettings active_settings = 27;
+  optional ProgramUnits program_units = 28;
+  optional int32 interpreter_error_code = 29;
+  optional bool task_paused = 30;
+  optional double delay_left = 31;
+  optional int32 queued_mdi_commands = 32;
+}
+
+message MotionStatDelta {
+  TrajectoryStat traj = 1;
+  repeated IndexedJointDelta joint = 2;
+  repeated IndexedAxisDelta axis = 3;
+  repeated IndexedSpindleDelta spindle = 4;
+  repeated int32 digital_input = 5 [packed = true];
+  bool replace_digital_input = 9;
+  repeated int32 digital_output = 6 [packed = true];
+  bool replace_digital_output = 10;
+  repeated double analog_input = 7 [packed = true];
+  bool replace_analog_input = 11;
+  repeated double analog_output = 8 [packed = true];
+  bool replace_analog_output = 12;
+}
+
+message IoStatDelta {
+  ToolIoStat tool = 1;
+  CoolantIoStat coolant = 2;
+  optional bool estop = 3;
+}
+
+message ToolTableDelta {
+  repeated ToolEntry replaced = 1;
+  repeated int32 removed_tool_numbers = 2 [packed = true];
+  bool replace_all = 3;
+}
+
+message LinuxCNCStatDelta {
+  int64 sequence = 1;
+  // One source observation produces one atomic delta. Scalar presence is
+  // explicit so valid zero-valued changes are distinguishable from absence.
+  optional int64 echo_serial_number = 2;
+  optional RcsStatus state = 3;
+  TaskStatDelta task = 4;
+  MotionStatDelta motion = 5;
+  IoStatDelta io = 6;
+  ToolTableDelta tool_table = 7;
+  optional int32 debug = 8;
+  reserved 9, 10;
+  reserved "path", "json_value";
+}
+
+message GetStatusRequest {}
+
+message GetStatusResponse {
+  uint64 sequence = 1;
+  LinuxCNCStat status = 2;
+}
+
+message WatchStatusRequest {
+  uint64 after_sequence = 1;
+}
+
+// Replays retained errors strictly after the supplied sequence.
+message WatchErrorsRequest {
+  uint64 after_sequence = 1;
+}
+
+message StatusReplay {
+  uint64 from_sequence = 1;
+  uint64 to_sequence = 2;
+  LinuxCNCStat snapshot = 3;
+  repeated LinuxCNCStatDelta deltas = 4;
+}
+
+message WatchStatusEvent {
+  uint64 sequence = 1;
+  oneof event {
+    LinuxCNCStat snapshot = 2;
+    StatusReplay replay = 3;
+    LinuxCNCStatDelta delta = 4;
+  }
+}
+
+message ExecuteCommandRequest {
+  WaitPolicy wait_policy = 1;
+  oneof command {
+    SetTaskMode set_task_mode = 2;
+    SetTaskState set_state = 3;
+    EmptyCommand task_plan_synch = 4;
+    EmptyCommand reset_interpreter = 5;
+    ProgramOpen program_open = 6;
+    EmptyCommand program_close = 7;
+    RunProgram run_program = 8;
+    EmptyCommand pause_program = 9;
+    EmptyCommand resume_program = 10;
+    EmptyCommand step_program = 11;
+    EmptyCommand reverse_program = 12;
+    EmptyCommand forward_program = 13;
+    EmptyCommand stop = 14;
+    EmptyCommand abort_task = 15;
+    SetBool set_optional_stop = 16;
+    SetBool set_block_delete = 17;
+    Mdi mdi = 18;
+    SetTrajMode set_traj_mode = 19;
+    SetMaxVelocity set_max_velocity = 20;
+    SetFeedRate set_feed_rate = 21;
+    SetSpindleOverride set_spindle_override = 22;
+    EmptyCommand override_limits = 23;
+    SetBool teleop_enable = 24;
+    SetBool set_feed_override_enable = 25;
+    SetSpindleOverrideEnable set_spindle_override_enable = 26;
+    SetBool set_feed_hold_enable = 27;
+    SetBool set_adaptive_feed_enable = 28;
+    JointIndex home_joint = 29;
+    JointIndex unhome_joint = 30;
+    JogStop jog_stop = 31;
+    JogContinuous jog_continuous = 32;
+    JogIncrement jog_increment = 33;
+    JointLimit set_min_position_limit = 34;
+    JointLimit set_max_position_limit = 35;
+    SpindleOn spindle_on = 36;
+    SpindleIndex spindle_increase = 37;
+    SpindleIndex spindle_decrease = 38;
+    SpindleIndex spindle_off = 39;
+    SpindleBrake spindle_brake = 40;
+    SetMist set_mist = 41;
+    SetFlood set_flood = 42;
+    EmptyCommand load_tool_table = 43;
+    SetTool set_tool = 44;
+    ToolNumber delete_tool = 45;
+    DigitalOutput set_digital_output = 46;
+    AnalogOutput set_analog_output = 47;
+    SetDebugLevel set_debug_level = 48;
+    MessageCommand send_operator_error = 49;
+    MessageCommand send_operator_text = 50;
+    MessageCommand send_operator_display = 51;
+    SetRapidRate set_rapid_rate = 52;
+  }
+}
+
+message ExecuteCommandResponse {
+  uint32 command_sequence = 1;
+  RcsStatus status = 2;
+  LinuxCNCError error = 3;
+}
+
+message EmptyCommand {}
+
+message SetTaskMode { TaskMode mode = 1; }
+
+message SetTaskState { TaskState state = 1; }
+
+message ProgramOpen { ProgramHandle entry = 1; }
+
+message RunProgram { int32 start_line = 1; }
+
+message SetBool { bool enable = 1; }
+
+message Mdi { string command = 1; }
+
+message SetTrajMode { TrajMode mode = 1; }
+
+message SetMaxVelocity { double velocity = 1; }
+
+message SetFeedRate { double scale = 1; }
+
+message SetSpindleOverride {
+  double scale = 1;
+  int32 spindle_index = 2;
+}
+
+message SetSpindleOverrideEnable {
+  bool enable = 1;
+  reserved 2;
+  reserved "spindle_index";
+}
+
+message JointIndex { int32 joint_index = 1; }
+
+message JogStop { int32 axis_or_joint_index = 1; bool is_joint_jog = 2; }
+
+message JogContinuous { int32 axis_or_joint_index = 1; bool is_joint_jog = 2; double speed = 3; }
+
+message JogIncrement { int32 axis_or_joint_index = 1; bool is_joint_jog = 2; double speed = 3; double increment = 4; }
+
+message JointLimit { int32 joint_index = 1; double limit = 2; }
+
+message SpindleOn {
+  double speed = 1;
+  int32 spindle_index = 2;
+  optional bool wait_for_speed = 3;
+}
+
+message SpindleIndex { int32 spindle_index = 1; }
+
+message SpindleBrake {
+  bool engage = 1;
+  int32 spindle_index = 2;
+}
+
+message SetMist { bool on = 1; }
+
+message SetFlood { bool on = 1; }
+
+message SetTool { ToolEntry tool = 1; }
+
+message ToolNumber { int32 tool_no = 1; }
+
+message DigitalOutput { int32 index = 1; bool value = 2; }
+
+message AnalogOutput { int32 index = 1; double value = 2; }
+
+message SetDebugLevel { int32 level = 1; }
+
+message SetRapidRate { double scale = 1; }
+
+message MessageCommand { string message = 1; }
+
+message PositionHistoryConfig {
+  optional bool enabled = 1;
+  uint32 capacity = 2;
+  uint32 sample_period_ms = 3;
+}
+
+service MachineService {
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+  rpc WatchStatus(WatchStatusRequest) returns (stream WatchStatusEvent);
+  rpc ExecuteCommand(ExecuteCommandRequest) returns (ExecuteCommandResponse);
+  rpc WatchErrors(WatchErrorsRequest) returns (stream LinuxCNCError);
+  rpc ConfigurePositionHistory(PositionHistoryConfig) returns (google.protobuf.Empty);
+  rpc ClearPositionHistory(google.protobuf.Empty) returns (google.protobuf.Empty);
+}

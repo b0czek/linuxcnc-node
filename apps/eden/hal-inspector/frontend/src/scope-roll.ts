@@ -41,7 +41,7 @@ export class ScopeRollBuffer {
     const count = Math.min(batch.samples, this.capacity);
     const sourceOffset = batch.samples - count;
     const previous: Array<number | null> = Array(batch.channels.length).fill(
-      null
+      null,
     );
     for (let channel = 0; channel < batch.channels.length; channel++) {
       const source = batch.channels[channel];
@@ -55,7 +55,8 @@ export class ScopeRollBuffer {
         ? target[(start - 1 + this.capacity) % this.capacity]
         : source[sourceOffset];
       for (let sample = 0; sample < count; sample++)
-        target[(start + sample) % this.capacity] = source[sourceOffset + sample];
+        target[(start + sample) % this.capacity] =
+          source[sourceOffset + sample];
     }
     this.head = (start + count) % this.capacity;
     this.length = Math.min(this.capacity, this.length + count);
@@ -65,7 +66,7 @@ export class ScopeRollBuffer {
       start,
       samples: count,
       channels: batch.channels.map((channel) =>
-        channel ? channel.subarray(sourceOffset) : null
+        channel ? channel.subarray(sourceOffset) : null,
       ),
       previous,
     };
@@ -88,7 +89,7 @@ export class ScopeRollBuffer {
     this.samplePeriodNs = batch.samplePeriodNs;
     this.generation = generation;
     this.channels = batch.channels.map((channel) =>
-      channel ? new Float64Array(this.capacity) : null
+      channel ? new Float64Array(this.capacity) : null,
     );
   }
 }
@@ -134,7 +135,7 @@ void main() { outColor = u_color; }`;
 function compileShader(
   gl: WebGL2RenderingContext,
   type: number,
-  source: string
+  source: string,
 ): WebGLShader {
   const shader = gl.createShader(type);
   if (!shader) throw new Error("Unable to create roll shader");
@@ -190,9 +191,11 @@ export class ScopeRollRenderer {
 
   configure(
     capacity: number,
-    channels: Array<{ channel: number; type: string | null }>
+    channels: Array<{ channel: number; type: string | null }>,
   ): void {
-    this.lines.forEach((line) => this.gl.deleteBuffer(line.buffer));
+    this.lines.forEach((line) => {
+      this.gl.deleteBuffer(line.buffer);
+    });
     this.lines = [];
     this.capacity = capacity;
     for (const channel of channels) {
@@ -204,7 +207,7 @@ export class ScopeRollRenderer {
         capacity *
           (channel.type === "bit" ? 4 : 2) *
           Float32Array.BYTES_PER_ELEMENT,
-        this.gl.DYNAMIC_DRAW
+        this.gl.DYNAMIC_DRAW,
       );
       this.lines.push({ ...channel, buffer });
     }
@@ -230,7 +233,12 @@ export class ScopeRollRenderer {
       const bufferCapacity = this.capacity * pointsPerSample;
       const start = result.start * pointsPerSample;
       this.write(line.buffer, start, values, bufferCapacity * 2);
-      this.write(line.buffer, start + bufferCapacity, values, bufferCapacity * 2);
+      this.write(
+        line.buffer,
+        start + bufferCapacity,
+        values,
+        bufferCapacity * 2,
+      );
       const overflow = start + values.length - bufferCapacity;
       if (overflow > 0) {
         const wrapped = values.subarray(values.length - overflow);
@@ -249,12 +257,11 @@ export class ScopeRollRenderer {
       const values = new Float32Array(this.capacity * pointsPerSample * 2);
       for (let slot = 0; slot < this.capacity; slot++) {
         if (pointsPerSample === 2) {
-          const first = source.length === source.capacity
-            ? source.head
-            : 0;
-          values[slot * 2] = slot === first
-            ? channel[slot]
-            : channel[(slot - 1 + this.capacity) % this.capacity];
+          const first = source.length === source.capacity ? source.head : 0;
+          values[slot * 2] =
+            slot === first
+              ? channel[slot]
+              : channel[(slot - 1 + this.capacity) % this.capacity];
           values[slot * 2 + 1] = channel[slot];
           values[(slot + this.capacity) * 2] = values[slot * 2];
           values[(slot + this.capacity) * 2 + 1] = values[slot * 2 + 1];
@@ -274,7 +281,7 @@ export class ScopeRollRenderer {
     count: number,
     phase: number,
     transforms: Map<number, RollLineTransform>,
-    xTransform: readonly [number, number]
+    xTransform: readonly [number, number],
   ): void {
     if (!this.program || count < 2) return;
     const full = count === this.capacity;
@@ -303,7 +310,9 @@ export class ScopeRollRenderer {
   }
 
   cleanup(): void {
-    this.lines.forEach((line) => this.gl.deleteBuffer(line.buffer));
+    this.lines.forEach((line) => {
+      this.gl.deleteBuffer(line.buffer);
+    });
     this.lines = [];
     if (this.program) this.gl.deleteProgram(this.program);
     this.program = null;
@@ -313,7 +322,7 @@ export class ScopeRollRenderer {
     buffer: WebGLBuffer,
     start: number,
     values: Float32Array,
-    bufferLength: number
+    bufferLength: number,
   ): void {
     const available = bufferLength - start;
     if (available <= 0 || !values.length) return;
@@ -321,7 +330,7 @@ export class ScopeRollRenderer {
     this.gl.bufferSubData(
       this.gl.ARRAY_BUFFER,
       start * Float32Array.BYTES_PER_ELEMENT,
-      values.subarray(0, available)
+      values.subarray(0, available),
     );
   }
 }

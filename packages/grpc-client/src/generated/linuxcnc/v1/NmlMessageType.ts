@@ -1,0 +1,29 @@
+// Original file: proto/linuxcnc/v1/common.proto
+
+export const NmlMessageType = {
+  NML_MESSAGE_TYPE_UNSPECIFIED: 0,
+  NML_MESSAGE_TYPE_NML_ERROR: 1,
+  NML_MESSAGE_TYPE_NML_TEXT: 2,
+  NML_MESSAGE_TYPE_NML_DISPLAY: 3,
+  NML_MESSAGE_TYPE_EMC_OPERATOR_ERROR: 11,
+  NML_MESSAGE_TYPE_EMC_OPERATOR_TEXT: 12,
+  NML_MESSAGE_TYPE_EMC_OPERATOR_DISPLAY: 13,
+} as const;
+
+export type NmlMessageType =
+  | 'NML_MESSAGE_TYPE_UNSPECIFIED'
+  | 0
+  | 'NML_MESSAGE_TYPE_NML_ERROR'
+  | 1
+  | 'NML_MESSAGE_TYPE_NML_TEXT'
+  | 2
+  | 'NML_MESSAGE_TYPE_NML_DISPLAY'
+  | 3
+  | 'NML_MESSAGE_TYPE_EMC_OPERATOR_ERROR'
+  | 11
+  | 'NML_MESSAGE_TYPE_EMC_OPERATOR_TEXT'
+  | 12
+  | 'NML_MESSAGE_TYPE_EMC_OPERATOR_DISPLAY'
+  | 13
+
+export type NmlMessageType__Output = typeof NmlMessageType[keyof typeof NmlMessageType]

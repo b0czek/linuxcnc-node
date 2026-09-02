@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package linuxcnc.v1;
+
+// Versioned transport contract for one LinuxCNC instance. Field numbers are
+// intentionally assigned in this schema set (rather than inferred from
+// TypeScript types). Removed fields must remain reserved.
+
+enum ProgramUnits {
+  PROGRAM_UNITS_UNSPECIFIED = 0;
+  PROGRAM_UNITS_INCH = 1;
+  PROGRAM_UNITS_MM = 2;
+  PROGRAM_UNITS_CM = 3;
+}
+
+enum NmlMessageType {
+  NML_MESSAGE_TYPE_UNSPECIFIED = 0;
+  NML_MESSAGE_TYPE_NML_ERROR = 1;
+  NML_MESSAGE_TYPE_NML_TEXT = 2;
+  NML_MESSAGE_TYPE_NML_DISPLAY = 3;
+  NML_MESSAGE_TYPE_EMC_OPERATOR_ERROR = 11;
+  NML_MESSAGE_TYPE_EMC_OPERATOR_TEXT = 12;
+  NML_MESSAGE_TYPE_EMC_OPERATOR_DISPLAY = 13;
+}
+
+enum HalType {
+  HAL_TYPE_UNSPECIFIED = 0;
+  HAL_TYPE_BIT = 1;
+  HAL_TYPE_FLOAT = 2;
+  HAL_TYPE_S32 = 3;
+  HAL_TYPE_U32 = 4;
+  HAL_TYPE_S64 = 5;
+  HAL_TYPE_U64 = 6;
+}
+
+enum HalItemKind {
+  HAL_ITEM_KIND_UNSPECIFIED = 0;
+  HAL_ITEM_KIND_PIN = 1;
+  HAL_ITEM_KIND_PARAM = 2;
+  HAL_ITEM_KIND_SIGNAL = 3;
+}
+
+message Position {
+  repeated double values = 1 [packed = true];
+}
+
+message ToolEntry {
+  int32 tool_no = 1;
+  optional int32 pocket_no = 2;
+  Position offset = 3;
+  Position wear_offset = 4;
+  optional double diameter = 5;
+  optional double front_angle = 6;
+  optional double back_angle = 7;
+  optional int32 orientation = 8;
+  optional string comment = 9;
+}
+
+message LinuxCNCError {
+  NmlMessageType type = 1;
+  string message = 2;
+  uint64 sequence = 3;
+  uint64 command_sequence = 4;
+}
+
+message ProgramHandle { string workspace_id = 1; string relative_path = 2; }
+
+message HalItemRef { HalItemKind kind = 1; string name = 2; }

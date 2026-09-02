@@ -8,7 +8,8 @@ export type HalParamDir = "ro" | "rw";
 
 export type RtapiMsgLevel = "none" | "err" | "warn" | "info" | "dbg" | "all";
 
-export type HalValue = boolean | number;
+/** A HAL scalar.  bigint keeps signed/unsigned 64-bit values lossless. */
+export type HalValue = boolean | number | bigint;
 
 export type HalItemKind = "pin" | "param" | "signal";
 
@@ -51,6 +52,16 @@ export interface HalThreadInfo {
   functions: string[];
 }
 
+/** Complete HAL topology snapshot shared by inspector and machine clients. */
+export interface HalTopology {
+  components: HalComponentInfo[];
+  functions: HalFunctionInfo[];
+  threads: HalThreadInfo[];
+  pins: HalPinInfo[];
+  params: HalParamInfo[];
+  signals: HalSignalInfo[];
+}
+
 export type ScopeRuntimeState =
   | "idle"
   | "init"
@@ -62,6 +73,8 @@ export type ScopeRuntimeState =
   | "invalid";
 
 export interface ScopeChannelConfig extends HalItemRef {
+  /** Original capture slot; preserves null/disabled channel positions. */
+  index: number;
   enabled?: boolean;
 }
 
@@ -87,6 +100,8 @@ export interface ScopeStatus {
   watchdog: number;
   threadName: string;
   samplePeriodNs: number;
+  generation?: number;
+  skippedFrames?: number;
 }
 
 export interface ScopeCapture {
@@ -94,6 +109,8 @@ export interface ScopeCapture {
   samples: number;
   triggerIndex: number;
   samplePeriodNs: number;
+  generation?: number;
+  skippedFrames?: number;
 }
 
 /** Incremental samples copied from a running scope_rt circular buffer. */
@@ -104,11 +121,13 @@ export interface ScopeCaptureDelta {
   sequence: number;
   samplePeriodNs: number;
   reset: boolean;
+  generation?: number;
+  skippedFrames?: number;
 }
 
 export interface HalPinInfo {
   name: string;
-  value: any;
+  value: HalValue;
   type: HalType;
   direction: HalPinDir;
   ownerId: number;
@@ -118,7 +137,7 @@ export interface HalPinInfo {
 
 export interface HalSignalInfo {
   name: string;
-  value: any;
+  value: HalValue;
   type: HalType;
   driver: string | null; // Name of the driving pin
   readers: number;
@@ -128,7 +147,7 @@ export interface HalSignalInfo {
 
 export interface HalParamInfo {
   name: string;
-  value: any;
+  value: HalValue;
   type: HalType;
   direction: HalParamDir;
   ownerId: number;

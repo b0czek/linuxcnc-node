@@ -2,24 +2,32 @@
   "name": "linuxcnc-node",
   "version": "0.0.0",
   "private": true,
-  "description": "LinuxCNC JavaScript and TypeScript monorepo",
+  "description": "Native gRPC services and TypeScript contracts for LinuxCNC",
   "packageManager": "pnpm@11.1.2",
   "engines": {
     "node": ">=24.15.0"
   },
   "scripts": {
     "changeset": "changeset",
-    "ci": "pnpm run typecheck && pnpm test",
-    "pretest": "pnpm --filter @linuxcnc-node/types build",
-    "test": "pnpm --filter @linuxcnc-node/core test && pnpm --filter @linuxcnc-node/hal test && pnpm --filter @linuxcnc-node/gcode test",
-    "pretest:unit": "pnpm --filter @linuxcnc-node/types build",
-    "test:unit": "pnpm --filter @linuxcnc-node/core test:unit",
-    "typecheck": "pnpm --filter @linuxcnc-node/types build && pnpm --filter @linuxcnc-node/core build:ts && pnpm --filter @linuxcnc-node/core test:types && pnpm --filter @linuxcnc-node/hal build:ts && pnpm --filter @linuxcnc-node/gcode build:ts && pnpm --filter @linuxcnc-node/eden-bridge typecheck",
-    "build:packages": "pnpm --filter @linuxcnc-node/types build && pnpm --filter @linuxcnc-node/core build && pnpm --filter @linuxcnc-node/hal build && pnpm --filter @linuxcnc-node/gcode build && pnpm --filter @linuxcnc-node/eden-bridge build",
+    "check": "biome ci .",
+    "check:fix": "biome check --write .",
+    "format:native": "./scripts/native-format.sh format",
+    "check:native:format": "./scripts/native-format.sh check",
+    "lint:native": "./scripts/native-lint.sh",
+    "ci": "pnpm run check && pnpm run typecheck && pnpm test",
+    "check:contracts": "pnpm --filter @linuxcnc-node/types check:generated && pnpm --filter @linuxcnc-node/grpc-client check:generated && pnpm --filter @linuxcnc-node/websocket-client check:generated",
+    "test:contracts": "pnpm --filter @linuxcnc-node/types test:conformance && pnpm --filter @linuxcnc-node/grpc-client test:conformance && pnpm --filter @linuxcnc-node/websocket-client test",
+    "test:consumers": "pnpm --filter @linuxcnc-node/hal-inspector test",
+    "test:patch-stack": "./linuxcnc-patches/test-stack.sh",
+    "pretest": "pnpm --filter @linuxcnc-node/types build && pnpm --filter @linuxcnc-node/grpc-client build && pnpm --filter @linuxcnc-node/websocket-client build",
+    "test": "pnpm run test:contracts && pnpm run test:consumers",
+    "typecheck": "pnpm run check:contracts && pnpm --filter @linuxcnc-node/types build && pnpm --filter @linuxcnc-node/grpc-client build && pnpm --filter @linuxcnc-node/websocket-client build && pnpm --filter @linuxcnc-node/hal-inspector typecheck",
+    "build:packages": "pnpm --filter @linuxcnc-node/types build && pnpm --filter @linuxcnc-node/grpc-client build && pnpm --filter @linuxcnc-node/websocket-client build && pnpm --filter @linuxcnc-node/hal-inspector build",
     "version": "changeset version",
     "publish": "changeset publish"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.10",
     "@changesets/cli": "^2.27.1"
   },
   "repository": {

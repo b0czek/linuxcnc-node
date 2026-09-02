@@ -4,12 +4,12 @@ Date: Sat, 27 Jun 2026 20:00:00 +0200
 Subject: [PATCH] emc: expose interpreter coordinate data in status
 
 ---
- src/emc/nml_intf/emc.cc                       |  8 +++++
- src/emc/nml_intf/emc_nml.hh                   |  4 +++
- src/emc/nml_intf/emcops.cc                    |  4 +++
+ src/emc/nml_intf/emc.cc                       |  6 +++
+ src/emc/nml_intf/emc_nml.hh                   |  4 ++
+ src/emc/nml_intf/emcops.cc                    |  4 ++
  src/emc/task/emctask.cc                       | 40 +++++++++++++++++++
- src/emc/usr_intf/axis/extensions/emcmodule.cc | 24 ++++++++++++
- 5 files changed, 80 insertions(+)
+ src/emc/usr_intf/axis/extensions/emcmodule.cc | 34 ++++++++++++++++
+ 5 files changed, 88 insertions(+)
 
 diff --git a/src/emc/nml_intf/emc.cc b/src/emc/nml_intf/emc.cc
 index fd5b118fba..282edd98ec 100644

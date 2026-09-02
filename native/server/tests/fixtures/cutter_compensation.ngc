@@ -1,0 +1,16 @@
+; Preview must contain LinuxCNC's compensated tool-center path, not the
+; programmed part contour.
+G21
+G17
+G90
+G0 X0 Y0 Z0
+F100
+G41.1 D2
+G1 X10 Y0
+G1 X10 Y10
+G40
+G1 X0 Y10
+G42.1 D2
+G1 X0 Y0
+G40
+M2

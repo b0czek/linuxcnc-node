@@ -5,49 +5,15 @@
  * LinuxCNC rs274ngc interpreter.
  */
 
-import { ProgramUnits } from "./constants";
-import { Position, Position3 } from "./core";
+import type {
+  CutterCompensationMode,
+  OperationType,
+  Plane,
+  ProgramUnits,
+} from "./constants";
+import type { Position, Position3 } from "./core";
 
-// ============================================================================
-// Enums
-// ============================================================================
-
-/**
- * Types of operations that can be parsed from G-code.
- */
-export enum OperationType {
-  // Motion operations
-  TRAVERSE = 1,
-  FEED = 2,
-  ARC = 3,
-  PROBE = 4,
-  RIGID_TAP = 5,
-  DWELL = 6,
-  NURBS_G5 = 7,
-  NURBS_G6 = 8,
-
-  // State change operations
-  UNITS_CHANGE = 10,
-  PLANE_CHANGE = 11,
-  G5X_OFFSET = 12,
-  G92_OFFSET = 13,
-  XY_ROTATION = 14,
-  TOOL_OFFSET = 15,
-  TOOL_CHANGE = 16,
-  FEED_RATE_CHANGE = 17,
-}
-
-/**
- * Plane selection for arc and NURBS operations.
- */
-export enum Plane {
-  XY = 1,
-  YZ = 2,
-  XZ = 3,
-  UV = 4,
-  VW = 5,
-  UW = 6,
-}
+export { CutterCompensationMode, OperationType, Plane } from "./constants";
 
 // ============================================================================
 // Motion Operations
@@ -180,6 +146,8 @@ export interface NurbsG6Operation {
   nurbsData: {
     /** B-spline order */
     order: number;
+    /** LinuxCNC G6 Q interpolation option (1, 2, or 3) */
+    interpolationMethod: number;
     /** Control points with R and K values */
     controlPoints: Array<{
       x: number;
@@ -270,6 +238,15 @@ export interface FeedRateChangeOperation {
   feedRate: number;
 }
 
+/**
+ * G40/G41/G42 cutter-radius compensation state change.
+ */
+export interface CutterCompensationChangeOperation {
+  type: OperationType.CUTTER_COMPENSATION_CHANGE;
+  /** Active compensation mode for subsequent path operations. */
+  mode: CutterCompensationMode;
+}
+
 // ============================================================================
 // Union Types
 // ============================================================================
@@ -293,7 +270,8 @@ export type GCodeOperation =
   | XYRotationOperation
   | ToolOffsetOperation
   | ToolChangeOperation
-  | FeedRateChangeOperation;
+  | FeedRateChangeOperation
+  | CutterCompensationChangeOperation;
 
 // ============================================================================
 // Result Types
@@ -318,36 +296,4 @@ export interface GCodeParseResult {
   operations: GCodeOperation[];
   /** Bounding box of all motion operations */
   extents: Extents;
-}
-
-/**
- * Progress information reported during parsing.
- */
-export interface ParseProgress {
-  /** Number of bytes read from the file */
-  bytesRead: number;
-  /** Total file size in bytes */
-  totalBytes: number;
-  /** Percentage complete (0-100) */
-  percent: number;
-  /** Number of operations parsed so far */
-  operationCount: number;
-}
-
-/**
- * Options for parsing a G-code file.
- */
-export interface ParseOptions {
-  /** Path to LinuxCNC INI file (required) */
-  iniPath: string;
-  /** Progress callback, called periodically during parsing */
-  onProgress?: (progress: ParseProgress) => void;
-  /**
-   * Target number of progress updates during parsing.
-   * The actual interval is calculated based on file size to achieve
-   * approximately this many updates. Default is 40.
-   * Set to 0 to disable progress callbacks entirely.
-   * @default 40
-   */
-  progressUpdates?: number;
 }

@@ -1,53 +1,29 @@
-import {
-  TaskMode,
-  TaskState,
+import type {
+  EmcDebug,
   ExecState,
   InterpState,
-  StopState,
-  TrajMode,
-  MotionType,
+  JointType,
   KinematicsType,
+  MotionType,
+  NmlMessageType,
+  OrientState,
   ProgramUnits,
   RcsStatus,
-  NmlMessageType,
-  JointType,
-  OrientState,
-  EmcDebug,
+  StopState,
+  TaskMode,
+  TaskState,
+  TrajMode,
 } from "./constants";
 
-/** Stride for position data in Float64Array: x, y, z, a, b, c, u, v, w, motionType */
-export const POSITION_STRIDE = 10;
+export {
+  POSITION_STRIDE,
+  PositionIndex,
+  PositionLoggerIndex,
+} from "./generated/enums";
 
+/** Stride for position data in Float64Array: x, y, z, a, b, c, u, v, w, motionType */
 /** Axis names supported by the LinuxCNC coordinate system. */
 export type AxisName = "X" | "Y" | "Z" | "A" | "B" | "C" | "U" | "V" | "W";
-
-/** Index constants for position logger data in Float64Array (10 elements with MotionType) */
-export enum PositionLoggerIndex {
-  X = 0,
-  Y = 1,
-  Z = 2,
-  A = 3,
-  B = 4,
-  C = 5,
-  U = 6,
-  V = 7,
-  W = 8,
-  /** Motion type (used in position logging) */
-  MotionType = 9,
-}
-
-/** Position array indices for readable access (9 elements) */
-export enum PositionIndex {
-  X = 0,
-  Y = 1,
-  Z = 2,
-  A = 3,
-  B = 4,
-  C = 5,
-  U = 6,
-  V = 7,
-  W = 8,
-}
 
 /**
  * Position and orientation in the LinuxCNC coordinate system.
@@ -77,6 +53,12 @@ export type Position = Float64Array;
  * - [2] z: Z-axis position
  */
 export type Position3 = Float64Array;
+
+/** Opaque reference to a program stored in a server workspace. */
+export interface ProgramHandle {
+  workspaceId: string;
+  relativePath: string;
+}
 
 /**
  * Tool table entry representing a cutting tool in the LinuxCNC system.
@@ -119,6 +101,15 @@ export interface ToolEntry {
    */
   comment: string;
 }
+
+/** Presence-sensitive partial tool-table update. */
+export type ToolUpdate = Partial<
+  Omit<ToolEntry, "toolNo" | "offset" | "wearOffset">
+> &
+  Pick<ToolEntry, "toolNo"> & {
+    offset?: Position;
+    wearOffset?: Position;
+  };
 
 /**
  * Active G-codes for each modal group in the LinuxCNC interpreter.
@@ -421,7 +412,6 @@ export interface TaskStat {
 
   /** Number of queued MDI commands. */
   queuedMdiCommands: number;
-
 }
 
 /**
@@ -803,6 +793,12 @@ export interface LinuxCNCError {
 
   /** Human-readable error message text. */
   message: string;
+
+  /** Monotonic daemon error sequence when received over MachineService. */
+  sequence?: number;
+
+  /** Coordinator sequence for a synthetic command failure. */
+  commandSequence?: number;
 }
 
 export type DebugFlags = EmcDebug;
@@ -844,25 +840,3 @@ export type RecursivePartial<T> = {
       ? RecursivePartial<T[P]>
       : T[P];
 };
-
-// Callback types
-export type StatPropertyWatchCallback<P extends LinuxCNCStatPaths> = (
-  newValue: GetPropertyType<LinuxCNCStat, P>,
-  oldValue: GetPropertyType<LinuxCNCStat, P> | null,
-  propertyPath: P
-) => void;
-
-export type ErrorCallback = (error: LinuxCNCError) => void;
-
-/**
- * A single stat change entry with the path and its correctly typed value.
- * This is a discriminated union that maps each path to its proper value type.
- */
-export type StatChange = {
-  [P in LinuxCNCStatPaths]: {
-    /** Dot-separated path to the changed property */
-    path: P;
-    /** New value of the property */
-    value: GetPropertyType<LinuxCNCStat, P>;
-  };
-}[LinuxCNCStatPaths];

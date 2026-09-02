@@ -1,4 +1,4 @@
-From 71fa7cb9286a1a504e1086eac9f18be3bca1c1c3 Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Dariusz Majnert <dariusz.majnert@gmail.com>
 Date: Sat, 15 Aug 2026 22:14:12 +0200
 Subject: [PATCH] interp: extend G76 with tapered threads and alternating
