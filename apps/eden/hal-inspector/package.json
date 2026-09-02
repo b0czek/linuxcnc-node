@@ -25,7 +25,7 @@
     "@edenapp/babel": "catalog:",
     "@edenapp/types": "catalog:",
     "@grpc/grpc-js": "^1.14.0",
-    "@kobalte/core": "^0.13.11",
+    "@kobalte/core": "^0.13.13",
     "@linuxcnc-node/grpc-client": "workspace:*",
     "@linuxcnc-node/websocket-client": "workspace:*",
     "@linuxcnc-node/types": "workspace:*",
