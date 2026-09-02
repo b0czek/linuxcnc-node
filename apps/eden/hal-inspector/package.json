@@ -37,7 +37,7 @@
   "devDependencies": {
     "@edenapp/genesis": "catalog:",
     "@edenapp/scripts": "catalog:",
-    "@types/node": "^22.0.0",
+    "@types/node": "^26.4.0",
     "tsup": "^8.5.1",
     "typescript": "^5.3.0",
     "vite": "^7.2.4",
