@@ -100,5 +100,7 @@ flow.
 ## License
 
 The native runtime and apps are licensed under **GPL-2.0-only**.
-`@linuxcnc-node/types` and `@linuxcnc-node/grpc-client` are licensed under
+`@linuxcnc-node/types`, `@linuxcnc-node/grpc-client`, and
+`@linuxcnc-node/websocket-client` are licensed under **MIT**.
+The protobuf protocol definitions under `proto/` are also licensed under
 **MIT**.
