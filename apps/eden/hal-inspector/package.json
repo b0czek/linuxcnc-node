@@ -31,7 +31,7 @@
     "@linuxcnc-node/types": "workspace:*",
     "@tanstack/solid-virtual": "^3.13.12",
     "solid-icons": "^1.1.0",
-    "solid-js": "^1.9.10",
+    "solid-js": "^1.9.15",
     "webgl-plot": "^1.1.2"
   },
   "devDependencies": {
