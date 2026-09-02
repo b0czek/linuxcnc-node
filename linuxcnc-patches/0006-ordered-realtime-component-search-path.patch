@@ -18,12 +18,14 @@ Subject: [PATCH] hal: add ordered trusted realtime component search path
  src/rtapi/rtmod_path.c            | 195 ++++++++++++++++++++++++++++++
  src/rtapi/rtmod_path.h            |  34 ++++++
  src/rtapi/uspace_rtapi_main.cc    |  36 ++++--
+ tests/rtmod-path/expected         |   1 +
  tests/rtmod-path/load.hal         |   2 +
  tests/rtmod-path/test.c           |  73 +++++++++++
  tests/rtmod-path/test.sh          |   8 ++
- 17 files changed, 469 insertions(+), 75 deletions(-)
+ 18 files changed, 470 insertions(+), 75 deletions(-)
  create mode 100644 src/rtapi/rtmod_path.c
  create mode 100644 src/rtapi/rtmod_path.h
+ create mode 100644 tests/rtmod-path/expected
  create mode 100644 tests/rtmod-path/load.hal
  create mode 100644 tests/rtmod-path/test.c
  create mode 100755 tests/rtmod-path/test.sh
@@ -768,6 +770,13 @@ index e04bf25545..7186ab0854 100644
          if (!module) {
              rtapi_print_msg(RTAPI_MSG_ERR, "%s: dlopen: %s\n", name.c_str(), dlerror());
              modules.erase(name);
+diff --git a/tests/rtmod-path/expected b/tests/rtmod-path/expected
+new file mode 100644
+index 0000000000..55233dce38
+--- /dev/null
++++ b/tests/rtmod-path/expected
+@@ -0,0 +1 @@
++rtmod-path: all tests passed
 diff --git a/tests/rtmod-path/load.hal b/tests/rtmod-path/load.hal
 new file mode 100644
 index 0000000000..b44392754d

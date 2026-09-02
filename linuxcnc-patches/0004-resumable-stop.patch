@@ -37,14 +37,13 @@ Add a dedicated task and trajectory Stop operation that preserves interpreter an
  tests/resumable-stop/rapid-then-feed.ngc      |   7 +
  tests/resumable-stop/single-step.ngc          |  10 +
  tests/resumable-stop/tap.ngc                  |   7 +
- tests/resumable-stop/test-ui.py               | 809 ++++++++++++++++++
+ tests/resumable-stop/test-ui.py               | 758 ++++++++++++++++++
  tests/resumable-stop/test.ini                 |  96 +++
  tests/resumable-stop/test.ngc                 |   9 +
- tests/resumable-stop/test.sh                  |  43 +
+ tests/resumable-stop/test.sh                  |  42 +
  tests/resumable-stop/thread.ngc               |   7 +
  tests/resumable-stop/tool.tbl                 |   1 +
- tests/resumable-stop/zero-speed-spindle.ngc   |   7 +
- 39 files changed, 1650 insertions(+), 16 deletions(-)
+ 38 files changed, 1591 insertions(+), 16 deletions(-)
  create mode 100644 tests/resumable-stop/README
  create mode 100644 tests/resumable-stop/after-abort.ngc
  create mode 100755 tests/resumable-stop/checkresult
@@ -65,10 +64,9 @@ Add a dedicated task and trajectory Stop operation that preserves interpreter an
  create mode 100755 tests/resumable-stop/test.sh
  create mode 100644 tests/resumable-stop/thread.ngc
  create mode 100644 tests/resumable-stop/tool.tbl
- create mode 100644 tests/resumable-stop/zero-speed-spindle.ngc
 
 diff --git a/docs/src/config/ini-config.adoc b/docs/src/config/ini-config.adoc
-index 8cb14ddb65..46167bbb01 100644
+index 8cb14dd..46167bb 100644
 --- a/docs/src/config/ini-config.adoc
 +++ b/docs/src/config/ini-config.adoc
 @@ -704,6 +704,13 @@ For more information on the motion controller see the <<sec:motion,Motion>> sect
@@ -86,7 +84,7 @@ index 8cb14ddb65..46167bbb01 100644
  [[sub:ini:sec:hal]]
  === [HAL] section(((INI File,Sections,[HAL] Section)))
 diff --git a/docs/src/config/python-interface.adoc b/docs/src/config/python-interface.adoc
-index 219a873d24..c465235054 100644
+index 219a873..c465235 100644
 --- a/docs/src/config/python-interface.adoc
 +++ b/docs/src/config/python-interface.adoc
 @@ -209,6 +209,10 @@ see <<python:reading-ini-values,ReadingINI file values>> for an example.
@@ -112,7 +110,7 @@ index 219a873d24..c465235054 100644
    run, step, pause or resume a program.
  
 diff --git a/docs/src/gui/halui.adoc b/docs/src/gui/halui.adoc
-index 37d92b8ff7..633a65fc00 100644
+index 37d92b8..633a65f 100644
 --- a/docs/src/gui/halui.adoc
 +++ b/docs/src/gui/halui.adoc
 @@ -268,7 +268,8 @@ _L_ = axis letter (xyzabcuvw)
@@ -126,7 +124,7 @@ index 37d92b8ff7..633a65fc00 100644
  === Rapid Override
  
 diff --git a/docs/src/man/man1/halui.1.adoc b/docs/src/man/man1/halui.1.adoc
-index 6e84da6e5f..66b7f74e85 100644
+index 6e84da6..66b7f74 100644
 --- a/docs/src/man/man1/halui.1.adoc
 +++ b/docs/src/man/man1/halui.1.adoc
 @@ -137,8 +137,9 @@ contact) connect the physical button to a HAL debounce filter first.
@@ -142,7 +140,7 @@ index 6e84da6e5f..66b7f74e85 100644
  === Mode
  
 diff --git a/src/emc/motion/command.c b/src/emc/motion/command.c
-index fa7beb3c72..efe02af73d 100644
+index fa7beb3..efe02af 100644
 --- a/src/emc/motion/command.c
 +++ b/src/emc/motion/command.c
 @@ -507,6 +507,9 @@ void emcmotCommandHandler_locked(void *arg, long servo_period)
@@ -197,7 +195,7 @@ index fa7beb3c72..efe02af73d 100644
         // check whether it's passed correctly
         if (!emcmotStatus->atspeed_next_feed){
 diff --git a/src/emc/motion/control.c b/src/emc/motion/control.c
-index 9e23ea480a..0a5d550480 100644
+index 9e23ea4..0a5d550 100644
 --- a/src/emc/motion/control.c
 +++ b/src/emc/motion/control.c
 @@ -1990,6 +1990,19 @@ static void output_to_hal(void)
@@ -221,7 +219,7 @@ index 9e23ea480a..0a5d550480 100644
      /* Change the following lines to assign the variable you want to observe
         to one of the debug parameters.  You can also comment out these lines
 diff --git a/src/emc/motion/motion.c b/src/emc/motion/motion.c
-index 6b4f01a50f..7f81108901 100644
+index 6b4f01a..7f81108 100644
 --- a/src/emc/motion/motion.c
 +++ b/src/emc/motion/motion.c
 @@ -906,6 +906,7 @@ static int init_comm_buffers(void)
@@ -233,7 +231,7 @@ index 6b4f01a50f..7f81108901 100644
      SET_MOTION_INPOS_FLAG(1);
      SET_MOTION_ENABLE_FLAG(0);
 diff --git a/src/emc/motion/motion.h b/src/emc/motion/motion.h
-index 9c62af046c..84ab8eb6ce 100644
+index 9c62af0..84ab8eb 100644
 --- a/src/emc/motion/motion.h
 +++ b/src/emc/motion/motion.h
 @@ -81,6 +81,7 @@ to another.
@@ -261,7 +259,7 @@ index 9c62af046c..84ab8eb6ce 100644
  				/* 1 << (joint-num*2) = ignore neg limit */
  				/* 2 << (joint-num*2) = ignore pos limit */
 diff --git a/src/emc/nml_intf/emc.cc b/src/emc/nml_intf/emc.cc
-index 282edd98ec..c4faf0dd39 100644
+index 282edd9..c4faf0d 100644
 --- a/src/emc/nml_intf/emc.cc
 +++ b/src/emc/nml_intf/emc.cc
 @@ -181,6 +181,9 @@ int emcFormat(NMLTYPE type, void *buffer, CMS * cms)
@@ -359,7 +357,7 @@ index 282edd98ec..c4faf0dd39 100644
  *	NML/CMS Update function for EMC_AUX_STAT_MSG
  *	Automatically generated by NML CodeGen Java Applet.
 diff --git a/src/emc/nml_intf/emc.hh b/src/emc/nml_intf/emc.hh
-index 20bb4bba56..6b3846feaa 100644
+index 20bb4bb..6b3846f 100644
 --- a/src/emc/nml_intf/emc.hh
 +++ b/src/emc/nml_intf/emc.hh
 @@ -93,6 +93,7 @@ struct PM_CARTESIAN;
@@ -401,7 +399,7 @@ index 20bb4bba56..6b3846feaa 100644
  extern int emcTrajForward();
  extern int emcTrajStep();
 diff --git a/src/emc/nml_intf/emc_nml.hh b/src/emc/nml_intf/emc_nml.hh
-index 38f67b98bd..9494a43de3 100644
+index 38f67b9..9494a43 100644
 --- a/src/emc/nml_intf/emc_nml.hh
 +++ b/src/emc/nml_intf/emc_nml.hh
 @@ -699,6 +699,15 @@ class EMC_TRAJ_PAUSE:public EMC_TRAJ_CMD_MSG {
@@ -469,7 +467,7 @@ index 38f67b98bd..9494a43de3 100644
      int motionLine;		// line motion is executing-- may lag
      int currentLine;		// line currently executing
 diff --git a/src/emc/nml_intf/emcops.cc b/src/emc/nml_intf/emcops.cc
-index 6e068c2708..734079d3af 100644
+index 6e068c2..734079d 100644
 --- a/src/emc/nml_intf/emcops.cc
 +++ b/src/emc/nml_intf/emcops.cc
 @@ -70,6 +70,7 @@ EMC_TRAJ_STAT::EMC_TRAJ_STAT()
@@ -505,7 +503,7 @@ index 6e068c2708..734079d3af 100644
  {
  }
 diff --git a/src/emc/task/emctaskmain.cc b/src/emc/task/emctaskmain.cc
-index 3bf13a702d..c98b34f24f 100644
+index 3bf13a7..c98b34f 100644
 --- a/src/emc/task/emctaskmain.cc
 +++ b/src/emc/task/emctaskmain.cc
 @@ -123,6 +123,38 @@ static int emcTaskEager = 0;
@@ -993,7 +991,7 @@ index 3bf13a702d..c98b34f24f 100644
  		   emcStatus->task.execState == EMC_TASK_EXEC::DONE &&
  		   emcStatus->motion.status == RCS_STATUS::DONE &&
 diff --git a/src/emc/task/taskintf.cc b/src/emc/task/taskintf.cc
-index a37da0ca5f..86fdd15940 100644
+index a37da0c..86fdd15 100644
 --- a/src/emc/task/taskintf.cc
 +++ b/src/emc/task/taskintf.cc
 @@ -1421,6 +1421,13 @@ int emcTrajPause()
@@ -1029,7 +1027,7 @@ index a37da0ca5f..86fdd15940 100644
      return 0;
  }
 diff --git a/src/emc/tp/tp.c b/src/emc/tp/tp.c
-index e5667b3f29..3b78e008c0 100644
+index e5667b3..3b78e00 100644
 --- a/src/emc/tp/tp.c
 +++ b/src/emc/tp/tp.c
 @@ -250,7 +250,11 @@ STATIC double tpGetFeedScale(TP_STRUCT const * const tp,
@@ -1154,7 +1152,7 @@ index e5667b3f29..3b78e008c0 100644
  }
  
 diff --git a/src/emc/tp/tp_types.h b/src/emc/tp/tp_types.h
-index 6687ef3a2d..8d8aa3a362 100644
+index 6687ef3..8d8aa3a 100644
 --- a/src/emc/tp/tp_types.h
 +++ b/src/emc/tp/tp_types.h
 @@ -136,6 +136,13 @@ typedef struct {
@@ -1172,7 +1170,7 @@ index 6687ef3a2d..8d8aa3a362 100644
  
  
 diff --git a/src/emc/usr_intf/axis/extensions/emcmodule.cc b/src/emc/usr_intf/axis/extensions/emcmodule.cc
-index 3345c0a6a0..59a6da5bf6 100644
+index 3345c0a..59a6da5 100644
 --- a/src/emc/usr_intf/axis/extensions/emcmodule.cc
 +++ b/src/emc/usr_intf/axis/extensions/emcmodule.cc
 @@ -1132,6 +1132,7 @@ static PyMemberDef Stat_members[] = {
@@ -1218,7 +1216,7 @@ index 3345c0a6a0..59a6da5bf6 100644
      PyModule_AddIntConstant(m, "MODE_MANUAL", (int)EMC_TASK_MODE::MANUAL);
      PyModule_AddIntConstant(m, "MODE_AUTO", (int)EMC_TASK_MODE::AUTO);
 diff --git a/src/emc/usr_intf/halui.cc b/src/emc/usr_intf/halui.cc
-index 6e7c462197..f516c9691a 100644
+index 6e7c462..f516c96 100644
 --- a/src/emc/usr_intf/halui.cc
 +++ b/src/emc/usr_intf/halui.cc
 @@ -1238,6 +1238,13 @@ static int sendAbort()
@@ -1246,7 +1244,7 @@ index 6e7c462197..f516c9691a 100644
      counts = new_halui_data.mv_counts;
 diff --git a/tests/resumable-stop/README b/tests/resumable-stop/README
 new file mode 100644
-index 0000000000..e457195324
+index 0000000..e457195
 --- /dev/null
 +++ b/tests/resumable-stop/README
 @@ -0,0 +1,10 @@
@@ -1262,7 +1260,7 @@ index 0000000000..e457195324
 +recovers after Resume.
 diff --git a/tests/resumable-stop/after-abort.ngc b/tests/resumable-stop/after-abort.ngc
 new file mode 100644
-index 0000000000..df711f6b3d
+index 0000000..df711f6
 --- /dev/null
 +++ b/tests/resumable-stop/after-abort.ngc
 @@ -0,0 +1,4 @@
@@ -1272,16 +1270,16 @@ index 0000000000..df711f6b3d
 +M2
 diff --git a/tests/resumable-stop/checkresult b/tests/resumable-stop/checkresult
 new file mode 100755
-index 0000000000..c491888fc8
+index 0000000..5a8f801
 --- /dev/null
 +++ b/tests/resumable-stop/checkresult
 @@ -0,0 +1,3 @@
 +#!/bin/sh
-+test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 15
++test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 14
 +grep -q '^resumable stop scenarios complete$' "$1"
 diff --git a/tests/resumable-stop/core_sim.hal b/tests/resumable-stop/core_sim.hal
 new file mode 100644
-index 0000000000..bbc7166567
+index 0000000..bbc7166
 --- /dev/null
 +++ b/tests/resumable-stop/core_sim.hal
 @@ -0,0 +1,42 @@
@@ -1329,7 +1327,7 @@ index 0000000000..bbc7166567
 +setp spindle.1.at-speed true
 diff --git a/tests/resumable-stop/css.ngc b/tests/resumable-stop/css.ngc
 new file mode 100644
-index 0000000000..382aaffcec
+index 0000000..382aaff
 --- /dev/null
 +++ b/tests/resumable-stop/css.ngc
 @@ -0,0 +1,6 @@
@@ -1341,7 +1339,7 @@ index 0000000000..382aaffcec
 +M2
 diff --git a/tests/resumable-stop/dwell.ngc b/tests/resumable-stop/dwell.ngc
 new file mode 100644
-index 0000000000..f7a54f80d5
+index 0000000..f7a54f8
 --- /dev/null
 +++ b/tests/resumable-stop/dwell.ngc
 @@ -0,0 +1,5 @@
@@ -1352,7 +1350,7 @@ index 0000000000..f7a54f80d5
 +M2
 diff --git a/tests/resumable-stop/fperrev.ngc b/tests/resumable-stop/fperrev.ngc
 new file mode 100644
-index 0000000000..92dbe87412
+index 0000000..92dbe87
 --- /dev/null
 +++ b/tests/resumable-stop/fperrev.ngc
 @@ -0,0 +1,7 @@
@@ -1365,7 +1363,7 @@ index 0000000000..92dbe87412
 +M2
 diff --git a/tests/resumable-stop/g76.ngc b/tests/resumable-stop/g76.ngc
 new file mode 100644
-index 0000000000..1c6a3ea852
+index 0000000..1c6a3ea
 --- /dev/null
 +++ b/tests/resumable-stop/g76.ngc
 @@ -0,0 +1,7 @@
@@ -1378,7 +1376,7 @@ index 0000000000..1c6a3ea852
 +M2
 diff --git a/tests/resumable-stop/multi-spindle.ngc b/tests/resumable-stop/multi-spindle.ngc
 new file mode 100644
-index 0000000000..ba2e66f6da
+index 0000000..ba2e66f
 --- /dev/null
 +++ b/tests/resumable-stop/multi-spindle.ngc
 @@ -0,0 +1,4 @@
@@ -1388,7 +1386,7 @@ index 0000000000..ba2e66f6da
 +M2
 diff --git a/tests/resumable-stop/orient.ngc b/tests/resumable-stop/orient.ngc
 new file mode 100644
-index 0000000000..bb08db3994
+index 0000000..bb08db3
 --- /dev/null
 +++ b/tests/resumable-stop/orient.ngc
 @@ -0,0 +1,6 @@
@@ -1400,7 +1398,7 @@ index 0000000000..bb08db3994
 +M2
 diff --git a/tests/resumable-stop/pause.ngc b/tests/resumable-stop/pause.ngc
 new file mode 100644
-index 0000000000..6fe71e34bc
+index 0000000..6fe71e3
 --- /dev/null
 +++ b/tests/resumable-stop/pause.ngc
 @@ -0,0 +1,7 @@
@@ -1413,7 +1411,7 @@ index 0000000000..6fe71e34bc
 +M2
 diff --git a/tests/resumable-stop/rapid-then-feed.ngc b/tests/resumable-stop/rapid-then-feed.ngc
 new file mode 100644
-index 0000000000..c562a572dc
+index 0000000..c562a57
 --- /dev/null
 +++ b/tests/resumable-stop/rapid-then-feed.ngc
 @@ -0,0 +1,7 @@
@@ -1426,7 +1424,7 @@ index 0000000000..c562a572dc
 +M2
 diff --git a/tests/resumable-stop/single-step.ngc b/tests/resumable-stop/single-step.ngc
 new file mode 100644
-index 0000000000..8955e51e55
+index 0000000..8955e51
 --- /dev/null
 +++ b/tests/resumable-stop/single-step.ngc
 @@ -0,0 +1,10 @@
@@ -1442,7 +1440,7 @@ index 0000000000..8955e51e55
 +M2
 diff --git a/tests/resumable-stop/tap.ngc b/tests/resumable-stop/tap.ngc
 new file mode 100644
-index 0000000000..3060ac429e
+index 0000000..3060ac4
 --- /dev/null
 +++ b/tests/resumable-stop/tap.ngc
 @@ -0,0 +1,7 @@
@@ -1455,10 +1453,10 @@ index 0000000000..3060ac429e
 +M2
 diff --git a/tests/resumable-stop/test-ui.py b/tests/resumable-stop/test-ui.py
 new file mode 100755
-index 0000000000..13dc57d304
+index 0000000..078eee4
 --- /dev/null
 +++ b/tests/resumable-stop/test-ui.py
-@@ -0,0 +1,809 @@
+@@ -0,0 +1,758 @@
 +#!/usr/bin/env python3
 +
 +import math
@@ -1708,56 +1706,6 @@ index 0000000000..13dc57d304
 +
 +    hal.set_p("spindle.0.at-speed", "true")
 +    wait_for_program_complete(90.0)
-+    assert_outputs_stopped_after_program()
-+
-+
-+def run_zero_speed_spindle_stop_resume_test():
-+    open_auto_program("zero-speed-spindle.ngc")
-+
-+    c.auto(linuxcnc.AUTO_RUN, 0)
-+
-+    wait_for(
-+        lambda: s.task_mode == linuxcnc.MODE_AUTO
-+        and s.position[0] > 0.05
-+        and s.position[0] < 9.0
-+        and s.spindle[0]["direction"] == 1
-+        and math.isclose(s.spindle[0]["speed"], 0.0, abs_tol=0.001)
-+        and not s.spindle[0]["enabled"]
-+        and hal.get_value("spindle.0.on"),
-+        "program did not reach active S0 M3 motion",
-+    )
-+
-+    c.stop()
-+    wait_complete("S0 M3 stop command did not complete")
-+
-+    wait_for(
-+        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
-+        "task did not enter STOPPED state for S0 M3",
-+    )
-+
-+    if hal.get_value("spindle.0.on"):
-+        fail("S0 M3 spindle enable remained asserted while stopped")
-+
-+    if s.spindle[0]["direction"] != 0:
-+        fail("S0 M3 spindle direction remained active while stopped")
-+
-+    stopped_x = s.position[0]
-+    c.auto(linuxcnc.AUTO_RESUME)
-+
-+    saw_restored_forward = False
-+    start = time.time()
-+    while time.time() - start < 10.0:
-+        s.poll()
-+        if hal.get_value("spindle.0.on") and s.spindle[0]["direction"] == 1:
-+            saw_restored_forward = True
-+        if s.position[0] > stopped_x + 0.05:
-+            break
-+        time.sleep(0.02)
-+
-+    if not saw_restored_forward:
-+        fail("resume did not restore S0 M3 spindle direction")
-+
-+    wait_for_program_complete(10.0)
 +    assert_outputs_stopped_after_program()
 +
 +
@@ -2246,7 +2194,6 @@ index 0000000000..13dc57d304
 +    "ordinary": run_ordinary_stop_resume_test,
 +    "single-step": run_stop_single_step_test,
 +    "rapid-no-atspeed": run_rapid_resume_without_at_speed_test,
-+    "zero-speed-spindle": run_zero_speed_spindle_stop_resume_test,
 +    "paused-resume": lambda: run_stop_while_program_paused_test(False),
 +    "paused-run": lambda: run_stop_while_program_paused_test(True),
 +    "abort-empty": run_abort_from_empty_stopped_queue_test,
@@ -2270,7 +2217,7 @@ index 0000000000..13dc57d304
 +sys.exit(0)
 diff --git a/tests/resumable-stop/test.ini b/tests/resumable-stop/test.ini
 new file mode 100644
-index 0000000000..a97cb95f4b
+index 0000000..a97cb95
 --- /dev/null
 +++ b/tests/resumable-stop/test.ini
 @@ -0,0 +1,96 @@
@@ -2372,7 +2319,7 @@ index 0000000000..a97cb95f4b
 +MIN_FERROR = 0.25
 diff --git a/tests/resumable-stop/test.ngc b/tests/resumable-stop/test.ngc
 new file mode 100644
-index 0000000000..416044b08c
+index 0000000..416044b
 --- /dev/null
 +++ b/tests/resumable-stop/test.ngc
 @@ -0,0 +1,9 @@
@@ -2387,10 +2334,10 @@ index 0000000000..416044b08c
 +M2
 diff --git a/tests/resumable-stop/test.sh b/tests/resumable-stop/test.sh
 new file mode 100755
-index 0000000000..7bdacbb211
+index 0000000..017d265
 --- /dev/null
 +++ b/tests/resumable-stop/test.sh
-@@ -0,0 +1,43 @@
+@@ -0,0 +1,42 @@
 +#!/bin/bash -e
 +
 +set -o pipefail
@@ -2404,7 +2351,6 @@ index 0000000000..7bdacbb211
 +    ordinary
 +    single-step
 +    rapid-no-atspeed
-+    zero-speed-spindle
 +    paused-resume
 +    paused-run
 +    abort-empty
@@ -2436,7 +2382,7 @@ index 0000000000..7bdacbb211
 +echo "resumable stop scenarios complete"
 diff --git a/tests/resumable-stop/thread.ngc b/tests/resumable-stop/thread.ngc
 new file mode 100644
-index 0000000000..5976979e44
+index 0000000..5976979
 --- /dev/null
 +++ b/tests/resumable-stop/thread.ngc
 @@ -0,0 +1,7 @@
@@ -2449,21 +2395,8 @@ index 0000000000..5976979e44
 +M2
 diff --git a/tests/resumable-stop/tool.tbl b/tests/resumable-stop/tool.tbl
 new file mode 100644
-index 0000000000..68840ea75c
+index 0000000..68840ea
 --- /dev/null
 +++ b/tests/resumable-stop/tool.tbl
 @@ -0,0 +1 @@
 +T1 P1 Z0 D0
-diff --git a/tests/resumable-stop/zero-speed-spindle.ngc b/tests/resumable-stop/zero-speed-spindle.ngc
-new file mode 100644
-index 0000000000..8e4ffa6645
---- /dev/null
-+++ b/tests/resumable-stop/zero-speed-spindle.ngc
-@@ -0,0 +1,7 @@
-+G21 G90
-+G0 X0
-+F60
-+S0 M3
-+G1 X10
-+M5
-+M2

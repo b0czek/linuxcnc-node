@@ -22,13 +22,13 @@ Preserve pass ownership on synthetic blend arcs, make marked clearance endpoints
  src/emc/rs274ngc/gcodemodule.cc               |   5 +
  src/emc/rs274ngc/interp_convert.cc            |  12 +
  src/emc/sai/saicanon.cc                       |   6 +
- src/emc/task/emccanon.cc                      |  63 +++-
+ src/emc/task/emccanon.cc                      |  63 ++-
  src/emc/task/emctask.cc                       |   4 +-
  src/emc/task/emctaskmain.cc                   |  74 +++-
  src/emc/task/task.hh                          |   2 +-
  src/emc/task/taskintf.cc                      |   8 +-
  src/emc/tp/tc_types.h                         |   2 +
- src/emc/tp/tp.c                               | 183 +++++++++-
+ src/emc/tp/tp.c                               | 183 ++++++++-
  src/emc/tp/tp.h                               |   3 +-
  src/emc/tp/tp_types.h                         |  10 +-
  tests/interp/compile/use-rs274.cc             |   5 +
@@ -41,10 +41,10 @@ Preserve pass ownership on synthetic blend arcs, make marked clearance endpoints
  .../resumable-stop/g76-tapered-exit-taper.ngc |   7 +
  tests/resumable-stop/g76-tapered-step.ngc     |   4 +
  tests/resumable-stop/g76-tapered.ngc          |   7 +
- tests/resumable-stop/test-ui.py               | 326 +++++++++++++++++-
+ tests/resumable-stop/test-ui.py               | 367 +++++++++++++++++-
  tests/resumable-stop/test.ini                 |   1 +
  tests/resumable-stop/test.sh                  |  14 +
- 35 files changed, 867 insertions(+), 58 deletions(-)
+ 35 files changed, 907 insertions(+), 59 deletions(-)
  create mode 100644 tests/resumable-stop/g33-followed-by-rapid.ngc
  create mode 100644 tests/resumable-stop/g76-exit-taper.ngc
  create mode 100644 tests/resumable-stop/g76-handoff.ngc
@@ -54,7 +54,7 @@ Preserve pass ownership on synthetic blend arcs, make marked clearance endpoints
  create mode 100644 tests/resumable-stop/g76-tapered.ngc
 
 diff --git a/docs/src/gcode/g-code.adoc b/docs/src/gcode/g-code.adoc
-index 4160cfb4a2..760cfe2384 100644
+index 4160cfb..760cfe2 100644
 --- a/docs/src/gcode/g-code.adoc
 +++ b/docs/src/gcode/g-code.adoc
 @@ -1986,6 +1986,21 @@ pass, so a relief groove will be required at the entry unless the
@@ -80,7 +80,7 @@ index 4160cfb4a2..760cfe2384 100644
  spindle speed and will be a <<gcode:g0,rapid move>>. With a slow spindle,
  the exit move might take only a small fraction of a revolution. If the
 diff --git a/src/emc/motion/command.c b/src/emc/motion/command.c
-index efe02af73d..b6ad9c1504 100644
+index efe02af..b6ad9c1 100644
 --- a/src/emc/motion/command.c
 +++ b/src/emc/motion/command.c
 @@ -509,6 +509,8 @@ void emcmotCommandHandler_locked(void *arg, long servo_period)
@@ -162,7 +162,7 @@ index efe02af73d..b6ad9c1504 100644
  		emcmotStatus->commandStatus = EMCMOT_COMMAND_BAD_EXEC;
  		tpAbort(&emcmotInternal->coord_tp);
 diff --git a/src/emc/motion/control.c b/src/emc/motion/control.c
-index 0a5d550480..160c2dcd2c 100644
+index 0a5d550..160c2dc 100644
 --- a/src/emc/motion/control.c
 +++ b/src/emc/motion/control.c
 @@ -1993,12 +1993,11 @@ static void output_to_hal(void)
@@ -207,7 +207,7 @@ index 0a5d550480..160c2dcd2c 100644
      // State Tags handling
      // Get the current executing trajectory component (the "Source of Truth")
 diff --git a/src/emc/motion/motion.h b/src/emc/motion/motion.h
-index 84ab8eb6ce..dfc990f853 100644
+index 84ab8eb..dfc990f 100644
 --- a/src/emc/motion/motion.h
 +++ b/src/emc/motion/motion.h
 @@ -275,6 +275,8 @@ extern "C" {
@@ -220,7 +220,7 @@ index 84ab8eb6ce..dfc990f853 100644
  
  /*! \todo FIXME - these packed bits might be replaced with chars
 diff --git a/src/emc/nml_intf/canon.hh b/src/emc/nml_intf/canon.hh
-index 23ef06ec5f..9a41b2647f 100644
+index 23ef06e..9a41b26 100644
 --- a/src/emc/nml_intf/canon.hh
 +++ b/src/emc/nml_intf/canon.hh
 @@ -1056,6 +1056,14 @@ extern int USER_DEFINED_FUNCTION_ADD(USER_DEFINED_FUNCTION_TYPE func,
@@ -239,7 +239,7 @@ index 23ef06ec5f..9a41b2647f 100644
  // it to the interp list in certain cases
  extern void ON_RESET(void);
 diff --git a/src/emc/nml_intf/emc.cc b/src/emc/nml_intf/emc.cc
-index fb74ca4faa..230ef23142 100644
+index fb74ca4..230ef23 100644
 --- a/src/emc/nml_intf/emc.cc
 +++ b/src/emc/nml_intf/emc.cc
 @@ -214,6 +214,9 @@ int emcFormat(NMLTYPE type, void *buffer, CMS * cms)
@@ -283,7 +283,7 @@ index fb74ca4faa..230ef23142 100644
  
  /*
 diff --git a/src/emc/nml_intf/emc.hh b/src/emc/nml_intf/emc.hh
-index ee07d5620d..d64730966b 100644
+index ee07d56..d647309 100644
 --- a/src/emc/nml_intf/emc.hh
 +++ b/src/emc/nml_intf/emc.hh
 @@ -144,6 +144,7 @@ struct PM_CARTESIAN;
@@ -306,7 +306,7 @@ index ee07d5620d..d64730966b 100644
          normal, int turn, int type, double vel, double ini_maxvel, double acc, double ini_maxjerk);
  extern int emcTrajSetTermCond(int cond, double tolerance);
 diff --git a/src/emc/nml_intf/emc_nml.hh b/src/emc/nml_intf/emc_nml.hh
-index 3d373a493c..70e695c8d7 100644
+index 3d373a4..70e695c 100644
 --- a/src/emc/nml_intf/emc_nml.hh
 +++ b/src/emc/nml_intf/emc_nml.hh
 @@ -746,7 +746,9 @@ class EMC_TRAJ_LINEAR_MOVE:public EMC_TRAJ_CMD_MSG {
@@ -350,7 +350,7 @@ index 3d373a493c..70e695c8d7 100644
    public:
      EMC_TASK_PLAN_SET_OPTIONAL_STOP()
 diff --git a/src/emc/nml_intf/interpl.cc b/src/emc/nml_intf/interpl.cc
-index 80fd26ffb1..1c58826f25 100644
+index 80fd26f..1c58826 100644
 --- a/src/emc/nml_intf/interpl.cc
 +++ b/src/emc/nml_intf/interpl.cc
 @@ -30,6 +30,11 @@ void NML_INTERP_LIST::set_line_number(int line)
@@ -410,7 +410,7 @@ index 80fd26ffb1..1c58826f25 100644
 +    return pass_group;
 +}
 diff --git a/src/emc/nml_intf/interpl.hh b/src/emc/nml_intf/interpl.hh
-index b5ef1652a6..324db10675 100644
+index b5ef165..324db10 100644
 --- a/src/emc/nml_intf/interpl.hh
 +++ b/src/emc/nml_intf/interpl.hh
 @@ -26,6 +26,7 @@ class NMLmsg;
@@ -440,7 +440,7 @@ index b5ef1652a6..324db10675 100644
  };
  
 diff --git a/src/emc/rs274ngc/gcodemodule.cc b/src/emc/rs274ngc/gcodemodule.cc
-index 32aeed560b..d97d0ac765 100644
+index 32aeed5..d97d0ac 100644
 --- a/src/emc/rs274ngc/gcodemodule.cc
 +++ b/src/emc/rs274ngc/gcodemodule.cc
 @@ -559,6 +559,11 @@ void WAIT_SPINDLE_ORIENT_COMPLETE(int /*s*/, double /*timeout*/) {}
@@ -456,7 +456,7 @@ index 32aeed560b..d97d0ac765 100644
  void PALLET_SHUTTLE() {}
  void SELECT_TOOL(int tool) {selected_tool = tool;}
 diff --git a/src/emc/rs274ngc/interp_convert.cc b/src/emc/rs274ngc/interp_convert.cc
-index 373916cfb0..33a35bda2e 100644
+index 373916c..33a35bd 100644
 --- a/src/emc/rs274ngc/interp_convert.cc
 +++ b/src/emc/rs274ngc/interp_convert.cc
 @@ -5618,11 +5618,14 @@ threading_pass(setup_pointer settings, block_pointer block,
@@ -542,7 +542,7 @@ index 373916cfb0..33a35bda2e 100644
  
  int Interp::convert_threading_cycle(block_pointer block,
 diff --git a/src/emc/sai/saicanon.cc b/src/emc/sai/saicanon.cc
-index b349f4952d..c4703d40d8 100644
+index b349f49..c4703d4 100644
 --- a/src/emc/sai/saicanon.cc
 +++ b/src/emc/sai/saicanon.cc
 @@ -1072,6 +1072,12 @@ void FINISH(void) {
@@ -559,7 +559,7 @@ index b349f4952d..c4703d40d8 100644
  {
      PRINT("ON_RESET()\n");
 diff --git a/src/emc/task/emccanon.cc b/src/emc/task/emccanon.cc
-index e5d71a60e8..ad1352a7d4 100644
+index e5d71a6..ad1352a 100644
 --- a/src/emc/task/emccanon.cc
 +++ b/src/emc/task/emccanon.cc
 @@ -149,6 +149,56 @@ struct JerkData{
@@ -668,7 +668,7 @@ index e5d71a60e8..ad1352a7d4 100644
          linearMoveMsg->type = EMC_MOTION_TYPE_INDEXROTARY;
      else
 diff --git a/src/emc/task/emctask.cc b/src/emc/task/emctask.cc
-index d5c060f669..e0fe4e3616 100644
+index d5c060f..e0fe4e3 100644
 --- a/src/emc/task/emctask.cc
 +++ b/src/emc/task/emctask.cc
 @@ -249,8 +249,7 @@ int emcTaskAbort()
@@ -687,7 +687,7 @@ index d5c060f669..e0fe4e3616 100644
  }
 -
 diff --git a/src/emc/task/emctaskmain.cc b/src/emc/task/emctaskmain.cc
-index 235a747ed2..1addd75459 100644
+index 235a747..1addd75 100644
 --- a/src/emc/task/emctaskmain.cc
 +++ b/src/emc/task/emctaskmain.cc
 @@ -463,6 +463,22 @@ static int programStartLine = 0;	// which line to run program from
@@ -886,7 +886,7 @@ index 235a747ed2..1addd75459 100644
  	    // now queue up command to resynch interpreter
  	    emcTaskQueueTaskPlanSynchCmd();
 diff --git a/src/emc/task/task.hh b/src/emc/task/task.hh
-index d8c619cdb5..79dbeb68bc 100644
+index d8c619c..79dbeb6 100644
 --- a/src/emc/task/task.hh
 +++ b/src/emc/task/task.hh
 @@ -22,6 +22,7 @@
@@ -903,7 +903,7 @@ index d8c619cdb5..79dbeb68bc 100644
  #endif
 -
 diff --git a/src/emc/task/taskintf.cc b/src/emc/task/taskintf.cc
-index 86fdd15940..4796832331 100644
+index 86fdd15..4796832 100644
 --- a/src/emc/task/taskintf.cc
 +++ b/src/emc/task/taskintf.cc
 @@ -1499,8 +1499,10 @@ int emcTrajSetTermCond(int cond, double tolerance)
@@ -929,7 +929,7 @@ index 86fdd15940..4796832331 100644
      return usrmotWriteEmcmotCommand(&emcmotCommand);
  }
 diff --git a/src/emc/tp/tc_types.h b/src/emc/tp/tc_types.h
-index c1767d5613..17ebe59d7c 100644
+index c1767d5..17ebe59 100644
 --- a/src/emc/tp/tc_types.h
 +++ b/src/emc/tp/tc_types.h
 @@ -167,6 +167,8 @@ typedef struct {
@@ -942,7 +942,7 @@ index c1767d5613..17ebe59d7c 100644
                              // this segment (g64 mode)
  
 diff --git a/src/emc/tp/tp.c b/src/emc/tp/tp.c
-index 3b78e008c0..d4373fd89f 100644
+index 3b78e00..d4373fd 100644
 --- a/src/emc/tp/tp.c
 +++ b/src/emc/tp/tp.c
 @@ -254,7 +254,7 @@ STATIC double tpGetFeedScale(TP_STRUCT const * const tp,
@@ -1280,7 +1280,7 @@ index 3b78e008c0..d4373fd89f 100644
          tp->aborting = 1;
      }
 diff --git a/src/emc/tp/tp.h b/src/emc/tp/tp.h
-index e00b457ad2..c89f3608f6 100644
+index e00b457..c89f360 100644
 --- a/src/emc/tp/tp.h
 +++ b/src/emc/tp/tp.h
 @@ -57,7 +57,8 @@ int tpAddRigidTap(TP_STRUCT * const tp,
@@ -1294,7 +1294,7 @@ index e00b457ad2..c89f3608f6 100644
  		PmCartesian normal, int turn, int canon_motion_type, double vel,
  		double ini_maxvel, double acc, double ini_maxjerk, unsigned char enables,
 diff --git a/src/emc/tp/tp_types.h b/src/emc/tp/tp_types.h
-index 8d8aa3a362..15be0f3127 100644
+index 8d8aa3a..15be0f3 100644
 --- a/src/emc/tp/tp_types.h
 +++ b/src/emc/tp/tp_types.h
 @@ -137,11 +137,17 @@ typedef struct {
@@ -1318,7 +1318,7 @@ index 8d8aa3a362..15be0f3127 100644
  } TP_STRUCT;
  
 diff --git a/tests/interp/compile/use-rs274.cc b/tests/interp/compile/use-rs274.cc
-index 4a55bad0de..a5a795f475 100644
+index 4a55bad..a5a795f 100644
 --- a/tests/interp/compile/use-rs274.cc
 +++ b/tests/interp/compile/use-rs274.cc
 @@ -258,6 +258,11 @@ int GET_EXTERNAL_DIGITAL_INPUT(int index, int def) { return 0; }
@@ -1334,7 +1334,7 @@ index 4a55bad0de..a5a795f475 100644
  void CANON_ERROR(const char *fmt, ...) {}
  void UPDATE_TAG(const StateTag& tag) {}
 diff --git a/tests/resumable-stop/README b/tests/resumable-stop/README
-index e457195324..e845030ffb 100644
+index e457195..e845030 100644
 --- a/tests/resumable-stop/README
 +++ b/tests/resumable-stop/README
 @@ -5,6 +5,22 @@ This regression test exercises the task-level Stop operation directly through
@@ -1364,18 +1364,18 @@ index e457195324..e845030ffb 100644
 +jerk-limited trajectory planner and rejects zero-limit Ruckig fallback errors
 +while spindle feedback recovers after Resume.
 diff --git a/tests/resumable-stop/checkresult b/tests/resumable-stop/checkresult
-index c491888fc8..32057a5049 100755
+index 5a8f801..faf35d6 100755
 --- a/tests/resumable-stop/checkresult
 +++ b/tests/resumable-stop/checkresult
 @@ -1,3 +1,4 @@
  #!/bin/sh
--test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 15
+-test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 14
 +set -e
-+test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 25
++test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 22
  grep -q '^resumable stop scenarios complete$' "$1"
 diff --git a/tests/resumable-stop/g33-followed-by-rapid.ngc b/tests/resumable-stop/g33-followed-by-rapid.ngc
 new file mode 100644
-index 0000000000..a12bcb3029
+index 0000000..a12bcb3
 --- /dev/null
 +++ b/tests/resumable-stop/g33-followed-by-rapid.ngc
 @@ -0,0 +1,7 @@
@@ -1388,7 +1388,7 @@ index 0000000000..a12bcb3029
 +M2
 diff --git a/tests/resumable-stop/g76-exit-taper.ngc b/tests/resumable-stop/g76-exit-taper.ngc
 new file mode 100644
-index 0000000000..5b04e6921e
+index 0000000..5b04e69
 --- /dev/null
 +++ b/tests/resumable-stop/g76-exit-taper.ngc
 @@ -0,0 +1,7 @@
@@ -1401,7 +1401,7 @@ index 0000000000..5b04e6921e
 +M2
 diff --git a/tests/resumable-stop/g76-handoff.ngc b/tests/resumable-stop/g76-handoff.ngc
 new file mode 100644
-index 0000000000..01a62a26a5
+index 0000000..01a62a2
 --- /dev/null
 +++ b/tests/resumable-stop/g76-handoff.ngc
 @@ -0,0 +1,7 @@
@@ -1414,7 +1414,7 @@ index 0000000000..01a62a26a5
 +M2
 diff --git a/tests/resumable-stop/g76-step.ngc b/tests/resumable-stop/g76-step.ngc
 new file mode 100644
-index 0000000000..c8ee28f7ed
+index 0000000..c8ee28f
 --- /dev/null
 +++ b/tests/resumable-stop/g76-step.ngc
 @@ -0,0 +1,4 @@
@@ -1424,7 +1424,7 @@ index 0000000000..c8ee28f7ed
 +M2
 diff --git a/tests/resumable-stop/g76-tapered-exit-taper.ngc b/tests/resumable-stop/g76-tapered-exit-taper.ngc
 new file mode 100644
-index 0000000000..488d2a9300
+index 0000000..488d2a9
 --- /dev/null
 +++ b/tests/resumable-stop/g76-tapered-exit-taper.ngc
 @@ -0,0 +1,7 @@
@@ -1437,7 +1437,7 @@ index 0000000000..488d2a9300
 +M2
 diff --git a/tests/resumable-stop/g76-tapered-step.ngc b/tests/resumable-stop/g76-tapered-step.ngc
 new file mode 100644
-index 0000000000..241f777682
+index 0000000..241f777
 --- /dev/null
 +++ b/tests/resumable-stop/g76-tapered-step.ngc
 @@ -0,0 +1,4 @@
@@ -1447,7 +1447,7 @@ index 0000000000..241f777682
 +M2
 diff --git a/tests/resumable-stop/g76-tapered.ngc b/tests/resumable-stop/g76-tapered.ngc
 new file mode 100644
-index 0000000000..b0eb997e19
+index 0000000..b0eb997
 --- /dev/null
 +++ b/tests/resumable-stop/g76-tapered.ngc
 @@ -0,0 +1,7 @@
@@ -1459,10 +1459,10 @@ index 0000000000..b0eb997e19
 +M5
 +M2
 diff --git a/tests/resumable-stop/test-ui.py b/tests/resumable-stop/test-ui.py
-index 13dc57d304..89bf59d175 100755
+index 078eee4..b0c58d8 100755
 --- a/tests/resumable-stop/test-ui.py
 +++ b/tests/resumable-stop/test-ui.py
-@@ -17,13 +17,13 @@ def fail(message):
+@@ -17,14 +17,30 @@ def fail(message):
      sys.exit(1)
  
  
@@ -1474,11 +1474,73 @@ index 13dc57d304..89bf59d175 100755
          if predicate():
              return
 -        time.sleep(0.02)
+-    fail(message)
 +        time.sleep(poll_interval)
-     fail(message)
++    fail(
++        "%s: X=%.6f Z=%.6f vel=%.6f queue=%d task_paused=%s "
++        "motion_paused=%s stepping=%s "
++        "interp=%d exec=%d"
++        % (
++            message,
++            s.position[0],
++            s.position[2],
++            s.current_vel,
++            s.queue,
++            s.task_paused,
++            s.paused,
++            s.single_stepping,
++            s.interp_state,
++            s.exec_state,
++        )
++    )
  
  
-@@ -447,6 +447,41 @@ def run_threading_stop_resume_test():
+ def wait_complete(message, timeout=10.0):
+@@ -202,6 +218,43 @@ def run_stop_single_step_test():
+     assert_outputs_stopped_after_program()
+ 
+ 
++def run_inflight_single_step_test():
++    open_auto_program("inflight-step.ngc")
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: s.queue >= 3
++        and s.position[0] > 1.0
++        and s.position[0] < 9.0,
++        "program did not prequeue later blocks during its first move",
++    )
++
++    c.auto(linuxcnc.AUTO_STEP)
++    wait_for(
++        lambda: s.single_stepping and not s.task_paused and not s.paused,
++        "in-flight Single Step did not remain unpaused while armed",
++    )
++    wait_for(
++        lambda: s.task_paused
++        and s.paused
++        and math.isclose(s.position[0], 10.0, abs_tol=0.01)
++        and abs(s.current_vel) < 0.001,
++        "in-flight Single Step did not finish the active source block",
++        timeout=15.0,
++    )
++
++    if s.queue < 3:
++        fail("in-flight Single Step did not preserve prequeued later blocks")
++
++    time.sleep(0.25)
++    s.poll()
++    if not math.isclose(s.position[0], 10.0, abs_tol=0.001):
++        fail("in-flight Single Step advanced into the next source block")
++
++    c.auto(linuxcnc.AUTO_RESUME)
++    wait_for_program_complete(40.0, timeout=10.0)
++
++
+ def run_rapid_resume_without_at_speed_test():
+     hal.set_p("spindle.0.at-speed", "false")
+     open_auto_program("rapid-then-feed.ngc")
+@@ -397,6 +450,41 @@ def run_threading_stop_resume_test():
      )
  
  
@@ -1520,7 +1582,7 @@ index 13dc57d304..89bf59d175 100755
  def run_fperrev_stop_resume_test():
      open_auto_program("fperrev.ngc")
      c.auto(linuxcnc.AUTO_RUN, 0)
-@@ -511,9 +546,9 @@ def run_g76_stop_resume_test():
+@@ -461,9 +549,9 @@ def run_g76_stop_resume_test():
      if s.position[2] > -4.90:
          fail("G76 stopped before its active threading TC completed")
  
@@ -1532,7 +1594,7 @@ index 13dc57d304..89bf59d175 100755
              % s.position[0]
          )
  
-@@ -532,6 +567,280 @@ def run_g76_stop_resume_test():
+@@ -482,6 +570,266 @@ def run_g76_stop_resume_test():
      assert_outputs_stopped_after_program()
  
  
@@ -1669,61 +1731,47 @@ index 13dc57d304..89bf59d175 100755
 +    )
 +
 +
-+def run_g76_stop_then_single_step_program(
-+    program, first_cut_x, expected_steps, label
-+):
-+    open_auto_program(program)
++def run_inflight_g76_single_step_test():
++    open_auto_program("g76.ngc")
 +    c.auto(linuxcnc.AUTO_RUN, 0)
 +
 +    wait_for(
-+        lambda: s.task_mode == linuxcnc.MODE_AUTO
-+        and s.position[0] < first_cut_x
++        lambda: s.queue > 3
++        and s.position[0] < 9.5
 +        and s.position[2] < -0.5
 +        and s.position[2] > -4.5,
-+        "%s did not enter its first synchronized pass" % label,
++        "G76 did not prequeue later passes during its first cut",
 +        timeout=15.0,
 +    )
 +
-+    c.stop()
-+    wait_complete("%s Stop command did not complete" % label)
++    c.auto(linuxcnc.AUTO_STEP)
 +    wait_for(
-+        lambda: s.stop_state == linuxcnc.STOP_STOPPED
-+        and s.task_paused
++        lambda: s.single_stepping and not s.task_paused and not s.paused,
++        "in-flight G76 Single Step did not remain unpaused while armed",
++    )
++    wait_for(
++        lambda: s.task_paused
++        and s.paused
 +        and abs(s.current_vel) < 0.001
 +        and s.position[2] <= -4.90
-+        and math.isclose(
-+            s.position[0], expected_steps[0][1], abs_tol=0.01
-+        ),
-+        "%s did not stop at its first pass clearance" % label,
++        and math.isclose(s.position[0], 10.4, abs_tol=0.01),
++        "in-flight G76 Single Step did not finish the active thread and clearance",
 +        timeout=20.0,
 +    )
 +
-+    if s.queue <= 0:
-+        fail("%s did not preserve prequeued later passes" % label)
-+
-+    for expected_approach, expected_clearance in expected_steps[1:]:
-+        step_g76_approach(expected_approach, label)
-+        step_g76_thread_and_clearance(expected_clearance, label)
++    stepped_x = s.position[0]
++    stepped_z = s.position[2]
++    time.sleep(0.25)
++    s.poll()
++    if (
++        not math.isclose(s.position[0], stepped_x, abs_tol=0.001)
++        or not math.isclose(s.position[2], stepped_z, abs_tol=0.001)
++    ):
++        fail("in-flight G76 Single Step advanced into the next approach")
 +
 +    c.auto(linuxcnc.AUTO_RESUME)
 +    wait_for_program_complete(20.0, expected_z=-5.0, timeout=20.0)
 +    assert_outputs_stopped_after_program()
-+
-+
-+def run_g76_stop_then_single_step_test():
-+    run_g76_stop_then_single_step_program(
-+        "g76.ngc", 9.5, ((10.4, 10.4), (10.2, 10.2), (10.0, 10.0)),
-+        "cylindrical G76",
-+    )
-+
-+
-+def run_tapered_g76_stop_then_single_step_test():
-+    run_g76_stop_then_single_step_program(
-+        "g76-tapered.ngc",
-+        8.6,
-+        ((10.4, 8.4), (10.2, 8.2), (10.0, 8.0)),
-+        "tapered-drive G76",
-+    )
 +
 +
 +def run_g76_exit_taper_stop_test(program, expected_clear_x, label):
@@ -1813,7 +1861,14 @@ index 13dc57d304..89bf59d175 100755
  def run_queued_threading_stop_resume_test():
      hal.set_p("spindle.0.at-speed", "false")
      open_auto_program("thread.ngc")
-@@ -791,8 +1100,17 @@ SCENARIOS = {
+@@ -734,14 +1082,23 @@ def run_css_stop_resume_test():
+ SCENARIOS = {
+     "ordinary": run_ordinary_stop_resume_test,
+     "single-step": run_stop_single_step_test,
++    "inflight-single-step": run_inflight_single_step_test,
+     "rapid-no-atspeed": run_rapid_resume_without_at_speed_test,
+     "paused-resume": lambda: run_stop_while_program_paused_test(False),
+     "paused-run": lambda: run_stop_while_program_paused_test(True),
      "abort-empty": run_abort_from_empty_stopped_queue_test,
      "queued-g33": run_queued_threading_stop_resume_test,
      "g33": run_threading_stop_resume_test,
@@ -1823,8 +1878,7 @@ index 13dc57d304..89bf59d175 100755
 +    "g76-tapered": run_tapered_g76_stop_resume_test,
 +    "g76-single-step": run_g76_single_step_test,
 +    "g76-tapered-single-step": run_tapered_g76_single_step_test,
-+    "g76-stop-single-step": run_g76_stop_then_single_step_test,
-+    "g76-tapered-stop-single-step": run_tapered_g76_stop_then_single_step_test,
++    "g76-inflight-single-step": run_inflight_g76_single_step_test,
 +    "g76-exit-taper": run_cylindrical_g76_exit_taper_stop_test,
 +    "g76-tapered-exit-taper": run_tapered_g76_exit_taper_stop_test,
 +    "g76-handoff-stress": run_g76_cut_retract_handoff_stress_test,
@@ -1832,7 +1886,7 @@ index 13dc57d304..89bf59d175 100755
      "orientation": run_spindle_orientation_stop_test,
      "dwell": run_dwell_stop_resume_test,
 diff --git a/tests/resumable-stop/test.ini b/tests/resumable-stop/test.ini
-index a97cb95f4b..ecfccd19be 100644
+index a97cb95..ecfccd1 100644
 --- a/tests/resumable-stop/test.ini
 +++ b/tests/resumable-stop/test.ini
 @@ -30,6 +30,7 @@ SPINDLES = 2
@@ -1844,10 +1898,10 @@ index a97cb95f4b..ecfccd19be 100644
  MAX_LINEAR_VELOCITY = 50
  MAX_LINEAR_JERK = 5000
 diff --git a/tests/resumable-stop/test.sh b/tests/resumable-stop/test.sh
-index 7bdacbb211..7c90c58a63 100755
+index 017d265..6246d49 100755
 --- a/tests/resumable-stop/test.sh
 +++ b/tests/resumable-stop/test.sh
-@@ -7,6 +7,11 @@ if nm -D -u "$EMC2_HOME/rtlib/motmod.so" | grep -q '[[:space:]]tpStop$'; then
+@@ -7,22 +7,36 @@ if nm -D -u "$EMC2_HOME/rtlib/motmod.so" | grep -q '[[:space:]]tpStop$'; then
      exit 1
  fi
  
@@ -1859,7 +1913,10 @@ index 7bdacbb211..7c90c58a63 100755
  scenarios=(
      ordinary
      single-step
-@@ -17,13 +22,22 @@ scenarios=(
++    inflight-single-step
+     rapid-no-atspeed
+     paused-resume
+     paused-run
      abort-empty
      queued-g33
      g33
@@ -1874,8 +1931,7 @@ index 7bdacbb211..7c90c58a63 100755
      css
 +    g76-single-step
 +    g76-tapered-single-step
-+    g76-stop-single-step
-+    g76-tapered-stop-single-step
++    g76-inflight-single-step
 +    g76-exit-taper
 +    g76-tapered-exit-taper
 +    g76-handoff-stress

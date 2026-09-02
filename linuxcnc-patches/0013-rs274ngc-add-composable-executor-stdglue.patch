@@ -499,7 +499,7 @@ index f8217637fc..7d9928caf3 100644
 +
 +void pycontext::close_generator()
 +{
-+    if (!impl->generator.ptr())
++    if (!impl->generator.ptr() || impl->generator.ptr() == Py_None)
 +        return;
 +
 +    try {

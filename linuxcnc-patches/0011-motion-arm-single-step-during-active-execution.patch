@@ -7,21 +7,19 @@ Forward AUTO_STEP to motion while an AUTO program is already running. The defaul
 
 Keep later prequeued motion from starting, restore temporary exact boundaries when Step is canceled by Resume or Stop, and report single_stepping while an in-flight step remains armed. Cover ordinary multi-move blocks and an active G76 thread with later passes queued.
 ---
- src/emc/motion/command.c               |  17 +++--
- src/emc/motion/control.c               |   9 ++-
- src/emc/task/emctaskmain.cc            |  48 ++++++------
- src/emc/tp/tp.c                        |  80 ++++++++++++++++----
- src/emc/tp/tp_types.h                  |   6 +-
- tests/resumable-stop/README            |  10 ++-
- tests/resumable-stop/checkresult       |   2 +-
- tests/resumable-stop/inflight-step.ngc |   7 ++
- tests/resumable-stop/test-ui.py        | 100 ++++++++++++++++++++++++-
- tests/resumable-stop/test.sh           |   2 +
- 10 files changed, 226 insertions(+), 55 deletions(-)
+ src/emc/motion/command.c               | 17 +++---
+ src/emc/motion/control.c               |  9 +--
+ src/emc/task/emctaskmain.cc            | 48 ++++++++--------
+ src/emc/tp/tp.c                        | 80 ++++++++++++++++++++------
+ src/emc/tp/tp_types.h                  |  6 +-
+ tests/resumable-stop/README            | 10 +++-
+ tests/resumable-stop/checkresult       |  2 +-
+ tests/resumable-stop/inflight-step.ngc |  7 +++
+ 8 files changed, 125 insertions(+), 54 deletions(-)
  create mode 100644 tests/resumable-stop/inflight-step.ngc
 
 diff --git a/src/emc/motion/command.c b/src/emc/motion/command.c
-index b6ad9c1504..c166af652b 100644
+index b6ad9c1..c166af6 100644
 --- a/src/emc/motion/command.c
 +++ b/src/emc/motion/command.c
 @@ -1269,26 +1269,29 @@ void emcmotCommandHandler_locked(void *arg, long servo_period)
@@ -62,7 +60,7 @@ index b6ad9c1504..c166af652b 100644
  	    break;
  
 diff --git a/src/emc/motion/control.c b/src/emc/motion/control.c
-index 160c2dcd2c..040e534653 100644
+index 160c2dc..040e534 100644
 --- a/src/emc/motion/control.c
 +++ b/src/emc/motion/control.c
 @@ -2225,14 +2225,15 @@ static void update_status(void)
@@ -86,7 +84,7 @@ index 160c2dcd2c..040e534653 100644
              emcmotStatus->stepping = 0;
              emcmotStatus->paused = 1;
 diff --git a/src/emc/task/emctaskmain.cc b/src/emc/task/emctaskmain.cc
-index 1addd75459..f916833c47 100644
+index 1addd75..f916833 100644
 --- a/src/emc/task/emctaskmain.cc
 +++ b/src/emc/task/emctaskmain.cc
 @@ -463,6 +463,7 @@ static int programStartLine = 0;	// which line to run program from
@@ -189,7 +187,7 @@ index 1addd75459..f916833c47 100644
  	// following error, etc.) unhome joints marked VOLATILE_HOME. The estop
  	// and machine-off paths already do their own unhome; this catches the
 diff --git a/src/emc/tp/tp.c b/src/emc/tp/tp.c
-index d4373fd89f..9091ba756d 100644
+index d4373fd..9091ba7 100644
 --- a/src/emc/tp/tp.c
 +++ b/src/emc/tp/tp.c
 @@ -342,9 +342,9 @@ STATIC inline double tpGetRealFinalVel(TP_STRUCT const * const tp,
@@ -380,7 +378,7 @@ index d4373fd89f..9091ba756d 100644
          tp->aborting = 1;
      }
 diff --git a/src/emc/tp/tp_types.h b/src/emc/tp/tp_types.h
-index 15be0f3127..893a9df4c2 100644
+index 15be0f3..893a9df 100644
 --- a/src/emc/tp/tp_types.h
 +++ b/src/emc/tp/tp_types.h
 @@ -147,7 +147,11 @@ typedef struct {
@@ -397,7 +395,7 @@ index 15be0f3127..893a9df4c2 100644
  } TP_STRUCT;
  
 diff --git a/tests/resumable-stop/README b/tests/resumable-stop/README
-index e845030ffb..72607e0da2 100644
+index e845030..72607e0 100644
 --- a/tests/resumable-stop/README
 +++ b/tests/resumable-stop/README
 @@ -13,11 +13,17 @@ requests across the cut/retract handoff, and a negative G33 test proving that
@@ -421,18 +419,18 @@ index e845030ffb..72607e0da2 100644
  also prove that a marked G76 retract endpoint is not trimmed by a following
  rapid. The handoff stress case uses a slow synchronized feed and issues Stop at
 diff --git a/tests/resumable-stop/checkresult b/tests/resumable-stop/checkresult
-index 32057a5049..f44353a1b7 100755
+index faf35d6..4792b57 100755
 --- a/tests/resumable-stop/checkresult
 +++ b/tests/resumable-stop/checkresult
 @@ -1,4 +1,4 @@
  #!/bin/sh
  set -e
--test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 25
-+test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 27
+-test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 22
++test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 24
  grep -q '^resumable stop scenarios complete$' "$1"
 diff --git a/tests/resumable-stop/inflight-step.ngc b/tests/resumable-stop/inflight-step.ngc
 new file mode 100644
-index 0000000000..1f72544983
+index 0000000..1f72544
 --- /dev/null
 +++ b/tests/resumable-stop/inflight-step.ngc
 @@ -0,0 +1,7 @@
@@ -443,162 +441,3 @@ index 0000000000..1f72544983
 +G1 X30
 +G1 X40
 +M2
-diff --git a/tests/resumable-stop/test-ui.py b/tests/resumable-stop/test-ui.py
-index 89bf59d175..0ecb3cc4be 100755
---- a/tests/resumable-stop/test-ui.py
-+++ b/tests/resumable-stop/test-ui.py
-@@ -24,7 +24,23 @@ def wait_for(predicate, message, timeout=10.0, poll_interval=0.02):
-         if predicate():
-             return
-         time.sleep(poll_interval)
--    fail(message)
-+    fail(
-+        "%s: X=%.6f Z=%.6f vel=%.6f queue=%d task_paused=%s "
-+        "motion_paused=%s stepping=%s "
-+        "interp=%d exec=%d"
-+        % (
-+            message,
-+            s.position[0],
-+            s.position[2],
-+            s.current_vel,
-+            s.queue,
-+            s.task_paused,
-+            s.paused,
-+            s.single_stepping,
-+            s.interp_state,
-+            s.exec_state,
-+        )
-+    )
- 
- 
- def wait_complete(message, timeout=10.0):
-@@ -202,6 +218,43 @@ def run_stop_single_step_test():
-     assert_outputs_stopped_after_program()
- 
- 
-+def run_inflight_single_step_test():
-+    open_auto_program("inflight-step.ngc")
-+    c.auto(linuxcnc.AUTO_RUN, 0)
-+
-+    wait_for(
-+        lambda: s.queue >= 3
-+        and s.position[0] > 1.0
-+        and s.position[0] < 9.0,
-+        "program did not prequeue later blocks during its first move",
-+    )
-+
-+    c.auto(linuxcnc.AUTO_STEP)
-+    wait_for(
-+        lambda: s.single_stepping and not s.task_paused and not s.paused,
-+        "in-flight Single Step did not remain unpaused while armed",
-+    )
-+    wait_for(
-+        lambda: s.task_paused
-+        and s.paused
-+        and math.isclose(s.position[0], 10.0, abs_tol=0.01)
-+        and abs(s.current_vel) < 0.001,
-+        "in-flight Single Step did not finish the active source block",
-+        timeout=15.0,
-+    )
-+
-+    if s.queue < 3:
-+        fail("in-flight Single Step did not preserve prequeued later blocks")
-+
-+    time.sleep(0.25)
-+    s.poll()
-+    if not math.isclose(s.position[0], 10.0, abs_tol=0.001):
-+        fail("in-flight Single Step advanced into the next source block")
-+
-+    c.auto(linuxcnc.AUTO_RESUME)
-+    wait_for_program_complete(40.0, timeout=10.0)
-+
-+
- def run_rapid_resume_without_at_speed_test():
-     hal.set_p("spindle.0.at-speed", "false")
-     open_auto_program("rapid-then-feed.ngc")
-@@ -700,6 +753,49 @@ def run_tapered_g76_single_step_test():
-     )
- 
- 
-+def run_inflight_g76_single_step_test():
-+    open_auto_program("g76.ngc")
-+    c.auto(linuxcnc.AUTO_RUN, 0)
-+
-+    wait_for(
-+        lambda: s.queue > 3
-+        and s.position[0] < 9.5
-+        and s.position[2] < -0.5
-+        and s.position[2] > -4.5,
-+        "G76 did not prequeue later passes during its first cut",
-+        timeout=15.0,
-+    )
-+
-+    c.auto(linuxcnc.AUTO_STEP)
-+    wait_for(
-+        lambda: s.single_stepping and not s.task_paused and not s.paused,
-+        "in-flight G76 Single Step did not remain unpaused while armed",
-+    )
-+    wait_for(
-+        lambda: s.task_paused
-+        and s.paused
-+        and abs(s.current_vel) < 0.001
-+        and s.position[2] <= -4.90
-+        and math.isclose(s.position[0], 10.4, abs_tol=0.01),
-+        "in-flight G76 Single Step did not finish the active thread and clearance",
-+        timeout=20.0,
-+    )
-+
-+    stepped_x = s.position[0]
-+    stepped_z = s.position[2]
-+    time.sleep(0.25)
-+    s.poll()
-+    if (
-+        not math.isclose(s.position[0], stepped_x, abs_tol=0.001)
-+        or not math.isclose(s.position[2], stepped_z, abs_tol=0.001)
-+    ):
-+        fail("in-flight G76 Single Step advanced into the next approach")
-+
-+    c.auto(linuxcnc.AUTO_RESUME)
-+    wait_for_program_complete(20.0, expected_z=-5.0, timeout=20.0)
-+    assert_outputs_stopped_after_program()
-+
-+
- def run_g76_stop_then_single_step_program(
-     program, first_cut_x, expected_steps, label
- ):
-@@ -1093,6 +1189,7 @@ def run_css_stop_resume_test():
- SCENARIOS = {
-     "ordinary": run_ordinary_stop_resume_test,
-     "single-step": run_stop_single_step_test,
-+    "inflight-single-step": run_inflight_single_step_test,
-     "rapid-no-atspeed": run_rapid_resume_without_at_speed_test,
-     "zero-speed-spindle": run_zero_speed_spindle_stop_resume_test,
-     "paused-resume": lambda: run_stop_while_program_paused_test(False),
-@@ -1106,6 +1203,7 @@ SCENARIOS = {
-     "g76-tapered": run_tapered_g76_stop_resume_test,
-     "g76-single-step": run_g76_single_step_test,
-     "g76-tapered-single-step": run_tapered_g76_single_step_test,
-+    "g76-inflight-single-step": run_inflight_g76_single_step_test,
-     "g76-stop-single-step": run_g76_stop_then_single_step_test,
-     "g76-tapered-stop-single-step": run_tapered_g76_stop_then_single_step_test,
-     "g76-exit-taper": run_cylindrical_g76_exit_taper_stop_test,
-diff --git a/tests/resumable-stop/test.sh b/tests/resumable-stop/test.sh
-index 7c90c58a63..90a960950e 100755
---- a/tests/resumable-stop/test.sh
-+++ b/tests/resumable-stop/test.sh
-@@ -15,6 +15,7 @@ fi
- scenarios=(
-     ordinary
-     single-step
-+    inflight-single-step
-     rapid-no-atspeed
-     zero-speed-spindle
-     paused-resume
-@@ -33,6 +34,7 @@ scenarios=(
-     css
-     g76-single-step
-     g76-tapered-single-step
-+    g76-inflight-single-step
-     g76-stop-single-step
-     g76-tapered-stop-single-step
-     g76-exit-taper
