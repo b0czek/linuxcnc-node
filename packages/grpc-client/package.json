@@ -1,6 +1,6 @@
 {
   "name": "@linuxcnc-node/grpc-client",
-  "version": "1.0.0",
+  "version": "5.0.0",
   "description": "Raw generated TypeScript contract for linuxcnc.v1 gRPC",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

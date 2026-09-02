@@ -1,5 +1,32 @@
 # @linuxcnc-node/types
 
+## 5.0.0
+
+### Major Changes
+
+- ecdd07a: Add the transport-independent v5 LinuxCNC domain contract and the initial
+  raw `linuxcnc.v1` gRPC client package. Migrate HAL Inspector from copied
+  bindings to the generated HAL and scope clients while preserving its UI
+  contracts. Keep position-history configuration and clearing on gRPC, move
+  renderer telemetry to the daemon's versioned binary WebSocket stream, and keep
+  the domain value union aligned with exact 64-bit transport semantics.
+
+### Minor Changes
+
+- f243489: Clarify machine error sequences, support replaying retained errors, and expose
+  wrapped LinuxCNC command serials as unsigned 32-bit values.
+- 8e4aa21: Expose nine-axis tool wear offsets in status and preserve omitted tool-table
+  fields and coordinate tails during partial `setTool` updates. Route tool
+  upsert, relocation, and deletion through LinuxCNC-owned transactional NML
+  commands with validation, durable persistence, and normal command completion.
+  Remote CRUD supports file-backed random and nonrandom tool tables;
+  the pinned LinuxCNC build rejects `DB_PROGRAM` during IO initialization.
+
+### Patch Changes
+
+- 4545481: Expose ordered cutter-compensation OFF/LEFT/RIGHT events in G-code preview
+  streams so clients can distinguish compensated path segments.
+
 ## 4.0.0
 
 ### Major Changes

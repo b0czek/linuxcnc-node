@@ -1,6 +1,6 @@
 {
   "name": "@linuxcnc-node/types",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "description": "Transport-independent TypeScript domain types for LinuxCNC",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

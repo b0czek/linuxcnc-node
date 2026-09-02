@@ -1,6 +1,6 @@
 {
   "name": "@linuxcnc-node/hal-inspector",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/b0czek/linuxcnc-node.git",

@@ -1,6 +1,6 @@
 {
   "name": "@linuxcnc-node/websocket-client",
-  "version": "1.0.0",
+  "version": "5.0.0",
   "description": "Browser WebSocket client for the linuxcnc.v1 protobuf data plane",
   "type": "module",
   "main": "dist/index.js",
