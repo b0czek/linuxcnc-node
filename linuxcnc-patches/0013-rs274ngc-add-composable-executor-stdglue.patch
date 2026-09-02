@@ -1,0 +1,936 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dariusz Majnert <dariusz.majnert@gmail.com>
+Date: Wed, 2 Sep 2026 11:36:57 +0200
+Subject: [PATCH] rs274ngc: add composable executor stdglue
+
+---
+ docs/src/remap/remap.adoc                    | 127 ++++++++++
+ nc_files/remap_lib/python-stdglue/stdglue.py | 253 ++++++++++++++++++-
+ src/Makefile                                 |   3 +
+ src/emc/rs274ngc/interp_internal.hh          |   1 +
+ src/emc/rs274ngc/interp_python.cc            |  24 ++
+ src/emc/rs274ngc/interp_python.hh            |   3 +
+ src/emc/rs274ngc/rs274ngc_pre.cc             |   1 +
+ tests/remap/executor/checkresult             |   5 +
+ tests/remap/executor/remap.py                |  52 ++++
+ tests/remap/executor/test-ui.py              | 177 +++++++++++++
+ tests/remap/executor/test.ini                |  95 +++++++
+ tests/remap/executor/test.sh                 |   8 +
+ tests/remap/executor/toplevel.py             |  18 ++
+ 13 files changed, 765 insertions(+), 2 deletions(-)
+ create mode 100755 tests/remap/executor/checkresult
+ create mode 100644 tests/remap/executor/remap.py
+ create mode 100755 tests/remap/executor/test-ui.py
+ create mode 100644 tests/remap/executor/test.ini
+ create mode 100755 tests/remap/executor/test.sh
+ create mode 100644 tests/remap/executor/toplevel.py
+
+diff --git a/docs/src/remap/remap.adoc b/docs/src/remap/remap.adoc
+index 218062048c..b263f1e959 100644
+--- a/docs/src/remap/remap.adoc
++++ b/docs/src/remap/remap.adoc
+@@ -1576,6 +1576,133 @@ For a slightly more advanced example, see `tests/remap/predefined-named-params`.
+ Since many remapping tasks are very similar, I've started collecting working prolog and epilog routines in a single Python module.
+ These can currently be found in 'ncfiles/remap_lib/python-stdglue/stdglue.py' and provide the following routines:
+ 
++[[remap:executor-stdglue]]
++=== Composable executor transactions
++
++The standard glue provides `executor_transact` and `executor_execute` for
++Python remaps that start an asynchronous machine action and stop program
++execution until it completes. The helpers own only the request lifecycle. The
++machine configuration still defines each remap and supplies the endpoint that
++performs the request.
++
++`executor_transact` begins one request, waits cooperatively, releases a
++terminal request, cancels it on timeout or interpreter abort, and returns an
++`ExecutorResponse` without deciding whether the response is acceptable.
++`executor_execute` adds the common policy: only `EXECUTOR_SUCCEEDED` continues
++program execution; failure, cancellation, timeout, and transport errors become
++interpreter errors. Both helpers default to a 10-second timeout.
++
++For example, a machine can define ordinary remaps around the standard policy:
++
++[source,ini]
++----
++[RS274NGC]
++REMAP=M10 modalgroup=10 python=m10_clamp
++REMAP=M11 modalgroup=10 python=m11_unclamp
++----
++
++[source,python]
++----
++# remap.py
++from stdglue import *
++
++def m10_clamp(self, **words):
++    check_clamping_interlocks(self)
++    response = yield from executor_execute(self, self.chuck, request=0)
++    record_clamping_result(response)
++
++def m11_unclamp(self, **words):
++    yield from executor_execute(self, self.chuck, request=1, timeout=6.0)
++----
++
++For custom terminal policy, call `executor_transact` instead:
++
++[source,python]
++----
++def m20_custom_action(self, **words):
++    response = yield from executor_transact(self, self.tailstock, request=7)
++    if response.outcome == EXECUTOR_FAILED and response.result == 42:
++        handle_machine_specific_result(self)
++        return
++    if not response.succeeded:
++        self.set_errormsg(response.message or "tailstock action failed")
++        yield INTERP_ERROR
++----
++
++An executor endpoint is transport-independent. Its `begin(request)` method
++returns an operation with three methods:
++
++* `poll()` performs a nonblocking check and returns `None` while pending or an
++  `ExecutorResponse` when terminal.
++* `release()` releases a terminal request.
++* `cancel()` abandons and cancels a nonterminal request.
++
++Endpoints may use HAL, a userspace service, shared memory, sockets, simulation,
++or another machine-specific transport. `ExecutorResponse` carries `outcome`,
++an arbitrary `result`, an optional `message`, and the convenience property
++`succeeded`.
++
++==== Standard HAL endpoint
++
++`HalExecutor` is the supplied HAL implementation. It does not construct or
++take ownership of a HAL component and does not call `ready()`. The top-level
++initializer passes an existing component; this lets the machine put several
++executors and its own pins in one component before making it ready.
++
++[source,python]
++----
++# toplevel.py
++import hal
++import remap
++
++def __init__(self):
++    remap.init_stdglue(self)
++    component = hal.component("remap") if self.task else None
++
++    self.chuck = remap.HalExecutor(self, "chuck", component)
++    self.tailstock = remap.HalExecutor(self, "tailstock", component)
++
++    if component is not None:
++        component.newpin("machine-specific", hal.HAL_BIT, hal.HAL_OUT)
++        component.ready()
++    self.remap_hal = component
++----
++
++For a component named `remap`, `HalExecutor(self, "chuck", component)` adds:
++
++[cols="2,1,1,4"]
++|===
++|Pin |Type |Direction |Meaning
++
++|`remap.executor.chuck.request-id`
++|u32 |out |Nonzero identifier of the current request
++
++|`remap.executor.chuck.opcode`
++|s32 |out |Integer request passed to `begin`
++
++|`remap.executor.chuck.request`
++|bit |out |The request is active
++
++|`remap.executor.chuck.cancel`
++|bit |out |The request was abandoned and must be cancelled
++
++|`remap.executor.chuck.response-id`
++|u32 |in |Identifier of the terminal response
++
++|`remap.executor.chuck.state`
++|s32 |in |Responder state
++
++|`remap.executor.chuck.result`
++|s32 |in |Machine-defined terminal result or diagnostic code
++|===
++
++HAL states are `0` unavailable, `1` idle, `2` accepted, `3` running, `4`
++succeeded, `5` failed, and `6` cancelled. To complete a request, the responder
++first writes the terminal state and result, then copies `request-id` to
++`response-id` as the commit marker. Matching IDs prevent stale responses from
++completing a later request. `cancel` remains asserted until the next request
++so realtime logic cannot miss a short userspace pulse.
++
+ === T: +prepare_prolog+ and +prepare_epilog+
+ 
+ These wrap a NGC procedure for T__x__ Tool Prepare.
+diff --git a/nc_files/remap_lib/python-stdglue/stdglue.py b/nc_files/remap_lib/python-stdglue/stdglue.py
+index a3b93019af..4b49e0beeb 100644
+--- a/nc_files/remap_lib/python-stdglue/stdglue.py
++++ b/nc_files/remap_lib/python-stdglue/stdglue.py
+@@ -16,6 +16,9 @@
+ # Usage:
+ #REMAP=G84.3  modalgroup=1 argspec=xyzqp prolog=cycle_prolog ngc=g843 epilog=cycle_epilog
+ 
++import math
++import time
++
+ import emccanon
+ from interpreter import *
+ from emccanon import MESSAGE
+@@ -40,6 +43,254 @@ def build_hal(self):
+     except Exception as e:
+         print(e)
+ 
++
++EXECUTOR_SUCCEEDED = "succeeded"
++EXECUTOR_FAILED = "failed"
++EXECUTOR_CANCELLED = "cancelled"
++EXECUTOR_TIMED_OUT = "timed-out"
++
++EXECUTOR_STATE_UNAVAILABLE = 0
++EXECUTOR_STATE_IDLE = 1
++EXECUTOR_STATE_ACCEPTED = 2
++EXECUTOR_STATE_RUNNING = 3
++EXECUTOR_STATE_SUCCEEDED = 4
++EXECUTOR_STATE_FAILED = 5
++EXECUTOR_STATE_CANCELLED = 6
++
++_EXECUTOR_DEFAULT_TIMEOUT = 10.0
++_EXECUTOR_POLL_INTERVAL = 0.01
++
++
++class ExecutorResponse:
++    """Transport-independent terminal result returned by an executor."""
++
++    def __init__(self, outcome, result=None, message=None):
++        self.outcome = outcome
++        self.result = result
++        self.message = message
++
++    @property
++    def succeeded(self):
++        return self.outcome == EXECUTOR_SUCCEEDED
++
++
++def _executor_timeout(timeout):
++    return ExecutorResponse(
++        EXECUTOR_TIMED_OUT,
++        message="timed out after %.3f seconds" % timeout,
++    )
++
++
++def executor_transact(
++    self,
++    endpoint,
++    request,
++    timeout=_EXECUTOR_DEFAULT_TIMEOUT,
++):
++    """Run one request and return its terminal response without judging it.
++
++    An endpoint's begin(request) method returns an operation with nonblocking
++    poll(), release(), and cancel() methods. poll() returns None while pending
++    and an ExecutorResponse at completion. The operation is released after any
++    terminal response and cancelled on timeout, interpreter error, or abort.
++    """
++
++    if not self.task:
++        return ExecutorResponse(EXECUTOR_SUCCEEDED)
++
++    try:
++        timeout = float(timeout)
++    except (TypeError, ValueError):
++        raise ValueError("executor timeout must be a number")
++    if not math.isfinite(timeout) or timeout <= 0.0:
++        raise ValueError("executor timeout must be finite and greater than zero")
++
++    operation = None
++    finalized = False
++    try:
++        operation = endpoint.begin(request)
++        deadline = time.monotonic() + timeout
++
++        while True:
++            remaining = deadline - time.monotonic()
++            if remaining <= 0.0:
++                finalized = True
++                operation.cancel()
++                return _executor_timeout(timeout)
++
++            response = operation.poll()
++            if response is not None:
++                if not isinstance(response, ExecutorResponse):
++                    raise TypeError(
++                        "executor poll() must return None or ExecutorResponse"
++                    )
++                if time.monotonic() >= deadline:
++                    finalized = True
++                    operation.cancel()
++                    return _executor_timeout(timeout)
++                finalized = True
++                operation.release()
++                return response
++
++            emccanon.DWELL(min(_EXECUTOR_POLL_INTERVAL, remaining))
++            yield INTERP_EXECUTE_FINISH
++    finally:
++        if operation is not None and not finalized:
++            finalized = True
++            operation.cancel()
++
++
++def executor_execute(
++    self,
++    endpoint,
++    request,
++    timeout=_EXECUTOR_DEFAULT_TIMEOUT,
++):
++    """Run one request and turn every non-success outcome into an error."""
++
++    endpoint_name = getattr(endpoint, "name", type(endpoint).__name__)
++    try:
++        response = yield from executor_transact(
++            self,
++            endpoint,
++            request,
++            timeout=timeout,
++        )
++    except Exception as error:
++        self.set_errormsg("executor '%s': %s" % (endpoint_name, error))
++        yield INTERP_ERROR
++        return
++
++    if response.succeeded:
++        return response
++
++    message = response.message
++    if not message:
++        message = "%s with result %s" % (response.outcome, response.result)
++    self.set_errormsg("executor '%s': %s" % (endpoint_name, message))
++    yield INTERP_ERROR
++
++
++class HalExecutor:
++    """HAL endpoint using pins added to a caller-owned component.
++
++    The caller is responsible for constructing the component before this
++    endpoint, retaining it, and calling ready() after all endpoints and custom
++    pins have been added.
++    """
++
++    def __init__(self, interpreter, name, component):
++        self.name = str(name)
++        self._component = component
++        self._prefix = "executor.%s." % self.name
++        self._active = False
++        self._active_request_id = 0
++        self._next_request_id = 1
++        self._enabled = bool(interpreter.task)
++
++        if not self._enabled:
++            return
++        if component is None:
++            raise ValueError("a task HalExecutor requires a HAL component")
++
++        import hal
++
++        component.newpin(self._prefix + "request-id", hal.HAL_U32, hal.HAL_OUT)
++        component.newpin(self._prefix + "opcode", hal.HAL_S32, hal.HAL_OUT)
++        component.newpin(self._prefix + "request", hal.HAL_BIT, hal.HAL_OUT)
++        component.newpin(self._prefix + "cancel", hal.HAL_BIT, hal.HAL_OUT)
++        component.newpin(self._prefix + "response-id", hal.HAL_U32, hal.HAL_IN)
++        component.newpin(self._prefix + "state", hal.HAL_S32, hal.HAL_IN)
++        component.newpin(self._prefix + "result", hal.HAL_S32, hal.HAL_IN)
++
++        component[self._prefix + "request-id"] = 0
++        component[self._prefix + "opcode"] = 0
++        component[self._prefix + "request"] = False
++        component[self._prefix + "cancel"] = False
++
++    def begin(self, request):
++        if not self._enabled:
++            raise RuntimeError("preview executor requests are not started")
++        if self._active:
++            raise RuntimeError("another request is already active")
++
++        try:
++            opcode = int(request)
++        except (TypeError, ValueError):
++            raise ValueError("HAL executor request must be an integer opcode")
++        if opcode < -2147483648 or opcode > 2147483647:
++            raise ValueError("HAL executor opcode is outside the s32 range")
++
++        request_id = self._next_request_id
++        self._next_request_id = (request_id + 1) & 0xFFFFFFFF
++        if self._next_request_id == 0:
++            self._next_request_id = 1
++
++        self._active = True
++        self._active_request_id = request_id
++        try:
++            self._component[self._prefix + "cancel"] = False
++            self._component[self._prefix + "request-id"] = request_id
++            self._component[self._prefix + "opcode"] = opcode
++            self._component[self._prefix + "request"] = True
++        except Exception:
++            self._active = False
++            self._active_request_id = 0
++            raise
++
++        return _HalExecutorOperation(self, request_id)
++
++    def _poll(self, request_id):
++        if int(self._component[self._prefix + "response-id"]) != request_id:
++            return None
++
++        state = int(self._component[self._prefix + "state"])
++        result = int(self._component[self._prefix + "result"])
++        if state == EXECUTOR_STATE_SUCCEEDED:
++            return ExecutorResponse(EXECUTOR_SUCCEEDED, result=result)
++        if state == EXECUTOR_STATE_FAILED:
++            return ExecutorResponse(EXECUTOR_FAILED, result=result)
++        if state == EXECUTOR_STATE_CANCELLED:
++            return ExecutorResponse(EXECUTOR_CANCELLED, result=result)
++        return ExecutorResponse(
++            EXECUTOR_FAILED,
++            result=result,
++            message="response %d used non-terminal state %d" % (request_id, state),
++        )
++
++    def _finish(self, request_id, cancel):
++        if not self._active or self._active_request_id != request_id:
++            return
++        if cancel:
++            self._component[self._prefix + "cancel"] = True
++        self._component[self._prefix + "request"] = False
++        self._active = False
++        self._active_request_id = 0
++
++
++class _HalExecutorOperation:
++    def __init__(self, endpoint, request_id):
++        self._endpoint = endpoint
++        self._request_id = request_id
++        self._closed = False
++
++    def poll(self):
++        if self._closed:
++            raise RuntimeError("executor operation is already closed")
++        return self._endpoint._poll(self._request_id)
++
++    def release(self):
++        if self._closed:
++            return
++        self._closed = True
++        self._endpoint._finish(self._request_id, cancel=False)
++
++    def cancel(self):
++        if self._closed:
++            return
++        self._closed = True
++        self._endpoint._finish(self._request_id, cancel=True)
++
+ # REMAP=S   prolog=setspeed_prolog  ngc=setspeed epilog=setspeed_epilog
+ # exposed parameter: #<speed>
+ 
+@@ -655,5 +906,3 @@ def tool_probe_m6(self, **words):
+         self.set_errormsg("tool_probe_m6 remap error." )
+         yield INTERP_ERROR
+ 
+-
+-
+diff --git a/src/Makefile b/src/Makefile
+index 35c77b38ac..fa06ec5664 100644
+--- a/src/Makefile
++++ b/src/Makefile
+@@ -711,6 +711,7 @@ install-headless-dirs:
+ 		$(DESTDIR)$(bindir) $(DESTDIR)$(libdir) $(DESTDIR)/$(libdir)/linuxcnc \
+ 		$(DESTDIR)$(includedir)/linuxcnc $(DESTDIR)$(tcldir) \
+ 		$(DESTDIR)$(tcldir)/msgs $(DESTDIR)$(datadir)/linuxcnc/hallib \
++		$(DESTDIR)$(ncfilesdir)/remap_lib/python-stdglue \
+ 		$(DESTDIR)$(mandir)/man1 $(DESTDIR)$(mandir)/man3 $(DESTDIR)$(mandir)/man9
+ 
+ install-headless: install-headless-dirs
+@@ -735,6 +736,8 @@ install-headless: install-headless-dirs
+ 		../lib/python/hal.py ../lib/python/linuxcnc_util.py ../lib/python/nf.py \
+ 		../lib/python/pyhal.py ../lib/python/raster.py ../lib/python/tooldb.py $(DESTDIR)$(SITEPY)
+ 	$(FILE) ../lib/python/rs274/*.py $(DESTDIR)$(SITEPY)/rs274
++	$(FILE) ../nc_files/remap_lib/python-stdglue/stdglue.py \
++		$(DESTDIR)$(ncfilesdir)/remap_lib/python-stdglue
+ ifneq ($(BUILD_MANPAGES),no)
+ 	$(FILE) ../docs/man/man1/*.1 $(DESTDIR)$(mandir)/man1
+ 	$(FILE) $(wildcard ../docs/man/man3/*.3) $(DESTDIR)$(mandir)/man3
+diff --git a/src/emc/rs274ngc/interp_internal.hh b/src/emc/rs274ngc/interp_internal.hh
+index fed82a67d8..e7e3497d34 100644
+--- a/src/emc/rs274ngc/interp_internal.hh
++++ b/src/emc/rs274ngc/interp_internal.hh
+@@ -594,6 +594,7 @@ struct pycontext {
+     pycontext(const struct pycontext &);
+     pycontext &operator=(const struct pycontext &);
+     ~pycontext();
++    void close_generator();
+     pycontext_impl *impl;
+ };
+ 
+diff --git a/src/emc/rs274ngc/interp_python.cc b/src/emc/rs274ngc/interp_python.cc
+index f8217637fc..7d9928caf3 100644
+--- a/src/emc/rs274ngc/interp_python.cc
++++ b/src/emc/rs274ngc/interp_python.cc
+@@ -151,6 +151,8 @@ int Interp::pycall(setup_pointer /*settings*/,
+ 		    frame->pystuff.impl->py_return_type = RET_STOPITERATION;
+ 		    bp::handle_exception();
+ 		    PyErr_Clear();
++		    frame->pystuff.impl->generator_next = bp::object();
++		    frame->pystuff.impl->generator = bp::object();
+ 		    logPy("pycall: call generator - StopIteration exception");
+ 		    return INTERP_OK;
+ 		} else  {
+@@ -194,6 +196,7 @@ int Interp::pycall(setup_pointer /*settings*/,
+ 
+ 		    // a generator was returned. This must have been the first time call to a handler
+ 		    // which contains a yield. Extract next() method.
++		    frame->pystuff.impl->generator = retval;
+ 		    frame->pystuff.impl->generator_next = bp::getattr(retval, "__next__");
+ 		    // and  call it for the first time.
+ 		    // Expect execution up to first 'yield INTERP_EXECUTE_FINISH'.
+@@ -299,3 +302,24 @@ pycontext &pycontext::operator=(const pycontext &other) {
+     impl = new pycontext_impl(*other.impl);
+     return *this;
+ }
++
++void pycontext::close_generator()
++{
++    if (!impl->generator.ptr())
++        return;
++
++    try {
++        impl->generator.attr("close")();
++    } catch (bp::error_already_set &) {
++        std::string msg;
++        if (PyErr_Occurred())
++            msg = handle_pyerror();
++        bp::handle_exception();
++        PyErr_Clear();
++        fprintf(stderr, "error closing aborted Python remap generator: %s\n",
++                msg.c_str());
++    }
++
++    impl->generator_next = bp::object();
++    impl->generator = bp::object();
++}
+diff --git a/src/emc/rs274ngc/interp_python.hh b/src/emc/rs274ngc/interp_python.hh
+index 3fcf26ba20..66155d9945 100644
+--- a/src/emc/rs274ngc/interp_python.hh
++++ b/src/emc/rs274ngc/interp_python.hh
+@@ -10,6 +10,9 @@ struct pycontext_impl {
+     int py_return_type;   // type of Python return value - enum retopts 
+     double py_returned_double;
+     int py_returned_int;
++    // Keep the generator itself so abort can close it and run Python finally
++    // blocks before the remap context is discarded.
++    boost::python::object generator;
+     // generator object next method as returned if Python function contained a yield statement
+     boost::python::object generator_next; 
+ };
+diff --git a/src/emc/rs274ngc/rs274ngc_pre.cc b/src/emc/rs274ngc/rs274ngc_pre.cc
+index a4ef597412..55b048cad7 100644
+--- a/src/emc/rs274ngc/rs274ngc_pre.cc
++++ b/src/emc/rs274ngc/rs274ngc_pre.cc
+@@ -1688,6 +1688,7 @@ int Interp::unwind_call(int status, const char *file, int line, const char *func
+     for(; _setup.call_level > 0; _setup.call_level--) {
+ 	int i;
+ 	context * sub = _setup.sub_context + _setup.call_level - 1;
++	_setup.sub_context[_setup.call_level].pystuff.close_generator();
+ 	free_named_parameters(&_setup.sub_context[_setup.call_level]);
+ 	if(sub->subName) {
+ 	    logDebug("unwind_call leaving sub '%s'", sub->subName);
+diff --git a/tests/remap/executor/checkresult b/tests/remap/executor/checkresult
+new file mode 100755
+index 0000000000..7fda8799ba
+--- /dev/null
++++ b/tests/remap/executor/checkresult
+@@ -0,0 +1,5 @@
++#!/bin/sh
++
++set -e
++test "$(grep -c '^executor remap scenario ok:' "$1")" -eq 4
++grep -q '^executor remap scenarios complete$' "$1"
+diff --git a/tests/remap/executor/remap.py b/tests/remap/executor/remap.py
+new file mode 100644
+index 0000000000..0198feb3fc
+--- /dev/null
++++ b/tests/remap/executor/remap.py
+@@ -0,0 +1,52 @@
++from stdglue import *
++
++
++def m10_execute(self, **words):
++    yield from executor_execute(self, self.chuck, request=0)
++
++
++def m11_execute(self, **words):
++    yield from executor_execute(self, self.chuck, request=1, timeout=0.2)
++
++
++def m20_transact(self, **words):
++    response = yield from executor_transact(self, self.tailstock, request=7)
++    if not self.task:
++        return
++    self.executor_component["raw-result"] = response.result
++
++
++def m21_non_hal(self, **words):
++    response = yield from executor_execute(self, self.memory_executor, request=41)
++    if not self.task:
++        return
++    if self.memory_executor.last_operation.released:
++        self.executor_component["transport-result"] = response.result
++
++
++class MemoryExecutor:
++    name = "memory"
++
++    def begin(self, request):
++        self.last_operation = MemoryOperation(request)
++        return self.last_operation
++
++
++class MemoryOperation:
++    def __init__(self, request):
++        self.request = request
++        self.polls = 0
++        self.released = False
++        self.cancelled = False
++
++    def poll(self):
++        self.polls += 1
++        if self.polls == 1:
++            return None
++        return ExecutorResponse(EXECUTOR_SUCCEEDED, result=self.request + 1)
++
++    def release(self):
++        self.released = True
++
++    def cancel(self):
++        self.cancelled = True
+diff --git a/tests/remap/executor/test-ui.py b/tests/remap/executor/test-ui.py
+new file mode 100755
+index 0000000000..fb9b77b2dc
+--- /dev/null
++++ b/tests/remap/executor/test-ui.py
+@@ -0,0 +1,177 @@
++#!/usr/bin/env python3
++
++import os
++import sys
++import time
++
++import hal
++import linuxcnc
++
++
++def fail(message):
++    print(message)
++    sys.exit(1)
++
++
++def wait_for(predicate, message, timeout=5.0):
++    start = time.time()
++    while time.time() - start < timeout:
++        status.poll()
++        if predicate():
++            return
++        time.sleep(0.01)
++    fail(message)
++
++
++def wait_complete(message, timeout=5.0):
++    if command.wait_complete(timeout) != linuxcnc.RCS_DONE:
++        fail(message)
++
++
++def pin_value(name):
++    try:
++        return hal.get_value(name)
++    except RuntimeError:
++        return None
++
++
++def wait_request(executor, opcode):
++    prefix = "remap.executor.%s." % executor
++    wait_for(
++        lambda: hal.get_value(prefix + "request"),
++        "executor request was not asserted",
++    )
++    request_id = int(hal.get_value(prefix + "request-id"))
++    if request_id == 0:
++        fail("executor used reserved request ID zero")
++    if int(hal.get_value(prefix + "opcode")) != opcode:
++        fail("executor published the wrong opcode")
++    if hal.get_value(prefix + "cancel"):
++        fail("executor cancel was asserted for a new request")
++    return prefix, request_id
++
++
++def respond(prefix, request_id, state, result):
++    hal.set_p(prefix + "state", str(state))
++    hal.set_p(prefix + "result", str(result))
++    hal.set_p(prefix + "response-id", str(request_id))
++
++
++def assert_released(prefix):
++    wait_for(
++        lambda: not hal.get_value(prefix + "request"),
++        "completed executor request was not released",
++    )
++    if hal.get_value(prefix + "cancel"):
++        fail("completed executor request was cancelled")
++
++
++command = linuxcnc.command()
++status = linuxcnc.stat()
++test_component = hal.component("executor-test-ui")
++test_component.ready()
++
++wait_for(
++    lambda: status.task_state == linuxcnc.STATE_ESTOP,
++    "LinuxCNC did not initialize",
++)
++
++for pin in (
++    "remap.executor.chuck.request-id",
++    "remap.executor.chuck.response-id",
++    "remap.executor.tailstock.request-id",
++    "remap.owner-marker",
++):
++    wait_for(
++        lambda pin=pin: pin_value(pin) is not None,
++        "missing caller-owned executor component pin %s" % pin,
++    )
++
++if not hal.get_value("remap.owner-marker"):
++    fail("executor endpoint did not share its caller-owned HAL component")
++
++command.state(linuxcnc.STATE_ESTOP_RESET)
++command.state(linuxcnc.STATE_ON)
++wait_complete("machine did not turn on")
++command.mode(linuxcnc.MODE_MDI)
++wait_complete("machine did not enter MDI")
++
++scenario = os.environ["EXECUTOR_SCENARIO"]
++
++if scenario == "success":
++    command.mdi("M10")
++    prefix, first_id = wait_request("chuck", 0)
++    respond(prefix, first_id, 4, 0)
++    wait_complete("successful executor request did not complete")
++    assert_released(prefix)
++
++    command.mdi("M11")
++    prefix, second_id = wait_request("chuck", 1)
++    if second_id != first_id + 1:
++        fail("executor request IDs were not monotonic")
++    respond(prefix, second_id, 4, 7)
++    wait_complete("second successful executor request did not complete")
++    assert_released(prefix)
++
++    command.mdi("M20")
++    prefix, request_id = wait_request("tailstock", 7)
++    respond(prefix, request_id, 5, 42)
++    wait_complete("raw executor transaction did not return to its remap")
++    assert_released(prefix)
++    if int(hal.get_value("remap.raw-result")) != 42:
++        fail("custom remap did not receive the raw executor result")
++
++    command.mdi("M21")
++    wait_complete("non-HAL executor transport did not complete")
++    if int(hal.get_value("remap.transport-result")) != 42:
++        fail("executor helper required a HAL transport")
++
++elif scenario == "failure":
++    command.mdi("M10")
++    prefix, request_id = wait_request("chuck", 0)
++    respond(prefix, request_id, 5, 42)
++    wait_for(
++        lambda: not hal.get_value(prefix + "request"),
++        "failed executor request was not released",
++    )
++    if hal.get_value(prefix + "cancel"):
++        fail("terminal executor failure was incorrectly cancelled")
++
++elif scenario == "timeout":
++    command.mdi("M11")
++    prefix, timed_out_id = wait_request("chuck", 1)
++    wait_for(
++        lambda: hal.get_value(prefix + "cancel")
++        and not hal.get_value(prefix + "request"),
++        "timed-out executor request was not cancelled",
++        timeout=2.0,
++    )
++
++    command.abort()
++    wait_complete("timeout recovery abort did not complete")
++    command.mdi("M10")
++    prefix, next_id = wait_request("chuck", 0)
++    respond(prefix, timed_out_id, 4, 0)
++    time.sleep(0.1)
++    if not hal.get_value(prefix + "request"):
++        fail("a stale response completed the next executor request")
++    respond(prefix, next_id, 4, 0)
++    wait_complete("request following a timeout did not complete")
++    assert_released(prefix)
++
++elif scenario == "abort":
++    command.mdi("M10")
++    prefix, unused_request_id = wait_request("chuck", 0)
++    command.abort()
++    wait_complete("abort command did not complete")
++    wait_for(
++        lambda: hal.get_value(prefix + "cancel")
++        and not hal.get_value(prefix + "request"),
++        "aborted executor request was not cancelled",
++    )
++
++else:
++    fail("unknown executor scenario %s" % scenario)
++
++print("executor remap scenario ok: %s" % scenario)
++sys.exit(0)
+diff --git a/tests/remap/executor/test.ini b/tests/remap/executor/test.ini
+new file mode 100644
+index 0000000000..c3ee45b9ca
+--- /dev/null
++++ b/tests/remap/executor/test.ini
+@@ -0,0 +1,95 @@
++[EMC]
++VERSION = 1.1
++DEBUG = 0x0
++
++[DISPLAY]
++DISPLAY = ./test-ui.py
++
++[RS274NGC]
++PARAMETER_FILE = sim.var
++REMAP = M10 modalgroup=10 python=m10_execute
++REMAP = M11 modalgroup=10 python=m11_execute
++REMAP = M20 modalgroup=10 python=m20_transact
++REMAP = M21 modalgroup=10 python=m21_non_hal
++
++[PYTHON]
++TOPLEVEL = toplevel.py
++PATH_PREPEND = .
++PATH_APPEND = ../../../nc_files/remap_lib/python-stdglue/
++
++[EMCMOT]
++EMCMOT = motmod
++COMM_TIMEOUT = 4.0
++BASE_PERIOD = 0
++SERVO_PERIOD = 1000000
++
++[TASK]
++TASK = milltask
++CYCLE_TIME = 0.001
++
++[HAL]
++HALFILE = ../remap-io/core_sim.hal
++
++[TRAJ]
++NO_FORCE_HOMING = 1
++AXES = 3
++COORDINATES = X Y Z
++LINEAR_UNITS = mm
++ANGULAR_UNITS = degree
++DEFAULT_LINEAR_VELOCITY = 1
++MAX_LINEAR_VELOCITY = 4
++
++[EMCIO]
++TOOL_TABLE = ../remap-io/simpockets.tbl
++
++[KINS]
++KINEMATICS = trivkins
++JOINTS = 3
++
++[AXIS_X]
++MIN_LIMIT = -40
++MAX_LIMIT = 40
++MAX_VELOCITY = 4
++MAX_ACCELERATION = 1000
++
++[JOINT_0]
++TYPE = LINEAR
++HOME = 0
++MAX_VELOCITY = 4
++MAX_ACCELERATION = 1000
++MIN_LIMIT = -40
++MAX_LIMIT = 40
++FERROR = 0.05
++MIN_FERROR = 0.01
++
++[AXIS_Y]
++MIN_LIMIT = -40
++MAX_LIMIT = 40
++MAX_VELOCITY = 4
++MAX_ACCELERATION = 1000
++
++[JOINT_1]
++TYPE = LINEAR
++HOME = 0
++MAX_VELOCITY = 4
++MAX_ACCELERATION = 1000
++MIN_LIMIT = -40
++MAX_LIMIT = 40
++FERROR = 0.05
++MIN_FERROR = 0.01
++
++[AXIS_Z]
++MIN_LIMIT = -40
++MAX_LIMIT = 40
++MAX_VELOCITY = 4
++MAX_ACCELERATION = 1000
++
++[JOINT_2]
++TYPE = LINEAR
++HOME = 0
++MAX_VELOCITY = 4
++MAX_ACCELERATION = 1000
++MIN_LIMIT = -40
++MAX_LIMIT = 40
++FERROR = 0.05
++MIN_FERROR = 0.01
+diff --git a/tests/remap/executor/test.sh b/tests/remap/executor/test.sh
+new file mode 100755
+index 0000000000..4d496c4c58
+--- /dev/null
++++ b/tests/remap/executor/test.sh
+@@ -0,0 +1,8 @@
++#!/bin/bash -e
++
++for scenario in success failure timeout abort; do
++    echo "Running executor remap scenario: ${scenario}"
++    EXECUTOR_SCENARIO="${scenario}" linuxcnc -r test.ini
++done
++
++echo "executor remap scenarios complete"
+diff --git a/tests/remap/executor/toplevel.py b/tests/remap/executor/toplevel.py
+new file mode 100644
+index 0000000000..1b41cf6b50
+--- /dev/null
++++ b/tests/remap/executor/toplevel.py
+@@ -0,0 +1,18 @@
++import hal
++import remap
++
++
++def __init__(self):
++    remap.init_stdglue(self)
++    component = hal.component("remap") if self.task else None
++    self.chuck = remap.HalExecutor(self, "chuck", component)
++    self.tailstock = remap.HalExecutor(self, "tailstock", component)
++    self.memory_executor = remap.MemoryExecutor()
++
++    if component is not None:
++        component.newpin("owner-marker", hal.HAL_BIT, hal.HAL_OUT)
++        component.newpin("raw-result", hal.HAL_S32, hal.HAL_OUT)
++        component.newpin("transport-result", hal.HAL_S32, hal.HAL_OUT)
++        component["owner-marker"] = True
++        component.ready()
++    self.executor_component = component

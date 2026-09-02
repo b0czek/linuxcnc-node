@@ -313,3 +313,26 @@ Tool-table reload now preserves the live table when opening, parsing, or
 validation fails. Read-only mmap clients detect inode replacement after a
 LinuxCNC restart and remap under the same process lock used by all mmap
 readers.
+
+### 0013 — Composable executor standard glue
+
+Adds transport-independent `executor_transact` and `executor_execute`
+generators to LinuxCNC's curated Python `stdglue`. Machine configurations keep
+ordinary, explicitly named remaps and pass an endpoint object into either
+helper. `transact` owns cooperative waiting, timeout, release, and abort
+cancellation while returning the terminal response for machine-specific
+policy. `execute` adds the common policy that only a successful response
+continues program execution. The default timeout is 10 seconds.
+
+The supplied `HalExecutor` endpoint adds namespaced request and response pins
+to a HAL component provided and owned by the machine configuration. It neither
+constructs the component nor calls `ready()`, allowing multiple endpoints and
+machine-specific pins to share one component. HAL remains optional: an
+integration regression exercises the same helpers with both the standard HAL
+endpoint and an in-memory endpoint.
+
+Python remap generators are closed during interpreter unwind so their
+`finally` cleanup runs on task or operator abort. The regression also covers
+success, raw failure handling, standard failure policy, timeout, stale
+responses, monotonic request IDs, request release, and cancellation. Headless
+installs now include the curated `stdglue`. 
