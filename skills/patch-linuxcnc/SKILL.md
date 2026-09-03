@@ -99,6 +99,12 @@ it.
 
 ## Verification
 
+Never write tests that require hard real-time scheduling, a real-time kernel,
+or real-time privileges. All LinuxCNC tests must pass with the userspace
+simulator under ordinary POSIX scheduling. Using LinuxCNC's HAL and userspace
+real-time process infrastructure is acceptable; depending on deterministic
+real-time timing is not.
+
 1. Materialize the complete series and verify the commit count equals the
    patch count:
    ```sh
