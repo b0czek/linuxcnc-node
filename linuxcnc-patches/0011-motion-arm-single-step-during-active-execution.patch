@@ -291,7 +291,7 @@ index d4373fd..9091ba7 100644
  int tpPause(TP_STRUCT * const tp)
  {
      if (0 == tp) {
-@@ -4379,10 +4407,12 @@ int tpPause(TP_STRUCT * const tp)
+@@ -4382,12 +4410,14 @@ int tpPause(TP_STRUCT * const tp)
      }
  
      if (tp->stopping) {
@@ -304,8 +304,10 @@ index d4373fd..9091ba7 100644
 +        tp->stepping_to_motion_target = 0;
          TC_STRUCT *tc = tcqItem(&tp->queue, 0);
          bool in_g76_cut_or_clearance = tc && tc->g76_pass_id &&
-             (tc->synchronized == TC_SYNC_POSITION ||
-@@ -4413,7 +4443,7 @@ int tpPause(TP_STRUCT * const tp)
+             ((tc->active && tc->synchronized == TC_SYNC_POSITION &&
+               tp->spindle.waiting_for_index != tc->id) ||
+              tc->g76_pass_clearance == 1);
+@@ -4416,7 +4446,7 @@ int tpPause(TP_STRUCT * const tp)
              tp->pausing = 1;
          }
      } else if (emcmotStatus->stepping &&
@@ -314,7 +316,7 @@ index d4373fd..9091ba7 100644
          /*
           * EMCMOT_STEP requests default-TP pass targeting through the existing
           * tpPause ABI. Alternate planners leave step_target_pending clear and
-@@ -4422,15 +4452,25 @@ int tpPause(TP_STRUCT * const tp)
+@@ -4425,15 +4455,25 @@ int tpPause(TP_STRUCT * const tp)
          int pass_id = tpGetQueuedG76PassId(tp);
          if (pass_id) {
              tp->step_pass_id = pass_id;
@@ -344,7 +346,7 @@ index d4373fd..9091ba7 100644
          }
      } else {
          tp->pausing = 1;
-@@ -4443,6 +4483,7 @@ int tpResume(TP_STRUCT * const tp)
+@@ -4446,6 +4486,7 @@ int tpResume(TP_STRUCT * const tp)
      if (0 == tp) {
          return TP_ERR_FAIL;
      }
@@ -352,7 +354,7 @@ index d4373fd..9091ba7 100644
      tp->pausing = 0;
      tp->stopping = 0;
      tp->stop_tc = 0;
-@@ -4451,7 +4492,10 @@ int tpResume(TP_STRUCT * const tp)
+@@ -4454,11 +4495,14 @@ int tpResume(TP_STRUCT * const tp)
      tp->step_tc = 0;
      tp->step_target_pending = 0;
      tp->step_pass_id = 0;
@@ -361,10 +363,14 @@ index d4373fd..9091ba7 100644
 +    tp->stepping_to_motion_target = 0;
 +    tp->step_target_term_cond = 0;
 +    tp->step_target_finalvel = 0.0;
+     if (MOTION_ID_VALID(tp->spindle.waiting_for_index)) {
+         emcmotStatus->spindle_status[
+             tp->spindle.spindle_num].spindle_index_enable = 1;
+     }
      emcmotStatus->stopped = 0;
      return TP_ERR_OK;
  }
-@@ -4467,7 +4511,11 @@ int tpAbort(TP_STRUCT * const tp)
+@@ -4474,7 +4518,11 @@ int tpAbort(TP_STRUCT * const tp)
          tp->step_tc = 0;
          tp->step_target_pending = 0;
          tp->step_pass_id = 0;
@@ -425,8 +431,8 @@ index faf35d6..4792b57 100755
 @@ -1,4 +1,4 @@
  #!/bin/sh
  set -e
--test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 22
-+test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 24
+-test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 23
++test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 25
  grep -q '^resumable stop scenarios complete$' "$1"
 diff --git a/tests/resumable-stop/inflight-step.ngc b/tests/resumable-stop/inflight-step.ngc
 new file mode 100644

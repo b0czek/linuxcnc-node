@@ -28,7 +28,7 @@ Preserve pass ownership on synthetic blend arcs, make marked clearance endpoints
  src/emc/task/task.hh                          |   2 +-
  src/emc/task/taskintf.cc                      |   8 +-
  src/emc/tp/tc_types.h                         |   2 +
- src/emc/tp/tp.c                               | 183 ++++++++-
+ src/emc/tp/tp.c                               | 189 +++++++++-
  src/emc/tp/tp.h                               |   3 +-
  src/emc/tp/tp_types.h                         |  10 +-
  tests/interp/compile/use-rs274.cc             |   5 +
@@ -41,10 +41,10 @@ Preserve pass ownership on synthetic blend arcs, make marked clearance endpoints
  .../resumable-stop/g76-tapered-exit-taper.ngc |   7 +
  tests/resumable-stop/g76-tapered-step.ngc     |   4 +
  tests/resumable-stop/g76-tapered.ngc          |   7 +
- tests/resumable-stop/test-ui.py               | 367 +++++++++++++++++-
+ tests/resumable-stop/test-ui.py               | 410 +++++++++++++++++++-
  tests/resumable-stop/test.ini                 |   1 +
- tests/resumable-stop/test.sh                  |  14 +
- 35 files changed, 907 insertions(+), 59 deletions(-)
+ tests/resumable-stop/test.sh                  |  15 +
+ 35 files changed, 957 insertions(+), 59 deletions(-)
  create mode 100644 tests/resumable-stop/g33-followed-by-rapid.ngc
  create mode 100644 tests/resumable-stop/g76-exit-taper.ngc
  create mode 100644 tests/resumable-stop/g76-handoff.ngc
@@ -1196,7 +1196,7 @@ index 3b78e00..d4373fd 100644
  int tpPause(TP_STRUCT * const tp)
  {
      if (0 == tp) {
-@@ -4267,12 +4379,57 @@ int tpPause(TP_STRUCT * const tp)
+@@ -4267,12 +4379,59 @@ int tpPause(TP_STRUCT * const tp)
      }
  
      if (tp->stopping) {
@@ -1207,13 +1207,15 @@ index 3b78e00..d4373fd 100644
          TC_STRUCT *tc = tcqItem(&tp->queue, 0);
 -        if (tc && tc->active && tc->synchronized == TC_SYNC_POSITION) {
 +        bool in_g76_cut_or_clearance = tc && tc->g76_pass_id &&
-+            (tc->synchronized == TC_SYNC_POSITION ||
++            ((tc->active && tc->synchronized == TC_SYNC_POSITION &&
++              tp->spindle.waiting_for_index != tc->id) ||
 +             tc->g76_pass_clearance == 1);
 +        if (in_g76_cut_or_clearance) {
 +            /*
-+             * Only an explicitly marked G76 cut/retract may extend Stop to
-+             * its pass clearance. This also covers the handoff cycle where
-+             * the marked retract has become queue head but is not active yet.
++             * Only a G76 cut that has passed spindle index, or an explicitly
++             * marked retract, may extend Stop to its pass clearance. This
++             * also covers the handoff cycle where the marked retract has
++             * become queue head but is not active yet.
 +             * If task has not delivered the retract yet, retain the pass ID
 +             * and bind the exact target as soon as it enters the TP queue.
 +             */
@@ -1221,7 +1223,7 @@ index 3b78e00..d4373fd 100644
 +            tp->stop_tc = tpFindG76PassClearance(tp, tp->stop_pass_id);
 +            tp->stop_target_pending = 1;
 +            tp->pausing = 0;
-+        } else if (tc && tc->active &&
++        } else if (tc && tc->active && !tc->g76_pass_id &&
 +                tc->synchronized == TC_SYNC_POSITION) {
 +            /* Preserve the established G33 and rigid-tap Stop boundary. */
 +            tp->stop_pass_id = 0;
@@ -1255,7 +1257,7 @@ index 3b78e00..d4373fd 100644
              tp->pausing = 1;
          }
      } else {
-@@ -4289,6 +4446,12 @@ int tpResume(TP_STRUCT * const tp)
+@@ -4289,6 +4449,16 @@ int tpResume(TP_STRUCT * const tp)
      tp->pausing = 0;
      tp->stopping = 0;
      tp->stop_tc = 0;
@@ -1265,10 +1267,14 @@ index 3b78e00..d4373fd 100644
 +    tp->step_target_pending = 0;
 +    tp->step_pass_id = 0;
 +    tp->stepping_to_pass_clearance = 0;
++    if (MOTION_ID_VALID(tp->spindle.waiting_for_index)) {
++        emcmotStatus->spindle_status[
++            tp->spindle.spindle_num].spindle_index_enable = 1;
++    }
      emcmotStatus->stopped = 0;
      return TP_ERR_OK;
  }
-@@ -4301,6 +4464,10 @@ int tpAbort(TP_STRUCT * const tp)
+@@ -4301,6 +4471,10 @@ int tpAbort(TP_STRUCT * const tp)
  
      if (!tp->aborting) {
          /* const to abort, signal a pause and set our abort flag */
@@ -1371,7 +1377,7 @@ index 5a8f801..faf35d6 100755
  #!/bin/sh
 -test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 14
 +set -e
-+test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 22
++test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 23
  grep -q '^resumable stop scenarios complete$' "$1"
 diff --git a/tests/resumable-stop/g33-followed-by-rapid.ngc b/tests/resumable-stop/g33-followed-by-rapid.ngc
 new file mode 100644
@@ -1462,6 +1468,12 @@ diff --git a/tests/resumable-stop/test-ui.py b/tests/resumable-stop/test-ui.py
 index 078eee4..b0c58d8 100755
 --- a/tests/resumable-stop/test-ui.py
 +++ b/tests/resumable-stop/test-ui.py
+@@ -3,4 +3,5 @@
+ import math
+ import os
++import subprocess
+ import sys
+ import time
 @@ -17,14 +17,30 @@ def fail(message):
      sys.exit(1)
  
@@ -1594,10 +1606,51 @@ index 078eee4..b0c58d8 100755
              % s.position[0]
          )
  
-@@ -482,6 +570,266 @@ def run_g76_stop_resume_test():
+@@ -482,6 +570,307 @@ def run_g76_stop_resume_test():
      assert_outputs_stopped_after_program()
  
  
++def run_g76_stop_while_waiting_for_index_test():
++    subprocess.run(["halcmd", "unlinkp", "encoder_0.phase-Z"], check=True)
++    hal.set_p("encoder_0.phase-Z", "false")
++    open_auto_program("g76.ngc")
++    c.auto(linuxcnc.AUTO_RUN, 0)
++
++    wait_for(
++        lambda: hal.get_value("spindle.0.index-enable")
++        and s.position[0] < 9.95
++        and math.isclose(s.position[2], 0.0, abs_tol=0.001)
++        and abs(s.current_vel) < 0.001,
++        "G76 did not arm its first cut while waiting for spindle index",
++        timeout=15.0,
++    )
++
++    c.stop()
++    wait_for(
++        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
++        "G76 did not stop with its index-waiting cut preserved",
++    )
++
++    # Deliver the delayed index after Stop. The armed cut must remain queued
++    # for Resume rather than starting merely because its prerequisite arrived.
++    subprocess.run(
++        ["halcmd", "net", "spindle-phase-Z", "encoder_0.phase-Z"],
++        check=True,
++    )
++
++    if not math.isclose(s.position[2], 0.0, abs_tol=0.001):
++        fail("G76 started its cut after Stop: Z=%.6f" % s.position[2])
++
++    time.sleep(0.25)
++    s.poll()
++    if not math.isclose(s.position[2], 0.0, abs_tol=0.001):
++        fail("index-waiting G76 moved while stopped: Z=%.6f" % s.position[2])
++
++    c.auto(linuxcnc.AUTO_RESUME)
++    wait_for_program_complete(20.0, expected_z=-5.0, timeout=40.0)
++    assert_outputs_stopped_after_program()
++
++
 +def run_tapered_g76_stop_resume_test():
 +    open_auto_program("g76-tapered.ngc")
 +    c.auto(linuxcnc.AUTO_RUN, 0)
@@ -1861,7 +1914,7 @@ index 078eee4..b0c58d8 100755
  def run_queued_threading_stop_resume_test():
      hal.set_p("spindle.0.at-speed", "false")
      open_auto_program("thread.ngc")
-@@ -734,14 +1082,23 @@ def run_css_stop_resume_test():
+@@ -734,14 +1124,24 @@ def run_css_stop_resume_test():
  SCENARIOS = {
      "ordinary": run_ordinary_stop_resume_test,
      "single-step": run_stop_single_step_test,
@@ -1875,6 +1928,7 @@ index 078eee4..b0c58d8 100755
 +    "g33-no-following-rapid": run_g33_does_not_execute_following_rapid_test,
      "fperrev": run_fperrev_stop_resume_test,
      "g76": run_g76_stop_resume_test,
++    "g76-waiting-index": run_g76_stop_while_waiting_for_index_test,
 +    "g76-tapered": run_tapered_g76_stop_resume_test,
 +    "g76-single-step": run_g76_single_step_test,
 +    "g76-tapered-single-step": run_tapered_g76_single_step_test,
@@ -1901,7 +1955,7 @@ diff --git a/tests/resumable-stop/test.sh b/tests/resumable-stop/test.sh
 index 017d265..6246d49 100755
 --- a/tests/resumable-stop/test.sh
 +++ b/tests/resumable-stop/test.sh
-@@ -7,22 +7,36 @@ if nm -D -u "$EMC2_HOME/rtlib/motmod.so" | grep -q '[[:space:]]tpStop$'; then
+@@ -7,22 +7,37 @@ if nm -D -u "$EMC2_HOME/rtlib/motmod.so" | grep -q '[[:space:]]tpStop$'; then
      exit 1
  fi
  
@@ -1923,6 +1977,7 @@ index 017d265..6246d49 100755
 +    g33-no-following-rapid
      fperrev
      g76
++    g76-waiting-index
 +    g76-tapered
      rigid-tap
      orientation
