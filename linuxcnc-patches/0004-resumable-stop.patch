@@ -19,7 +19,7 @@ Add a dedicated task and trajectory Stop operation that preserves interpreter an
  src/emc/nml_intf/emcops.cc                    |   4 +
  src/emc/task/emctaskmain.cc                   | 342 +++++++-
  src/emc/task/taskintf.cc                      |  11 +
- src/emc/tp/tp.c                               |  65 +-
+ src/emc/tp/tp.c                               |  68 +-
  src/emc/tp/tp_types.h                         |   7 +
  src/emc/usr_intf/axis/extensions/emcmodule.cc |  14 +
  src/emc/usr_intf/halui.cc                     |   9 +-
@@ -40,10 +40,10 @@ Add a dedicated task and trajectory Stop operation that preserves interpreter an
  tests/resumable-stop/test-ui.py               | 758 ++++++++++++++++++
  tests/resumable-stop/test.ini                 |  96 +++
  tests/resumable-stop/test.ngc                 |   9 +
- tests/resumable-stop/test.sh                  |  42 +
+ tests/resumable-stop/test.sh                  |  41 +
  tests/resumable-stop/thread.ngc               |   7 +
  tests/resumable-stop/tool.tbl                 |   1 +
- 38 files changed, 1591 insertions(+), 16 deletions(-)
+ 38 files changed, 1593 insertions(+), 16 deletions(-)
  create mode 100644 tests/resumable-stop/README
  create mode 100644 tests/resumable-stop/after-abort.ngc
  create mode 100755 tests/resumable-stop/checkresult
@@ -1066,16 +1066,16 @@ index e5667b3..3b78e00 100644
  
 -    // Check if feed_override = 0 (not pause/abort, but velocity limited to 0)
 +    /*
-+     * Synchronized motion derives its limit from spindle feedback. That limit
-+     * can legitimately be zero while waiting for position synchronization or
-+     * while a spindle restarts after a resumable Stop. Ruckig position control
-+     * rejects a zero maximum velocity, so remain in velocity control until
-+     * feedback provides a usable limit.
++     * Velocity-synchronized motion derives its limit from spindle feedback.
++     * That limit can legitimately be zero while a spindle restarts after a
++     * resumable Stop. Ruckig position control rejects a zero maximum
++     * velocity, so remain in velocity control until feedback provides a
++     * usable limit.
 +     */
      bool use_velocity_control = (is_pausing || is_aborting ||
 -                                   emcmotStatus->net_feed_scale <= TP_VEL_EPSILON);
 +                                   emcmotStatus->net_feed_scale <= TP_VEL_EPSILON ||
-+                                   (tc->synchronized != TC_SYNC_NONE &&
++                                   (tc->synchronized == TC_SYNC_VELOCITY &&
 +                                    tc_target_vel <= TP_VEL_EPSILON));
      // Normal operation parameters
      double effective_max_vel = tc_target_vel;
@@ -1091,6 +1091,14 @@ index e5667b3..3b78e00 100644
  }
  
  /** Wrapper function to unlock rotary axes */
+@@ -3713,3 +3733,6 @@ STATIC int tpUpdateCycle(TP_STRUCT * const tp,
+     if(mode == NULL) planner_type = 0;
+-
++    if (tc->synchronized == TC_SYNC_POSITION || tc->motion_type == TC_RIGIDTAP) {
++        planner_type = 0;
++    }
++
+     if(planner_type != 1){
 @@ -4118,10 +4138,28 @@ int tpRunCycle(TP_STRUCT * const tp, long period)
  
      //If we have a NULL pointer, then the queue must be empty, so we're done.
@@ -2337,7 +2345,7 @@ new file mode 100755
 index 0000000..017d265
 --- /dev/null
 +++ b/tests/resumable-stop/test.sh
-@@ -0,0 +1,42 @@
+@@ -0,0 +1,41 @@
 +#!/bin/bash -e
 +
 +set -o pipefail
@@ -2373,9 +2381,8 @@ index 0000000..017d265
 +    : > "$scenario_log"
 +    RESUMABLE_STOP_SCENARIO="$scenario" linuxcnc -r test.ini 2>&1 |
 +        tee "$scenario_log"
-+    if [[ "$scenario" == fperrev ]] &&
-+            grep -Eq 'ruckig_plan_position: invalid limits|Ruckig planning failed \\(first attempt\\)' "$scenario_log"; then
-+        echo "G95 resume passed an invalid zero velocity limit to Ruckig" >&2
++    if grep -Eq 'ruckig_plan_(position|velocity): invalid limits|Ruckig (velocity control )?planning failed' "$scenario_log"; then
++        echo "$scenario emitted a Ruckig invalid-limit or planning failure" >&2
 +        exit 1
 +    fi
 +done
