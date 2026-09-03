@@ -4,6 +4,7 @@ import type { HealthClient } from "./generated/grpc/health/v1/Health";
 import type { ProtoGrpcType as HealthProtoGrpcType } from "./generated/health";
 import type { ProtoGrpcType } from "./generated/linuxcnc";
 import type { HalServiceClient } from "./generated/linuxcnc/v1/HalService";
+import type { IniServiceClient } from "./generated/linuxcnc/v1/IniService";
 import type { MachineServiceClient } from "./generated/linuxcnc/v1/MachineService";
 import type { ProgramServiceClient } from "./generated/linuxcnc/v1/ProgramService";
 import type { ScopeServiceClient } from "./generated/linuxcnc/v1/ScopeService";
@@ -23,6 +24,7 @@ export interface LinuxCncClientOptions {
 
 export interface LinuxCncClients {
   machine: MachineServiceClient;
+  ini: IniServiceClient;
   program: ProgramServiceClient;
   hal: HalServiceClient;
   scope: ScopeServiceClient;
@@ -57,6 +59,11 @@ export async function createLinuxCncClients(
   const credentials = options.credentials ?? grpc.credentials.createInsecure();
   return {
     machine: new v1.MachineService(
+      options.address,
+      credentials,
+      options.channelOptions,
+    ),
+    ini: new v1.IniService(
       options.address,
       credentials,
       options.channelOptions,

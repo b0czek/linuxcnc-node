@@ -30,6 +30,7 @@ class ServerRuntime {
  public:
   ServerRuntime(std::unique_ptr<::grpc::Server> server,
                 std::unique_ptr<ManagedGrpcService> machine,
+                std::unique_ptr<ManagedGrpcService> ini,
                 std::unique_ptr<ManagedGrpcService> program,
                 std::unique_ptr<ManagedGrpcService> hal,
                 std::unique_ptr<ManagedGrpcService> scope,
@@ -76,6 +77,7 @@ class ServerRuntime {
 
   std::unique_ptr<::grpc::Server> server_;
   std::unique_ptr<ManagedGrpcService> machine_;
+  std::unique_ptr<ManagedGrpcService> ini_;
   std::unique_ptr<ManagedGrpcService> program_;
   std::unique_ptr<ManagedGrpcService> hal_;
   std::unique_ptr<ManagedGrpcService> scope_;

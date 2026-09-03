@@ -34,17 +34,56 @@ chmod 700 "$root/workspaces"
 cat > "$root/linuxcnc.ini" <<EOF
 [DISPLAY]
 PROGRAM_PREFIX = $root/active
+[TEST]
+REPEATED = first
+REPEATED = second
+BOOL_TRUE = yes
+BOOL_INVALID = perhaps
+INT_VALUE = -42
+FLOAT_VALUE = 2.5
 EOF
 : > "$root/nml.conf"
 
+common_args=(
+  "--endpoint=127.0.0.1:${port}"
+  "--telemetry-endpoint=127.0.0.1:${telemetry_port}"
+  "--nml=$root/nml.conf"
+  "--workspace-root=$root/workspaces"
+  "--active-program-directory=$root/active"
+  "--workspace-ttl-seconds=3600"
+)
+
+if "$server" "${common_args[@]}" "--ini=$root/missing.ini" \
+    >"$root/missing.log" 2>&1; then
+  echo "linuxcnc-grpc-integration: missing active INI unexpectedly started" >&2
+  exit 1
+fi
+
+cp "$root/linuxcnc.ini" "$root/unreadable.ini"
+chmod 000 "$root/unreadable.ini"
+if [[ "$EUID" -ne 0 ]]; then
+  if "$server" "${common_args[@]}" "--ini=$root/unreadable.ini" \
+      >"$root/unreadable.log" 2>&1; then
+    echo "linuxcnc-grpc-integration: unreadable active INI unexpectedly started" >&2
+    exit 1
+  fi
+fi
+chmod 600 "$root/unreadable.ini"
+
+cat > "$root/invalid.ini" <<EOF
+[DISPLAY]
+PROGRAM_PREFIX = $root/active
+#INCLUDE missing.inc
+EOF
+if "$server" "${common_args[@]}" "--ini=$root/invalid.ini" \
+    >"$root/invalid.log" 2>&1; then
+  echo "linuxcnc-grpc-integration: invalid active INI unexpectedly started" >&2
+  exit 1
+fi
+
 "$server" \
-  "--endpoint=127.0.0.1:${port}" \
-  "--telemetry-endpoint=127.0.0.1:${telemetry_port}" \
+  "${common_args[@]}" \
   "--ini=$root/linuxcnc.ini" \
-  "--nml=$root/nml.conf" \
-  "--workspace-root=$root/workspaces" \
-  "--active-program-directory=$root/active" \
-  "--workspace-ttl-seconds=3600" \
   >"$root/server.log" 2>&1 &
 server_pid=$!
 

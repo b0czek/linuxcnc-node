@@ -36,6 +36,7 @@ void invoke_shutdown(const char* name, Function&& function) noexcept {
 ServerRuntime::ServerRuntime(
     std::unique_ptr<::grpc::Server> server,
     std::unique_ptr<ManagedGrpcService> machine,
+    std::unique_ptr<ManagedGrpcService> ini,
     std::unique_ptr<ManagedGrpcService> program,
     std::unique_ptr<ManagedGrpcService> hal,
     std::unique_ptr<ManagedGrpcService> scope,
@@ -48,6 +49,7 @@ ServerRuntime::ServerRuntime(
     BoundedExecutor& hal_worker, BoundedExecutor& scope_worker)
     : server_(std::move(server)),
       machine_(std::move(machine)),
+      ini_(std::move(ini)),
       program_(std::move(program)),
       hal_(std::move(hal)),
       scope_(std::move(scope)),
@@ -123,6 +125,9 @@ void ServerRuntime::request_shutdown() noexcept {
   invoke_shutdown("machine-service", [this] {
     if (machine_) machine_->shutdown();
   });
+  invoke_shutdown("ini-service", [this] {
+    if (ini_) ini_->shutdown();
+  });
   invoke_shutdown("program-service", [this] {
     if (program_) program_->shutdown();
   });
@@ -177,6 +182,7 @@ void ServerRuntime::finalize() noexcept {
   scope_.reset();
   hal_.reset();
   program_.reset();
+  ini_.reset();
   machine_.reset();
   telemetry_websocket_.reset();
   position_telemetry_.reset();

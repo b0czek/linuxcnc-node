@@ -7,6 +7,7 @@ const root = join(here, "../../..");
 const destinationRoot = join(here, "../proto");
 const linuxCncSchemas = [
   "common.proto",
+  "ini.proto",
   "machine.proto",
   "program.proto",
   "hal.proto",

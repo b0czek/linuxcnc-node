@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "linuxcnc/v1/hal.grpc.pb.h"
+#include "linuxcnc/v1/ini.grpc.pb.h"
 #include "linuxcnc/v1/machine.grpc.pb.h"
 #include "linuxcnc/v1/program.grpc.pb.h"
 #include "linuxcnc/v1/scope.grpc.pb.h"
@@ -58,6 +59,7 @@ int main(int argc, char** argv) {
   auto channel =
       grpc::CreateChannel(endpoint, grpc::InsecureChannelCredentials());
   auto machine = linuxcnc::v1::MachineService::NewStub(channel);
+  auto ini = linuxcnc::v1::IniService::NewStub(channel);
   if (argc > 2 && std::string(argv[2]) == "--hold-stream") {
     auto program = linuxcnc::v1::ProgramService::NewStub(channel);
     auto hal = linuxcnc::v1::HalService::NewStub(channel);
@@ -164,6 +166,66 @@ int main(int argc, char** argv) {
   // The integration daemon has no LinuxCNC NML instance. It must expose an
   // explicit unavailable status rather than fabricate an empty snapshot.
   assert(status_result.error_code() == grpc::StatusCode::UNAVAILABLE);
+
+  linuxcnc::v1::IniValueRequest ini_request;
+  ini_request.set_section("TEST");
+  ini_request.set_key("REPEATED");
+  linuxcnc::v1::IniStringValue ini_string;
+  grpc::ClientContext ini_find_context;
+  assert(ini->Find(&ini_find_context, ini_request, &ini_string).ok());
+  assert(ini_string.value() == "first");
+  ini_request.set_occurrence(2);
+  grpc::ClientContext ini_second_context;
+  assert(ini->Find(&ini_second_context, ini_request, &ini_string).ok());
+  assert(ini_string.value() == "second");
+
+  linuxcnc::v1::IniFindAllRequest all_request;
+  all_request.set_section("TEST");
+  all_request.set_key("REPEATED");
+  linuxcnc::v1::IniStringValues all_values;
+  grpc::ClientContext ini_all_context;
+  assert(ini->FindAll(&ini_all_context, all_request, &all_values).ok());
+  assert(all_values.values_size() == 2);
+  assert(all_values.values(0) == "first");
+  assert(all_values.values(1) == "second");
+  all_request.set_key("MISSING");
+  all_values.Clear();
+  grpc::ClientContext ini_all_missing_context;
+  assert(ini
+             ->FindAll(&ini_all_missing_context, all_request, &all_values)
+             .ok());
+  assert(all_values.values().empty());
+
+  ini_request.clear_occurrence();
+  ini_request.set_key("BOOL_TRUE");
+  linuxcnc::v1::IniBoolValue bool_value;
+  grpc::ClientContext ini_bool_context;
+  assert(ini->GetBool(&ini_bool_context, ini_request, &bool_value).ok());
+  assert(bool_value.value());
+
+  ini_request.set_key("INT_VALUE");
+  linuxcnc::v1::IniIntValue int_value;
+  grpc::ClientContext ini_int_context;
+  assert(ini->GetInt(&ini_int_context, ini_request, &int_value).ok());
+  assert(int_value.value() == -42);
+
+  ini_request.set_key("FLOAT_VALUE");
+  linuxcnc::v1::IniFloatValue float_value;
+  grpc::ClientContext ini_float_context;
+  assert(ini->GetFloat(&ini_float_context, ini_request, &float_value).ok());
+  assert(float_value.value() == 2.5);
+
+  ini_request.set_key("MISSING");
+  grpc::ClientContext ini_find_missing_context;
+  assert(ini->Find(&ini_find_missing_context, ini_request, &ini_string)
+             .error_code() == grpc::StatusCode::NOT_FOUND);
+  grpc::ClientContext ini_missing_context;
+  assert(ini->GetBool(&ini_missing_context, ini_request, &bool_value)
+             .error_code() == grpc::StatusCode::NOT_FOUND);
+  ini_request.set_key("BOOL_INVALID");
+  grpc::ClientContext ini_invalid_context;
+  assert(ini->GetBool(&ini_invalid_context, ini_request, &bool_value)
+             .error_code() == grpc::StatusCode::INVALID_ARGUMENT);
 
   grpc::ClientContext context2;
   linuxcnc::v1::PositionHistoryConfig config;

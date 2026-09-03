@@ -7,7 +7,7 @@ and exclusive/coalesced scope frames. These classes do not include Node,
 protobuf, or gRPC headers.
 
 With `LINUXCNC_GRPC_BUILD_WIRE=ON`, `linuxcnc-grpc-server` is a real listener:
-it registers the generated `linuxcnc.v1` Machine, Program, HAL, and Scope
+it registers the generated `linuxcnc.v1` Machine, INI, Program, HAL, and Scope
 services, enables standard gRPC health, optionally enables reflection, and
 supports plaintext/TLS/mTLS credentials. The NML adapter mechanically maps all
 51 command oneof cases, including spindle indices, tool offsets/wear, operator
@@ -20,6 +20,15 @@ position deltas, workspace upload and rs274 parsing, exact 64-bit HAL values,
 client-component cleanup, and exclusive scope ownership. The harness refuses
 to start when another LinuxCNC/HAL runtime exists and reclaims only the runtime
 and NML resources it created.
+
+`IniService` exposes read-only `Find`, `FindAll`, `GetBool`, `GetInt`,
+`GetUInt`, and `GetFloat` queries against the active LinuxCNC INI. Requests
+contain only a section, key, and optional one-based occurrence; they cannot
+select a file. The daemon loads LinuxCNC's cached `IniFile` representation
+before binding its listeners, so parse and access failures prevent readiness
+and changes on disk are not observed until the next daemon session. Missing
+values return gRPC `NOT_FOUND`, while present values that fail conversion
+return `INVALID_ARGUMENT`.
 
 ## Tool table mutation support
 

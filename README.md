@@ -16,7 +16,7 @@ WebSocket data plane for position, selected HAL values, and G-code preview. See 
 ## Repository Layout
 
 - **`proto/linuxcnc/v1`**: Versioned protobuf wire contract for machine,
-  program, HAL, and scope services.
+  INI, program, HAL, and scope services.
 - **`native/server`**: C++20 domain library and `linuxcnc-grpc-server` daemon.
 - **`packages/grpc-client`**: Raw generated Node gRPC clients and protobuf
   message types, without convenience wrappers. [README](./packages/grpc-client/README.md)

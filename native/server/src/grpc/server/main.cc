@@ -17,6 +17,7 @@
 #include "linuxcnc_grpc/callback_runtime.hpp"
 #include "linuxcnc_grpc/grpc/server.hpp"
 #include "linuxcnc_grpc/hal/value_telemetry.hpp"
+#include "linuxcnc_grpc/linuxcnc/active_ini.hpp"
 #include "linuxcnc_grpc/position/telemetry.hpp"
 #include "linuxcnc_grpc/program/workspace.hpp"
 #include "linuxcnc_grpc/telemetry_websocket_server.hpp"
@@ -57,6 +58,9 @@ int run_grpc_server(const DaemonConfig& config) {
     ::grpc::reflection::InitProtoReflectionServerBuilderPlugin();
 
   try {
+    // Construct the LinuxCNC parser before binding either listener. IniFile is
+    // cached by LinuxCNC, so this also fixes the snapshot for this session.
+    auto active_ini = std::make_shared<const ActiveIni>(config.ini_file);
     auto workspaces = std::make_shared<ProgramWorkspaceStore>(
         config.workspace_root, config.active_program_directory,
         WorkspaceLimits{config.workspace_quota_bytes, config.total_quota_bytes,
@@ -74,6 +78,7 @@ int run_grpc_server(const DaemonConfig& config) {
     auto hal_telemetry = std::make_shared<HalValueTelemetry>(128);
     auto machine = detail::make_machine_service(
         config, workspaces, position_telemetry, blocking, stream_admission);
+    auto ini = detail::make_ini_service(active_ini);
     auto program =
         detail::make_program_service(config, workspaces, upload_admission);
     auto hal = detail::make_hal_service(config, hal_worker, component_admission,
@@ -115,6 +120,7 @@ int run_grpc_server(const DaemonConfig& config) {
 
     builder.AddListeningPort(config.endpoint, credentials);
     builder.RegisterService(machine->service());
+    builder.RegisterService(ini->service());
     builder.RegisterService(program->service());
     builder.RegisterService(hal->service());
     builder.RegisterService(scope->service());
@@ -129,8 +135,9 @@ int run_grpc_server(const DaemonConfig& config) {
               << std::flush;
 
     detail::ServerRuntime runtime(
-        std::move(server), std::move(machine), std::move(program),
-        std::move(hal), std::move(scope), std::move(telemetry_websocket),
+        std::move(server), std::move(machine), std::move(ini),
+        std::move(program), std::move(hal), std::move(scope),
+        std::move(telemetry_websocket),
         std::move(position_telemetry), std::move(hal_telemetry),
         stream_admission, upload_admission, component_admission,
         scope_admission, blocking, parser_worker, hal_worker, scope_worker);

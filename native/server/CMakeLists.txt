@@ -78,6 +78,7 @@ if(LINUXCNC_GRPC_ENABLE_NML)
                 "${LINUXCNC_ROOT}/src/rtapi"
                 "${LINUXCNC_ROOT}/include")
             target_sources(linuxcnc-grpc-domain PRIVATE
+                src/linuxcnc/active_ini.cc
                 src/linuxcnc/emc_globals.cc
                 src/linuxcnc/emc_format.cc
                 src/linuxcnc/emc_ops.cc
@@ -202,6 +203,7 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
         "Root containing versioned LinuxCNC protobuf files")
     set(LINUXCNC_GRPC_PROTO_FILES
         "${LINUXCNC_GRPC_PROTO_ROOT}/linuxcnc/v1/common.proto"
+        "${LINUXCNC_GRPC_PROTO_ROOT}/linuxcnc/v1/ini.proto"
         "${LINUXCNC_GRPC_PROTO_ROOT}/linuxcnc/v1/machine.proto"
         "${LINUXCNC_GRPC_PROTO_ROOT}/linuxcnc/v1/program.proto"
         "${LINUXCNC_GRPC_PROTO_ROOT}/linuxcnc/v1/hal.proto"
@@ -213,6 +215,8 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
     set(LINUXCNC_GRPC_GENERATED_CC
         "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/common.pb.cc"
         "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/common.grpc.pb.cc"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/ini.pb.cc"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/ini.grpc.pb.cc"
         "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/machine.pb.cc"
         "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/machine.grpc.pb.cc"
         "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/program.pb.cc"
@@ -230,6 +234,8 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
     set(LINUXCNC_GRPC_GENERATED_HEADERS
         "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/common.pb.h"
         "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/common.grpc.pb.h"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/ini.pb.h"
+        "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/ini.grpc.pb.h"
         "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/machine.pb.h"
         "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/machine.grpc.pb.h"
         "${LINUXCNC_GRPC_GENERATED_DIR}/linuxcnc/v1/program.pb.h"
@@ -271,6 +277,7 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
     set(LINUXCNC_GRPC_SERVER_SOURCES
         src/grpc/server/main.cc
         src/grpc/server/runtime.cc
+        src/ini/grpc/service.cc
         src/machine/grpc/service.cc
         src/machine/grpc/status_codec.cc
         src/program/grpc/service.cc
@@ -382,10 +389,23 @@ if(LINUXCNC_GRPC_BUILD_TESTS)
         -Wall -Wextra -Wpedantic)
     add_test(NAME linuxcnc-grpc-native-edge-tests
              COMMAND linuxcnc-grpc-native-edge-tests)
+    if(LINUXCNC_GRPC_HAS_NML)
+        add_executable(linuxcnc-grpc-active-ini-tests
+            tests/active_ini_tests.cc)
+        target_compile_features(linuxcnc-grpc-active-ini-tests PRIVATE
+            cxx_std_20)
+        target_link_libraries(linuxcnc-grpc-active-ini-tests PRIVATE
+            linuxcnc-grpc-domain)
+        target_compile_options(linuxcnc-grpc-active-ini-tests PRIVATE
+            -Wall -Wextra -Wpedantic)
+        add_test(NAME linuxcnc-grpc-active-ini-tests
+                 COMMAND linuxcnc-grpc-active-ini-tests)
+    endif()
     set(LINUXCNC_GRPC_CALLBACK_SOURCES
         "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/server/main.cc"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/server/runtime.cc"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/server/runtime.hpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/ini/grpc/service.cc"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/machine/grpc/service.cc"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/hal/grpc/service.cc"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/scope/grpc/service.cc")

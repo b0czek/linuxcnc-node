@@ -10,12 +10,16 @@ class BoundedExecutor;
 class AdmissionCounter;
 class PositionTelemetry;
 class HalValueTelemetry;
+class ActiveIni;
 class ProgramWorkspaceStore;
 struct DaemonConfig;
 
 }  // namespace linuxcnc::server
 
 namespace linuxcnc::server::detail {
+
+std::unique_ptr<ManagedGrpcService> make_ini_service(
+    std::shared_ptr<const ActiveIni> ini);
 
 std::unique_ptr<ManagedGrpcService> make_machine_service(
     const DaemonConfig& config,
