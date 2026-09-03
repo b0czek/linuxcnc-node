@@ -191,9 +191,7 @@ int main(int argc, char** argv) {
   all_request.set_key("MISSING");
   all_values.Clear();
   grpc::ClientContext ini_all_missing_context;
-  assert(ini
-             ->FindAll(&ini_all_missing_context, all_request, &all_values)
-             .ok());
+  assert(ini->FindAll(&ini_all_missing_context, all_request, &all_values).ok());
   assert(all_values.values().empty());
 
   ini_request.clear_occurrence();

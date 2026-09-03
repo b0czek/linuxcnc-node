@@ -2,7 +2,6 @@
 
 #include <limits>
 #include <stdexcept>
-#include <utility>
 
 #include "inifile.hh"
 
@@ -19,9 +18,8 @@ int checked_occurrence(std::size_t occurrence) {
 
 template <typename Value, typename Convert>
 IniConversion<Value> convert(const ::linuxcnc::IniFile& ini,
-                             const std::string& section,
-                             const std::string& key, std::size_t occurrence,
-                             Convert&& conversion) {
+                             const std::string& section, const std::string& key,
+                             std::size_t occurrence, Convert&& conversion) {
   const int number = checked_occurrence(occurrence);
   if (!ini.findString(number, key, section)) {
     return {IniConversionStatus::Missing, {}};
@@ -36,7 +34,7 @@ IniConversion<Value> convert(const ::linuxcnc::IniFile& ini,
 
 class ActiveIni::Impl {
  public:
-  explicit Impl(std::string path) : ini(std::move(path)) {
+  explicit Impl(const std::string& path) : ini(path) {
     if (!ini) throw std::runtime_error("cannot load active LinuxCNC INI");
   }
 
@@ -67,24 +65,20 @@ IniConversion<bool> ActiveIni::get_bool(const std::string& section,
   });
 }
 
-IniConversion<std::int64_t> ActiveIni::get_int(
-    const std::string& section, const std::string& key,
-    std::size_t occurrence) const {
-  return convert<std::int64_t>(impl_->ini, section, key, occurrence,
-                               [&](int number) {
-                                 return impl_->ini.findSInt(number, key,
-                                                           section);
-                               });
+IniConversion<std::int64_t> ActiveIni::get_int(const std::string& section,
+                                               const std::string& key,
+                                               std::size_t occurrence) const {
+  return convert<std::int64_t>(
+      impl_->ini, section, key, occurrence,
+      [&](int number) { return impl_->ini.findSInt(number, key, section); });
 }
 
-IniConversion<std::uint64_t> ActiveIni::get_uint(
-    const std::string& section, const std::string& key,
-    std::size_t occurrence) const {
-  return convert<std::uint64_t>(impl_->ini, section, key, occurrence,
-                                [&](int number) {
-                                  return impl_->ini.findUInt(number, key,
-                                                             section);
-                                });
+IniConversion<std::uint64_t> ActiveIni::get_uint(const std::string& section,
+                                                 const std::string& key,
+                                                 std::size_t occurrence) const {
+  return convert<std::uint64_t>(
+      impl_->ini, section, key, occurrence,
+      [&](int number) { return impl_->ini.findUInt(number, key, section); });
 }
 
 IniConversion<double> ActiveIni::get_float(const std::string& section,

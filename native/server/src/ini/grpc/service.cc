@@ -73,15 +73,15 @@ class IniServiceImpl final : public IniService::CallbackService,
       return finish(context, status);
     auto value = ini_->find(request->section(), request->key(), occurrence);
     if (!value)
-      return finish(context, {::grpc::StatusCode::NOT_FOUND,
-                              "INI key was not found"});
+      return finish(context,
+                    {::grpc::StatusCode::NOT_FOUND, "INI key was not found"});
     response->set_value(std::move(*value));
     return finish(context, ::grpc::Status::OK);
   }
 
-  ::grpc::ServerUnaryReactor* FindAll(
-      ::grpc::CallbackServerContext* context,
-      const IniFindAllRequest* request, IniStringValues* response) override {
+  ::grpc::ServerUnaryReactor* FindAll(::grpc::CallbackServerContext* context,
+                                      const IniFindAllRequest* request,
+                                      IniStringValues* response) override {
     if (auto status = validate(*request); !status.ok())
       return finish(context, status);
     for (auto& value : ini_->find_all(request->section(), request->key())) {

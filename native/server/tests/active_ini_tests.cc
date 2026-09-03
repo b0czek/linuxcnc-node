@@ -35,8 +35,8 @@ int main() {
 
   ActiveIni ini(ini_path);
   assert(!ini.find("TEST", "MISSING"));
-  assert(ini.find("TEST", "REPEATED").value() == "first");
-  assert(ini.find("TEST", "REPEATED", 2).value() == "second");
+  assert(ini.find("TEST", "REPEATED") == "first");
+  assert(ini.find("TEST", "REPEATED", 2) == "second");
   const auto repeated = ini.find_all("TEST", "REPEATED");
   assert(repeated.size() == 2);
   assert(repeated[0] == "first" && repeated[1] == "second");
@@ -49,8 +49,7 @@ int main() {
   const auto integer = ini.get_int("TEST", "INT");
   const auto unsigned_integer = ini.get_uint("TEST", "UINT");
   const auto real = ini.get_float("TEST", "FLOAT");
-  assert(integer.status == IniConversionStatus::Found &&
-         integer.value == -42);
+  assert(integer.status == IniConversionStatus::Found && integer.value == -42);
   assert(unsigned_integer.status == IniConversionStatus::Found &&
          unsigned_integer.value == 42);
   assert(real.status == IniConversionStatus::Found && real.value == 2.5);
@@ -68,7 +67,7 @@ int main() {
     std::ofstream output(ini_path, std::ios::trunc);
     output << "[TEST]\nREPEATED = changed\n";
   }
-  assert(ini.find("TEST", "REPEATED").value() == "first");
+  assert(ini.find("TEST", "REPEATED") == "first");
 
   bool missing_failed = false;
   try {
@@ -87,8 +86,8 @@ int main() {
   if (::geteuid() == 0) {
     // Root bypasses ordinary mode checks, so exercise the same constructor in
     // a privilege-dropped child when tests run in a container as root.
-    assert(::chmod(root.c_str(), S_IRUSR | S_IWUSR | S_IXUSR | S_IROTH |
-                                     S_IXOTH) == 0);
+    assert(::chmod(root.c_str(),
+                   S_IRUSR | S_IWUSR | S_IXUSR | S_IROTH | S_IXOTH) == 0);
     const pid_t child = ::fork();
     assert(child >= 0);
     if (child == 0) {

@@ -137,10 +137,10 @@ int run_grpc_server(const DaemonConfig& config) {
     detail::ServerRuntime runtime(
         std::move(server), std::move(machine), std::move(ini),
         std::move(program), std::move(hal), std::move(scope),
-        std::move(telemetry_websocket),
-        std::move(position_telemetry), std::move(hal_telemetry),
-        stream_admission, upload_admission, component_admission,
-        scope_admission, blocking, parser_worker, hal_worker, scope_worker);
+        std::move(telemetry_websocket), std::move(position_telemetry),
+        std::move(hal_telemetry), stream_admission, upload_admission,
+        component_admission, scope_admission, blocking, parser_worker,
+        hal_worker, scope_worker);
     runtime.start_control_thread(shutdown_signals);
     runtime.wait();
     runtime.finalize();
