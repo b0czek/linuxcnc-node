@@ -350,3 +350,17 @@ The `tests/css-status` regression covers G96 while stopped, persistence across
 M5, clearing on G97, and stopped-spindle enabled state. The patch exposes
 `css_maximum` through Python spindle status; the existing Node status adapter
 and schema already carry it, so no Node binding change is required.
+
+### 0015 — Pass spindle selectors to remaps
+
+Adds `$` to the remap `argspec` grammar. When a remapped block includes a
+spindle selector, named NGC parameters and Python keyword arguments receive it
+as `spindle`; positional remaps receive it at the `$` position in the
+argument specification. Omitting `$` omits the parameter, and each remap
+retains responsibility for validating the spindle values it supports.
+When `^` requires a positive spindle speed, `$` selects which spindle is
+checked and supplied as `s`; omitting `$` preserves the spindle 0 default.
+
+The `tests/remap/dollar-argspec` regression covers omitted, numbered, and
+all-spindle selectors through Python, named NGC, and positional NGC remaps,
+plus selected-spindle behavior for `^`.
