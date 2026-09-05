@@ -1,5 +1,7 @@
 #include "linuxcnc_grpc/linuxcnc/active_ini.hpp"
+
 #include <stdexcept>
+
 #include "inifile.hh"
 
 namespace linuxcnc::server {

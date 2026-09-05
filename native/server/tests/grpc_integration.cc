@@ -172,7 +172,8 @@ int main(int argc, char** argv) {
   assert(ini->Read(&ini_context, {}, &ini_snapshot).ok());
   std::vector<std::string> repeated;
   for (const auto& entry : ini_snapshot.entries()) {
-    if (entry.section() == "TEST" && entry.key() == "REPEATED") repeated.push_back(entry.value());
+    if (entry.section() == "TEST" && entry.key() == "REPEATED")
+      repeated.push_back(entry.value());
   }
   assert((repeated == std::vector<std::string>{"first", "second"}));
 

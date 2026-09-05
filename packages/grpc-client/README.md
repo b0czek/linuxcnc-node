@@ -18,8 +18,9 @@ applications with a custom layout can pass `protoRoot`, `protoPath`, and/or
 application schema filename.
 
 The returned `ini` client provides read-only access to the server session's
-active LinuxCNC INI. Its requests select a section, key, and optional one-based
-occurrence; no operation accepts an INI filename.
+active LinuxCNC INI through `ini.read({})`. Read once per connection and query
+the returned section/key/value entries locally. Repeated values retain their
+order; includes are resolved by LinuxCNC. No operation accepts a filename.
 
 HAL value consumers create and mutate subscriptions with the raw `HalService`
 methods, then attach the returned path to the daemon's read-only telemetry

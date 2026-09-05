@@ -15,6 +15,7 @@ class ActiveIni {
  public:
   explicit ActiveIni(const std::filesystem::path& path);
   const std::vector<IniEntry>& entries() const noexcept { return entries_; }
+
  private:
   std::vector<IniEntry> entries_;
 };

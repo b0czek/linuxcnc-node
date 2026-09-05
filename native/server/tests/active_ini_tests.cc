@@ -43,12 +43,15 @@ int main() {
   const auto before = ini.entries();
   std::vector<std::string> repeated;
   for (const auto& entry : before) {
-    if (entry.section == "TEST" && entry.key == "REPEATED") repeated.push_back(entry.value);
+    if (entry.section == "TEST" && entry.key == "REPEATED")
+      repeated.push_back(entry.value);
   }
   assert((repeated == std::vector<std::string>{"first", "second"}));
   bool included = false;
   for (const auto& entry : before) {
-    if (entry.section == "INCLUDED" && entry.key == "VALUE" && entry.value == "from-include") included = true;
+    if (entry.section == "INCLUDED" && entry.key == "VALUE" &&
+        entry.value == "from-include")
+      included = true;
   }
   assert(included);
 
