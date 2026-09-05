@@ -11,7 +11,7 @@
 #include "linuxcnc_grpc/linuxcnc/active_ini.hpp"
 
 using linuxcnc::server::ActiveIni;
-using linuxcnc::server::IniConversionStatus;
+using linuxcnc::server::IniEntry;
 namespace fs = std::filesystem;
 
 int main() {
@@ -33,33 +33,24 @@ int main() {
               "FLOAT = 2.5\n";
   }
 
+  {
+    std::ofstream include(root / "included.ini");
+    include << "[INCLUDED]\nVALUE = from-include\n";
+    std::ofstream output(ini_path, std::ios::app);
+    output << "#INCLUDE " << (root / "included.ini").string() << "\n";
+  }
   ActiveIni ini(ini_path);
-  assert(!ini.find("TEST", "MISSING"));
-  assert(ini.find("TEST", "REPEATED") == "first");
-  assert(ini.find("TEST", "REPEATED", 2) == "second");
-  const auto repeated = ini.find_all("TEST", "REPEATED");
-  assert(repeated.size() == 2);
-  assert(repeated[0] == "first" && repeated[1] == "second");
-
-  const auto true_value = ini.get_bool("TEST", "BOOL_TRUE");
-  const auto false_value = ini.get_bool("TEST", "BOOL_FALSE");
-  assert(true_value.status == IniConversionStatus::Found && true_value.value);
-  assert(false_value.status == IniConversionStatus::Found &&
-         !false_value.value);
-  const auto integer = ini.get_int("TEST", "INT");
-  const auto unsigned_integer = ini.get_uint("TEST", "UINT");
-  const auto real = ini.get_float("TEST", "FLOAT");
-  assert(integer.status == IniConversionStatus::Found && integer.value == -42);
-  assert(unsigned_integer.status == IniConversionStatus::Found &&
-         unsigned_integer.value == 42);
-  assert(real.status == IniConversionStatus::Found && real.value == 2.5);
-
-  assert(ini.get_bool("TEST", "MISSING").status ==
-         IniConversionStatus::Missing);
-  assert(ini.get_bool("TEST", "BOOL_INVALID").status ==
-         IniConversionStatus::Invalid);
-  assert(ini.get_uint("TEST", "UINT_INVALID").status ==
-         IniConversionStatus::Invalid);
+  const auto before = ini.entries();
+  std::vector<std::string> repeated;
+  for (const auto& entry : before) {
+    if (entry.section == "TEST" && entry.key == "REPEATED") repeated.push_back(entry.value);
+  }
+  assert((repeated == std::vector<std::string>{"first", "second"}));
+  bool included = false;
+  for (const auto& entry : before) {
+    if (entry.section == "INCLUDED" && entry.key == "VALUE" && entry.value == "from-include") included = true;
+  }
+  assert(included);
 
   // LinuxCNC's parser cache makes an already loaded INI immutable even when
   // the underlying file changes during the server session.
@@ -67,7 +58,7 @@ int main() {
     std::ofstream output(ini_path, std::ios::trunc);
     output << "[TEST]\nREPEATED = changed\n";
   }
-  assert(ini.find("TEST", "REPEATED") == "first");
+  assert(ini.entries() == before);
 
   bool missing_failed = false;
   try {

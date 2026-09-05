@@ -1,12 +1,14 @@
 // Original file: proto/linuxcnc/v1/ini.proto
 
 
-export interface IniFindAllRequest {
+export interface IniEntry {
   'section'?: (string);
   'key'?: (string);
+  'value'?: (string);
 }
 
-export interface IniFindAllRequest__Output {
+export interface IniEntry__Output {
   'section'?: (string);
   'key'?: (string);
+  'value'?: (string);
 }

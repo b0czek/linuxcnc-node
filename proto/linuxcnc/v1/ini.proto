@@ -1,43 +1,17 @@
 syntax = "proto3";
-
 package linuxcnc.v1;
+import "google/protobuf/empty.proto";
 
-// Selects a value from the active LinuxCNC INI. Occurrence uses the same
-// one-based numbering as linuxcnc.ini; when omitted, the first value is used.
-message IniValueRequest {
+message IniEntry {
   string section = 1;
   string key = 2;
-  optional uint32 occurrence = 3;
+  string value = 3;
 }
 
-message IniFindAllRequest {
-  string section = 1;
-  string key = 2;
-}
+// Parsed active INI, including resolved includes and repeated keys in order.
+message IniSnapshot { repeated IniEntry entries = 1; }
 
-message IniStringValue { string value = 1; }
-
-message IniStringValues { repeated string values = 1; }
-
-message IniBoolValue { bool value = 1; }
-
-message IniIntValue { sint64 value = 1; }
-
-message IniUIntValue { uint64 value = 1; }
-
-message IniFloatValue { double value = 1; }
-
-// Read-only access to the INI loaded when this server session starts. No RPC
-// accepts a filename, so callers cannot query files other than the active INI.
+// Immutable for the daemon session. No request accepts a filename.
 service IniService {
-  // Returns NOT_FOUND when the selected key occurrence does not exist.
-  rpc Find(IniValueRequest) returns (IniStringValue);
-  // Returns an empty values list when the key does not exist.
-  rpc FindAll(IniFindAllRequest) returns (IniStringValues);
-  // Typed operations return NOT_FOUND for an absent value and
-  // INVALID_ARGUMENT for a present value that LinuxCNC cannot convert.
-  rpc GetBool(IniValueRequest) returns (IniBoolValue);
-  rpc GetInt(IniValueRequest) returns (IniIntValue);
-  rpc GetUInt(IniValueRequest) returns (IniUIntValue);
-  rpc GetFloat(IniValueRequest) returns (IniFloatValue);
+  rpc Read(google.protobuf.Empty) returns (IniSnapshot);
 }

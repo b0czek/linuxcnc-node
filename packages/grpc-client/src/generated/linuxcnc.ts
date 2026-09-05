@@ -64,15 +64,9 @@ import type { HalWriterMetadata as _linuxcnc_v1_HalWriterMetadata, HalWriterMeta
 import type { IndexedAxisDelta as _linuxcnc_v1_IndexedAxisDelta, IndexedAxisDelta__Output as _linuxcnc_v1_IndexedAxisDelta__Output } from './linuxcnc/v1/IndexedAxisDelta';
 import type { IndexedJointDelta as _linuxcnc_v1_IndexedJointDelta, IndexedJointDelta__Output as _linuxcnc_v1_IndexedJointDelta__Output } from './linuxcnc/v1/IndexedJointDelta';
 import type { IndexedSpindleDelta as _linuxcnc_v1_IndexedSpindleDelta, IndexedSpindleDelta__Output as _linuxcnc_v1_IndexedSpindleDelta__Output } from './linuxcnc/v1/IndexedSpindleDelta';
-import type { IniBoolValue as _linuxcnc_v1_IniBoolValue, IniBoolValue__Output as _linuxcnc_v1_IniBoolValue__Output } from './linuxcnc/v1/IniBoolValue';
-import type { IniFindAllRequest as _linuxcnc_v1_IniFindAllRequest, IniFindAllRequest__Output as _linuxcnc_v1_IniFindAllRequest__Output } from './linuxcnc/v1/IniFindAllRequest';
-import type { IniFloatValue as _linuxcnc_v1_IniFloatValue, IniFloatValue__Output as _linuxcnc_v1_IniFloatValue__Output } from './linuxcnc/v1/IniFloatValue';
-import type { IniIntValue as _linuxcnc_v1_IniIntValue, IniIntValue__Output as _linuxcnc_v1_IniIntValue__Output } from './linuxcnc/v1/IniIntValue';
+import type { IniEntry as _linuxcnc_v1_IniEntry, IniEntry__Output as _linuxcnc_v1_IniEntry__Output } from './linuxcnc/v1/IniEntry';
 import type { IniServiceClient as _linuxcnc_v1_IniServiceClient, IniServiceDefinition as _linuxcnc_v1_IniServiceDefinition } from './linuxcnc/v1/IniService';
-import type { IniStringValue as _linuxcnc_v1_IniStringValue, IniStringValue__Output as _linuxcnc_v1_IniStringValue__Output } from './linuxcnc/v1/IniStringValue';
-import type { IniStringValues as _linuxcnc_v1_IniStringValues, IniStringValues__Output as _linuxcnc_v1_IniStringValues__Output } from './linuxcnc/v1/IniStringValues';
-import type { IniUIntValue as _linuxcnc_v1_IniUIntValue, IniUIntValue__Output as _linuxcnc_v1_IniUIntValue__Output } from './linuxcnc/v1/IniUIntValue';
-import type { IniValueRequest as _linuxcnc_v1_IniValueRequest, IniValueRequest__Output as _linuxcnc_v1_IniValueRequest__Output } from './linuxcnc/v1/IniValueRequest';
+import type { IniSnapshot as _linuxcnc_v1_IniSnapshot, IniSnapshot__Output as _linuxcnc_v1_IniSnapshot__Output } from './linuxcnc/v1/IniSnapshot';
 import type { IoStat as _linuxcnc_v1_IoStat, IoStat__Output as _linuxcnc_v1_IoStat__Output } from './linuxcnc/v1/IoStat';
 import type { IoStatDelta as _linuxcnc_v1_IoStatDelta, IoStatDelta__Output as _linuxcnc_v1_IoStatDelta__Output } from './linuxcnc/v1/IoStatDelta';
 import type { JogContinuous as _linuxcnc_v1_JogContinuous, JogContinuous__Output as _linuxcnc_v1_JogContinuous__Output } from './linuxcnc/v1/JogContinuous';
@@ -244,19 +238,12 @@ export interface ProtoGrpcType {
       IndexedAxisDelta: MessageTypeDefinition<_linuxcnc_v1_IndexedAxisDelta, _linuxcnc_v1_IndexedAxisDelta__Output>
       IndexedJointDelta: MessageTypeDefinition<_linuxcnc_v1_IndexedJointDelta, _linuxcnc_v1_IndexedJointDelta__Output>
       IndexedSpindleDelta: MessageTypeDefinition<_linuxcnc_v1_IndexedSpindleDelta, _linuxcnc_v1_IndexedSpindleDelta__Output>
-      IniBoolValue: MessageTypeDefinition<_linuxcnc_v1_IniBoolValue, _linuxcnc_v1_IniBoolValue__Output>
-      IniFindAllRequest: MessageTypeDefinition<_linuxcnc_v1_IniFindAllRequest, _linuxcnc_v1_IniFindAllRequest__Output>
-      IniFloatValue: MessageTypeDefinition<_linuxcnc_v1_IniFloatValue, _linuxcnc_v1_IniFloatValue__Output>
-      IniIntValue: MessageTypeDefinition<_linuxcnc_v1_IniIntValue, _linuxcnc_v1_IniIntValue__Output>
+      IniEntry: MessageTypeDefinition<_linuxcnc_v1_IniEntry, _linuxcnc_v1_IniEntry__Output>
       /**
-       * Read-only access to the INI loaded when this server session starts. No RPC
-       * accepts a filename, so callers cannot query files other than the active INI.
+       * Immutable for the daemon session. No request accepts a filename.
        */
       IniService: SubtypeConstructor<typeof grpc.Client, _linuxcnc_v1_IniServiceClient> & { service: _linuxcnc_v1_IniServiceDefinition }
-      IniStringValue: MessageTypeDefinition<_linuxcnc_v1_IniStringValue, _linuxcnc_v1_IniStringValue__Output>
-      IniStringValues: MessageTypeDefinition<_linuxcnc_v1_IniStringValues, _linuxcnc_v1_IniStringValues__Output>
-      IniUIntValue: MessageTypeDefinition<_linuxcnc_v1_IniUIntValue, _linuxcnc_v1_IniUIntValue__Output>
-      IniValueRequest: MessageTypeDefinition<_linuxcnc_v1_IniValueRequest, _linuxcnc_v1_IniValueRequest__Output>
+      IniSnapshot: MessageTypeDefinition<_linuxcnc_v1_IniSnapshot, _linuxcnc_v1_IniSnapshot__Output>
       InterpState: EnumTypeDefinition
       IoStat: MessageTypeDefinition<_linuxcnc_v1_IoStat, _linuxcnc_v1_IoStat__Output>
       IoStatDelta: MessageTypeDefinition<_linuxcnc_v1_IoStatDelta, _linuxcnc_v1_IoStatDelta__Output>

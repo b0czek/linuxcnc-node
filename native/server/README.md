@@ -21,14 +21,11 @@ client-component cleanup, and exclusive scope ownership. The harness refuses
 to start when another LinuxCNC/HAL runtime exists and reclaims only the runtime
 and NML resources it created.
 
-`IniService` exposes read-only `Find`, `FindAll`, `GetBool`, `GetInt`,
-`GetUInt`, and `GetFloat` queries against the active LinuxCNC INI. Requests
-contain only a section, key, and optional one-based occurrence; they cannot
-select a file. The daemon loads LinuxCNC's cached `IniFile` representation
-before binding its listeners, so parse and access failures prevent readiness
-and changes on disk are not observed until the next daemon session. Missing
-values return gRPC `NOT_FOUND`, while present values that fail conversion
-return `INVALID_ARGUMENT`.
+`IniService.Read` returns the complete parsed active INI as section/key/value
+entries, preserving repeated-key order and resolving includes through LinuxCNC's
+parser. The daemon loads this immutable snapshot before binding its listeners.
+Clients read once per session and query locally. There are no per-key RPCs,
+typed conversion RPCs, or filename parameters. Disk edits require a new session.
 
 ## Tool table mutation support
 
