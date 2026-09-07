@@ -1,104 +1,70 @@
-# LinuxCNC Node
+# linuxcnc-ctrl
 
-LinuxCNC Node is an open-source C++ and TypeScript monorepo for building
-applications on top of LinuxCNC. Its architecture is one standalone
-`linuxcnc-grpc-server` beside one patched LinuxCNC instance, a versioned raw
-gRPC client, transport-independent TypeScript domain types, and a protobuf
-WebSocket data plane for position, selected HAL values, and G-code preview. See the
-[native architecture](./docs/native-grpc-architecture.md).
+`linuxcnc-ctrl` is the open-source LinuxCNC integration used by
+[ctrlcnc.xyz](https://ctrlcnc.xyz). It owns
+the maintained LinuxCNC patch stack, the canonical `linuxcnc.v1` protobuf
+contract, the C++ gRPC and telemetry server, simulator containers, and native
+tests.
 
-> **Compatibility:** Starting with v3, these packages are purpose-built for
-> **LinuxCNC 2.10** at the pinned
-> [base revision](./linuxcnc-patches/base-revision) with this repository's
-> [LinuxCNC patch series](./linuxcnc-patches/README.md) applied. Stock or
-> other LinuxCNC builds are not ABI-compatible with these packages.
+The server attaches to one patched LinuxCNC instance. It exposes machine,
+INI, program, HAL, and scope services over gRPC, plus binary WebSocket streams
+for position history, selected HAL values, and G-code preview. See the
+[architecture document](./docs/native-grpc-architecture.md).
 
-## Repository Layout
+## Repository layout
 
-- **`proto/linuxcnc/v1`**: Versioned protobuf wire contract for machine,
-  INI, program, HAL, and scope services.
-- **`native/server`**: C++20 domain library and `linuxcnc-grpc-server` daemon.
-- **`packages/grpc-client`**: Raw generated Node gRPC clients and protobuf
-  message types, without convenience wrappers. [README](./packages/grpc-client/README.md)
-- **`packages/types`**: Transport-independent constants and domain models used
-  by consumers. [README](./packages/types/README.md)
-- **`packages/websocket-client`**: Browser-safe renderer client for the three
-  route-specific protobuf WebSocket streams.
-- **`linuxcnc-patches`**: Maintained LinuxCNC patch series and pinned upstream
-  baseline.
+- `proto/`: canonical versioned protobuf wire contract and its existing license.
+- `native/server/`: C++20 domain library, daemon, health check, and native tests.
+- `linuxcnc-patches/`: maintained patch series and pinned upstream baseline.
+- `docker/`, `Dockerfile`, and `compose.yaml`: headless simulator container.
+- `scripts/`: native formatting and clang-tidy wrappers.
 
-## Development
+## Native build
 
-Install dependencies from the repository root:
-
-```sh
-pnpm install
-```
-
-Build all publishable packages:
-
-```sh
-pnpm run build:packages
-```
-
-Run the TypeScript checks:
-
-```sh
-pnpm run typecheck
-```
-
-Build and test the standalone native contract without a running LinuxCNC
-instance:
+Build and test the transport-neutral contract without a LinuxCNC runtime:
 
 ```sh
 cmake -S . -B build/native-grpc \
-  -DLINUXCNC_GRPC_BUILD_WIRE=ON \
+  -DLINUXCNC_GRPC_BUILD_WIRE=OFF \
+  -DLINUXCNC_GRPC_ENABLE_NML=OFF \
+  -DLINUXCNC_GRPC_BUILD_TESTS=ON \
   -DCMAKE_BUILD_TYPE=Debug
 cmake --build build/native-grpc --parallel
 ctest --test-dir build/native-grpc --output-on-failure
 ```
 
-Run the TypeScript contract and consumer tests:
+A full server build requires LinuxCNC built from the pinned revision with the
+complete patch series applied:
 
 ```sh
-pnpm test
+./linuxcnc-patches/apply.sh /path/to/linuxcnc
+cmake -S . -B build/native-grpc-linuxcnc \
+  -DLINUXCNC_ROOT=/path/to/linuxcnc \
+  -DLINUXCNC_GRPC_BUILD_WIRE=ON \
+  -DLINUXCNC_GRPC_BUILD_TESTS=ON \
+  -DLINUXCNC_GRPC_ENABLE_NML=ON \
+  -DCMAKE_BUILD_TYPE=Debug
+cmake --build build/native-grpc-linuxcnc --parallel
+ctest --test-dir build/native-grpc-linuxcnc --output-on-failure
 ```
 
-## Headless simulator container
+Run native source checks directly:
 
-`linuxcnc-simulator` packages the pinned patched LinuxCNC backend and the
-native server in one headless image. It accepts a mounted LinuxCNC
-configuration and exposes the gRPC control plane on port `50051` plus the
-read-only telemetry data plane on WebSocket port `50052`.
+```sh
+./scripts/native-format.sh check
+./scripts/native-lint.sh build/native-grpc-linuxcnc
+./linuxcnc-patches/test-stack.sh
+```
 
-The container configuration, required capabilities, image tags, and custom
-INI contract are documented in [`docker`](./docker/README.md).
+## Simulator container
 
-## Patched LinuxCNC Baseline
-
-The maintained patches, their order, and the reason each divergence exists are
-documented in [`linuxcnc-patches`](./linuxcnc-patches/README.md). Build
-LinuxCNC from the pinned revision with that complete series before building or
-running the native daemon. CI performs the same checkout, patch, and build
-flow.
-
-## Prerequisites
-
-1. **LinuxCNC Environment**
-   - A working LinuxCNC development environment.
-   - Source the LinuxCNC runtime environment before running the native daemon.
-   - LinuxCNC headers and libraries must be available when building it.
-2. **Node.js 24.15 or later and pnpm**
-3. **Native build tools**
-   - A C++20 compiler, CMake, Python development headers, protobuf, and gRPC.
-   - On Debian-family systems the contract build uses `libgrpc++-dev`,
-     `libgrpc-dev`, `libprotobuf-dev`, `protobuf-compiler`, and
-     `protobuf-compiler-grpc`.
+The `linuxcnc-simulator` image packages the pinned patched LinuxCNC backend and
+`linuxcnc-grpc-server`. It exposes gRPC on port `50051` and read-only telemetry
+on WebSocket port `50052`. Configuration, capabilities, and acceptance commands
+are documented in the [Docker guide](./docker/README.md).
 
 ## License
 
-The native runtime is licensed under **GPL-2.0-only**.
-`@linuxcnc-node/types`, `@linuxcnc-node/grpc-client`, and
-`@linuxcnc-node/websocket-client` are licensed under **MIT**.
-The protobuf protocol definitions under `proto/` are also licensed under
-**MIT**.
+The project is licensed under GPL-2.0-only. LinuxCNC remains GPLv2 software.
+The protobuf definitions under `proto/` are covered by
+[`proto/LICENSE`](./proto/LICENSE).

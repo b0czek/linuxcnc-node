@@ -1,7 +1,8 @@
-# linuxcnc-simulator
+# linuxcnc-ctrl simulator
 
 `ghcr.io/b0czek/linuxcnc-simulator` contains the pinned LinuxCNC build with
-this repository's complete patch series and `linuxcnc-grpc-server`. It is a
+the `linuxcnc-ctrl` repository's complete patch series and
+`linuxcnc-grpc-server`. It is a
 simulation environment only; do not use it to control physical hardware.
 
 ## Configuration
@@ -60,6 +61,8 @@ To build locally instead of pulling the published image:
 LINUXCNC_CONFIG_DIR=/absolute/path/to/machine docker compose build
 LINUXCNC_CONFIG_DIR=/absolute/path/to/machine docker compose up
 ```
+
+Run these commands from the `linuxcnc-ctrl` checkout.
 
 ## Endpoints and image tags
 

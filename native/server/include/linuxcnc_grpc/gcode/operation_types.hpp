@@ -17,7 +17,7 @@
 namespace linuxcnc::server::gcode {
 
 // ============================================================================
-// Enums (matching TypeScript)
+// Enums (matching the canonical protobuf contract)
 // ============================================================================
 
 enum class OperationType {

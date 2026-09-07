@@ -47,7 +47,7 @@ RUN cd /src/linuxcnc/src \
     && make -j"${BUILD_JOBS}" \
     && make DESTDIR=/linuxcnc-root install
 
-WORKDIR /src/linuxcnc-node
+WORKDIR /src/linuxcnc-ctrl
 COPY CMakeLists.txt ./CMakeLists.txt
 COPY native ./native
 COPY proto ./proto
@@ -99,8 +99,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /linuxcnc-root/ /
 COPY --from=builder /usr/local/bin/linuxcnc-grpc-server /usr/local/bin/
 COPY --from=builder /usr/local/bin/linuxcnc-grpc-health-check /usr/local/bin/
-COPY docker/linuxcnc-grpc-display /usr/local/bin/linuxcnc-grpc-display
-COPY docker/linuxcnc-simulator-entrypoint /usr/local/bin/linuxcnc-simulator-entrypoint
+COPY --chmod=0755 docker/linuxcnc-grpc-display /usr/local/bin/linuxcnc-grpc-display
+COPY --chmod=0755 docker/linuxcnc-simulator-entrypoint /usr/local/bin/linuxcnc-simulator-entrypoint
 COPY docker/linuxcnc.ld.so.conf /etc/ld.so.conf.d/linuxcnc.conf
 
 ENV PATH="/opt/linuxcnc/bin:${PATH}" \

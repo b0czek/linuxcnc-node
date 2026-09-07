@@ -4,9 +4,9 @@ set -euo pipefail
 
 readonly PATCH_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly BASE_REVISION_FILE="${PATCH_DIR}/base-revision"
-readonly DEFAULT_BRANCH="linuxcnc-node/patch-stack"
-readonly COMMITTER_NAME="linuxcnc-node patch stack"
-readonly COMMITTER_EMAIL="patch-stack@linuxcnc-node.local"
+readonly DEFAULT_BRANCH="linuxcnc-ctrl/patch-stack"
+readonly COMMITTER_NAME="linuxcnc-ctrl patch stack"
+readonly COMMITTER_EMAIL="patch-stack@linuxcnc-ctrl.local"
 
 usage() {
   cat >&2 <<EOF
@@ -197,7 +197,7 @@ fi
 if [[ "${rebuild}" == true ]]; then
   [[ "${current_branch}" == "${branch_name}" ]] || \
     fail "--rebuild requires the managed branch ${branch_name} to be checked out"
-  backup_branch="linuxcnc-node/backups/patch-stack-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  backup_branch="linuxcnc-ctrl/backups/patch-stack-$(date -u +%Y%m%dT%H%M%SZ)-$$"
   git -C "${LINUXCNC_DIR}" branch "${backup_branch}" "${ACTUAL_HEAD}"
   git -C "${LINUXCNC_DIR}" switch --quiet --detach
   git -C "${LINUXCNC_DIR}" branch --force "${branch_name}" "${EXPECTED_TIP}"

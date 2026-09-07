@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(linuxcnc_node_native LANGUAGES CXX)
+project(linuxcnc_ctrl LANGUAGES CXX)
 
 include(CTest)
 

@@ -533,6 +533,7 @@ void position_collinear_compaction_test() {
   assert(arc.size() < 101);
 }
 
+#ifdef LINUXCNC_GRPC_HAS_RS274
 void preview_non_finite_rejection_test() {
   gcode::ParseContext context;
   gcode::FeedOp operation;
@@ -546,6 +547,7 @@ void preview_non_finite_rejection_test() {
   assert(rejected);
   assert(context.operations.empty());
 }
+#endif
 
 void hal_value_telemetry_test() {
   HalValueTelemetry telemetry(2);
@@ -966,7 +968,9 @@ int main() {
   nml_serial_wrap_test();
   position_cursor_generation_and_replacement_test();
   position_collinear_compaction_test();
+#ifdef LINUXCNC_GRPC_HAS_RS274
   preview_non_finite_rejection_test();
+#endif
   hal_value_telemetry_test();
   workspace_restart_cleanup_test();
   workspace_expiration_and_recovery_test();

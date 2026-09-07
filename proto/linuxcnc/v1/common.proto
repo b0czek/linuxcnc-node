@@ -3,8 +3,8 @@ syntax = "proto3";
 package linuxcnc.v1;
 
 // Versioned transport contract for one LinuxCNC instance. Field numbers are
-// intentionally assigned in this schema set (rather than inferred from
-// TypeScript types). Removed fields must remain reserved.
+// intentionally assigned in this schema set. Removed fields must remain
+// reserved.
 
 enum ProgramUnits {
   PROGRAM_UNITS_UNSPECIFIED = 0;

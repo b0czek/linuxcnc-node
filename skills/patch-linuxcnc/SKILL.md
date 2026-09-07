@@ -3,7 +3,7 @@ name: patch-linuxcnc
 description: Use when adding, modifying, or rebasing LinuxCNC patches in linuxcnc-patches/. Covers EMC_STAT/NML changes, parameter mapping, native daemon exposure, and verification for the pinned LinuxCNC baseline.
 ---
 
-# Patching LinuxCNC for linuxcnc-node
+# Patching LinuxCNC for linuxcnc-ctrl
 
 This project maintains a patch series in `linuxcnc-patches/` against a pinned
 LinuxCNC baseline (`linuxcnc-patches/base-revision`). The native daemon is
@@ -37,7 +37,7 @@ only when its complete tree exactly matches the patch files.
 ## Adding or extending a patch
 
 1. **Work in commits.** Each patch is exactly one commit on the managed
-   `linuxcnc-node/patch-stack` branch. Append a commit for a new patch. To
+   `linuxcnc-ctrl/patch-stack` branch. Append a commit for a new patch. To
    change an existing patch, interactively rebase, amend that commit, and
    rebase all later commits. Do not layer changes in the working tree.
 
@@ -62,8 +62,8 @@ only when its complete tree exactly matches the patch files.
 4. **Update the native daemon mapping** in `native/server/src/` and the
    protobuf contract when the new data crosses the transport boundary.
 
-5. **Update TypeScript types** in `types/src/core.ts` to match the new status
-   paths emitted by the daemon.
+5. **Coordinate downstream clients** after changing the protobuf boundary.
+   This repository owns only the canonical schema and native implementation.
 
 6. **Commit the LinuxCNC change** with the intended patch author and message,
    then test the clean branch. Refresh every patch file from the linear commit
@@ -77,7 +77,7 @@ only when its complete tree exactly matches the patch files.
    filename for each appended commit, normalizes mail headers with
    `git format-patch`, and verifies a full replay before replacing files. It
    normalizes the branch to the deterministic replayed commit IDs and retains
-   the pre-normalization tip under `linuxcnc-node/backups/`.
+   the pre-normalization tip under `linuxcnc-ctrl/backups/`.
 
 7. **Document the patch** in `linuxcnc-patches/README.md` under the patch
    inventory section.
@@ -92,9 +92,9 @@ From a clean checkout at the pinned baseline:
 
 The script checks the revision, validates the entire series in a temporary
 worktree, and then creates one commit per patch on
-`linuxcnc-node/patch-stack`. Use `--detach` for CI or image builds. If patch
+`linuxcnc-ctrl/patch-stack`. Use `--detach` for CI or image builds. If patch
 files changed while an older managed branch is checked out, use `--rebuild`;
-the script saves the old tip under `linuxcnc-node/backups/` before replacing
+the script saves the old tip under `linuxcnc-ctrl/backups/` before replacing
 it.
 
 ## Verification
@@ -115,9 +115,8 @@ real-time timing is not.
 2. Apply the same series to the system LinuxCNC source used for builds
    (`/home/dariusz/Desktop/linuxcnc` in this workspace).
 3. Rebuild LinuxCNC so the shared libraries match the new `EMC_STAT` layout.
-4. Build the TypeScript contract and native daemon:
+4. Build the native daemon:
    ```sh
-   pnpm --filter @linuxcnc-node/types build
    cmake -S . -B build/native-grpc-linuxcnc \
      -DLINUXCNC_ROOT=/path/to/linuxcnc \
      -DLINUXCNC_GRPC_BUILD_WIRE=ON \

@@ -31,8 +31,7 @@ struct PositionHistoryBatch {
 };
 
 // Bounded, cursor-addressable history used by both the gRPC position service
-// and local consumers.  It stores the same ten-double layout as the stable
-// TypeScript POSITION_STRIDE representation, but has no JavaScript types.
+// and local consumers. It stores the stable ten-double wire layout.
 class PositionHistory {
  public:
   explicit PositionHistory(std::size_t max_samples = 10000,

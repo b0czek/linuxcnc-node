@@ -1,6 +1,6 @@
 # LinuxCNC patch series
 
-`linuxcnc-node` since v3 is purpose-built for LinuxCNC with the patches in this
+`linuxcnc-ctrl` is purpose-built for LinuxCNC with the patches in this
 directory. It is not compatible with an arbitrary stock LinuxCNC build.
 
 ## Baseline
@@ -35,7 +35,7 @@ From a clean checkout of the baseline revision:
 ```
 
 The script builds the complete series in a temporary worktree first, then
-creates and checks out `linuxcnc-node/patch-stack`. Every patch is applied with
+creates and checks out `linuxcnc-ctrl/patch-stack`. Every patch is applied with
 `git am`, so `git log`, `git show`, rebase, revert, and bisect work normally.
 It is safe to rerun for the exact stack, but refuses dirty, partial, stale, or
 divergent checkouts.
@@ -56,7 +56,7 @@ matches a separately materialized series; it never absorbs extra changes:
 
 If tracked patch files changed while a clean managed branch still contains an
 older stack, rebuild it explicitly. The previous tip is retained under
-`linuxcnc-node/backups/`:
+`linuxcnc-ctrl/backups/`:
 
 ```sh
 ./linuxcnc-patches/apply.sh --rebuild /path/to/linuxcnc
@@ -80,7 +80,7 @@ reviewable patch files:
 existing filenames by ordinal, names newly appended patches from their commit
 subjects, and replays the generated series before replacing any patch file. It
 then normalizes the checked-out branch to those deterministic replayed commit
-IDs, retaining its prior tip under `linuxcnc-node/backups/` when the IDs
+IDs, retaining its prior tip under `linuxcnc-ctrl/backups/` when the IDs
 change. It refuses to remove patches implicitly.
 
 Patch filenames begin with a sequence number. New patches must use the next
@@ -102,8 +102,8 @@ it for every configured spindle, serializes it through NML, and exposes it as
 speed supplied to `spindle.N.speed-in`, converted from revolutions per second
 to RPM to match the other spindle status speed fields.
 
-The corresponding `@linuxcnc-node/core` property is
-`motion.spindle[N].feedback`. Keeping the feedback in spindle status gives GUI
+The corresponding transport property is `motion.spindle[N].feedback`. Keeping
+the feedback in spindle status gives GUI
 and remote status consumers one coherent source without requiring direct HAL
 access.
 
@@ -128,7 +128,7 @@ Index 0 of the arrays is G54, index 8 is G59.3. The fields are serialized
 through NML and exposed in the Python `linuxcnc.stat` object as
 `g5x_offsets`, `g5x_rotations`, `g28_position`, and `g30_position`.
 
-The corresponding `@linuxcnc-node/core` properties are `task.g5xOffsets[N]`,
+The corresponding transport properties are `task.g5xOffsets[N]`,
 `task.g5xRotations[N]`, `task.g28Position`, and `task.g30Position`.
 
 ### 0003 — Preserve G96/G97 modal state across task-mode switches
@@ -153,8 +153,7 @@ This patch:
   `SET_SPINDLE_MODE(s, 0)`, keeping the interpreter model consistent with
   canon when a program ends.
 
-No new `EMC_STAT` fields are added, so no Node.js binding or TypeScript
-changes are required.
+No new `EMC_STAT` fields or public transport fields are added.
 
 ### 0004 — Resumable Stop for active AUTO programs
 
@@ -167,10 +166,10 @@ must issue `EMC_TASK_ABORT` explicitly when execution should be terminated.
 Abort, E-stop, faults, mode changes, M0/M1, and Pause retain their existing
 behavior.
 
-The command is exposed as Python `command.program_stop()`, Node
-`CommandChannel.stopProgram()`, and `halui.program.stop`. Stop progress is
+The command is exposed as Python `command.program_stop()`, protobuf
+`stop_program`, and `halui.program.stop`. Stop progress is
 reported as `EMC_TASK_STOP_STATE` (`IDLE`, `STOPPING`, `STOPPED`, `STARTING`)
-through Python `stop_state` and Node `task.stopState`.  The patch adds a
+through Python `stop_state` and the task-status protobuf. The patch adds a
 `tests/resumable-stop` LinuxCNC regression that verifies active AUTO
 Stop/Resume and Stop/Single-Step preserve the queued program, disable
 spindle/coolant while stopped, restore them without adding a task-level spindle-at-speed
@@ -205,7 +204,7 @@ checks prevent trusted-directory symlink escapes.
 The shared resolver is used by `halcmd`, `halrmt`, userspace `rtapi_app`, shell
 completion, and the setuid module helper. `linuxcnc` and `halrun` continue to
 export `HAL_RTMOD_DIR` and only supply the standard `HAL_RTMOD_PATH` default
-when the caller did not set one. No Node.js ABI or binding changes are needed.
+when the caller did not set one. No public transport changes are needed.
 
 ### 0007 — Native automatic tool wear offsets
 
@@ -217,7 +216,7 @@ cancels compensation and same-block explicit G-codes take precedence.
 
 Stored wear is available in interpreter parameters `#5430–#5438`, Python tool
 status, and the interpreter Python tool object. The tool database protocol is
-v2.2 and the tool-entry line limit is 512 bytes. The matching Node API exposes
+v2.2 and the tool-entry line limit is 512 bytes. The protobuf contract exposes
 `ToolEntry.wearOffset`, including status deltas and partial `setTool` updates.
 
 ### 0008 — Tapered G76 drive lines and alternating infeed
@@ -239,7 +238,7 @@ Y endpoints. G76 also accepts `D0` for the existing fixed compound-infeed
 direction (the default) and `D1` to alternate roughing passes across the final
 thread line; full-depth and spring passes remain centered, and `Q0` keeps every
 pass on the centered line. Both cylindrical and tapered alternating paths are
-covered. No NML or Node.js API changes are required.
+covered. No NML or public transport changes are required.
 
 ### 0009 — Safe G76 Stop clearance and two-stage Single Step
 
@@ -267,7 +266,7 @@ runtime scenarios cover direct first passes, fresh and prequeued cylindrical
 and tapered safe-approach/thread-clearance pairs, synchronized exit tapers,
 arc-blend clearance endpoints, an unmarked post-G33 rapid, and repeated Stops
 with deterministic cut-side timing near the cut/retract handoff. The internal
-NML and motion fields add no public status field or Node.js binding requirement.
+NML and motion fields add no public status or transport field.
 
 ### 0010 — Recording canon backend for native G-code preview
 
@@ -349,8 +348,8 @@ nonzero CSS limit remains disabled and is not restarted by resumable Stop.
 
 The `tests/css-status` regression covers G96 while stopped, persistence across
 M5, clearing on G97, and stopped-spindle enabled state. The patch exposes
-`css_maximum` through Python spindle status; the existing Node status adapter
-and schema already carry it, so no Node binding change is required.
+`css_maximum` through Python spindle status; the canonical protobuf schema
+already carries it, so no transport-contract change is required.
 
 ### 0015 — Pass spindle selectors to remaps
 

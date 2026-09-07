@@ -4,8 +4,8 @@ set -euo pipefail
 
 readonly PATCH_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly BASE_REVISION_FILE="${PATCH_DIR}/base-revision"
-readonly COMMITTER_NAME="linuxcnc-node patch stack"
-readonly COMMITTER_EMAIL="patch-stack@linuxcnc-node.local"
+readonly COMMITTER_NAME="linuxcnc-ctrl patch stack"
+readonly COMMITTER_EMAIL="patch-stack@linuxcnc-ctrl.local"
 
 fail() {
   echo "$*" >&2
@@ -93,7 +93,7 @@ verified_tree="$(git -C "${VERIFY_WORKTREE}" rev-parse HEAD^{tree})"
 source_tip="$(git -C "${LINUXCNC_DIR}" rev-parse HEAD)"
 verified_tip="$(git -C "${VERIFY_WORKTREE}" rev-parse HEAD)"
 if [[ "${source_tip}" != "${verified_tip}" ]]; then
-  backup_branch="linuxcnc-node/backups/refresh-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  backup_branch="linuxcnc-ctrl/backups/refresh-$(date -u +%Y%m%dT%H%M%SZ)-$$"
   git -C "${LINUXCNC_DIR}" branch "${backup_branch}" "${source_tip}"
   git -C "${LINUXCNC_DIR}" reset --soft "${verified_tip}"
   echo "Pre-normalization tip retained as ${backup_branch}"

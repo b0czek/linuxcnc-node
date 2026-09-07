@@ -12,29 +12,6 @@ env:
   LINUXCNC_CACHE_VERSION: v4
 
 jobs:
-  biome:
-    name: Biome format and lint
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Check formatting and lint
-        run: pnpm run check
-
   patch-stack:
     name: LinuxCNC patch stack tooling
     runs-on: ubuntu-latest
@@ -66,34 +43,6 @@ jobs:
         run: ./scripts/native-format.sh check
         env:
           CLANG_FORMAT: ${{ runner.temp }}/clang-format/bin/clang-format
-
-  typecheck:
-    name: Typecheck
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Install protobuf compiler
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends protobuf-compiler
-
-      - name: Typecheck
-        run: pnpm run typecheck
 
   test:
     name: Test
@@ -131,18 +80,6 @@ jobs:
             protobuf-compiler \
             protobuf-compiler-grpc \
             python3-dev
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
 
       - name: Restore LinuxCNC build
         id: linuxcnc-cache
@@ -263,7 +200,7 @@ jobs:
         run: cmake --build build/native-grpc-linuxcnc --parallel 2
 
       - name: Lint native LinuxCNC sources
-        run: pnpm lint:native build/native-grpc-linuxcnc
+        run: ./scripts/native-lint.sh build/native-grpc-linuxcnc
         env:
           CLANG_TIDY: clang-tidy
           RUN_CLANG_TIDY: run-clang-tidy
@@ -288,9 +225,6 @@ jobs:
         with:
           path: .cache/linuxcnc/${{ steps.linuxcnc-baseline.outputs.revision }}/linuxcnc
           key: linuxcnc-${{ runner.os }}-${{ runner.arch }}-${{ steps.linuxcnc-baseline.outputs.revision }}-${{ env.LINUXCNC_CACHE_VERSION }}-${{ hashFiles('linuxcnc-patches/*.patch') }}
-
-      - name: Test
-        run: pnpm test
 
   container:
     name: linuxcnc-simulator container

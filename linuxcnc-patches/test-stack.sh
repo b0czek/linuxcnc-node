@@ -54,7 +54,7 @@ git clone --quiet "${UPSTREAM}" "${TARGET}"
 git -C "${TARGET}" checkout --quiet --detach "${base_revision}"
 "${STACK}/apply.sh" "${TARGET}" >/dev/null
 [[ "$(git -C "${TARGET}" branch --show-current)" == \
-  "linuxcnc-node/patch-stack" ]] || fail "managed branch was not selected"
+  "linuxcnc-ctrl/patch-stack" ]] || fail "managed branch was not selected"
 [[ "$(git -C "${TARGET}" rev-list --count "${base_revision}..HEAD")" == 2 ]] || \
   fail "materialization did not create one commit per patch"
 [[ "$(git -C "${TARGET}" log -2 --format=%s)" == $'fixture: second patch\nfixture: first patch' ]] || \
@@ -73,7 +73,7 @@ fi
 rm "${TARGET}/unrelated.txt"
 
 git clone --quiet "${TARGET}" "${PARTIAL}"
-git -C "${PARTIAL}" switch --quiet linuxcnc-node/patch-stack
+git -C "${PARTIAL}" switch --quiet linuxcnc-ctrl/patch-stack
 git -C "${PARTIAL}" reset --quiet --hard HEAD^
 if "${STACK}/apply.sh" "${PARTIAL}" >/dev/null 2>&1; then
   fail "partial managed stack was accepted"
@@ -108,7 +108,7 @@ fi
 [[ "$(git -C "${STALE}" rev-list --count "${base_revision}..HEAD")" == 3 ]] || \
   fail "rebuild did not install the refreshed stack"
 [[ "$(git -C "${STALE}" for-each-ref --format='%(refname)' \
-  'refs/heads/linuxcnc-node/backups/patch-stack-*' | wc -l)" -ge 1 ]] || \
+  'refs/heads/linuxcnc-ctrl/backups/patch-stack-*' | wc -l)" -ge 1 ]] || \
   fail "rebuild did not retain a backup branch"
 assert_clean "${STALE}"
 
@@ -119,7 +119,7 @@ for patch in "${STACK}"/*.patch; do
 done
 "${STACK}/apply.sh" --adopt "${ADOPT}" >/dev/null
 [[ "$(git -C "${ADOPT}" branch --show-current)" == \
-  "linuxcnc-node/patch-stack" ]] || fail "adoption did not create the managed branch"
+  "linuxcnc-ctrl/patch-stack" ]] || fail "adoption did not create the managed branch"
 assert_clean "${ADOPT}"
 
 git -C "${ADOPT}" switch --quiet --detach "${base_revision}"
@@ -127,7 +127,7 @@ for patch in "${STACK}"/*.patch; do
   git -C "${ADOPT}" apply "${patch}"
 done
 printf 'unrelated\n' >"${ADOPT}/unrelated.txt"
-if "${STACK}/apply.sh" --adopt --branch linuxcnc-node/adopt-reject \
+if "${STACK}/apply.sh" --adopt --branch linuxcnc-ctrl/adopt-reject \
   "${ADOPT}" >/dev/null 2>&1; then
   fail "adoption accepted an unrelated change"
 fi
@@ -146,14 +146,14 @@ git -C "${REPLAY}" checkout --quiet --detach "${base_revision}"
 assert_clean "${REPLAY}"
 
 git clone --quiet "${TARGET}" "${MERGED}"
-git -C "${MERGED}" switch --quiet linuxcnc-node/patch-stack
+git -C "${MERGED}" switch --quiet linuxcnc-ctrl/patch-stack
 git -C "${MERGED}" config user.name "Patch Stack Test"
 git -C "${MERGED}" config user.email "patch-stack-test@example.invalid"
 git -C "${MERGED}" switch --quiet -c fixture-side HEAD^
 printf 'side\n' >"${MERGED}/side.txt"
 git -C "${MERGED}" add side.txt
 git -C "${MERGED}" commit --quiet -m "fixture: side"
-git -C "${MERGED}" switch --quiet linuxcnc-node/patch-stack
+git -C "${MERGED}" switch --quiet linuxcnc-ctrl/patch-stack
 printf 'main\n' >"${MERGED}/main.txt"
 git -C "${MERGED}" add main.txt
 git -C "${MERGED}" commit --quiet -m "fixture: main"

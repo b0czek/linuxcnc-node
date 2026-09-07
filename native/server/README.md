@@ -116,8 +116,8 @@ Formatting and static analysis are pinned to Clang 21. Install
 formatting workflow from the repository root:
 
 ```sh
-pnpm format:native
-pnpm check:native:format
+./scripts/native-format.sh format
+./scripts/native-format.sh check
 ```
 
 Clang-Tidy consumes a CMake compilation database, so configure and build the
@@ -132,7 +132,7 @@ cmake -S . -B build/native-grpc \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
   -DCMAKE_BUILD_TYPE=Debug
 cmake --build build/native-grpc --parallel
-pnpm lint:native build/native-grpc
+./scripts/native-lint.sh build/native-grpc
 ctest --test-dir build/native-grpc --output-on-failure
 ```
 

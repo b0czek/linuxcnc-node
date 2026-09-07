@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package linuxcnc.v1;
 
-// Aggregate entrypoint for Node and other consumers of the complete contract.
+// Aggregate entrypoint for consumers of the complete contract.
 import public "linuxcnc/v1/common.proto";
 import public "linuxcnc/v1/ini.proto";
 import public "linuxcnc/v1/machine.proto";
