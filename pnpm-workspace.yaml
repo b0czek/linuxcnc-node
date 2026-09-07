@@ -5,7 +5,7 @@ packages:
 catalog:
   '@edenapp/babel': ^0.12.1
   '@edenapp/genesis': ^0.12.1
-  '@edenapp/scripts': ^0.12.1
+  '@edenapp/scripts': ^0.13.0
   '@edenapp/types': ^0.12.1
   '@types/node': ^24.13.3
   tsup: ^8.5.1
