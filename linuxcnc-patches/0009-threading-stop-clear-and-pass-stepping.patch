@@ -28,7 +28,7 @@ Preserve pass ownership on synthetic blend arcs, make marked clearance endpoints
  src/emc/task/task.hh                          |   2 +-
  src/emc/task/taskintf.cc                      |   8 +-
  src/emc/tp/tc_types.h                         |   2 +
- src/emc/tp/tp.c                               | 189 +++++++++-
+ src/emc/tp/tp.c                               | 189 +++++++-
  src/emc/tp/tp.h                               |   3 +-
  src/emc/tp/tp_types.h                         |  10 +-
  tests/interp/compile/use-rs274.cc             |   5 +
@@ -41,7 +41,7 @@ Preserve pass ownership on synthetic blend arcs, make marked clearance endpoints
  .../resumable-stop/g76-tapered-exit-taper.ngc |   7 +
  tests/resumable-stop/g76-tapered-step.ngc     |   4 +
  tests/resumable-stop/g76-tapered.ngc          |   7 +
- tests/resumable-stop/test-ui.py               | 410 +++++++++++++++++++-
+ tests/resumable-stop/test-ui.py               | 410 +++++++++++++++++-
  tests/resumable-stop/test.ini                 |   1 +
  tests/resumable-stop/test.sh                  |  15 +
  35 files changed, 957 insertions(+), 59 deletions(-)
@@ -54,7 +54,7 @@ Preserve pass ownership on synthetic blend arcs, make marked clearance endpoints
  create mode 100644 tests/resumable-stop/g76-tapered.ngc
 
 diff --git a/docs/src/gcode/g-code.adoc b/docs/src/gcode/g-code.adoc
-index 4160cfb..760cfe2 100644
+index 4160cfb4a2..760cfe2384 100644
 --- a/docs/src/gcode/g-code.adoc
 +++ b/docs/src/gcode/g-code.adoc
 @@ -1986,6 +1986,21 @@ pass, so a relief groove will be required at the entry unless the
@@ -80,7 +80,7 @@ index 4160cfb..760cfe2 100644
  spindle speed and will be a <<gcode:g0,rapid move>>. With a slow spindle,
  the exit move might take only a small fraction of a revolution. If the
 diff --git a/src/emc/motion/command.c b/src/emc/motion/command.c
-index efe02af..b6ad9c1 100644
+index efe02af73d..b6ad9c1504 100644
 --- a/src/emc/motion/command.c
 +++ b/src/emc/motion/command.c
 @@ -509,6 +509,8 @@ void emcmotCommandHandler_locked(void *arg, long servo_period)
@@ -162,7 +162,7 @@ index efe02af..b6ad9c1 100644
  		emcmotStatus->commandStatus = EMCMOT_COMMAND_BAD_EXEC;
  		tpAbort(&emcmotInternal->coord_tp);
 diff --git a/src/emc/motion/control.c b/src/emc/motion/control.c
-index 0a5d550..160c2dc 100644
+index 0a5d550480..160c2dcd2c 100644
 --- a/src/emc/motion/control.c
 +++ b/src/emc/motion/control.c
 @@ -1993,12 +1993,11 @@ static void output_to_hal(void)
@@ -207,7 +207,7 @@ index 0a5d550..160c2dc 100644
      // State Tags handling
      // Get the current executing trajectory component (the "Source of Truth")
 diff --git a/src/emc/motion/motion.h b/src/emc/motion/motion.h
-index 84ab8eb..dfc990f 100644
+index 84ab8eb6ce..dfc990f853 100644
 --- a/src/emc/motion/motion.h
 +++ b/src/emc/motion/motion.h
 @@ -275,6 +275,8 @@ extern "C" {
@@ -220,7 +220,7 @@ index 84ab8eb..dfc990f 100644
  
  /*! \todo FIXME - these packed bits might be replaced with chars
 diff --git a/src/emc/nml_intf/canon.hh b/src/emc/nml_intf/canon.hh
-index 23ef06e..9a41b26 100644
+index 23ef06ec5f..9a41b2647f 100644
 --- a/src/emc/nml_intf/canon.hh
 +++ b/src/emc/nml_intf/canon.hh
 @@ -1056,6 +1056,14 @@ extern int USER_DEFINED_FUNCTION_ADD(USER_DEFINED_FUNCTION_TYPE func,
@@ -239,7 +239,7 @@ index 23ef06e..9a41b26 100644
  // it to the interp list in certain cases
  extern void ON_RESET(void);
 diff --git a/src/emc/nml_intf/emc.cc b/src/emc/nml_intf/emc.cc
-index fb74ca4..230ef23 100644
+index 5e69fbb997..da68282b6d 100644
 --- a/src/emc/nml_intf/emc.cc
 +++ b/src/emc/nml_intf/emc.cc
 @@ -214,6 +214,9 @@ int emcFormat(NMLTYPE type, void *buffer, CMS * cms)
@@ -283,7 +283,7 @@ index fb74ca4..230ef23 100644
  
  /*
 diff --git a/src/emc/nml_intf/emc.hh b/src/emc/nml_intf/emc.hh
-index ee07d56..d647309 100644
+index a98ae39f20..d2ab16d3ba 100644
 --- a/src/emc/nml_intf/emc.hh
 +++ b/src/emc/nml_intf/emc.hh
 @@ -144,6 +144,7 @@ struct PM_CARTESIAN;
@@ -306,7 +306,7 @@ index ee07d56..d647309 100644
          normal, int turn, int type, double vel, double ini_maxvel, double acc, double ini_maxjerk);
  extern int emcTrajSetTermCond(int cond, double tolerance);
 diff --git a/src/emc/nml_intf/emc_nml.hh b/src/emc/nml_intf/emc_nml.hh
-index 3d373a4..70e695c 100644
+index 92e21f800b..e9a2be99fa 100644
 --- a/src/emc/nml_intf/emc_nml.hh
 +++ b/src/emc/nml_intf/emc_nml.hh
 @@ -746,7 +746,9 @@ class EMC_TRAJ_LINEAR_MOVE:public EMC_TRAJ_CMD_MSG {
@@ -350,7 +350,7 @@ index 3d373a4..70e695c 100644
    public:
      EMC_TASK_PLAN_SET_OPTIONAL_STOP()
 diff --git a/src/emc/nml_intf/interpl.cc b/src/emc/nml_intf/interpl.cc
-index 80fd26f..1c58826 100644
+index 80fd26ffb1..1c58826f25 100644
 --- a/src/emc/nml_intf/interpl.cc
 +++ b/src/emc/nml_intf/interpl.cc
 @@ -30,6 +30,11 @@ void NML_INTERP_LIST::set_line_number(int line)
@@ -410,7 +410,7 @@ index 80fd26f..1c58826 100644
 +    return pass_group;
 +}
 diff --git a/src/emc/nml_intf/interpl.hh b/src/emc/nml_intf/interpl.hh
-index b5ef165..324db10 100644
+index b5ef1652a6..324db10675 100644
 --- a/src/emc/nml_intf/interpl.hh
 +++ b/src/emc/nml_intf/interpl.hh
 @@ -26,6 +26,7 @@ class NMLmsg;
@@ -440,7 +440,7 @@ index b5ef165..324db10 100644
  };
  
 diff --git a/src/emc/rs274ngc/gcodemodule.cc b/src/emc/rs274ngc/gcodemodule.cc
-index 32aeed5..d97d0ac 100644
+index 32aeed560b..d97d0ac765 100644
 --- a/src/emc/rs274ngc/gcodemodule.cc
 +++ b/src/emc/rs274ngc/gcodemodule.cc
 @@ -559,6 +559,11 @@ void WAIT_SPINDLE_ORIENT_COMPLETE(int /*s*/, double /*timeout*/) {}
@@ -456,7 +456,7 @@ index 32aeed5..d97d0ac 100644
  void PALLET_SHUTTLE() {}
  void SELECT_TOOL(int tool) {selected_tool = tool;}
 diff --git a/src/emc/rs274ngc/interp_convert.cc b/src/emc/rs274ngc/interp_convert.cc
-index 373916c..33a35bd 100644
+index 373916cfb0..33a35bda2e 100644
 --- a/src/emc/rs274ngc/interp_convert.cc
 +++ b/src/emc/rs274ngc/interp_convert.cc
 @@ -5618,11 +5618,14 @@ threading_pass(setup_pointer settings, block_pointer block,
@@ -542,7 +542,7 @@ index 373916c..33a35bd 100644
  
  int Interp::convert_threading_cycle(block_pointer block,
 diff --git a/src/emc/sai/saicanon.cc b/src/emc/sai/saicanon.cc
-index b349f49..c4703d4 100644
+index b349f4952d..c4703d40d8 100644
 --- a/src/emc/sai/saicanon.cc
 +++ b/src/emc/sai/saicanon.cc
 @@ -1072,6 +1072,12 @@ void FINISH(void) {
@@ -559,7 +559,7 @@ index b349f49..c4703d4 100644
  {
      PRINT("ON_RESET()\n");
 diff --git a/src/emc/task/emccanon.cc b/src/emc/task/emccanon.cc
-index e5d71a6..ad1352a 100644
+index e5d71a60e8..ad1352a7d4 100644
 --- a/src/emc/task/emccanon.cc
 +++ b/src/emc/task/emccanon.cc
 @@ -149,6 +149,56 @@ struct JerkData{
@@ -668,7 +668,7 @@ index e5d71a6..ad1352a 100644
          linearMoveMsg->type = EMC_MOTION_TYPE_INDEXROTARY;
      else
 diff --git a/src/emc/task/emctask.cc b/src/emc/task/emctask.cc
-index d5c060f..e0fe4e3 100644
+index d5c060f669..e0fe4e3616 100644
 --- a/src/emc/task/emctask.cc
 +++ b/src/emc/task/emctask.cc
 @@ -249,8 +249,7 @@ int emcTaskAbort()
@@ -687,10 +687,10 @@ index d5c060f..e0fe4e3 100644
  }
 -
 diff --git a/src/emc/task/emctaskmain.cc b/src/emc/task/emctaskmain.cc
-index 235a747..1addd75 100644
+index 64b5497e58..beb6d565d6 100644
 --- a/src/emc/task/emctaskmain.cc
 +++ b/src/emc/task/emctaskmain.cc
-@@ -463,6 +463,22 @@ static int programStartLine = 0;	// which line to run program from
+@@ -462,6 +462,22 @@ static int programStartLine = 0;	// which line to run program from
  int stepping = 0;
  int steppingWait = 0;
  static int steppedLine = 0;
@@ -713,7 +713,7 @@ index 235a747..1addd75 100644
  
  // Variables to handle MDI call interrupts
  // Depth of call level before interrupted MDI call
-@@ -789,8 +805,7 @@ static void emcTaskResumeInterpreter()
+@@ -788,8 +804,7 @@ static void emcTaskResumeInterpreter()
          emcStatus->task.interpState = interpResumeState;
      }
      emcStatus->motion.traj.single_stepping = 0;
@@ -723,7 +723,7 @@ index 235a747..1addd75 100644
  }
  
  static void emcTaskStepInterpreter()
-@@ -1421,6 +1436,10 @@ static int emcTaskPlan(void)
+@@ -1420,6 +1435,10 @@ static int emcTaskPlan(void)
  		    emcStatus->motion.traj.single_stepping = 1;
  		    stepping = 1;	// set stepping mode in case it's not
  		    steppingWait = 0;	// clear the wait
@@ -734,7 +734,7 @@ index 235a747..1addd75 100644
  		    break;
  
  		    // otherwise we can't handle it
-@@ -1573,6 +1592,10 @@ static int emcTaskPlan(void)
+@@ -1572,6 +1591,10 @@ static int emcTaskPlan(void)
  		    emcStatus->motion.traj.single_stepping = 1;
  		    stepping = 1;	// set stepping mode in case it's not
  		    steppingWait = 0;	// clear the wait
@@ -745,7 +745,7 @@ index 235a747..1addd75 100644
  		    break;
  
  		    // otherwise we can't handle it
-@@ -1825,6 +1848,11 @@ static EMC_TASK_EXEC emcTaskCheckPreconditions(NMLmsg * cmd)
+@@ -1824,6 +1847,11 @@ static EMC_TASK_EXEC emcTaskCheckPreconditions(NMLmsg * cmd)
  	return EMC_TASK_EXEC::WAITING_FOR_MOTION_AND_IO;
  	break;
  
@@ -757,7 +757,7 @@ index 235a747..1addd75 100644
      case EMC_TRAJ_DELAY_TYPE:
  	return EMC_TASK_EXEC::WAITING_FOR_MOTION_AND_IO;
  	break;
-@@ -2066,7 +2094,9 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -2065,7 +2093,9 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
          retval = emcTrajLinearMove(emcTrajLinearMoveMsg->end,
                                     emcTrajLinearMoveMsg->type, emcTrajLinearMoveMsg->vel,
                                     emcTrajLinearMoveMsg->ini_maxvel, emcTrajLinearMoveMsg->acc, emcTrajLinearMoveMsg->ini_maxjerk,
@@ -768,7 +768,7 @@ index 235a747..1addd75 100644
  	break;
  
      case EMC_TRAJ_CIRCULAR_MOVE_TYPE:
-@@ -2403,6 +2433,8 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -2401,6 +2431,8 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  	} else { // we can honour the modeswitch
  	    if (mode_msg->mode != emcStatus->task.mode) {
  		emcTaskStopClear();
@@ -777,7 +777,7 @@ index 235a747..1addd75 100644
  	    }
  	    if (mode_msg->mode == EMC_TASK_MODE::MANUAL &&
  		emcStatus->task.mode != EMC_TASK_MODE::MANUAL) {
-@@ -2436,8 +2468,7 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -2434,8 +2466,7 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  		emcStatus->task.interpState = EMC_TASK_INTERP::IDLE;
  		emcStatus->task.execState = EMC_TASK_EXEC::DONE;
  		emcStatus->motion.traj.single_stepping = 0;
@@ -787,7 +787,7 @@ index 235a747..1addd75 100644
  
  		// now queue up command to resynch interpreter
  		emcTaskQueueTaskPlanSynchCmd();
-@@ -2450,6 +2481,8 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -2448,6 +2479,8 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  	state_msg = reinterpret_cast<EMC_TASK_SET_STATE *>(cmd);
  	if (state_msg->state != EMC_TASK_STATE::ON) {
  	    emcTaskStopClear();
@@ -796,7 +796,7 @@ index 235a747..1addd75 100644
  	}
  	retval = emcTaskSetState(state_msg->state);
  	break;
-@@ -2534,8 +2567,7 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -2532,8 +2565,7 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  
      case EMC_TASK_PLAN_EXECUTE_TYPE:
  	emcStatus->motion.traj.single_stepping = 0;
@@ -806,7 +806,7 @@ index 235a747..1addd75 100644
  	execute_msg = reinterpret_cast<EMC_TASK_PLAN_EXECUTE *>(cmd);
          if (!all_homed() && !no_force_homing) { //!no_force_homing = force homing before MDI
              emcOperatorError(_("Can't issue MDI command when not homed"));
-@@ -2630,8 +2662,7 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -2628,8 +2660,7 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
              break;
          }
  	emcStatus->motion.traj.single_stepping = 0;
@@ -816,7 +816,7 @@ index 235a747..1addd75 100644
  	if (!taskplanopen && emcStatus->task.file[0] != 0) {
  	    emcTaskPlanOpen(emcStatus->task.file);
  	}
-@@ -2699,6 +2730,10 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
+@@ -2697,6 +2728,10 @@ static int emcTaskIssueCommand(NMLmsg * cmd)
  	}
  	break;
  
@@ -827,7 +827,7 @@ index 235a747..1addd75 100644
      case EMC_TASK_PLAN_SET_OPTIONAL_STOP_TYPE:
  	os_msg = reinterpret_cast<EMC_TASK_PLAN_SET_OPTIONAL_STOP *>(cmd);
  	emcTaskPlanSetOptionalStop(os_msg->state);
-@@ -2802,6 +2837,7 @@ static EMC_TASK_EXEC emcTaskCheckPostconditions(NMLmsg * cmd)
+@@ -2800,6 +2835,7 @@ static EMC_TASK_EXEC emcTaskCheckPostconditions(NMLmsg * cmd)
      case EMC_TASK_PLAN_END_TYPE:
      case EMC_TASK_PLAN_INIT_TYPE:
      case EMC_TASK_PLAN_SYNCH_TYPE:
@@ -835,7 +835,7 @@ index 235a747..1addd75 100644
      case EMC_TASK_PLAN_EXECUTE_TYPE:
      case EMC_TASK_PLAN_OPTIONAL_STOP_TYPE:
  	return EMC_TASK_EXEC::DONE;
-@@ -2843,11 +2879,18 @@ static EMC_TASK_EXEC emcTaskCheckPostconditions(NMLmsg * cmd)
+@@ -2841,11 +2877,18 @@ static EMC_TASK_EXEC emcTaskCheckPostconditions(NMLmsg * cmd)
  #define STEPPING_CHECK()                                                   \
  if (stepping) {                                                            \
    if (! steppingWait) {                                                    \
@@ -857,7 +857,7 @@ index 235a747..1addd75 100644
        break;                                                               \
      }                                                                      \
    }                                                                        \
-@@ -2908,8 +2951,7 @@ static int emcTaskExecute(void)
+@@ -2906,8 +2949,7 @@ static int emcTaskExecute(void)
  	emcStatus->task.interpState = EMC_TASK_INTERP::IDLE;
  	emcStatus->task.execState = EMC_TASK_EXEC::DONE;
  	emcStatus->motion.traj.single_stepping = 0;
@@ -867,7 +867,7 @@ index 235a747..1addd75 100644
  
  	// now queue up command to resynch interpreter
  	emcTaskQueueTaskPlanSynchCmd();
-@@ -2931,6 +2973,7 @@ static int emcTaskExecute(void)
+@@ -2929,6 +2971,7 @@ static int emcTaskExecute(void)
  		if (0 != emcTaskCommand) {
  		    emcTaskEager = 1;
  		    emcStatus->task.currentLine = interp_list.get_line_number();
@@ -875,7 +875,7 @@ index 235a747..1addd75 100644
  		    emcStatus->task.callLevel = emcTaskPlanLevel();
  		    // and set it for all subsystems which use queued ids
  		    emcTrajSetMotionId(emcStatus->task.currentLine);
-@@ -3759,8 +3802,7 @@ int main(int argc, char *argv[])
+@@ -3754,8 +3797,7 @@ int main(int argc, char *argv[])
  	    emcStatus->task.interpState = EMC_TASK_INTERP::IDLE;
  	    emcStatus->task.execState = EMC_TASK_EXEC::DONE;
  		emcStatus->motion.traj.single_stepping = 0;
@@ -886,7 +886,7 @@ index 235a747..1addd75 100644
  	    // now queue up command to resynch interpreter
  	    emcTaskQueueTaskPlanSynchCmd();
 diff --git a/src/emc/task/task.hh b/src/emc/task/task.hh
-index d8c619c..79dbeb6 100644
+index d8c619cdb5..79dbeb68bc 100644
 --- a/src/emc/task/task.hh
 +++ b/src/emc/task/task.hh
 @@ -22,6 +22,7 @@
@@ -903,7 +903,7 @@ index d8c619c..79dbeb6 100644
  #endif
 -
 diff --git a/src/emc/task/taskintf.cc b/src/emc/task/taskintf.cc
-index 86fdd15..4796832 100644
+index 86fdd15940..4796832331 100644
 --- a/src/emc/task/taskintf.cc
 +++ b/src/emc/task/taskintf.cc
 @@ -1499,8 +1499,10 @@ int emcTrajSetTermCond(int cond, double tolerance)
@@ -929,7 +929,7 @@ index 86fdd15..4796832 100644
      return usrmotWriteEmcmotCommand(&emcmotCommand);
  }
 diff --git a/src/emc/tp/tc_types.h b/src/emc/tp/tc_types.h
-index c1767d5..17ebe59 100644
+index c1767d5613..17ebe59d7c 100644
 --- a/src/emc/tp/tc_types.h
 +++ b/src/emc/tp/tc_types.h
 @@ -167,6 +167,8 @@ typedef struct {
@@ -942,7 +942,7 @@ index c1767d5..17ebe59 100644
                              // this segment (g64 mode)
  
 diff --git a/src/emc/tp/tp.c b/src/emc/tp/tp.c
-index 3b78e00..d4373fd 100644
+index e48127c5a9..00a06f1a75 100644
 --- a/src/emc/tp/tp.c
 +++ b/src/emc/tp/tp.c
 @@ -254,7 +254,7 @@ STATIC double tpGetFeedScale(TP_STRUCT const * const tp,
@@ -1119,7 +1119,7 @@ index 3b78e00..d4373fd 100644
      //TODO make progress to match target?
      // done with this move
      if (tp->reverse_run) {
-@@ -4140,22 +4207,31 @@ int tpRunCycle(TP_STRUCT * const tp, long period)
+@@ -4143,22 +4210,31 @@ int tpRunCycle(TP_STRUCT * const tp, long period)
      if(!tc) {
          if (tp->stopping) {
              tpHandleEmptyQueue(tp);
@@ -1153,7 +1153,7 @@ index 3b78e00..d4373fd 100644
              fabs(emcmotStatus->current_vel) < TP_VEL_EPSILON) {
          emcmotStatus->stopped = 1;
      }
-@@ -4260,6 +4336,42 @@ int tpSetSpindleSync(TP_STRUCT * const tp, int spindle, double sync, int mode) {
+@@ -4263,6 +4339,42 @@ int tpSetSpindleSync(TP_STRUCT * const tp, int spindle, double sync, int mode) {
      return TP_ERR_OK;
  }
  
@@ -1196,7 +1196,7 @@ index 3b78e00..d4373fd 100644
  int tpPause(TP_STRUCT * const tp)
  {
      if (0 == tp) {
-@@ -4267,12 +4379,59 @@ int tpPause(TP_STRUCT * const tp)
+@@ -4270,12 +4382,59 @@ int tpPause(TP_STRUCT * const tp)
      }
  
      if (tp->stopping) {
@@ -1257,7 +1257,7 @@ index 3b78e00..d4373fd 100644
              tp->pausing = 1;
          }
      } else {
-@@ -4289,6 +4449,16 @@ int tpResume(TP_STRUCT * const tp)
+@@ -4292,6 +4451,16 @@ int tpResume(TP_STRUCT * const tp)
      tp->pausing = 0;
      tp->stopping = 0;
      tp->stop_tc = 0;
@@ -1274,7 +1274,7 @@ index 3b78e00..d4373fd 100644
      emcmotStatus->stopped = 0;
      return TP_ERR_OK;
  }
-@@ -4301,6 +4471,10 @@ int tpAbort(TP_STRUCT * const tp)
+@@ -4304,6 +4473,10 @@ int tpAbort(TP_STRUCT * const tp)
  
      if (!tp->aborting) {
          /* const to abort, signal a pause and set our abort flag */
@@ -1286,7 +1286,7 @@ index 3b78e00..d4373fd 100644
          tp->aborting = 1;
      }
 diff --git a/src/emc/tp/tp.h b/src/emc/tp/tp.h
-index e00b457..c89f360 100644
+index e00b457ad2..c89f3608f6 100644
 --- a/src/emc/tp/tp.h
 +++ b/src/emc/tp/tp.h
 @@ -57,7 +57,8 @@ int tpAddRigidTap(TP_STRUCT * const tp,
@@ -1300,7 +1300,7 @@ index e00b457..c89f360 100644
  		PmCartesian normal, int turn, int canon_motion_type, double vel,
  		double ini_maxvel, double acc, double ini_maxjerk, unsigned char enables,
 diff --git a/src/emc/tp/tp_types.h b/src/emc/tp/tp_types.h
-index 8d8aa3a..15be0f3 100644
+index 8d8aa3a362..15be0f3127 100644
 --- a/src/emc/tp/tp_types.h
 +++ b/src/emc/tp/tp_types.h
 @@ -137,11 +137,17 @@ typedef struct {
@@ -1324,7 +1324,7 @@ index 8d8aa3a..15be0f3 100644
  } TP_STRUCT;
  
 diff --git a/tests/interp/compile/use-rs274.cc b/tests/interp/compile/use-rs274.cc
-index 4a55bad..a5a795f 100644
+index 4a55bad0de..a5a795f475 100644
 --- a/tests/interp/compile/use-rs274.cc
 +++ b/tests/interp/compile/use-rs274.cc
 @@ -258,6 +258,11 @@ int GET_EXTERNAL_DIGITAL_INPUT(int index, int def) { return 0; }
@@ -1340,7 +1340,7 @@ index 4a55bad..a5a795f 100644
  void CANON_ERROR(const char *fmt, ...) {}
  void UPDATE_TAG(const StateTag& tag) {}
 diff --git a/tests/resumable-stop/README b/tests/resumable-stop/README
-index e457195..e845030 100644
+index e457195324..e845030ffb 100644
 --- a/tests/resumable-stop/README
 +++ b/tests/resumable-stop/README
 @@ -5,6 +5,22 @@ This regression test exercises the task-level Stop operation directly through
@@ -1370,18 +1370,18 @@ index e457195..e845030 100644
 +jerk-limited trajectory planner and rejects zero-limit Ruckig fallback errors
 +while spindle feedback recovers after Resume.
 diff --git a/tests/resumable-stop/checkresult b/tests/resumable-stop/checkresult
-index 5a8f801..faf35d6 100755
+index c491888fc8..4792b570e1 100755
 --- a/tests/resumable-stop/checkresult
 +++ b/tests/resumable-stop/checkresult
 @@ -1,3 +1,4 @@
  #!/bin/sh
--test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 14
+-test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 15
 +set -e
-+test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 23
++test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 24
  grep -q '^resumable stop scenarios complete$' "$1"
 diff --git a/tests/resumable-stop/g33-followed-by-rapid.ngc b/tests/resumable-stop/g33-followed-by-rapid.ngc
 new file mode 100644
-index 0000000..a12bcb3
+index 0000000000..a12bcb3029
 --- /dev/null
 +++ b/tests/resumable-stop/g33-followed-by-rapid.ngc
 @@ -0,0 +1,7 @@
@@ -1394,7 +1394,7 @@ index 0000000..a12bcb3
 +M2
 diff --git a/tests/resumable-stop/g76-exit-taper.ngc b/tests/resumable-stop/g76-exit-taper.ngc
 new file mode 100644
-index 0000000..5b04e69
+index 0000000000..5b04e6921e
 --- /dev/null
 +++ b/tests/resumable-stop/g76-exit-taper.ngc
 @@ -0,0 +1,7 @@
@@ -1407,7 +1407,7 @@ index 0000000..5b04e69
 +M2
 diff --git a/tests/resumable-stop/g76-handoff.ngc b/tests/resumable-stop/g76-handoff.ngc
 new file mode 100644
-index 0000000..01a62a2
+index 0000000000..01a62a26a5
 --- /dev/null
 +++ b/tests/resumable-stop/g76-handoff.ngc
 @@ -0,0 +1,7 @@
@@ -1420,7 +1420,7 @@ index 0000000..01a62a2
 +M2
 diff --git a/tests/resumable-stop/g76-step.ngc b/tests/resumable-stop/g76-step.ngc
 new file mode 100644
-index 0000000..c8ee28f
+index 0000000000..c8ee28f7ed
 --- /dev/null
 +++ b/tests/resumable-stop/g76-step.ngc
 @@ -0,0 +1,4 @@
@@ -1430,7 +1430,7 @@ index 0000000..c8ee28f
 +M2
 diff --git a/tests/resumable-stop/g76-tapered-exit-taper.ngc b/tests/resumable-stop/g76-tapered-exit-taper.ngc
 new file mode 100644
-index 0000000..488d2a9
+index 0000000000..488d2a9300
 --- /dev/null
 +++ b/tests/resumable-stop/g76-tapered-exit-taper.ngc
 @@ -0,0 +1,7 @@
@@ -1443,7 +1443,7 @@ index 0000000..488d2a9
 +M2
 diff --git a/tests/resumable-stop/g76-tapered-step.ngc b/tests/resumable-stop/g76-tapered-step.ngc
 new file mode 100644
-index 0000000..241f777
+index 0000000000..241f777682
 --- /dev/null
 +++ b/tests/resumable-stop/g76-tapered-step.ngc
 @@ -0,0 +1,4 @@
@@ -1453,7 +1453,7 @@ index 0000000..241f777
 +M2
 diff --git a/tests/resumable-stop/g76-tapered.ngc b/tests/resumable-stop/g76-tapered.ngc
 new file mode 100644
-index 0000000..b0eb997
+index 0000000000..b0eb997e19
 --- /dev/null
 +++ b/tests/resumable-stop/g76-tapered.ngc
 @@ -0,0 +1,7 @@
@@ -1465,16 +1465,18 @@ index 0000000..b0eb997
 +M5
 +M2
 diff --git a/tests/resumable-stop/test-ui.py b/tests/resumable-stop/test-ui.py
-index 078eee4..b0c58d8 100755
+index d3c9646b11..463ec75590 100755
 --- a/tests/resumable-stop/test-ui.py
 +++ b/tests/resumable-stop/test-ui.py
-@@ -3,4 +3,5 @@
+@@ -2,6 +2,7 @@
+ 
  import math
  import os
 +import subprocess
  import sys
  import time
-@@ -17,14 +17,30 @@ def fail(message):
+ 
+@@ -17,14 +18,30 @@ def fail(message):
      sys.exit(1)
  
  
@@ -1508,7 +1510,7 @@ index 078eee4..b0c58d8 100755
  
  
  def wait_complete(message, timeout=10.0):
-@@ -202,6 +218,43 @@ def run_stop_single_step_test():
+@@ -215,6 +232,43 @@ def run_stop_single_step_test():
      assert_outputs_stopped_after_program()
  
  
@@ -1552,7 +1554,7 @@ index 078eee4..b0c58d8 100755
  def run_rapid_resume_without_at_speed_test():
      hal.set_p("spindle.0.at-speed", "false")
      open_auto_program("rapid-then-feed.ngc")
-@@ -397,6 +450,41 @@ def run_threading_stop_resume_test():
+@@ -410,6 +464,41 @@ def run_threading_stop_resume_test():
      )
  
  
@@ -1565,7 +1567,7 @@ index 078eee4..b0c58d8 100755
 +        "G33 did not enter synchronized motion before negative Stop test",
 +        timeout=15.0,
 +    )
-+    c.stop()
++    c.program_stop()
 +    wait_complete("G33 negative Stop command did not complete")
 +    wait_for(
 +        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
@@ -1594,7 +1596,7 @@ index 078eee4..b0c58d8 100755
  def run_fperrev_stop_resume_test():
      open_auto_program("fperrev.ngc")
      c.auto(linuxcnc.AUTO_RUN, 0)
-@@ -461,9 +549,9 @@ def run_g76_stop_resume_test():
+@@ -474,9 +563,9 @@ def run_g76_stop_resume_test():
      if s.position[2] > -4.90:
          fail("G76 stopped before its active threading TC completed")
  
@@ -1606,7 +1608,7 @@ index 078eee4..b0c58d8 100755
              % s.position[0]
          )
  
-@@ -482,6 +570,307 @@ def run_g76_stop_resume_test():
+@@ -495,6 +584,307 @@ def run_g76_stop_resume_test():
      assert_outputs_stopped_after_program()
  
  
@@ -1625,7 +1627,7 @@ index 078eee4..b0c58d8 100755
 +        timeout=15.0,
 +    )
 +
-+    c.stop()
++    c.program_stop()
 +    wait_for(
 +        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
 +        "G76 did not stop with its index-waiting cut preserved",
@@ -1664,7 +1666,7 @@ index 078eee4..b0c58d8 100755
 +        timeout=15.0,
 +    )
 +
-+    c.stop()
++    c.program_stop()
 +    wait_complete("tapered G76 stop command did not complete")
 +    wait_for(
 +        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
@@ -1838,7 +1840,7 @@ index 078eee4..b0c58d8 100755
 +        "%s did not enter its first synchronized pass" % label,
 +        timeout=15.0,
 +    )
-+    c.stop()
++    c.program_stop()
 +    wait_complete("%s Stop command did not complete" % label)
 +    wait_for(
 +        lambda: s.stop_state == linuxcnc.STOP_STOPPED and s.task_paused,
@@ -1887,7 +1889,7 @@ index 078eee4..b0c58d8 100755
 +            poll_interval=0.001,
 +        )
 +
-+        c.stop()
++        c.program_stop()
 +        wait_complete(
 +            "G76 handoff attempt %d Stop command did not complete" % attempt
 +        )
@@ -1914,8 +1916,8 @@ index 078eee4..b0c58d8 100755
  def run_queued_threading_stop_resume_test():
      hal.set_p("spindle.0.at-speed", "false")
      open_auto_program("thread.ngc")
-@@ -734,14 +1124,24 @@ def run_css_stop_resume_test():
- SCENARIOS = {
+@@ -748,14 +1138,24 @@ SCENARIOS = {
+     "idle-rejected": run_idle_program_stop_rejected_test,
      "ordinary": run_ordinary_stop_resume_test,
      "single-step": run_stop_single_step_test,
 +    "inflight-single-step": run_inflight_single_step_test,
@@ -1940,10 +1942,10 @@ index 078eee4..b0c58d8 100755
      "orientation": run_spindle_orientation_stop_test,
      "dwell": run_dwell_stop_resume_test,
 diff --git a/tests/resumable-stop/test.ini b/tests/resumable-stop/test.ini
-index a97cb95..ecfccd1 100644
+index b73c0956b5..ef31f9a636 100644
 --- a/tests/resumable-stop/test.ini
 +++ b/tests/resumable-stop/test.ini
-@@ -30,6 +30,7 @@ SPINDLES = 2
+@@ -29,6 +29,7 @@ SPINDLES = 2
  LINEAR_UNITS = mm
  ANGULAR_UNITS = degree
  PLANNER_TYPE = 1
@@ -1952,10 +1954,10 @@ index a97cb95..ecfccd1 100644
  MAX_LINEAR_VELOCITY = 50
  MAX_LINEAR_JERK = 5000
 diff --git a/tests/resumable-stop/test.sh b/tests/resumable-stop/test.sh
-index 017d265..6246d49 100755
+index 7a9a863436..20e0d14d78 100755
 --- a/tests/resumable-stop/test.sh
 +++ b/tests/resumable-stop/test.sh
-@@ -7,22 +7,37 @@ if nm -D -u "$EMC2_HOME/rtlib/motmod.so" | grep -q '[[:space:]]tpStop$'; then
+@@ -7,23 +7,38 @@ if nm -D -u "$EMC2_HOME/rtlib/motmod.so" | grep -q '[[:space:]]tpStop$'; then
      exit 1
  fi
  
@@ -1965,6 +1967,7 @@ index 017d265..6246d49 100755
 +fi
 +
  scenarios=(
+     idle-rejected
      ordinary
      single-step
 +    inflight-single-step

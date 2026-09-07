@@ -38,7 +38,7 @@ enum class NmlCommandKind {
   Step,
   Reverse,
   Forward,
-  Stop,
+  StopProgram,
   AbortTask,
   SetOptionalStop,
   SetBlockDelete,
@@ -249,7 +249,7 @@ struct NmlIoStatus {
 };
 
 struct NmlCommand {
-  NmlCommandKind kind = NmlCommandKind::Stop;
+  NmlCommandKind kind = NmlCommandKind::StopProgram;
   std::int32_t integer = 0;
   std::int32_t integer2 = 0;
   double number = 0.0;

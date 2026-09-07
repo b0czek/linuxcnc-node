@@ -868,7 +868,7 @@ index f9ad3cb7da..45d0c2e7c2 100644
  } //tool_mmap_user()
  
 diff --git a/tests/ccomp/lathe-comp/expected b/tests/ccomp/lathe-comp/expected
-index bba4efd..5b35a2d 100644
+index bba4efd501..5b35a2dc62 100644
 --- a/tests/ccomp/lathe-comp/expected
 +++ b/tests/ccomp/lathe-comp/expected
 @@ -30,6 +30,7 @@
@@ -904,7 +904,7 @@ index bba4efd..5b35a2d 100644
   N..... USE_TOOL_LENGTH_OFFSET(0.0000 0.0000 0.0000, 0.0000 0.0000 0.0000, 0.0000 0.0000 0.0000)
   N..... SELECT_TOOL(0)
 diff --git a/tests/ccomp/mill-g90g91g92/expected b/tests/ccomp/mill-g90g91g92/expected
-index 7327c18..e6d7cf0 100644
+index 7327c18c64..e6d7cf04c0 100644
 --- a/tests/ccomp/mill-g90g91g92/expected
 +++ b/tests/ccomp/mill-g90g91g92/expected
 @@ -24,6 +24,7 @@
@@ -924,7 +924,7 @@ index 7327c18..e6d7cf0 100644
   N..... SET_G5X_OFFSET(1, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000)
   N..... SET_XY_ROTATION(0.0000)
 diff --git a/tests/ccomp/mill-line-arc-entry/expected b/tests/ccomp/mill-line-arc-entry/expected
-index ea4339f..40dc7a9 100644
+index ea4339f8cb..40dc7a995b 100644
 --- a/tests/ccomp/mill-line-arc-entry/expected
 +++ b/tests/ccomp/mill-line-arc-entry/expected
 @@ -27,6 +27,7 @@
@@ -944,7 +944,7 @@ index ea4339f..40dc7a9 100644
   N..... SET_XY_ROTATION(0.0000)
   N..... SET_FEED_MODE(0, 0)
 diff --git a/tests/ccomp/mill-zchanges/expected b/tests/ccomp/mill-zchanges/expected
-index 3cfeabc..58f0c3c 100644
+index 3cfeabcc65..58f0c3c7f2 100644
 --- a/tests/ccomp/mill-zchanges/expected
 +++ b/tests/ccomp/mill-zchanges/expected
 @@ -11,42 +11,52 @@
@@ -1058,7 +1058,7 @@ index 3cfeabc..58f0c3c 100644
   N..... STRAIGHT_FEED(1.2500, -0.2500, 0.2500, 0.0000, 0.0000, 0.0000)
   N..... SET_G5X_OFFSET(1, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000)
 diff --git a/tests/interp/cam-nisley/expected b/tests/interp/cam-nisley/expected
-index 6f3aab5..4a85d26 100644
+index 6f3aab576f..4a85d26ac5 100644
 --- a/tests/interp/cam-nisley/expected
 +++ b/tests/interp/cam-nisley/expected
 @@ -69,6 +69,7 @@
@@ -1078,7 +1078,7 @@ index 6f3aab5..4a85d26 100644
   N..... STRAIGHT_TRAVERSE(75.0000, 0.0000, 75.0000, 0.0000, 0.0000, 0.0000)
   N..... MESSAGE("Done!")
 diff --git a/tests/interp/crazy-paths/expected b/tests/interp/crazy-paths/expected
-index c3b6e9a..575ea1a 100644
+index c3b6e9a2dc..575ea1a49e 100644
 --- a/tests/interp/crazy-paths/expected
 +++ b/tests/interp/crazy-paths/expected
 @@ -18,6 +18,7 @@
@@ -1802,7 +1802,7 @@ index c3b6e9a..575ea1a 100644
   N..... SET_G5X_OFFSET(1, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000)
   N..... SET_XY_ROTATION(0.0000)
 diff --git a/tests/interp/g71-endless-loop_2/expected b/tests/interp/g71-endless-loop_2/expected
-index 6c42f3a..a53d19a 100644
+index 6c42f3a6b1..a53d19afa2 100644
 --- a/tests/interp/g71-endless-loop_2/expected
 +++ b/tests/interp/g71-endless-loop_2/expected
 @@ -28,6 +28,7 @@
@@ -1822,7 +1822,7 @@ index 6c42f3a..a53d19a 100644
   N..... FLOOD_OFF()
   N..... STRAIGHT_TRAVERSE(12.5000, 0.0000, -25.0000, 0.0000, 0.0000, 0.0000)
 diff --git a/tests/interp/inside-corners/expected b/tests/interp/inside-corners/expected
-index 0312994..c37a26d 100644
+index 0312994b1c..c37a26d5a2 100644
 --- a/tests/interp/inside-corners/expected
 +++ b/tests/interp/inside-corners/expected
 @@ -26,6 +26,7 @@
@@ -1917,7 +1917,7 @@ index 0312994..c37a26d 100644
   N..... STRAIGHT_FEED(0.0000, 0.0000, 1.0000, 0.0000, 0.0000, 0.0000)
   N..... SET_G5X_OFFSET(1, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000)
 diff --git a/tests/interp/inverse-time-with-comp/expected b/tests/interp/inverse-time-with-comp/expected
-index e2193e7..74ffad1 100644
+index e2193e7ee5..74ffad1c79 100644
 --- a/tests/interp/inverse-time-with-comp/expected
 +++ b/tests/interp/inverse-time-with-comp/expected
 @@ -7,6 +7,7 @@

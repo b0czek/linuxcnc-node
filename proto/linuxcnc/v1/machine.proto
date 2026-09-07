@@ -468,7 +468,7 @@ message ExecuteCommandRequest {
     EmptyCommand step_program = 11;
     EmptyCommand reverse_program = 12;
     EmptyCommand forward_program = 13;
-    EmptyCommand stop = 14;
+    EmptyCommand stop_program = 14;
     EmptyCommand abort_task = 15;
     SetBool set_optional_stop = 16;
     SetBool set_block_delete = 17;

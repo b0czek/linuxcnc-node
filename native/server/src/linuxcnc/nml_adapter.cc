@@ -653,7 +653,7 @@ CommandTicket NmlAdapter::submit(
     // NOLINTNEXTLINE(performance-unnecessary-value-param): see above.
     std::stop_token stop_token) {
 #ifdef LINUXCNC_GRPC_HAS_NML
-  const bool safety_command = command.kind == NmlCommandKind::Stop ||
+  const bool safety_command = command.kind == NmlCommandKind::StopProgram ||
                               command.kind == NmlCommandKind::Pause ||
                               command.kind == NmlCommandKind::AbortTask;
   return impl_->commands.submit_with_context(
@@ -709,8 +709,8 @@ CommandTicket NmlAdapter::submit(
             case NmlCommandKind::ProgramClose:
               message = std::make_unique<EMC_TASK_PLAN_CLOSE>();
               break;
-            case NmlCommandKind::Stop:
-              message = std::make_unique<EMC_TASK_STOP>();
+            case NmlCommandKind::StopProgram:
+              message = std::make_unique<EMC_TASK_PLAN_STOP>();
               break;
             case NmlCommandKind::Pause:
               message = std::make_unique<EMC_TASK_PLAN_PAUSE>();

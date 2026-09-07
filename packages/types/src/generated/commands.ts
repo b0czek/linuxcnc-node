@@ -16,7 +16,7 @@ export type LinuxCncCommand =
   | { type: "stepProgram" }
   | { type: "reverseProgram" }
   | { type: "forwardProgram" }
-  | { type: "stop" }
+  | { type: "stopProgram" }
   | { type: "abortTask" }
   | { type: "setOptionalStop"; enable: boolean }
   | { type: "setBlockDelete"; enable: boolean }
@@ -74,7 +74,7 @@ export const LINUXCNC_COMMAND_TYPES = [
   "stepProgram",
   "reverseProgram",
   "forwardProgram",
-  "stop",
+  "stopProgram",
   "abortTask",
   "setOptionalStop",
   "setBlockDelete",

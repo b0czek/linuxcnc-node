@@ -19,7 +19,7 @@ Keep later prequeued motion from starting, restore temporary exact boundaries wh
  create mode 100644 tests/resumable-stop/inflight-step.ngc
 
 diff --git a/src/emc/motion/command.c b/src/emc/motion/command.c
-index b6ad9c1..c166af6 100644
+index b6ad9c1504..c166af652b 100644
 --- a/src/emc/motion/command.c
 +++ b/src/emc/motion/command.c
 @@ -1269,26 +1269,29 @@ void emcmotCommandHandler_locked(void *arg, long servo_period)
@@ -60,7 +60,7 @@ index b6ad9c1..c166af6 100644
  	    break;
  
 diff --git a/src/emc/motion/control.c b/src/emc/motion/control.c
-index 160c2dc..040e534 100644
+index 160c2dcd2c..040e534653 100644
 --- a/src/emc/motion/control.c
 +++ b/src/emc/motion/control.c
 @@ -2225,14 +2225,15 @@ static void update_status(void)
@@ -84,10 +84,10 @@ index 160c2dc..040e534 100644
              emcmotStatus->stepping = 0;
              emcmotStatus->paused = 1;
 diff --git a/src/emc/task/emctaskmain.cc b/src/emc/task/emctaskmain.cc
-index 1addd75..f916833 100644
+index beb6d565d6..e01ef50ce8 100644
 --- a/src/emc/task/emctaskmain.cc
 +++ b/src/emc/task/emctaskmain.cc
-@@ -463,6 +463,7 @@ static int programStartLine = 0;	// which line to run program from
+@@ -462,6 +462,7 @@ static int programStartLine = 0;	// which line to run program from
  int stepping = 0;
  int steppingWait = 0;
  static int steppedLine = 0;
@@ -95,7 +95,7 @@ index 1addd75..f916833 100644
  /*
   * Pass groups delimit commands that are still owned by task. Motion that was
   * already queued before resumable Stop is stepped by TP to its marked G76
-@@ -478,6 +479,7 @@ void emcTaskResetSteppingState()
+@@ -477,6 +478,7 @@ void emcTaskResetSteppingState()
      steppedLine = 0;
      currentPassGroup = 0;
      steppedPassGroup = 0;
@@ -103,7 +103,7 @@ index 1addd75..f916833 100644
  }
  
  // Variables to handle MDI call interrupts
-@@ -819,6 +821,22 @@ static void emcTaskStepInterpreter()
+@@ -818,6 +820,22 @@ static void emcTaskStepInterpreter()
      emcStatus->task.task_paused = 1;
  }
  
@@ -126,7 +126,7 @@ index 1addd75..f916833 100644
  static void emcTaskStopClear()
  {
      bool was_active = emcStatus &&
-@@ -1433,13 +1451,7 @@ static int emcTaskPlan(void)
+@@ -1432,13 +1450,7 @@ static int emcTaskPlan(void)
  		    break;
  
  		case EMC_TASK_PLAN_STEP_TYPE:
@@ -141,7 +141,7 @@ index 1addd75..f916833 100644
  		    break;
  
  		    // otherwise we can't handle it
-@@ -1513,17 +1525,9 @@ static int emcTaskPlan(void)
+@@ -1512,17 +1524,9 @@ static int emcTaskPlan(void)
  		    break;
  
  		case EMC_TASK_PLAN_STEP_TYPE:
@@ -160,7 +160,7 @@ index 1addd75..f916833 100644
  		    break;
  
  		    // otherwise we can't handle it
-@@ -1589,13 +1593,7 @@ static int emcTaskPlan(void)
+@@ -1588,13 +1592,7 @@ static int emcTaskPlan(void)
  		    break;
  
  		case EMC_TASK_PLAN_STEP_TYPE:
@@ -175,7 +175,7 @@ index 1addd75..f916833 100644
  		    break;
  
  		    // otherwise we can't handle it
-@@ -3681,6 +3679,10 @@ int main(int argc, char *argv[])
+@@ -3676,6 +3674,10 @@ int main(int argc, char *argv[])
  	// update subordinate status
  
  	emcMotionUpdate(&emcStatus->motion);
@@ -187,7 +187,7 @@ index 1addd75..f916833 100644
  	// following error, etc.) unhome joints marked VOLATILE_HOME. The estop
  	// and machine-off paths already do their own unhome; this catches the
 diff --git a/src/emc/tp/tp.c b/src/emc/tp/tp.c
-index d4373fd..9091ba7 100644
+index 00a06f1a75..81d50e10d3 100644
 --- a/src/emc/tp/tp.c
 +++ b/src/emc/tp/tp.c
 @@ -342,9 +342,9 @@ STATIC inline double tpGetRealFinalVel(TP_STRUCT const * const tp,
@@ -251,7 +251,7 @@ index d4373fd..9091ba7 100644
      }
  
      //TODO make progress to match target?
-@@ -4217,7 +4221,7 @@ int tpRunCycle(TP_STRUCT * const tp, long period)
+@@ -4220,7 +4224,7 @@ int tpRunCycle(TP_STRUCT * const tp, long period)
              }
              return TP_ERR_WAITING;
          }
@@ -260,7 +260,7 @@ index d4373fd..9091ba7 100644
                  tp->step_pass_id && !tp->step_tc) {
              tpHandleEmptyQueue(tp);
              return TP_ERR_WAITING;
-@@ -4372,6 +4376,30 @@ STATIC int tpGetQueuedG76PassId(TP_STRUCT * const tp)
+@@ -4375,6 +4379,30 @@ STATIC int tpGetQueuedG76PassId(TP_STRUCT * const tp)
      return tc ? tc->g76_pass_id : 0;
  }
  
@@ -291,7 +291,7 @@ index d4373fd..9091ba7 100644
  int tpPause(TP_STRUCT * const tp)
  {
      if (0 == tp) {
-@@ -4382,12 +4410,14 @@ int tpPause(TP_STRUCT * const tp)
+@@ -4382,10 +4410,12 @@ int tpPause(TP_STRUCT * const tp)
      }
  
      if (tp->stopping) {
@@ -305,9 +305,7 @@ index d4373fd..9091ba7 100644
          TC_STRUCT *tc = tcqItem(&tp->queue, 0);
          bool in_g76_cut_or_clearance = tc && tc->g76_pass_id &&
              ((tc->active && tc->synchronized == TC_SYNC_POSITION &&
-               tp->spindle.waiting_for_index != tc->id) ||
-              tc->g76_pass_clearance == 1);
-@@ -4416,7 +4446,7 @@ int tpPause(TP_STRUCT * const tp)
+@@ -4418,7 +4448,7 @@ int tpPause(TP_STRUCT * const tp)
              tp->pausing = 1;
          }
      } else if (emcmotStatus->stepping &&
@@ -316,7 +314,7 @@ index d4373fd..9091ba7 100644
          /*
           * EMCMOT_STEP requests default-TP pass targeting through the existing
           * tpPause ABI. Alternate planners leave step_target_pending clear and
-@@ -4425,15 +4455,25 @@ int tpPause(TP_STRUCT * const tp)
+@@ -4427,15 +4457,25 @@ int tpPause(TP_STRUCT * const tp)
          int pass_id = tpGetQueuedG76PassId(tp);
          if (pass_id) {
              tp->step_pass_id = pass_id;
@@ -346,7 +344,7 @@ index d4373fd..9091ba7 100644
          }
      } else {
          tp->pausing = 1;
-@@ -4446,6 +4486,7 @@ int tpResume(TP_STRUCT * const tp)
+@@ -4448,6 +4488,7 @@ int tpResume(TP_STRUCT * const tp)
      if (0 == tp) {
          return TP_ERR_FAIL;
      }
@@ -354,7 +352,7 @@ index d4373fd..9091ba7 100644
      tp->pausing = 0;
      tp->stopping = 0;
      tp->stop_tc = 0;
-@@ -4454,11 +4495,14 @@ int tpResume(TP_STRUCT * const tp)
+@@ -4456,7 +4497,10 @@ int tpResume(TP_STRUCT * const tp)
      tp->step_tc = 0;
      tp->step_target_pending = 0;
      tp->step_pass_id = 0;
@@ -366,11 +364,7 @@ index d4373fd..9091ba7 100644
      if (MOTION_ID_VALID(tp->spindle.waiting_for_index)) {
          emcmotStatus->spindle_status[
              tp->spindle.spindle_num].spindle_index_enable = 1;
-     }
-     emcmotStatus->stopped = 0;
-     return TP_ERR_OK;
- }
-@@ -4474,7 +4518,11 @@ int tpAbort(TP_STRUCT * const tp)
+@@ -4476,7 +4520,11 @@ int tpAbort(TP_STRUCT * const tp)
          tp->step_tc = 0;
          tp->step_target_pending = 0;
          tp->step_pass_id = 0;
@@ -384,7 +378,7 @@ index d4373fd..9091ba7 100644
          tp->aborting = 1;
      }
 diff --git a/src/emc/tp/tp_types.h b/src/emc/tp/tp_types.h
-index 15be0f3..893a9df 100644
+index 15be0f3127..893a9df4c2 100644
 --- a/src/emc/tp/tp_types.h
 +++ b/src/emc/tp/tp_types.h
 @@ -147,7 +147,11 @@ typedef struct {
@@ -401,7 +395,7 @@ index 15be0f3..893a9df 100644
  } TP_STRUCT;
  
 diff --git a/tests/resumable-stop/README b/tests/resumable-stop/README
-index e845030..72607e0 100644
+index e845030ffb..72607e0da2 100644
 --- a/tests/resumable-stop/README
 +++ b/tests/resumable-stop/README
 @@ -13,11 +13,17 @@ requests across the cut/retract handoff, and a negative G33 test proving that
@@ -425,18 +419,18 @@ index e845030..72607e0 100644
  also prove that a marked G76 retract endpoint is not trimmed by a following
  rapid. The handoff stress case uses a slow synchronized feed and issues Stop at
 diff --git a/tests/resumable-stop/checkresult b/tests/resumable-stop/checkresult
-index faf35d6..4792b57 100755
+index 4792b570e1..dcdfb2d76f 100755
 --- a/tests/resumable-stop/checkresult
 +++ b/tests/resumable-stop/checkresult
 @@ -1,4 +1,4 @@
  #!/bin/sh
  set -e
--test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 23
-+test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 25
+-test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 24
++test "$(grep -c '^resumable stop scenario ok:' "$1")" -eq 26
  grep -q '^resumable stop scenarios complete$' "$1"
 diff --git a/tests/resumable-stop/inflight-step.ngc b/tests/resumable-stop/inflight-step.ngc
 new file mode 100644
-index 0000000..1f72544
+index 0000000000..1f72544983
 --- /dev/null
 +++ b/tests/resumable-stop/inflight-step.ngc
 @@ -0,0 +1,7 @@

@@ -472,7 +472,7 @@ index fed82a67d8..e7e3497d34 100644
  };
  
 diff --git a/src/emc/rs274ngc/interp_python.cc b/src/emc/rs274ngc/interp_python.cc
-index f8217637fc..7d9928caf3 100644
+index f8217637fc..6d304503b8 100644
 --- a/src/emc/rs274ngc/interp_python.cc
 +++ b/src/emc/rs274ngc/interp_python.cc
 @@ -151,6 +151,8 @@ int Interp::pycall(setup_pointer /*settings*/,

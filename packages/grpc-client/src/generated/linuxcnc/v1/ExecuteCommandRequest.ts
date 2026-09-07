@@ -45,7 +45,7 @@ export interface ExecuteCommandRequest {
   'stepProgram'?: (_linuxcnc_v1_EmptyCommand | null);
   'reverseProgram'?: (_linuxcnc_v1_EmptyCommand | null);
   'forwardProgram'?: (_linuxcnc_v1_EmptyCommand | null);
-  'stop'?: (_linuxcnc_v1_EmptyCommand | null);
+  'stopProgram'?: (_linuxcnc_v1_EmptyCommand | null);
   'abortTask'?: (_linuxcnc_v1_EmptyCommand | null);
   'setOptionalStop'?: (_linuxcnc_v1_SetBool | null);
   'setBlockDelete'?: (_linuxcnc_v1_SetBool | null);
@@ -84,7 +84,7 @@ export interface ExecuteCommandRequest {
   'sendOperatorText'?: (_linuxcnc_v1_MessageCommand | null);
   'sendOperatorDisplay'?: (_linuxcnc_v1_MessageCommand | null);
   'setRapidRate'?: (_linuxcnc_v1_SetRapidRate | null);
-  'command'?: "setTaskMode"|"setState"|"taskPlanSynch"|"resetInterpreter"|"programOpen"|"programClose"|"runProgram"|"pauseProgram"|"resumeProgram"|"stepProgram"|"reverseProgram"|"forwardProgram"|"stop"|"abortTask"|"setOptionalStop"|"setBlockDelete"|"mdi"|"setTrajMode"|"setMaxVelocity"|"setFeedRate"|"setSpindleOverride"|"overrideLimits"|"teleopEnable"|"setFeedOverrideEnable"|"setSpindleOverrideEnable"|"setFeedHoldEnable"|"setAdaptiveFeedEnable"|"homeJoint"|"unhomeJoint"|"jogStop"|"jogContinuous"|"jogIncrement"|"setMinPositionLimit"|"setMaxPositionLimit"|"spindleOn"|"spindleIncrease"|"spindleDecrease"|"spindleOff"|"spindleBrake"|"setMist"|"setFlood"|"loadToolTable"|"setTool"|"deleteTool"|"setDigitalOutput"|"setAnalogOutput"|"setDebugLevel"|"sendOperatorError"|"sendOperatorText"|"sendOperatorDisplay"|"setRapidRate";
+  'command'?: "setTaskMode"|"setState"|"taskPlanSynch"|"resetInterpreter"|"programOpen"|"programClose"|"runProgram"|"pauseProgram"|"resumeProgram"|"stepProgram"|"reverseProgram"|"forwardProgram"|"stopProgram"|"abortTask"|"setOptionalStop"|"setBlockDelete"|"mdi"|"setTrajMode"|"setMaxVelocity"|"setFeedRate"|"setSpindleOverride"|"overrideLimits"|"teleopEnable"|"setFeedOverrideEnable"|"setSpindleOverrideEnable"|"setFeedHoldEnable"|"setAdaptiveFeedEnable"|"homeJoint"|"unhomeJoint"|"jogStop"|"jogContinuous"|"jogIncrement"|"setMinPositionLimit"|"setMaxPositionLimit"|"spindleOn"|"spindleIncrease"|"spindleDecrease"|"spindleOff"|"spindleBrake"|"setMist"|"setFlood"|"loadToolTable"|"setTool"|"deleteTool"|"setDigitalOutput"|"setAnalogOutput"|"setDebugLevel"|"sendOperatorError"|"sendOperatorText"|"sendOperatorDisplay"|"setRapidRate";
 }
 
 export interface ExecuteCommandRequest__Output {
@@ -101,7 +101,7 @@ export interface ExecuteCommandRequest__Output {
   'stepProgram'?: (_linuxcnc_v1_EmptyCommand__Output);
   'reverseProgram'?: (_linuxcnc_v1_EmptyCommand__Output);
   'forwardProgram'?: (_linuxcnc_v1_EmptyCommand__Output);
-  'stop'?: (_linuxcnc_v1_EmptyCommand__Output);
+  'stopProgram'?: (_linuxcnc_v1_EmptyCommand__Output);
   'abortTask'?: (_linuxcnc_v1_EmptyCommand__Output);
   'setOptionalStop'?: (_linuxcnc_v1_SetBool__Output);
   'setBlockDelete'?: (_linuxcnc_v1_SetBool__Output);
@@ -140,5 +140,5 @@ export interface ExecuteCommandRequest__Output {
   'sendOperatorText'?: (_linuxcnc_v1_MessageCommand__Output);
   'sendOperatorDisplay'?: (_linuxcnc_v1_MessageCommand__Output);
   'setRapidRate'?: (_linuxcnc_v1_SetRapidRate__Output);
-  'command'?: "setTaskMode"|"setState"|"taskPlanSynch"|"resetInterpreter"|"programOpen"|"programClose"|"runProgram"|"pauseProgram"|"resumeProgram"|"stepProgram"|"reverseProgram"|"forwardProgram"|"stop"|"abortTask"|"setOptionalStop"|"setBlockDelete"|"mdi"|"setTrajMode"|"setMaxVelocity"|"setFeedRate"|"setSpindleOverride"|"overrideLimits"|"teleopEnable"|"setFeedOverrideEnable"|"setSpindleOverrideEnable"|"setFeedHoldEnable"|"setAdaptiveFeedEnable"|"homeJoint"|"unhomeJoint"|"jogStop"|"jogContinuous"|"jogIncrement"|"setMinPositionLimit"|"setMaxPositionLimit"|"spindleOn"|"spindleIncrease"|"spindleDecrease"|"spindleOff"|"spindleBrake"|"setMist"|"setFlood"|"loadToolTable"|"setTool"|"deleteTool"|"setDigitalOutput"|"setAnalogOutput"|"setDebugLevel"|"sendOperatorError"|"sendOperatorText"|"sendOperatorDisplay"|"setRapidRate";
+  'command'?: "setTaskMode"|"setState"|"taskPlanSynch"|"resetInterpreter"|"programOpen"|"programClose"|"runProgram"|"pauseProgram"|"resumeProgram"|"stepProgram"|"reverseProgram"|"forwardProgram"|"stopProgram"|"abortTask"|"setOptionalStop"|"setBlockDelete"|"mdi"|"setTrajMode"|"setMaxVelocity"|"setFeedRate"|"setSpindleOverride"|"overrideLimits"|"teleopEnable"|"setFeedOverrideEnable"|"setSpindleOverrideEnable"|"setFeedHoldEnable"|"setAdaptiveFeedEnable"|"homeJoint"|"unhomeJoint"|"jogStop"|"jogContinuous"|"jogIncrement"|"setMinPositionLimit"|"setMaxPositionLimit"|"spindleOn"|"spindleIncrease"|"spindleDecrease"|"spindleOff"|"spindleBrake"|"setMist"|"setFlood"|"loadToolTable"|"setTool"|"deleteTool"|"setDigitalOutput"|"setAnalogOutput"|"setDebugLevel"|"sendOperatorError"|"sendOperatorText"|"sendOperatorDisplay"|"setRapidRate";
 }

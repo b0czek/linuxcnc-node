@@ -393,8 +393,8 @@ class MachineServiceImpl final : public MachineCallbackBase,
       case ExecuteCommandRequest::kForwardProgram:
         command.kind = NmlCommandKind::Forward;
         break;
-      case ExecuteCommandRequest::kStop:
-        command.kind = NmlCommandKind::Stop;
+      case ExecuteCommandRequest::kStopProgram:
+        command.kind = NmlCommandKind::StopProgram;
         break;
       case ExecuteCommandRequest::kAbortTask:
         command.kind = NmlCommandKind::AbortTask;

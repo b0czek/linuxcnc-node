@@ -23,7 +23,7 @@ constexpr std::array<ExecuteCommandRequest::CommandCase, 51> kCommandCatalog = {
     ExecuteCommandRequest::kStepProgram,
     ExecuteCommandRequest::kReverseProgram,
     ExecuteCommandRequest::kForwardProgram,
-    ExecuteCommandRequest::kStop,
+    ExecuteCommandRequest::kStopProgram,
     ExecuteCommandRequest::kAbortTask,
     ExecuteCommandRequest::kSetOptionalStop,
     ExecuteCommandRequest::kSetBlockDelete,
