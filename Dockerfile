@@ -21,7 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY linuxcnc-patches /tmp/linuxcnc-patches
+COPY linuxcnc-patches/base-revision linuxcnc-patches/apply.sh linuxcnc-patches/*.patch /tmp/linuxcnc-patches/
 
 RUN git init /src/linuxcnc \
     && git -C /src/linuxcnc remote add origin https://github.com/LinuxCNC/linuxcnc.git \

@@ -20,9 +20,19 @@ concurrency:
 
 jobs:
   linuxcnc-tests:
-    name: Patched LinuxCNC regression suite
+    name: Patched LinuxCNC regression suite (${{ matrix.label }}/${{ strategy.job-total }})
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: 0
+            label: 1
+          - shard: 1
+            label: 2
+          - shard: 2
+            label: 3
 
     steps:
       - name: Check out repository
@@ -71,6 +81,31 @@ jobs:
             --with-realtime=uspace \
             --with-extra-rtlib-dirs="${RUNNER_TEMP}/rtlib-a:${RUNNER_TEMP}/rtlib-b"
 
-      - name: Run LinuxCNC regression suite
+      - name: Run LinuxCNC regression suite shard
         working-directory: ${{ runner.temp }}/linuxcnc
-        run: scripts/rip-environment runtests -p
+        env:
+          SHARD_COUNT: ${{ strategy.job-total }}
+          SHARD_INDEX: ${{ matrix.shard }}
+        run: |
+          set -euo pipefail
+
+          shard_tests=()
+          while IFS= read -r -d '' test_path; do
+            if [[ "${test_path}" == tests/resumable-stop/* ]]; then
+              test_shard=0
+            else
+              checksum="$(printf '%s' "${test_path}" | cksum)"
+              checksum="${checksum%% *}"
+              test_shard=$((1 + checksum % (SHARD_COUNT - 1)))
+            fi
+            if (( test_shard == SHARD_INDEX )); then
+              shard_tests+=("${test_path}")
+            fi
+          done < <(
+            find tests \( -name test -o -name test.sh -o -name test.hal \) \
+              -print0 | sort -z
+          )
+
+          ((${#shard_tests[@]} > 0))
+          echo "Running ${#shard_tests[@]} tests in shard $((SHARD_INDEX + 1))/${SHARD_COUNT}"
+          scripts/rip-environment runtests -p "${shard_tests[@]}"

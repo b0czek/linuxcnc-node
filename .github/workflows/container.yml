@@ -6,6 +6,17 @@ on:
       - main
     tags:
       - "v*.*.*"
+    paths:
+      - ".dockerignore"
+      - ".github/workflows/container.yml"
+      - "CMakeLists.txt"
+      - "Dockerfile"
+      - "docker/**"
+      - "linuxcnc-patches/base-revision"
+      - "linuxcnc-patches/*.patch"
+      - "linuxcnc-patches/apply.sh"
+      - "native/**"
+      - "proto/**"
 
 permissions:
   contents: read
@@ -13,7 +24,7 @@ permissions:
 
 concurrency:
   group: linuxcnc-simulator-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.ref_type == 'branch' }}
 
 env:
   IMAGE_NAME: ghcr.io/b0czek/linuxcnc-simulator
@@ -55,6 +66,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           load: true
           tags: linuxcnc-simulator:test
+          build-args: BUILD_JOBS=4
           cache-from: type=gha,scope=linuxcnc-simulator-${{ matrix.suffix }}
           cache-to: type=gha,mode=max,scope=linuxcnc-simulator-${{ matrix.suffix }}
 
@@ -68,6 +80,7 @@ jobs:
           context: .
           target: runtime
           platforms: ${{ matrix.platform }}
+          build-args: BUILD_JOBS=4
           outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=linuxcnc-simulator-${{ matrix.suffix }}
           cache-to: type=gha,mode=max,scope=linuxcnc-simulator-${{ matrix.suffix }}

@@ -7,30 +7,30 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   LINUXCNC_REPOSITORY: LinuxCNC/linuxcnc
-  LINUXCNC_CACHE_VERSION: v4
+  LINUXCNC_CACHE_VERSION: v5
 
 jobs:
   patch-stack:
     name: LinuxCNC patch stack tooling
     runs-on: ubuntu-latest
-
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-
       - name: Test patch stack tooling
         run: ./linuxcnc-patches/test-stack.sh
 
   native-format:
     name: Native format
     runs-on: ubuntu-24.04
-
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-
       - name: Install clang-format 21
         run: |
           python3 -m venv "${RUNNER_TEMP}/clang-format"
@@ -38,56 +38,42 @@ jobs:
             --disable-pip-version-check \
             --only-binary=:all: \
             clang-format==21.1.8
-
       - name: Check native formatting
         run: ./scripts/native-format.sh check
         env:
           CLANG_FORMAT: ${{ runner.temp }}/clang-format/bin/clang-format
 
-  test:
-    name: Test
+  prepare-linuxcnc:
+    name: Prepare LinuxCNC
     runs-on: ubuntu-24.04
-
+    outputs:
+      cache-key: ${{ steps.linuxcnc-baseline.outputs.cache-key }}
+      revision: ${{ steps.linuxcnc-baseline.outputs.revision }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-
-      - name: Read LinuxCNC base revision
+      - name: Read LinuxCNC base revision and cache key
         id: linuxcnc-baseline
         shell: bash
         run: |
           revision="$(< linuxcnc-patches/base-revision)"
+          cache_key="linuxcnc-${RUNNER_OS}-${RUNNER_ARCH}-${revision}-${LINUXCNC_CACHE_VERSION}-${{ hashFiles('linuxcnc-patches/base-revision', 'linuxcnc-patches/*.patch', 'linuxcnc-patches/apply.sh') }}"
           echo "revision=${revision}" >> "${GITHUB_OUTPUT}"
-
-      - name: Install native daemon and Clang dependencies
-        uses: KyleMayes/install-llvm-action@v2
-        with:
-          version: "21"
-
-      - name: Install native daemon dependencies
-        run: |
-          set -euo pipefail
-
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            cmake \
-            libboost-dev \
-            libarchive-dev \
-            libgrpc++-dev \
-            libgrpc-dev \
-            libprotobuf-dev \
-            protobuf-compiler \
-            protobuf-compiler-grpc \
-            python3-dev
-
+          echo "cache-key=${cache_key}" >> "${GITHUB_OUTPUT}"
       - name: Restore LinuxCNC build
         id: linuxcnc-cache
         uses: actions/cache/restore@v4
         with:
           path: .cache/linuxcnc/${{ steps.linuxcnc-baseline.outputs.revision }}/linuxcnc
-          key: linuxcnc-${{ runner.os }}-${{ runner.arch }}-${{ steps.linuxcnc-baseline.outputs.revision }}-${{ env.LINUXCNC_CACHE_VERSION }}-${{ hashFiles('linuxcnc-patches/*.patch') }}
-
+          key: ${{ steps.linuxcnc-baseline.outputs.cache-key }}
+      - name: Validate cached LinuxCNC build
+        if: steps.linuxcnc-cache.outputs.cache-hit == 'true'
+        shell: bash
+        env:
+          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ steps.linuxcnc-baseline.outputs.revision }}/linuxcnc
+        run: |
+          test -x "${LINUXCNC_DIR}/bin/linuxcnc"
+          test -e "${LINUXCNC_DIR}/lib/liblinuxcncini.so"
       - name: Check out LinuxCNC
         if: steps.linuxcnc-cache.outputs.cache-hit != 'true'
         shell: bash
@@ -96,11 +82,11 @@ jobs:
           LINUXCNC_REF: ${{ steps.linuxcnc-baseline.outputs.revision }}
         run: |
           set -euo pipefail
-
           mkdir -p "$(dirname "${LINUXCNC_DIR}")"
-          git clone "https://github.com/${LINUXCNC_REPOSITORY}.git" "${LINUXCNC_DIR}"
-          git -C "${LINUXCNC_DIR}" checkout "${LINUXCNC_REF}"
-
+          git init "${LINUXCNC_DIR}"
+          git -C "${LINUXCNC_DIR}" remote add origin "https://github.com/${LINUXCNC_REPOSITORY}.git"
+          git -C "${LINUXCNC_DIR}" fetch --depth=1 origin "${LINUXCNC_REF}"
+          git -C "${LINUXCNC_DIR}" checkout --detach FETCH_HEAD
       - name: Apply LinuxCNC patches
         if: steps.linuxcnc-cache.outputs.cache-hit != 'true'
         shell: bash
@@ -109,14 +95,11 @@ jobs:
           LINUXCNC_REF: ${{ steps.linuxcnc-baseline.outputs.revision }}
         run: |
           set -euo pipefail
-
           "${GITHUB_WORKSPACE}/linuxcnc-patches/apply.sh" --detach "${LINUXCNC_DIR}"
-
           patch_count="$(find "${GITHUB_WORKSPACE}/linuxcnc-patches" -maxdepth 1 -name '*.patch' | wc -l)"
           commit_count="$(git -C "${LINUXCNC_DIR}" rev-list --count "${LINUXCNC_REF}..HEAD")"
           test "${commit_count}" -eq "${patch_count}"
           test -z "$(git -C "${LINUXCNC_DIR}" status --porcelain --untracked-files=all)"
-
       - name: Install LinuxCNC build dependencies
         if: steps.linuxcnc-cache.outputs.cache-hit != 'true'
         shell: bash
@@ -124,10 +107,8 @@ jobs:
           LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ steps.linuxcnc-baseline.outputs.revision }}/linuxcnc
         run: |
           set -euo pipefail
-
           sudo apt-get update
           sudo apt-get install -y build-essential dpkg-dev
-
           cd "${LINUXCNC_DIR}"
           export DEB_BUILD_PROFILES="pkg.linuxcnc.headless nodoc"
           ./debian/configure no-docs
@@ -135,26 +116,6 @@ jobs:
             dpkg-checkbuilddeps || true
             exit 1
           fi
-
-      - name: Install LinuxCNC cached runtime dependencies
-        if: steps.linuxcnc-cache.outputs.cache-hit == 'true'
-        run: |
-          set -euo pipefail
-
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            python3-dev \
-            procps \
-            psmisc \
-            libboost-python-dev \
-            libedit2 \
-            libfmt9 \
-            libmodbus5 \
-            libtirpc3t64 \
-            libudev1 \
-            libusb-1.0-0
-
       - name: Build LinuxCNC
         if: steps.linuxcnc-cache.outputs.cache-hit != 'true'
         shell: bash
@@ -162,7 +123,6 @@ jobs:
           LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ steps.linuxcnc-baseline.outputs.revision }}/linuxcnc
         run: |
           set -euo pipefail
-
           cd "${LINUXCNC_DIR}/src"
           ./autogen.sh
           ./configure --with-realtime=uspace \
@@ -170,24 +130,108 @@ jobs:
             --disable-build-documentation \
             --disable-build-manpages
           make -j"$(nproc)"
+      - name: Save LinuxCNC build
+        if: steps.linuxcnc-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/linuxcnc/${{ steps.linuxcnc-baseline.outputs.revision }}/linuxcnc
+          key: ${{ steps.linuxcnc-baseline.outputs.cache-key }}
 
+  native-build-test:
+    name: Native build and test
+    needs: prepare-linuxcnc
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install native dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential ccache cmake libarchive-dev libboost-dev \
+            libboost-python-dev libedit2 libfmt9 libgrpc++-dev libgrpc-dev \
+            libmodbus5 libprotobuf-dev libtirpc3t64 libudev1 libusb-1.0-0 \
+            procps protobuf-compiler protobuf-compiler-grpc psmisc python3-dev
+      - name: Restore LinuxCNC build
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/linuxcnc/${{ needs.prepare-linuxcnc.outputs.revision }}/linuxcnc
+          key: ${{ needs.prepare-linuxcnc.outputs.cache-key }}
+          fail-on-cache-miss: true
+      - name: Restore native compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: native-ccache-${{ runner.os }}-${{ runner.arch }}-${{ needs.prepare-linuxcnc.outputs.revision }}-${{ github.sha }}
+          restore-keys: |
+            native-ccache-${{ runner.os }}-${{ runner.arch }}-${{ needs.prepare-linuxcnc.outputs.revision }}-
       - name: Set LinuxCNC runtime permissions
-        shell: bash
         env:
-          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ steps.linuxcnc-baseline.outputs.revision }}/linuxcnc
-        run: |
-          set -euo pipefail
-
-          cd "${LINUXCNC_DIR}/src"
-          sudo make setuid
-
+          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ needs.prepare-linuxcnc.outputs.revision }}/linuxcnc
+        run: sudo make -C "${LINUXCNC_DIR}/src" setuid
       - name: Configure native LinuxCNC daemon
+        env:
+          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ needs.prepare-linuxcnc.outputs.revision }}/linuxcnc
+        run: |
+          cmake -S . -B build/native-grpc-linuxcnc \
+            -DLINUXCNC_ROOT="${LINUXCNC_DIR}" \
+            -DLINUXCNC_GRPC_BUILD_WIRE=ON \
+            -DLINUXCNC_GRPC_BUILD_TESTS=ON \
+            -DLINUXCNC_GRPC_ENABLE_NML=ON \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_BUILD_TYPE=Debug
+      - name: Build native LinuxCNC daemon
+        run: cmake --build build/native-grpc-linuxcnc --parallel "$(nproc)"
+      - name: Test native LinuxCNC daemon
         shell: bash
         env:
-          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ steps.linuxcnc-baseline.outputs.revision }}/linuxcnc
+          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ needs.prepare-linuxcnc.outputs.revision }}/linuxcnc
         run: |
           set -euo pipefail
+          set +u
+          source "${LINUXCNC_DIR}/scripts/rip-environment"
+          set -u
+          export LINUXCNC_INCLUDE="${LINUXCNC_DIR}/include"
+          export LINUXCNC_LIB="${LINUXCNC_DIR}/lib"
+          ctest --test-dir build/native-grpc-linuxcnc --output-on-failure
+      - name: Report compiler cache statistics
+        if: always()
+        run: ccache --show-stats
 
+  native-lint:
+    name: Native lint
+    needs: prepare-linuxcnc
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install LLVM apt repository
+        run: |
+          set -euo pipefail
+          sudo install -m 0755 -d /etc/apt/keyrings
+          curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key \
+            | sudo tee /etc/apt/keyrings/apt.llvm.org.asc >/dev/null
+          echo 'deb [signed-by=/etc/apt/keyrings/apt.llvm.org.asc] https://apt.llvm.org/noble/ llvm-toolchain-noble-21 main' \
+            | sudo tee /etc/apt/sources.list.d/llvm-21.list >/dev/null
+      - name: Install native and Clang dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential clang-tidy-21 clang-tools-21 cmake \
+            libarchive-dev libboost-dev libgrpc++-dev libgrpc-dev \
+            libprotobuf-dev protobuf-compiler protobuf-compiler-grpc python3-dev
+      - name: Restore LinuxCNC build
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/linuxcnc/${{ needs.prepare-linuxcnc.outputs.revision }}/linuxcnc
+          key: ${{ needs.prepare-linuxcnc.outputs.cache-key }}
+          fail-on-cache-miss: true
+      - name: Configure native LinuxCNC daemon
+        env:
+          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ needs.prepare-linuxcnc.outputs.revision }}/linuxcnc
+        run: |
           cmake -S . -B build/native-grpc-linuxcnc \
             -DLINUXCNC_ROOT="${LINUXCNC_DIR}" \
             -DLINUXCNC_GRPC_BUILD_WIRE=ON \
@@ -195,36 +239,11 @@ jobs:
             -DLINUXCNC_GRPC_ENABLE_NML=ON \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
             -DCMAKE_BUILD_TYPE=Debug
-
-      - name: Build native LinuxCNC daemon
-        run: cmake --build build/native-grpc-linuxcnc --parallel 2
-
       - name: Lint native LinuxCNC sources
         run: ./scripts/native-lint.sh build/native-grpc-linuxcnc
         env:
-          CLANG_TIDY: clang-tidy
-          RUN_CLANG_TIDY: run-clang-tidy
-
-      - name: Test native LinuxCNC daemon
-        shell: bash
-        env:
-          LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ steps.linuxcnc-baseline.outputs.revision }}/linuxcnc
-        run: |
-          set -euo pipefail
-
-          set +u
-          source "${LINUXCNC_DIR}/scripts/rip-environment"
-          set -u
-          export LINUXCNC_INCLUDE="${LINUXCNC_DIR}/include"
-          export LINUXCNC_LIB="${LINUXCNC_DIR}/lib"
-          ctest --test-dir build/native-grpc-linuxcnc --output-on-failure
-
-      - name: Save LinuxCNC build
-        if: steps.linuxcnc-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
-        uses: actions/cache/save@v4
-        with:
-          path: .cache/linuxcnc/${{ steps.linuxcnc-baseline.outputs.revision }}/linuxcnc
-          key: linuxcnc-${{ runner.os }}-${{ runner.arch }}-${{ steps.linuxcnc-baseline.outputs.revision }}-${{ env.LINUXCNC_CACHE_VERSION }}-${{ hashFiles('linuxcnc-patches/*.patch') }}
+          CLANG_TIDY: clang-tidy-21
+          RUN_CLANG_TIDY: run-clang-tidy-21
 
   container:
     name: linuxcnc-simulator container
@@ -232,14 +251,11 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
-
       - name: Build test image
         uses: docker/build-push-action@v7
         with:
@@ -247,8 +263,8 @@ jobs:
           target: test
           load: true
           tags: linuxcnc-simulator:test
+          build-args: BUILD_JOBS=4
           cache-from: type=gha,scope=linuxcnc-simulator-amd64
           cache-to: type=gha,mode=max,scope=linuxcnc-simulator-amd64
-
       - name: Run full-stack container acceptance test
         run: ./docker/acceptance-test.sh linuxcnc-simulator:test
