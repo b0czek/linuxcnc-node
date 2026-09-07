@@ -220,6 +220,99 @@ std::optional<std::pair<std::string, std::string>> preview_parameters(
 }
 
 class Session final : public std::enable_shared_from_this<Session> {
+  struct RouteDependencies {
+    std::shared_ptr<PositionTelemetry> position_telemetry;
+    std::shared_ptr<HalValueTelemetry> hal_telemetry;
+    std::shared_ptr<ScopeTelemetry> scope_telemetry;
+    std::shared_ptr<ProgramWorkspaceStore> workspaces;
+    BoundedExecutor* parser_worker;
+    AdmissionCounter* preview_admission;
+    std::filesystem::path ini_file;
+    std::size_t batch_size;
+  };
+
+  struct PreviewFlow {
+    std::stop_source stop_source;
+    std::mutex mutex;
+    std::condition_variable condition;
+    std::size_t outstanding_batches = 0;
+  };
+
+  struct PreviewMessage {
+    std::string bytes;
+    bool batch = false;
+    bool terminal = false;
+    bool progress = false;
+  };
+
+  struct PositionSession {
+    PositionSession(asio::any_io_executor executor,
+                    std::shared_ptr<PositionTelemetry> source)
+        : delivery_timer(executor), telemetry(std::move(source)) {}
+
+    asio::steady_timer delivery_timer;
+    std::shared_ptr<PositionTelemetry> telemetry;
+    PositionTelemetry::Subscription subscription;
+    std::uint64_t cursor = 0;
+    std::uint64_t generation = 0;
+    std::uint64_t write_cursor = 0;
+    std::uint64_t write_generation = 0;
+    std::chrono::steady_clock::time_point next_delivery;
+    std::atomic<bool> wake_pending{false};
+    bool delivery_scheduled = false;
+  };
+
+  struct HalSession {
+    HalSession(std::shared_ptr<HalValueTelemetry> source,
+               std::string subscription_id)
+        : telemetry(std::move(source)), id(std::move(subscription_id)) {}
+
+    std::shared_ptr<HalValueTelemetry> telemetry;
+    HalValueTelemetry::Subscription subscription;
+    std::optional<HalTelemetrySnapshot> write_snapshot;
+    std::vector<std::optional<HalTelemetryValue>> values;
+    std::string id;
+    std::uint64_t revision = 0;
+    bool dirty = false;
+  };
+
+  struct ScopeSession {
+    ScopeSession(std::shared_ptr<ScopeTelemetry> source, std::string token)
+        : telemetry(std::move(source)), token(std::move(token)) {}
+
+    std::shared_ptr<ScopeTelemetry> telemetry;
+    ScopeTelemetry::Subscription subscription;
+    std::string token;
+    std::uint64_t generation = 0;
+  };
+
+  struct PreviewSession {
+    PreviewSession(std::shared_ptr<ProgramWorkspaceStore> workspace_store,
+                   BoundedExecutor& worker, AdmissionCounter& admission,
+                   std::filesystem::path ini, std::size_t size,
+                   std::string workspace, std::string relative_path)
+        : workspaces(std::move(workspace_store)),
+          parser_worker(worker),
+          admission(admission),
+          ini_file(std::move(ini)),
+          batch_size(size),
+          workspace_id(std::move(workspace)),
+          relative_path(std::move(relative_path)) {}
+
+    std::shared_ptr<ProgramWorkspaceStore> workspaces;
+    BoundedExecutor& parser_worker;
+    AdmissionCounter& admission;
+    std::filesystem::path ini_file;
+    std::size_t batch_size;
+    std::string workspace_id;
+    std::string relative_path;
+    std::shared_ptr<PreviewFlow> flow = std::make_shared<PreviewFlow>();
+    std::deque<PreviewMessage> queue;
+    bool active_batch = false;
+    bool active_terminal = false;
+    bool admitted = false;
+  };
+
  public:
   Session(PlainStream stream,
           std::shared_ptr<PositionTelemetry> position_telemetry,
@@ -230,23 +323,20 @@ class Session final : public std::enable_shared_from_this<Session> {
           std::filesystem::path ini_file, std::size_t batch_size,
           std::function<void()> release)
       : websocket_(std::move(stream)),
-        position_delivery_timer_(websocket_.get_executor()),
         write_deadline_(websocket_.get_executor()),
-        position_telemetry_(std::move(position_telemetry)),
-        hal_telemetry_(std::move(hal_telemetry)),
-        scope_telemetry_(std::move(scope_telemetry)),
-        workspaces_(std::move(workspaces)),
-        parser_worker_(parser_worker),
-        preview_admission_(preview_admission),
-        ini_file_(std::move(ini_file)),
-        batch_size_(batch_size),
+        dependencies_(RouteDependencies{
+            std::move(position_telemetry), std::move(hal_telemetry),
+            std::move(scope_telemetry), std::move(workspaces), &parser_worker,
+            &preview_admission, std::move(ini_file), batch_size}),
         release_(std::move(release)) {}
 
   void run() { read_upgrade(); }
 
   void stop() {
-    preview_flow_->stop_source.request_stop();
-    preview_flow_->condition.notify_all();
+    if (preview_) {
+      preview_->flow->stop_source.request_stop();
+      preview_->flow->condition.notify_all();
+    }
     abort_socket();
     fail();
   }
@@ -260,31 +350,37 @@ class Session final : public std::enable_shared_from_this<Session> {
 
   void on_upgrade_request(beast::error_code error, std::size_t) {
     if (error || !websocket::is_upgrade(request_)) return fail();
+    auto& dependencies = *dependencies_;
     const std::string target(request_.target());
     if (target == "/v1/position-history") {
-      mode_ = Mode::Position;
+      position_ = std::make_unique<PositionSession>(
+          websocket_.get_executor(),
+          std::move(dependencies.position_telemetry));
     } else if (const auto parameters = preview_parameters(target)) {
-      mode_ = Mode::Preview;
-      preview_workspace_id_ = parameters->first;
-      preview_relative_path_ = parameters->second;
+      preview_ = std::make_unique<PreviewSession>(
+          std::move(dependencies.workspaces), *dependencies.parser_worker,
+          *dependencies.preview_admission, std::move(dependencies.ini_file),
+          dependencies.batch_size, parameters->first, parameters->second);
     } else {
       constexpr std::string_view hal_prefix = "/v1/hal-values/";
       constexpr std::string_view scope_prefix = "/v1/scope/";
       if (target.rfind(hal_prefix, 0) == 0) {
-        auto claimed = hal_telemetry_->claim(target.substr(hal_prefix.size()));
-        if (!claimed) return fail();
-        mode_ = Mode::Hal;
-        hal_subscription_id_ = std::move(*claimed);
-      } else if (target.rfind(scope_prefix, 0) == 0) {
         auto claimed =
-            scope_telemetry_->claim(target.substr(scope_prefix.size()));
+            dependencies.hal_telemetry->claim(target.substr(hal_prefix.size()));
         if (!claimed) return fail();
-        mode_ = Mode::Scope;
-        scope_token_ = std::move(*claimed);
+        hal_ = std::make_unique<HalSession>(
+            std::move(dependencies.hal_telemetry), std::move(*claimed));
+      } else if (target.rfind(scope_prefix, 0) == 0) {
+        auto claimed = dependencies.scope_telemetry->claim(
+            target.substr(scope_prefix.size()));
+        if (!claimed) return fail();
+        scope_ = std::make_unique<ScopeSession>(
+            std::move(dependencies.scope_telemetry), std::move(*claimed));
       } else {
         return fail();
       }
     }
+    dependencies_.reset();
     websocket_.binary(true);
     websocket_.read_message_max(1024);
     websocket_.set_option(
@@ -297,16 +393,16 @@ class Session final : public std::enable_shared_from_this<Session> {
   void on_accept(beast::error_code error) {
     if (error) return fail();
     const std::weak_ptr<Session> weak = this->shared_from_this();
-    if (mode_ == Mode::Position) {
-      position_subscription_ =
-          position_telemetry_->subscribe([weak](const std::uint64_t&) {
+    if (position_) {
+      position_->subscription =
+          position_->telemetry->subscribe([weak](const std::uint64_t&) {
             if (const auto self = weak.lock()) self->queue_position_wake();
           });
       send_next(true);
-      next_position_delivery_ =
+      position_->next_delivery =
           std::chrono::steady_clock::now() + kPositionDeliveryPeriod;
       schedule_position_delivery();
-    } else if (mode_ == Mode::Hal) {
+    } else if (hal_) {
       const auto callback = [weak](const std::uint64_t&) {
         if (const auto self = weak.lock()) {
           asio::post(self->websocket_.get_executor(), [weak] {
@@ -314,12 +410,11 @@ class Session final : public std::enable_shared_from_this<Session> {
           });
         }
       };
-      hal_subscription_ =
-          hal_telemetry_->subscribe(hal_subscription_id_, callback);
+      hal_->subscription = hal_->telemetry->subscribe(hal_->id, callback);
       send_hal();
-    } else if (mode_ == Mode::Scope) {
-      scope_subscription_ = scope_telemetry_->subscribe(
-          scope_token_, [weak](const std::uint64_t&) {
+    } else if (scope_) {
+      scope_->subscription = scope_->telemetry->subscribe(
+          scope_->token, [weak](const std::uint64_t&) {
             if (const auto self = weak.lock()) {
               asio::post(self->websocket_.get_executor(), [weak] {
                 if (const auto session = weak.lock()) session->wake_scope();
@@ -333,73 +428,80 @@ class Session final : public std::enable_shared_from_this<Session> {
     read_application_data();
   }
 
-  void queue_position_wake() { position_wake_pending_ = true; }
+  void queue_position_wake() {
+    if (position_) position_->wake_pending = true;
+  }
 
   void schedule_position_delivery() {
-    if (closed_ || closing_ || position_delivery_scheduled_) return;
-    position_delivery_scheduled_ = true;
-    position_delivery_timer_.expires_at(next_position_delivery_);
-    position_delivery_timer_.async_wait(beast::bind_front_handler(
+    if (closed_ || closing_ || !position_ || position_->delivery_scheduled)
+      return;
+    position_->delivery_scheduled = true;
+    position_->delivery_timer.expires_at(position_->next_delivery);
+    position_->delivery_timer.async_wait(beast::bind_front_handler(
         &Session::on_position_delivery, this->shared_from_this()));
   }
 
   void on_position_delivery(beast::error_code error) {
-    position_delivery_scheduled_ = false;
+    if (!position_) return;
+    position_->delivery_scheduled = false;
     if (error == asio::error::operation_aborted || closed_ || closing_) return;
     if (error) return fail();
     const auto now = std::chrono::steady_clock::now();
     do {
-      next_position_delivery_ += kPositionDeliveryPeriod;
-    } while (next_position_delivery_ <= now);
+      position_->next_delivery += kPositionDeliveryPeriod;
+    } while (position_->next_delivery <= now);
     schedule_position_delivery();
-    if (!writing_ && position_wake_pending_.exchange(false)) send_next(false);
+    if (!writing_ && position_->wake_pending.exchange(false)) send_next(false);
   }
 
   void wake_hal() {
     if (closed_) return;
     if (writing_) {
-      dirty_ = true;
+      hal_->dirty = true;
       return;
     }
     send_hal();
   }
 
   void send_next(bool initial) {
+    auto& state = *position_;
     PositionHistoryBatch batch =
-        initial ? position_telemetry_->snapshot()
-                : position_telemetry_->since(cursor_, generation_);
+        initial ? state.telemetry->snapshot()
+                : state.telemetry->since(state.cursor, state.generation);
     if (!initial && !batch.reset && batch.packed.empty()) return;
     const bool replacement = initial || batch.reset;
-    write_cursor_ = batch.next_sequence;
-    write_generation_ = batch.generation;
+    state.write_cursor = batch.next_sequence;
+    state.write_generation = batch.generation;
     writing_ = true;
     write_frame(encode_position_frame(batch, replacement));
   }
 
   void send_hal() {
-    const auto snapshot = hal_telemetry_->snapshot(hal_subscription_id_);
+    auto& state = *hal_;
+    const auto snapshot = state.telemetry->snapshot(state.id);
     if (!snapshot) return fail();
     if (!snapshot->sampled) return;
-    const bool replacement = hal_revision_ != snapshot->revision;
+    const bool replacement = state.revision != snapshot->revision;
     std::vector<std::size_t> changed;
     if (!replacement) {
       for (std::size_t index = 0; index < snapshot->values.size(); ++index) {
-        if (index >= hal_values_.size() ||
-            snapshot->values[index] != hal_values_[index])
+        if (index >= state.values.size() ||
+            snapshot->values[index] != state.values[index])
           changed.push_back(index);
       }
       if (changed.empty()) return;
     }
-    write_hal_snapshot_ = *snapshot;
+    state.write_snapshot = *snapshot;
     writing_ = true;
     write_frame(encode_hal_frame(*snapshot, replacement, changed));
   }
 
   void wake_scope() {
     if (closed_ || writing_) return;
-    const auto frame = scope_telemetry_->next(scope_token_);
+    auto& state = *scope_;
+    const auto frame = state.telemetry->next(state.token);
     if (!frame) return;
-    scope_generation_ = frame->generation;
+    state.generation = frame->generation;
     writing_ = true;
     write_frame(encode_scope_frame(*frame));
   }
@@ -423,44 +525,46 @@ class Session final : public std::enable_shared_from_this<Session> {
     write_deadline_.cancel();
     writing_ = false;
     if (error) return fail();
-    if (mode_ == Mode::Preview) {
-      if (preview_active_batch_) {
-        std::lock_guard lock(preview_flow_->mutex);
-        --preview_flow_->outstanding_batches;
-        preview_flow_->condition.notify_all();
+    if (preview_) {
+      if (preview_->active_batch) {
+        std::lock_guard lock(preview_->flow->mutex);
+        --preview_->flow->outstanding_batches;
+        preview_->flow->condition.notify_all();
       }
-      const bool terminal = preview_active_terminal_;
-      preview_active_batch_ = false;
-      preview_active_terminal_ = false;
+      const bool terminal = preview_->active_terminal;
+      preview_->active_batch = false;
+      preview_->active_terminal = false;
       write_frame_.clear();
       if (closing_) return close_policy_violation();
       if (terminal) return close_normal();
       pump_preview();
       return;
     }
-    if (mode_ == Mode::Scope) {
+    if (scope_) {
       write_frame_.clear();
       if (closing_) return close_policy_violation();
       const auto next =
-          scope_telemetry_->acknowledge(scope_token_, scope_generation_);
+          scope_->telemetry->acknowledge(scope_->token, scope_->generation);
       if (next) {
-        scope_generation_ = next->generation;
+        scope_->generation = next->generation;
         writing_ = true;
         write_frame(encode_scope_frame(*next));
       }
       return;
     }
-    cursor_ = write_cursor_;
-    generation_ = write_generation_;
-    if (write_hal_snapshot_) {
-      hal_revision_ = write_hal_snapshot_->revision;
-      hal_values_ = write_hal_snapshot_->values;
-      write_hal_snapshot_.reset();
+    if (position_) {
+      position_->cursor = position_->write_cursor;
+      position_->generation = position_->write_generation;
+    }
+    if (hal_ && hal_->write_snapshot) {
+      hal_->revision = hal_->write_snapshot->revision;
+      hal_->values = hal_->write_snapshot->values;
+      hal_->write_snapshot.reset();
     }
     write_frame_.clear();
     if (closing_) return close_policy_violation();
-    if (dirty_) {
-      dirty_ = false;
+    if (hal_ && hal_->dirty) {
+      hal_->dirty = false;
       send_hal();
     }
   }
@@ -485,51 +589,37 @@ class Session final : public std::enable_shared_from_this<Session> {
                                        beast::error_code) { self->fail(); });
   }
 
-  struct PreviewFlow {
-    std::stop_source stop_source;
-    std::mutex mutex;
-    std::condition_variable condition;
-    std::size_t outstanding_batches = 0;
-  };
-
-  struct PreviewMessage {
-    std::string bytes;
-    bool batch = false;
-    bool terminal = false;
-    bool progress = false;
-  };
-
   void enqueue_preview(std::string bytes, bool batch, bool terminal,
                        bool progress = false) {
     const std::weak_ptr<Session> weak = this->shared_from_this();
-    asio::post(
-        websocket_.get_executor(),
-        [weak, bytes = std::move(bytes), batch, terminal, progress]() mutable {
-          const auto self = weak.lock();
-          if (!self || self->closed_) return;
-          if (progress && !self->preview_queue_.empty() &&
-              self->preview_queue_.back().progress) {
-            self->preview_queue_.back().bytes = std::move(bytes);
-          } else {
-            self->preview_queue_.push_back(
-                {std::move(bytes), batch, terminal, progress});
-          }
-          self->pump_preview();
-        });
+    asio::post(websocket_.get_executor(), [weak, bytes = std::move(bytes),
+                                           batch, terminal,
+                                           progress]() mutable {
+      const auto self = weak.lock();
+      if (!self || self->closed_) return;
+      auto& preview = *self->preview_;
+      if (progress && !preview.queue.empty() && preview.queue.back().progress) {
+        preview.queue.back().bytes = std::move(bytes);
+      } else {
+        preview.queue.push_back({std::move(bytes), batch, terminal, progress});
+      }
+      self->pump_preview();
+    });
   }
 
   void start_preview() {
-    if (!preview_admission_.acquire()) return close_try_again_later();
-    preview_admitted_ = true;
-    const auto flow = preview_flow_;
-    const auto store = workspaces_;
-    const auto workspace_id = preview_workspace_id_;
-    const auto relative_path = preview_relative_path_;
-    const auto ini_file = ini_file_;
-    const auto batch_size = batch_size_;
+    auto& preview = *preview_;
+    if (!preview.admission.acquire()) return close_try_again_later();
+    preview.admitted = true;
+    const auto flow = preview.flow;
+    const auto store = preview.workspaces;
+    const auto workspace_id = preview.workspace_id;
+    const auto relative_path = preview.relative_path;
+    const auto ini_file = preview.ini_file;
+    const auto batch_size = preview.batch_size;
     const std::weak_ptr<Session> weak = this->shared_from_this();
-    if (!parser_worker_.submit([flow, store, workspace_id, relative_path,
-                                ini_file, batch_size, weak] {
+    if (!preview.parser_worker.submit([flow, store, workspace_id, relative_path,
+                                       ini_file, batch_size, weak] {
           static_cast<void>(batch_size);
           const auto send =
               [weak](const linuxcnc::v1::ProgramPreviewEvent& event, bool batch,
@@ -658,11 +748,12 @@ class Session final : public std::enable_shared_from_this<Session> {
   }
 
   void pump_preview() {
-    if (writing_ || preview_queue_.empty() || closed_) return;
-    auto message = std::move(preview_queue_.front());
-    preview_queue_.pop_front();
-    preview_active_batch_ = message.batch;
-    preview_active_terminal_ = message.terminal;
+    auto& preview = *preview_;
+    if (writing_ || preview.queue.empty() || closed_) return;
+    auto message = std::move(preview.queue.front());
+    preview.queue.pop_front();
+    preview.active_batch = message.batch;
+    preview.active_terminal = message.terminal;
     writing_ = true;
     write_frame(std::move(message.bytes));
   }
@@ -683,31 +774,33 @@ class Session final : public std::enable_shared_from_this<Session> {
   void fail() {
     if (closed_) return;
     closed_ = true;
-    preview_flow_->stop_source.request_stop();
-    preview_flow_->condition.notify_all();
-    position_delivery_timer_.cancel();
+    if (preview_) {
+      preview_->flow->stop_source.request_stop();
+      preview_->flow->condition.notify_all();
+    }
+    if (position_) position_->delivery_timer.cancel();
     write_deadline_.cancel();
-    position_subscription_.reset();
-    hal_subscription_.reset();
-    scope_subscription_.reset();
-    if (!hal_subscription_id_.empty()) {
-      hal_telemetry_->erase(hal_subscription_id_);
-      hal_subscription_id_.clear();
+    if (position_) position_->subscription.reset();
+    if (hal_) {
+      hal_->subscription.reset();
+      hal_->telemetry->erase(hal_->id);
+      hal_->id.clear();
     }
-    if (!scope_token_.empty()) {
-      scope_telemetry_->release(scope_token_);
-      scope_token_.clear();
+    if (scope_) {
+      scope_->subscription.reset();
+      scope_->telemetry->release(scope_->token);
+      scope_->token.clear();
     }
-    if (preview_admitted_) {
-      preview_admitted_ = false;
-      preview_admission_.release();
+    if (preview_ && preview_->admitted) {
+      preview_->admitted = false;
+      preview_->admission.release();
     }
     if (release_) {
       release_();
       release_ = {};
     }
     write_frame_.clear();
-    preview_queue_.clear();
+    if (preview_) preview_->queue.clear();
     abort_socket();
   }
 
@@ -722,48 +815,19 @@ class Session final : public std::enable_shared_from_this<Session> {
   }
 
   websocket::stream<PlainStream> websocket_;
-  asio::steady_timer position_delivery_timer_;
   asio::steady_timer write_deadline_;
-  std::shared_ptr<PositionTelemetry> position_telemetry_;
-  std::shared_ptr<HalValueTelemetry> hal_telemetry_;
-  std::shared_ptr<ScopeTelemetry> scope_telemetry_;
-  std::shared_ptr<ProgramWorkspaceStore> workspaces_;
-  BoundedExecutor& parser_worker_;
-  AdmissionCounter& preview_admission_;
-  const std::filesystem::path ini_file_;
-  const std::size_t batch_size_;
-  PositionTelemetry::Subscription position_subscription_;
-  HalValueTelemetry::Subscription hal_subscription_;
-  ScopeTelemetry::Subscription scope_subscription_;
+  std::optional<RouteDependencies> dependencies_;
+  std::unique_ptr<PositionSession> position_;
+  std::unique_ptr<HalSession> hal_;
+  std::unique_ptr<ScopeSession> scope_;
+  std::unique_ptr<PreviewSession> preview_;
   std::function<void()> release_;
   beast::flat_buffer read_buffer_;
   http::request<http::string_body> request_;
   std::string write_frame_;
-  std::optional<HalTelemetrySnapshot> write_hal_snapshot_;
-  std::vector<std::optional<HalTelemetryValue>> hal_values_;
-  std::string hal_subscription_id_;
-  std::string scope_token_;
-  std::string preview_workspace_id_;
-  std::string preview_relative_path_;
-  std::shared_ptr<PreviewFlow> preview_flow_ = std::make_shared<PreviewFlow>();
-  std::deque<PreviewMessage> preview_queue_;
-  std::uint64_t hal_revision_ = 0;
-  std::uint64_t scope_generation_ = 0;
-  std::uint64_t cursor_ = 0;
-  std::uint64_t generation_ = 0;
-  std::uint64_t write_cursor_ = 0;
-  std::uint64_t write_generation_ = 0;
-  std::chrono::steady_clock::time_point next_position_delivery_;
-  std::atomic<bool> position_wake_pending_{false};
   bool writing_ = false;
-  bool dirty_ = false;
-  bool position_delivery_scheduled_ = false;
   bool closing_ = false;
   bool closed_ = false;
-  bool preview_active_batch_ = false;
-  bool preview_active_terminal_ = false;
-  bool preview_admitted_ = false;
-  enum class Mode { Position, Hal, Scope, Preview } mode_ = Mode::Position;
 };
 
 }  // namespace
