@@ -40,7 +40,7 @@ int main() {
     output << "#INCLUDE " << (root / "included.ini").string() << "\n";
   }
   ActiveIni ini(ini_path);
-  const auto before = ini.entries();
+  const auto& before = ini.entries();
   std::vector<std::string> repeated;
   for (const auto& entry : before) {
     if (entry.section == "TEST" && entry.key == "REPEATED")
