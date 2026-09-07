@@ -1,5 +1,13 @@
 # @linuxcnc-node/websocket-client
 
+## 5.1.0
+
+### Patch Changes
+
+- abbace5: Ship the intended MIT license with the gRPC and WebSocket client packages
+  instead of inheriting the repository-level GPL license during packaging.
+  - @linuxcnc-node/types@5.1.0
+
 ## 5.0.0
 
 ### Minor Changes

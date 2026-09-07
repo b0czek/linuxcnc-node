@@ -1,5 +1,19 @@
 # @linuxcnc-node/grpc-client
 
+## 5.1.0
+
+### Minor Changes
+
+- 3e4039a: Replace per-key INI lookup and conversion RPCs with IniService.Read, returning the complete immutable parsed snapshot with repeated entries and resolved includes.
+- 65981ed: Expose the active LinuxCNC INI through a read-only gRPC service with string,
+  repeated-value, boolean, integer, unsigned-integer, and floating-point queries.
+
+### Patch Changes
+
+- abbace5: Ship the intended MIT license with the gRPC and WebSocket client packages
+  instead of inheriting the repository-level GPL license during packaging.
+  - @linuxcnc-node/types@5.1.0
+
 ## 5.0.0
 
 ### Major Changes
