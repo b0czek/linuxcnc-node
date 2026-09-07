@@ -88,9 +88,6 @@ bool has_scope_controller_owner() {
     auto* component = static_cast<hal_comp_t*>(SHMPTR(next));
     if (!component) continue;
     if (std::strcmp(component->name, "halscope") == 0) return true;
-    if (starts_with(component->name, "hal-inspector-scope-") &&
-        process_is_live(component->pid))
-      return true;
     if (starts_with(component->name, "linuxcnc-grpc-scope") &&
         process_is_live(component->pid))
       return true;

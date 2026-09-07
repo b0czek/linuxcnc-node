@@ -24,8 +24,6 @@ WebSocket data plane for position, selected HAL values, and G-code preview. See 
   by consumers. [README](./packages/types/README.md)
 - **`packages/websocket-client`**: Browser-safe renderer client for the three
   route-specific protobuf WebSocket streams.
-- **`apps/eden/hal-inspector`**: Eden HAL and scope inspector using the raw
-  gRPC client.
 - **`linuxcnc-patches`**: Maintained LinuxCNC patch series and pinned upstream
   baseline.
 
@@ -99,7 +97,7 @@ flow.
 
 ## License
 
-The native runtime and apps are licensed under **GPL-2.0-only**.
+The native runtime is licensed under **GPL-2.0-only**.
 `@linuxcnc-node/types`, `@linuxcnc-node/grpc-client`, and
 `@linuxcnc-node/websocket-client` are licensed under **MIT**.
 The protobuf protocol definitions under `proto/` are also licensed under

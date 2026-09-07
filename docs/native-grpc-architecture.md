@@ -83,8 +83,6 @@ listener is always plaintext WebSocket and does not inherit gRPC TLS settings.
 A non-loopback plaintext bind is rejected unless the operator also sets the
 explicit unsafe-bind option. The daemon intentionally has no machine lease or
 application authorization layer; Noah owns writer policy and concurrency.
-HAL Inspector uses `LINUXCNC_TELEMETRY_URL` for the externally reachable
-WebSocket base and defaults it to `ws://127.0.0.1:50052`.
 
 ## Operational bounds
 
@@ -96,7 +94,7 @@ The initial polling defaults preserve existing timing behavior:
 | Errors | 100 ms |
 | Position acquisition | 10 ms |
 | HAL topology | 2 s |
-| HAL Inspector values | subscription-selected, 50-1000 ms |
+| HAL value subscriptions | subscription-selected, 50-1000 ms |
 | Scope poll | 20 ms |
 | Scope heartbeat | 100 ms |
 

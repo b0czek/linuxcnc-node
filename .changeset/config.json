@@ -6,8 +6,7 @@
     [
       "@linuxcnc-node/types",
       "@linuxcnc-node/grpc-client",
-      "@linuxcnc-node/websocket-client",
-      "@linuxcnc-node/hal-inspector"
+      "@linuxcnc-node/websocket-client"
     ]
   ],
   "access": "public",
