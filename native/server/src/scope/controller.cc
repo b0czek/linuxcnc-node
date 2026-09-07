@@ -925,6 +925,10 @@ std::optional<ScopeFrame> LinuxCncScopeController::acknowledge(
   return impl_->frames.acknowledge(owner, generation);
 }
 
+void LinuxCncScopeController::discard_frames(const std::string& owner) {
+  if (impl_) impl_->frames.clear(owner);
+}
+
 std::uint64_t LinuxCncScopeController::skipped_frames() const {
   return impl_ ? impl_->frames.skipped_frames() : 0;
 }

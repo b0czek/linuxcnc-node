@@ -3,6 +3,7 @@ syntax = "proto3";
 package linuxcnc.v1;
 
 import "linuxcnc/v1/common.proto";
+import "google/protobuf/empty.proto";
 
 enum ScopeRuntimeState {
   SCOPE_RUNTIME_STATE_UNSPECIFIED = 0;
@@ -27,7 +28,7 @@ message ScopeChannelConfig { uint32 index = 1; HalItemRef item = 2; bool enabled
 
 message ScopeAcquisitionConfig { string thread_name = 1; uint32 multiplier = 2; uint32 pre_trigger = 3; uint32 trigger_channel = 4; double trigger_level = 5; bool rising = 6; bool automatic = 7; repeated ScopeChannelConfig channels = 8; }
 
-message ScopeStatus { ScopeRuntimeState state = 1; uint32 buffer_length = 2; uint32 record_length = 3; uint32 sample_length = 4; uint32 samples = 5; uint32 start = 6; uint32 multiplier = 7; uint32 watchdog = 8; string thread_name = 9; uint64 sample_period_ns = 10; uint64 generation = 11; uint64 skipped_frames = 12; }
+message ScopeStatus { ScopeRuntimeState state = 1; uint32 buffer_length = 2; uint32 record_length = 3; uint32 sample_length = 4; uint32 samples = 5; uint32 start = 6; uint32 multiplier = 7; uint32 watchdog = 8; string thread_name = 9; uint64 sample_period_ns = 10; }
 
 message ScopeCapture { repeated PackedChannel channels = 1; uint32 samples = 2; uint32 trigger_index = 3; uint64 sample_period_ns = 4; uint64 generation = 5; uint64 skipped_frames = 6; }
 
@@ -41,8 +42,6 @@ message PackedChannel {
 
 message ScopeCaptureDelta { repeated PackedChannel channels = 1; uint32 samples = 2; uint32 capacity = 3; uint64 sequence = 4; uint64 sample_period_ns = 5; bool reset = 6; uint64 generation = 7; uint64 skipped_frames = 8; }
 
-message ScopeAcquire {}
-
 message ScopeConfigure { ScopeAcquisitionConfig config = 1; }
 
 message ScopeRun { ScopeRunMode mode = 1; }
@@ -51,23 +50,15 @@ message ScopeStop {}
 
 message ScopeTrigger {}
 
-message ScopeFrameAck { uint64 generation = 1; }
-
-message ScopeSessionMessage {
-  oneof message {
-    ScopeAcquire acquire = 1;
-    ScopeConfigure configure = 2;
-    ScopeRun run = 3;
-    ScopeStop stop = 4;
-    ScopeTrigger trigger = 5;
-    ScopeFrameAck ack = 6;
-    ScopeStatus status = 7;
-    ScopeCapture capture = 8;
-    ScopeCaptureDelta roll = 9;
-  }
+message ScopeControlState {
+  ScopeStatus status = 1;
+  string websocket_path = 2;
 }
 
 service ScopeService {
-  rpc Session(stream ScopeSessionMessage) returns (stream ScopeSessionMessage);
+  rpc GetStatus(google.protobuf.Empty) returns (ScopeControlState);
+  rpc Configure(ScopeConfigure) returns (ScopeControlState);
+  rpc Run(ScopeRun) returns (ScopeControlState);
+  rpc Stop(ScopeStop) returns (ScopeControlState);
+  rpc Trigger(ScopeTrigger) returns (ScopeControlState);
 }
-

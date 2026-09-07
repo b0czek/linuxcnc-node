@@ -63,7 +63,6 @@ int main(int argc, char** argv) {
   if (argc > 2 && std::string(argv[2]) == "--hold-stream") {
     auto program = linuxcnc::v1::ProgramService::NewStub(channel);
     auto hal = linuxcnc::v1::HalService::NewStub(channel);
-    auto scope = linuxcnc::v1::ScopeService::NewStub(channel);
     auto terminal_ok = [](const grpc::Status& result) {
       assert(result.error_code() == grpc::StatusCode::CANCELLED ||
              result.error_code() == grpc::StatusCode::UNAVAILABLE);
@@ -118,19 +117,6 @@ int main(int argc, char** argv) {
                            std::chrono::seconds(10));
       auto stream = hal->ComponentSession(&context);
       linuxcnc::v1::ComponentSessionMessage response;
-      while (stream->Read(&response)) {
-      }
-      terminal_ok(stream->Finish());
-    });
-    holders.emplace_back([&] {
-      grpc::ClientContext context;
-      context.set_deadline(std::chrono::system_clock::now() +
-                           std::chrono::seconds(10));
-      auto stream = scope->Session(&context);
-      linuxcnc::v1::ScopeSessionMessage acquire;
-      acquire.mutable_acquire();
-      assert(stream->Write(acquire));
-      linuxcnc::v1::ScopeSessionMessage response;
       while (stream->Read(&response)) {
       }
       terminal_ok(stream->Finish());

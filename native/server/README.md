@@ -52,6 +52,7 @@ message contains exactly one protobuf message from
 
 - `/v1/position-history` uses `PositionHistoryFrame`.
 - `/v1/hal-values/{token}` uses `HalValueFrame`.
+- `/v1/scope/{token}` uses `ScopeTelemetryFrame`.
 - `/v1/program-preview?workspace_id=…&relative_path=…` uses
   `ProgramPreviewEvent`.
 
@@ -70,6 +71,11 @@ disconnects release the subscription.
 HAL frames contain slot/value entries. An absent `HalScalar` marks a slot as
 temporarily unavailable; `s64`, `u64`, revisions, and sequences remain exact
 64-bit integers.
+
+Scope status, configuration, run, stop, and trigger are unary `ScopeService`
+RPCs on the shared gRPC control plane. Their response supplies a WebSocket
+attachment path; capture and roll frames flow only over the shared telemetry
+listener, which owns frame acknowledgement and backpressure.
 Position history keeps its acquisition cadence while coalescing mutations into
 50 ms delivery windows for viewers. Slow consumers receive coalesced
 latest-state deltas rather than every sampled transition. Client WebSocket

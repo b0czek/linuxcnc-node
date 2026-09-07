@@ -347,23 +347,11 @@ int probe_reacquire(const std::string& endpoint) {
   grpc::ClientContext scope_context;
   scope_context.set_deadline(std::chrono::system_clock::now() +
                              std::chrono::seconds(5));
-  auto session = scope->Session(&scope_context);
-  linuxcnc::v1::ScopeSessionMessage acquire;
-  acquire.mutable_acquire();
-  assert(session->Write(acquire));
-  linuxcnc::v1::ScopeSessionMessage scope_response;
-  assert(session->Read(&scope_response) && scope_response.has_status());
-
-  acquire.Clear();
-  acquire.mutable_stop();
-  assert(session->Write(acquire));
-  do {
-    assert(session->Read(&scope_response));
-  } while (!scope_response.has_status());
-  session->WritesDone();
-  while (session->Read(&scope_response)) {
-  }
-  assert(session->Finish().ok());
+  linuxcnc::v1::ScopeControlState scope_response;
+  assert(scope->GetStatus(&scope_context, {}, &scope_response).ok());
+  assert(!scope_response.websocket_path().empty());
+  grpc::ClientContext stop_context;
+  assert(scope->Stop(&stop_context, {}, &scope_response).ok());
   request.Clear();
   request.mutable_close();
   assert(component->Write(request));
@@ -378,7 +366,6 @@ int hold_shutdown(const std::string& endpoint) {
   auto machine = linuxcnc::v1::MachineService::NewStub(channel);
   auto program = linuxcnc::v1::ProgramService::NewStub(channel);
   auto hal = linuxcnc::v1::HalService::NewStub(channel);
-  auto scope = linuxcnc::v1::ScopeService::NewStub(channel);
   (void)get_status_with_retry(machine.get());
 
   grpc::ClientContext error_context;
@@ -434,16 +421,6 @@ int hold_shutdown(const std::string& endpoint) {
   topology_request.set_after_sequence(topology_snapshot.sequence());
   auto topology = hal->WatchTopology(&topology_context, topology_request);
 
-  grpc::ClientContext scope_context;
-  scope_context.set_deadline(std::chrono::system_clock::now() +
-                             std::chrono::seconds(15));
-  auto session = scope->Session(&scope_context);
-  linuxcnc::v1::ScopeSessionMessage scope_request;
-  scope_request.mutable_acquire();
-  assert(session->Write(scope_request));
-  linuxcnc::v1::ScopeSessionMessage scope_response;
-  assert(session->Read(&scope_response) && scope_response.has_status());
-
   std::cout << "LIVE_SHUTDOWN_READY\n" << std::flush;
 
   linuxcnc::v1::LinuxCNCError error;
@@ -467,10 +444,6 @@ int hold_shutdown(const std::string& endpoint) {
   while (component->Read(&component_response)) {
   }
   require_shutdown_status(component->Finish(), "ComponentSession");
-  session->WritesDone();
-  while (session->Read(&scope_response)) {
-  }
-  require_shutdown_status(session->Finish(), "ScopeSession");
   std::cout << "LIVE_SHUTDOWN_TERMINATED\n" << std::flush;
   return 0;
 }
@@ -1192,18 +1165,16 @@ int main(int argc, char** argv) {
   }
   assert(abrupt_removed);
 
-  // Scope ownership is exclusive even when two clients share one endpoint.
+  // Scope controls use the shared gRPC control plane while capture data uses
+  // the shared WebSocket telemetry listener.
   auto scope = linuxcnc::v1::ScopeService::NewStub(channel);
   grpc::ClientContext scope_context;
   scope_context.set_deadline(std::chrono::system_clock::now() +
                              std::chrono::seconds(10));
-  auto scope_session = scope->Session(&scope_context);
-  linuxcnc::v1::ScopeSessionMessage scope_acquire;
-  scope_acquire.mutable_acquire();
-  assert(scope_session->Write(scope_acquire));
-  linuxcnc::v1::ScopeSessionMessage scope_response;
-  assert(scope_session->Read(&scope_response));
+  linuxcnc::v1::ScopeControlState scope_response;
+  assert(scope->GetStatus(&scope_context, {}, &scope_response).ok());
   assert(scope_response.has_status());
+  assert(!scope_response.websocket_path().empty());
 
   const linuxcnc::v1::HalPinInfo* scope_pin = nullptr;
   for (const auto& candidate : topology.topology().pins()) {
@@ -1216,8 +1187,8 @@ int main(int argc, char** argv) {
     }
   }
   assert(scope_pin != nullptr);
-  linuxcnc::v1::ScopeSessionMessage scope_configure;
-  auto* acquisition = scope_configure.mutable_configure()->mutable_config();
+  linuxcnc::v1::ScopeConfigure scope_configure;
+  auto* acquisition = scope_configure.mutable_config();
   acquisition->set_thread_name("servo-thread");
   acquisition->set_multiplier(1);
   acquisition->set_automatic(true);
@@ -1226,93 +1197,54 @@ int main(int argc, char** argv) {
   scope_channel->set_enabled(true);
   scope_channel->mutable_item()->set_kind(linuxcnc::v1::HAL_ITEM_KIND_PIN);
   scope_channel->mutable_item()->set_name(scope_pin->name());
-  assert(scope_session->Write(scope_configure));
-  do {
-    assert(scope_session->Read(&scope_response));
-  } while (!scope_response.has_status());
+  grpc::ClientContext configure_context;
+  assert(scope->Configure(&configure_context, scope_configure, &scope_response)
+             .ok());
 
-  linuxcnc::v1::ScopeSessionMessage scope_run;
-  scope_run.mutable_run()->set_mode(linuxcnc::v1::SCOPE_RUN_MODE_ROLL);
-  assert(scope_session->Write(scope_run));
-  do {
-    assert(scope_session->Read(&scope_response));
-  } while (!scope_response.has_status());
+  const auto [scope_host, scope_port] = split_endpoint(telemetry_endpoint);
+  asio::io_context scope_io;
+  tcp::resolver scope_resolver(scope_io);
+  websocket::stream<beast::tcp_stream> scope_socket(scope_io);
+  beast::get_lowest_layer(scope_socket).expires_after(std::chrono::seconds(5));
+  beast::get_lowest_layer(scope_socket)
+      .connect(scope_resolver.resolve(scope_host, scope_port));
+  scope_socket.handshake(scope_host, scope_response.websocket_path());
 
-  do {
-    assert(scope_session->Read(&scope_response));
-  } while (!scope_response.has_capture() && !scope_response.has_roll());
-  const auto frame_generation = scope_response.has_capture()
-                                    ? scope_response.capture().generation()
-                                    : scope_response.roll().generation();
-  // Leave one frame unacknowledged while several controller polls occur. The
-  // controller keeps one coalesced replacement and accounts for skipped frames.
-  std::this_thread::sleep_for(std::chrono::milliseconds(300));
-  linuxcnc::v1::ScopeSessionMessage scope_ack;
-  scope_ack.mutable_ack()->set_generation(frame_generation);
-  assert(scope_session->Write(scope_ack));
-  do {
-    assert(scope_session->Read(&scope_response));
-  } while (!scope_response.has_capture() && !scope_response.has_roll());
-  const auto replacement_generation =
-      scope_response.has_capture() ? scope_response.capture().generation()
-                                   : scope_response.roll().generation();
-  const auto replacement_skipped =
-      scope_response.has_capture() ? scope_response.capture().skipped_frames()
-                                   : scope_response.roll().skipped_frames();
-  assert(replacement_generation > frame_generation);
-  assert(replacement_skipped > 0);
-  scope_ack.mutable_ack()->set_generation(replacement_generation);
-  assert(scope_session->Write(scope_ack));
+  linuxcnc::v1::ScopeRun scope_run;
+  scope_run.set_mode(linuxcnc::v1::SCOPE_RUN_MODE_ROLL);
+  grpc::ClientContext run_context;
+  assert(scope->Run(&run_context, scope_run, &scope_response).ok());
 
-  linuxcnc::v1::ScopeSessionMessage scope_trigger;
-  scope_trigger.mutable_trigger();
-  assert(scope_session->Write(scope_trigger));
-  do {
-    assert(scope_session->Read(&scope_response));
-  } while (!scope_response.has_status());
+  beast::flat_buffer scope_buffer;
+  scope_socket.read(scope_buffer);
+  std::vector<std::uint8_t> scope_bytes(scope_buffer.size());
+  asio::buffer_copy(asio::buffer(scope_bytes), scope_buffer.data());
+  linuxcnc::v1::ScopeTelemetryFrame scope_frame;
+  assert(scope_frame.ParseFromArray(scope_bytes.data(),
+                                    static_cast<int>(scope_bytes.size())));
+  assert(scope_frame.has_capture() || scope_frame.has_roll());
 
-  linuxcnc::v1::ScopeSessionMessage scope_stop;
-  scope_stop.mutable_stop();
-  assert(scope_session->Write(scope_stop));
-  do {
-    assert(scope_session->Read(&scope_response));
-  } while (!scope_response.has_status());
+  grpc::ClientContext trigger_context;
+  assert(scope->Trigger(&trigger_context, {}, &scope_response).ok());
+
+  grpc::ClientContext stop_context;
+  assert(scope->Stop(&stop_context, {}, &scope_response).ok());
 
   for (const auto mode : {linuxcnc::v1::SCOPE_RUN_MODE_SINGLE,
                           linuxcnc::v1::SCOPE_RUN_MODE_RUN}) {
-    assert(scope_session->Write(scope_configure));
-    do {
-      assert(scope_session->Read(&scope_response));
-    } while (!scope_response.has_status());
-    linuxcnc::v1::ScopeSessionMessage mode_request;
-    mode_request.mutable_run()->set_mode(mode);
-    assert(scope_session->Write(mode_request));
-    do {
-      assert(scope_session->Read(&scope_response));
-    } while (!scope_response.has_status());
-    assert(scope_session->Write(scope_stop));
-    do {
-      assert(scope_session->Read(&scope_response));
-    } while (!scope_response.has_status());
+    grpc::ClientContext mode_configure_context;
+    assert(scope
+               ->Configure(&mode_configure_context, scope_configure,
+                           &scope_response)
+               .ok());
+    linuxcnc::v1::ScopeRun mode_request;
+    mode_request.set_mode(mode);
+    grpc::ClientContext mode_run_context;
+    assert(scope->Run(&mode_run_context, mode_request, &scope_response).ok());
+    grpc::ClientContext mode_stop_context;
+    assert(scope->Stop(&mode_stop_context, {}, &scope_response).ok());
   }
-
-  grpc::ClientContext conflicting_scope_context;
-  conflicting_scope_context.set_deadline(std::chrono::system_clock::now() +
-                                         std::chrono::seconds(5));
-  auto conflicting_scope = scope->Session(&conflicting_scope_context);
-  (void)conflicting_scope->Write(scope_acquire);
-  conflicting_scope->WritesDone();
-  while (conflicting_scope->Read(&scope_response)) {
-  }
-  const auto conflicting_scope_status = conflicting_scope->Finish();
-  assert(conflicting_scope_status.error_code() ==
-         grpc::StatusCode::RESOURCE_EXHAUSTED);
-
-  scope_session->WritesDone();
-  while (scope_session->Read(&scope_response)) {
-  }
-  const auto scope_status = scope_session->Finish();
-  assert(scope_status.ok());
+  scope_socket.close(websocket::close_code::normal);
 
   std::cout << "native LinuxCNC gRPC live integration passed\n";
   return 0;

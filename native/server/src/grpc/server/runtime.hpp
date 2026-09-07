@@ -40,9 +40,8 @@ class ServerRuntime {
                 AdmissionCounter& stream_admission,
                 AdmissionCounter& upload_admission,
                 AdmissionCounter& component_admission,
-                AdmissionCounter& scope_admission, BoundedExecutor& blocking,
-                BoundedExecutor& parser_worker, BoundedExecutor& hal_worker,
-                BoundedExecutor& scope_worker);
+                BoundedExecutor& blocking, BoundedExecutor& parser_worker,
+                BoundedExecutor& hal_worker, BoundedExecutor& scope_worker);
 
   ~ServerRuntime() noexcept;
 
@@ -88,7 +87,6 @@ class ServerRuntime {
   AdmissionCounter& stream_admission_;
   AdmissionCounter& upload_admission_;
   AdmissionCounter& component_admission_;
-  AdmissionCounter& scope_admission_;
   BoundedExecutor& blocking_;
   BoundedExecutor& parser_worker_;
   BoundedExecutor& hal_worker_;

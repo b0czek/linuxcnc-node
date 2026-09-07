@@ -20,6 +20,7 @@
 #include "linuxcnc_grpc/linuxcnc/active_ini.hpp"
 #include "linuxcnc_grpc/position/telemetry.hpp"
 #include "linuxcnc_grpc/program/workspace.hpp"
+#include "linuxcnc_grpc/scope/telemetry.hpp"
 #include "linuxcnc_grpc/telemetry_websocket_server.hpp"
 
 namespace linuxcnc::server {
@@ -73,9 +74,9 @@ int run_grpc_server(const DaemonConfig& config) {
     AdmissionCounter stream_admission(128);
     AdmissionCounter upload_admission(1);
     AdmissionCounter component_admission(16);
-    AdmissionCounter scope_admission(1);
     auto position_telemetry = std::make_shared<PositionTelemetry>(10000);
     auto hal_telemetry = std::make_shared<HalValueTelemetry>(128);
+    auto scope_telemetry = std::make_shared<ScopeTelemetry>();
     auto machine = detail::make_machine_service(
         config, workspaces, position_telemetry, blocking, stream_admission);
     auto ini = detail::make_ini_service(active_ini);
@@ -83,11 +84,11 @@ int run_grpc_server(const DaemonConfig& config) {
         detail::make_program_service(config, workspaces, upload_admission);
     auto hal = detail::make_hal_service(config, hal_worker, component_admission,
                                         stream_admission, hal_telemetry);
-    auto scope = detail::make_scope_service(config, scope_worker,
-                                            scope_admission, stream_admission);
+    auto scope =
+        detail::make_scope_service(config, scope_worker, scope_telemetry);
     auto telemetry_websocket = std::make_unique<TelemetryWebSocketServer>(
-        config, position_telemetry, hal_telemetry, workspaces, parser_worker,
-        stream_admission);
+        config, position_telemetry, hal_telemetry, scope_telemetry, workspaces,
+        parser_worker, stream_admission);
 
     ::grpc::ServerBuilder builder;
     ::grpc::ResourceQuota resource_quota;
@@ -139,8 +140,7 @@ int run_grpc_server(const DaemonConfig& config) {
         std::move(program), std::move(hal), std::move(scope),
         std::move(telemetry_websocket), std::move(position_telemetry),
         std::move(hal_telemetry), stream_admission, upload_admission,
-        component_admission, scope_admission, blocking, parser_worker,
-        hal_worker, scope_worker);
+        component_admission, blocking, parser_worker, hal_worker, scope_worker);
     runtime.start_control_thread(shutdown_signals);
     runtime.wait();
     runtime.finalize();

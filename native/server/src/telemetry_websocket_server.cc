@@ -30,6 +30,8 @@
 #include "linuxcnc_grpc/position/telemetry.hpp"
 #include "linuxcnc_grpc/program/workspace.hpp"
 #include "linuxcnc_grpc/protobuf_gcode_mapping.hpp"
+#include "linuxcnc_grpc/scope/controller.hpp"
+#include "linuxcnc_grpc/scope/telemetry.hpp"
 
 namespace linuxcnc::server {
 namespace {
@@ -107,6 +109,52 @@ std::string encode_hal_frame(const HalTelemetrySnapshot& snapshot,
   return frame.SerializeAsString();
 }
 
+template <typename Source>
+void encode_scope_channels(
+    const Source& source,
+    google::protobuf::RepeatedPtrField<linuxcnc::v1::PackedChannel>* target) {
+  for (std::size_t index = 0; index < source.channels.size(); ++index) {
+    auto* channel = target->Add();
+    channel->set_index(static_cast<std::uint32_t>(index));
+    channel->set_enabled(source.channels[index].has_value());
+    if (const auto& values = source.channels[index]; values) {
+      for (const auto value : *values) channel->add_values(value);
+    }
+  }
+}
+
+std::string encode_scope_frame(const ScopeFrame& source) {
+  linuxcnc::v1::ScopeTelemetryFrame frame;
+  if (source.kind == ScopeFrameKind::Capture) {
+    const auto& capture = std::get<ScopeCapture>(source.payload);
+    auto* encoded = frame.mutable_capture();
+    encode_scope_channels(capture, encoded->mutable_channels());
+    encoded->set_samples(
+        static_cast<std::uint32_t>(std::max(0, capture.samples)));
+    encoded->set_trigger_index(
+        static_cast<std::uint32_t>(std::max(0, capture.trigger_index)));
+    encoded->set_sample_period_ns(static_cast<std::uint64_t>(
+        std::max<std::int64_t>(0, capture.sample_period_ns)));
+    encoded->set_generation(source.generation);
+    encoded->set_skipped_frames(source.skipped_frames);
+  } else {
+    const auto& delta = std::get<ScopeCaptureDelta>(source.payload);
+    auto* encoded = frame.mutable_roll();
+    encode_scope_channels(delta, encoded->mutable_channels());
+    encoded->set_samples(
+        static_cast<std::uint32_t>(std::max(0, delta.samples)));
+    encoded->set_capacity(
+        static_cast<std::uint32_t>(std::max(0, delta.capacity)));
+    encoded->set_sequence(delta.sequence);
+    encoded->set_sample_period_ns(static_cast<std::uint64_t>(
+        std::max<std::int64_t>(0, delta.sample_period_ns)));
+    encoded->set_reset(delta.reset);
+    encoded->set_generation(source.generation);
+    encoded->set_skipped_frames(source.skipped_frames);
+  }
+  return frame.SerializeAsString();
+}
+
 std::pair<std::string, std::string> split_endpoint(
     const std::string& endpoint) {
   const auto separator = endpoint.rfind(':');
@@ -173,8 +221,10 @@ std::optional<std::pair<std::string, std::string>> preview_parameters(
 
 class Session final : public std::enable_shared_from_this<Session> {
  public:
-  Session(PlainStream stream, std::shared_ptr<PositionTelemetry> telemetry,
+  Session(PlainStream stream,
+          std::shared_ptr<PositionTelemetry> position_telemetry,
           std::shared_ptr<HalValueTelemetry> hal_telemetry,
+          std::shared_ptr<ScopeTelemetry> scope_telemetry,
           std::shared_ptr<ProgramWorkspaceStore> workspaces,
           BoundedExecutor& parser_worker, AdmissionCounter& preview_admission,
           std::filesystem::path ini_file, std::size_t batch_size,
@@ -182,8 +232,9 @@ class Session final : public std::enable_shared_from_this<Session> {
       : websocket_(std::move(stream)),
         position_delivery_timer_(websocket_.get_executor()),
         write_deadline_(websocket_.get_executor()),
-        telemetry_(std::move(telemetry)),
+        position_telemetry_(std::move(position_telemetry)),
         hal_telemetry_(std::move(hal_telemetry)),
+        scope_telemetry_(std::move(scope_telemetry)),
         workspaces_(std::move(workspaces)),
         parser_worker_(parser_worker),
         preview_admission_(preview_admission),
@@ -217,12 +268,22 @@ class Session final : public std::enable_shared_from_this<Session> {
       preview_workspace_id_ = parameters->first;
       preview_relative_path_ = parameters->second;
     } else {
-      const std::string prefix = "/v1/hal-values/";
-      if (target.rfind(prefix, 0) != 0) return fail();
-      auto claimed = hal_telemetry_->claim(target.substr(prefix.size()));
-      if (!claimed) return fail();
-      mode_ = Mode::Hal;
-      hal_subscription_id_ = std::move(*claimed);
+      constexpr std::string_view hal_prefix = "/v1/hal-values/";
+      constexpr std::string_view scope_prefix = "/v1/scope/";
+      if (target.rfind(hal_prefix, 0) == 0) {
+        auto claimed = hal_telemetry_->claim(target.substr(hal_prefix.size()));
+        if (!claimed) return fail();
+        mode_ = Mode::Hal;
+        hal_subscription_id_ = std::move(*claimed);
+      } else if (target.rfind(scope_prefix, 0) == 0) {
+        auto claimed =
+            scope_telemetry_->claim(target.substr(scope_prefix.size()));
+        if (!claimed) return fail();
+        mode_ = Mode::Scope;
+        scope_token_ = std::move(*claimed);
+      } else {
+        return fail();
+      }
     }
     websocket_.binary(true);
     websocket_.read_message_max(1024);
@@ -238,7 +299,7 @@ class Session final : public std::enable_shared_from_this<Session> {
     const std::weak_ptr<Session> weak = this->shared_from_this();
     if (mode_ == Mode::Position) {
       position_subscription_ =
-          telemetry_->subscribe([weak](const std::uint64_t&) {
+          position_telemetry_->subscribe([weak](const std::uint64_t&) {
             if (const auto self = weak.lock()) self->queue_position_wake();
           });
       send_next(true);
@@ -256,6 +317,16 @@ class Session final : public std::enable_shared_from_this<Session> {
       hal_subscription_ =
           hal_telemetry_->subscribe(hal_subscription_id_, callback);
       send_hal();
+    } else if (mode_ == Mode::Scope) {
+      scope_subscription_ = scope_telemetry_->subscribe(
+          scope_token_, [weak](const std::uint64_t&) {
+            if (const auto self = weak.lock()) {
+              asio::post(self->websocket_.get_executor(), [weak] {
+                if (const auto session = weak.lock()) session->wake_scope();
+              });
+            }
+          });
+      wake_scope();
     } else {
       start_preview();
     }
@@ -294,9 +365,9 @@ class Session final : public std::enable_shared_from_this<Session> {
   }
 
   void send_next(bool initial) {
-    PositionHistoryBatch batch = initial
-                                     ? telemetry_->snapshot()
-                                     : telemetry_->since(cursor_, generation_);
+    PositionHistoryBatch batch =
+        initial ? position_telemetry_->snapshot()
+                : position_telemetry_->since(cursor_, generation_);
     if (!initial && !batch.reset && batch.packed.empty()) return;
     const bool replacement = initial || batch.reset;
     write_cursor_ = batch.next_sequence;
@@ -322,6 +393,15 @@ class Session final : public std::enable_shared_from_this<Session> {
     write_hal_snapshot_ = *snapshot;
     writing_ = true;
     write_frame(encode_hal_frame(*snapshot, replacement, changed));
+  }
+
+  void wake_scope() {
+    if (closed_ || writing_) return;
+    const auto frame = scope_telemetry_->next(scope_token_);
+    if (!frame) return;
+    scope_generation_ = frame->generation;
+    writing_ = true;
+    write_frame(encode_scope_frame(*frame));
   }
 
   void write_frame(std::string frame) {
@@ -356,6 +436,18 @@ class Session final : public std::enable_shared_from_this<Session> {
       if (closing_) return close_policy_violation();
       if (terminal) return close_normal();
       pump_preview();
+      return;
+    }
+    if (mode_ == Mode::Scope) {
+      write_frame_.clear();
+      if (closing_) return close_policy_violation();
+      const auto next =
+          scope_telemetry_->acknowledge(scope_token_, scope_generation_);
+      if (next) {
+        scope_generation_ = next->generation;
+        writing_ = true;
+        write_frame(encode_scope_frame(*next));
+      }
       return;
     }
     cursor_ = write_cursor_;
@@ -597,9 +689,14 @@ class Session final : public std::enable_shared_from_this<Session> {
     write_deadline_.cancel();
     position_subscription_.reset();
     hal_subscription_.reset();
+    scope_subscription_.reset();
     if (!hal_subscription_id_.empty()) {
       hal_telemetry_->erase(hal_subscription_id_);
       hal_subscription_id_.clear();
+    }
+    if (!scope_token_.empty()) {
+      scope_telemetry_->release(scope_token_);
+      scope_token_.clear();
     }
     if (preview_admitted_) {
       preview_admitted_ = false;
@@ -627,8 +724,9 @@ class Session final : public std::enable_shared_from_this<Session> {
   websocket::stream<PlainStream> websocket_;
   asio::steady_timer position_delivery_timer_;
   asio::steady_timer write_deadline_;
-  std::shared_ptr<PositionTelemetry> telemetry_;
+  std::shared_ptr<PositionTelemetry> position_telemetry_;
   std::shared_ptr<HalValueTelemetry> hal_telemetry_;
+  std::shared_ptr<ScopeTelemetry> scope_telemetry_;
   std::shared_ptr<ProgramWorkspaceStore> workspaces_;
   BoundedExecutor& parser_worker_;
   AdmissionCounter& preview_admission_;
@@ -636,6 +734,7 @@ class Session final : public std::enable_shared_from_this<Session> {
   const std::size_t batch_size_;
   PositionTelemetry::Subscription position_subscription_;
   HalValueTelemetry::Subscription hal_subscription_;
+  ScopeTelemetry::Subscription scope_subscription_;
   std::function<void()> release_;
   beast::flat_buffer read_buffer_;
   http::request<http::string_body> request_;
@@ -643,11 +742,13 @@ class Session final : public std::enable_shared_from_this<Session> {
   std::optional<HalTelemetrySnapshot> write_hal_snapshot_;
   std::vector<std::optional<HalTelemetryValue>> hal_values_;
   std::string hal_subscription_id_;
+  std::string scope_token_;
   std::string preview_workspace_id_;
   std::string preview_relative_path_;
   std::shared_ptr<PreviewFlow> preview_flow_ = std::make_shared<PreviewFlow>();
   std::deque<PreviewMessage> preview_queue_;
   std::uint64_t hal_revision_ = 0;
+  std::uint64_t scope_generation_ = 0;
   std::uint64_t cursor_ = 0;
   std::uint64_t generation_ = 0;
   std::uint64_t write_cursor_ = 0;
@@ -662,19 +763,22 @@ class Session final : public std::enable_shared_from_this<Session> {
   bool preview_active_batch_ = false;
   bool preview_active_terminal_ = false;
   bool preview_admitted_ = false;
-  enum class Mode { Position, Hal, Preview } mode_ = Mode::Position;
+  enum class Mode { Position, Hal, Scope, Preview } mode_ = Mode::Position;
 };
 
 }  // namespace
 
 class TelemetryWebSocketServer::Impl {
  public:
-  Impl(const DaemonConfig& config, std::shared_ptr<PositionTelemetry> telemetry,
+  Impl(const DaemonConfig& config,
+       std::shared_ptr<PositionTelemetry> position_telemetry,
        std::shared_ptr<HalValueTelemetry> hal_telemetry,
+       std::shared_ptr<ScopeTelemetry> scope_telemetry,
        std::shared_ptr<ProgramWorkspaceStore> workspaces,
        BoundedExecutor& parser_worker, AdmissionCounter& preview_admission)
-      : telemetry_(std::move(telemetry)),
+      : position_telemetry_(std::move(position_telemetry)),
         hal_telemetry_(std::move(hal_telemetry)),
+        scope_telemetry_(std::move(scope_telemetry)),
         workspaces_(std::move(workspaces)),
         parser_worker_(parser_worker),
         preview_admission_(preview_admission),
@@ -729,9 +833,9 @@ class TelemetryWebSocketServer::Impl {
         } else {
           auto release = [this] { active_sessions_.fetch_sub(1); };
           auto session = std::make_shared<Session>(
-              PlainStream(std::move(socket)), telemetry_, hal_telemetry_,
-              workspaces_, parser_worker_, preview_admission_, ini_file_,
-              batch_size_, std::move(release));
+              PlainStream(std::move(socket)), position_telemetry_,
+              hal_telemetry_, scope_telemetry_, workspaces_, parser_worker_,
+              preview_admission_, ini_file_, batch_size_, std::move(release));
           sessions_.push_back(session);
           session->run();
         }
@@ -741,8 +845,9 @@ class TelemetryWebSocketServer::Impl {
   }
 
   asio::io_context io_{1};
-  std::shared_ptr<PositionTelemetry> telemetry_;
+  std::shared_ptr<PositionTelemetry> position_telemetry_;
   std::shared_ptr<HalValueTelemetry> hal_telemetry_;
+  std::shared_ptr<ScopeTelemetry> scope_telemetry_;
   std::shared_ptr<ProgramWorkspaceStore> workspaces_;
   BoundedExecutor& parser_worker_;
   AdmissionCounter& preview_admission_;
@@ -756,13 +861,16 @@ class TelemetryWebSocketServer::Impl {
 };
 
 TelemetryWebSocketServer::TelemetryWebSocketServer(
-    const DaemonConfig& config, std::shared_ptr<PositionTelemetry> telemetry,
+    const DaemonConfig& config,
+    std::shared_ptr<PositionTelemetry> position_telemetry,
     std::shared_ptr<HalValueTelemetry> hal_telemetry,
+    std::shared_ptr<ScopeTelemetry> scope_telemetry,
     std::shared_ptr<ProgramWorkspaceStore> workspaces,
     BoundedExecutor& parser_worker, AdmissionCounter& preview_admission)
     : impl_(std::make_unique<Impl>(
-          config, std::move(telemetry), std::move(hal_telemetry),
-          std::move(workspaces), parser_worker, preview_admission)) {}
+          config, std::move(position_telemetry), std::move(hal_telemetry),
+          std::move(scope_telemetry), std::move(workspaces), parser_worker,
+          preview_admission)) {}
 
 TelemetryWebSocketServer::~TelemetryWebSocketServer() = default;
 

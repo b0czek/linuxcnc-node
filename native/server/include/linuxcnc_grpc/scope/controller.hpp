@@ -173,6 +173,7 @@ class LinuxCncScopeController final {
                                        std::chrono::milliseconds timeout);
   std::optional<ScopeFrame> acknowledge(const std::string& owner,
                                         std::uint64_t generation);
+  void discard_frames(const std::string& owner);
   std::uint64_t skipped_frames() const;
   void set_frame_listener(std::function<void()> listener);
 

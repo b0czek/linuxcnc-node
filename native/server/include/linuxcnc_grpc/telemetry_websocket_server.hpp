@@ -7,18 +7,20 @@ namespace linuxcnc::server {
 struct DaemonConfig;
 class PositionTelemetry;
 class HalValueTelemetry;
+class ScopeTelemetry;
 class ProgramWorkspaceStore;
 class BoundedExecutor;
 class AdmissionCounter;
 
 class TelemetryWebSocketServer {
  public:
-  TelemetryWebSocketServer(const DaemonConfig& config,
-                           std::shared_ptr<PositionTelemetry> telemetry,
-                           std::shared_ptr<HalValueTelemetry> hal_telemetry,
-                           std::shared_ptr<ProgramWorkspaceStore> workspaces,
-                           BoundedExecutor& parser_worker,
-                           AdmissionCounter& preview_admission);
+  TelemetryWebSocketServer(
+      const DaemonConfig& config,
+      std::shared_ptr<PositionTelemetry> position_telemetry,
+      std::shared_ptr<HalValueTelemetry> hal_telemetry,
+      std::shared_ptr<ScopeTelemetry> scope_telemetry,
+      std::shared_ptr<ProgramWorkspaceStore> workspaces,
+      BoundedExecutor& parser_worker, AdmissionCounter& preview_admission);
   ~TelemetryWebSocketServer();
 
   TelemetryWebSocketServer(const TelemetryWebSocketServer&) = delete;

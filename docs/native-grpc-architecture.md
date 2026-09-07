@@ -26,14 +26,16 @@ already accepted by LinuxCNC.
 `IniService` returns the parsed active configuration. `ProgramService` accepts
 bounded tar.zst uploads and publishes immutable workspaces after validation.
 `HalService` provides topology, exact-width scalar access, subscriptions,
-signals, metadata, and session-owned components. `ScopeService` permits one
-exclusive controller and keeps shared-memory polling outside realtime code.
+signals, metadata, and session-owned components. `ScopeService` exposes unary
+scope controls on the shared gRPC control plane and keeps shared-memory polling
+outside realtime code. Scope capture and roll data use only WebSocket telemetry.
 
 High-rate, read-only telemetry uses binary WebSocket routes on the shared
 telemetry listener:
 
 - `/v1/position-history`
 - `/v1/hal-values/{token}`
+- `/v1/scope/{token}`
 - `/v1/program-preview?workspace_id=...&relative_path=...`
 
 Each frame is a route-specific protobuf from

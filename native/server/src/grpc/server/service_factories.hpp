@@ -10,6 +10,7 @@ class BoundedExecutor;
 class AdmissionCounter;
 class PositionTelemetry;
 class HalValueTelemetry;
+class ScopeTelemetry;
 class ActiveIni;
 class ProgramWorkspaceStore;
 struct DaemonConfig;
@@ -38,6 +39,6 @@ std::unique_ptr<ManagedGrpcService> make_hal_service(
 
 std::unique_ptr<ManagedGrpcService> make_scope_service(
     const DaemonConfig& config, BoundedExecutor& worker,
-    AdmissionCounter& admission, AdmissionCounter& stream_admission);
+    std::shared_ptr<ScopeTelemetry> scope_telemetry);
 
 }  // namespace linuxcnc::server::detail

@@ -44,9 +44,9 @@ ServerRuntime::ServerRuntime(
     std::shared_ptr<PositionTelemetry> position_telemetry,
     std::shared_ptr<HalValueTelemetry> hal_telemetry,
     AdmissionCounter& stream_admission, AdmissionCounter& upload_admission,
-    AdmissionCounter& component_admission, AdmissionCounter& scope_admission,
-    BoundedExecutor& blocking, BoundedExecutor& parser_worker,
-    BoundedExecutor& hal_worker, BoundedExecutor& scope_worker)
+    AdmissionCounter& component_admission, BoundedExecutor& blocking,
+    BoundedExecutor& parser_worker, BoundedExecutor& hal_worker,
+    BoundedExecutor& scope_worker)
     : server_(std::move(server)),
       machine_(std::move(machine)),
       ini_(std::move(ini)),
@@ -59,7 +59,6 @@ ServerRuntime::ServerRuntime(
       stream_admission_(stream_admission),
       upload_admission_(upload_admission),
       component_admission_(component_admission),
-      scope_admission_(scope_admission),
       blocking_(blocking),
       parser_worker_(parser_worker),
       hal_worker_(hal_worker),
@@ -109,7 +108,6 @@ void ServerRuntime::request_shutdown() noexcept {
   invoke_shutdown("upload-admission", [this] { upload_admission_.stop(); });
   invoke_shutdown("component-admission",
                   [this] { component_admission_.stop(); });
-  invoke_shutdown("scope-admission", [this] { scope_admission_.stop(); });
   invoke_shutdown("blocking-admission", [this] { blocking_.stop_admission(); });
   invoke_shutdown("parser-admission",
                   [this] { parser_worker_.stop_admission(); });

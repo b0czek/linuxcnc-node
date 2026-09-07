@@ -29,6 +29,7 @@ set(LINUXCNC_GRPC_DOMAIN_SOURCES
     src/program/workspace.cc
     src/program/workspace_archive.cc
     src/scope/manager.cc
+    src/scope/telemetry.cc
     src/linuxcnc/command_validation.cc
     src/linuxcnc/nml_adapter.cc
 )

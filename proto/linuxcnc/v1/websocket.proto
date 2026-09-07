@@ -7,6 +7,7 @@ package linuxcnc.v1;
 import public "linuxcnc/v1/common.proto";
 import "linuxcnc/v1/program.proto";
 import "linuxcnc/v1/hal.proto";
+import "linuxcnc/v1/scope.proto";
 
 enum FrameKind {
   FRAME_KIND_UNSPECIFIED = 0;
@@ -34,6 +35,13 @@ message HalValueFrame {
   uint64 revision = 2;
   uint64 sequence = 3;
   repeated HalValueFrameEntry entries = 4;
+}
+
+message ScopeTelemetryFrame {
+  oneof frame {
+    ScopeCapture capture = 1;
+    ScopeCaptureDelta roll = 2;
+  }
 }
 
 message ParseProgress {
