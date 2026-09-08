@@ -25,7 +25,8 @@ trap 'rm -rf "$workdir"' EXIT
 # The fixture INI names sim_mm.var relative to the process directory. Keep
 # that parameter state in the temporary directory so an integration run never writes
 # sim_mm.var or sim_mm.var.bak into the repository.
-cp "$ini" "$workdir/machine.ini"
+cp "$ini" "$workdir/included.ini"
+printf '#INCLUDE included.ini\n' >"$workdir/machine.ini"
 cp "$parameter_file" "$workdir/sim_mm.var"
 cp "$tool_table" "$workdir/sim_mm.tbl"
 cp "$fixture_dir/remap.py" "$workdir/remap.py"

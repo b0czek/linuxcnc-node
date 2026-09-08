@@ -8,10 +8,12 @@
 #include <stdexcept>
 #include <string>
 
+#include "linuxcnc_grpc/daemon/config.hpp"
 #include "linuxcnc_grpc/linuxcnc/active_ini.hpp"
 
 using linuxcnc::server::ActiveIni;
 using linuxcnc::server::IniEntry;
+using linuxcnc::server::validate_program_prefix;
 namespace fs = std::filesystem;
 
 int main() {
@@ -35,7 +37,8 @@ int main() {
 
   {
     std::ofstream include(root / "included.ini");
-    include << "[INCLUDED]\nVALUE = from-include\n";
+    include << "[INCLUDED]\nVALUE = from-include\n"
+               "[DISPLAY]\nPROGRAM_PREFIX = active-program\n";
     std::ofstream output(ini_path, std::ios::app);
     output << "#INCLUDE " << (root / "included.ini").string() << "\n";
   }
@@ -54,6 +57,10 @@ int main() {
       included = true;
   }
   assert(included);
+  fs::create_directory(root / "active-program");
+  std::string validation_error;
+  assert(validate_program_prefix(ini_path, root / "active-program",
+                                 &validation_error));
 
   // LinuxCNC's parser cache makes an already loaded INI immutable even when
   // the underlying file changes during the server session.

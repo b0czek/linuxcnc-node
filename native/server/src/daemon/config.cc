@@ -1,9 +1,7 @@
 #include "linuxcnc_grpc/daemon/config.hpp"
 
 #include <algorithm>
-#include <cctype>
 #include <charconv>
-#include <fstream>
 #include <sstream>
 
 namespace linuxcnc::server {
@@ -42,16 +40,6 @@ std::string endpoint_host(const std::string& endpoint) {
   const auto separator = endpoint.rfind(':');
   return separator == std::string::npos ? endpoint
                                         : endpoint.substr(0, separator);
-}
-
-std::string trim(std::string value) {
-  while (!value.empty() &&
-         std::isspace(static_cast<unsigned char>(value.front())))
-    value.erase(value.begin());
-  while (!value.empty() &&
-         std::isspace(static_cast<unsigned char>(value.back())))
-    value.pop_back();
-  return value;
 }
 
 bool loopback_host(const std::string& host) {
@@ -160,59 +148,6 @@ bool validate_config(const DaemonConfig& config, std::string* error) {
       config.scope_heartbeat <= std::chrono::milliseconds::zero()) {
     return fail(
         "daemon periods, upload timeout, and workspace TTL must be positive");
-  }
-  return true;
-}
-
-bool validate_program_prefix(const std::filesystem::path& ini_file,
-                             const std::filesystem::path& active_directory,
-                             std::string* error) {
-  const auto fail = [error](const std::string& message) {
-    if (error) *error = message;
-    return false;
-  };
-  std::ifstream input(ini_file);
-  if (!input) return fail("cannot read LinuxCNC INI: " + ini_file.string());
-  bool display_section = false;
-  std::string line;
-  std::string configured_prefix;
-  while (std::getline(input, line)) {
-    const auto comment = line.find_first_of("#;");
-    if (comment != std::string::npos) line.resize(comment);
-    line = trim(std::move(line));
-    if (line.empty()) continue;
-    if (line.front() == '[' && line.back() == ']') {
-      auto section = trim(line.substr(1, line.size() - 2));
-      for (char& character : section)
-        character = static_cast<char>(
-            std::toupper(static_cast<unsigned char>(character)));
-      display_section = section == "DISPLAY";
-      continue;
-    }
-    if (!display_section) continue;
-    const auto equals = line.find('=');
-    if (equals == std::string::npos) continue;
-    auto key = trim(line.substr(0, equals));
-    for (char& character : key)
-      character = static_cast<char>(
-          std::toupper(static_cast<unsigned char>(character)));
-    if (key == "PROGRAM_PREFIX") {
-      configured_prefix = trim(line.substr(equals + 1));
-      break;
-    }
-  }
-  if (configured_prefix.empty())
-    return fail("[DISPLAY] PROGRAM_PREFIX is missing from LinuxCNC INI");
-  std::filesystem::path configured_path(configured_prefix);
-  if (configured_path.is_relative())
-    configured_path = ini_file.parent_path() / configured_path;
-  const auto configured = std::filesystem::weakly_canonical(
-      std::filesystem::absolute(configured_path));
-  const auto expected = std::filesystem::weakly_canonical(
-      std::filesystem::absolute(active_directory));
-  if (configured != expected) {
-    return fail(
-        "LinuxCNC PROGRAM_PREFIX does not match active program directory");
   }
   return true;
 }

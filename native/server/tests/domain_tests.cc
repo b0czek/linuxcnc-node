@@ -263,12 +263,6 @@ void daemon_config_test() {
   fs::remove_all(base, filesystem_error);
   fs::create_directories(base / "active");
   {
-    std::ofstream ini(base / "machine.ini");
-    ini << "[DISPLAY]\nPROGRAM_PREFIX = active\n";
-  }
-  assert(
-      validate_program_prefix(base / "machine.ini", base / "active", &error));
-  {
     std::ofstream certificate(base / "server.crt");
     std::ofstream private_key(base / "server.key");
     certificate << "certificate";
