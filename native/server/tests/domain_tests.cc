@@ -21,6 +21,11 @@ void expect(bool condition) {
   (void)condition;
 }
 
+CommandTicket submitted(CommandSubmission submission) {
+  assert(submission.status == CommandSubmitStatus::Submitted);
+  return std::move(submission.ticket);
+}
+
 void callback_runtime_test() {
   ActiveCallbackRegistry registry;
   std::atomic<int> shutdown_calls{0};
@@ -180,11 +185,12 @@ void command_coordinator_test() {
   CommandCoordinator coordinator(2);
   std::atomic<bool> started{false};
   std::atomic<bool> allow_accept{false};
-  auto ticket = coordinator.submit_with_context([&](CommandContext& context) {
-    started = true;
-    while (!allow_accept.load()) std::this_thread::yield();
-    context.mark_accepted(42);
-  });
+  auto ticket =
+      submitted(coordinator.submit_with_context([&](CommandContext& context) {
+        started = true;
+        while (!allow_accept.load()) std::this_thread::yield();
+        context.mark_accepted(42);
+      }));
   while (!started.load()) std::this_thread::yield();
   CommandResult result;
   assert(!ticket.wait_for(CommandWaitPolicy::Accepted,

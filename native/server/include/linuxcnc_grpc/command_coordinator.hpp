@@ -31,6 +31,12 @@ enum class CommandPriority {
   Safety,
 };
 
+enum class CommandSubmitStatus {
+  Submitted,
+  QueueFull,
+  Stopped,
+};
+
 struct CommandResult {
   // Internal sequence assigned when work enters the daemon coordinator.
   std::uint64_t sequence = 0;
@@ -94,6 +100,15 @@ class CommandTicket {
   std::shared_ptr<State> state_;
 };
 
+struct CommandSubmission {
+  CommandSubmitStatus status = CommandSubmitStatus::Stopped;
+  CommandTicket ticket;
+
+  explicit operator bool() const noexcept {
+    return status == CommandSubmitStatus::Submitted;
+  }
+};
+
 class CommandCoordinator {
  public:
   explicit CommandCoordinator(std::size_t capacity = 128,
@@ -106,10 +121,10 @@ class CommandCoordinator {
   // submit() only queues the action.  The action is executed serially by the
   // coordinator worker, and cancellation of an RPC wait never removes an
   // already accepted action from this queue.
-  CommandTicket submit(CommandAction action,
-                       CommandPriority priority = CommandPriority::Normal);
-  CommandTicket submit_with_context(ContextCommandAction action);
-  CommandTicket submit_with_context(
+  CommandSubmission submit(CommandAction action,
+                           CommandPriority priority = CommandPriority::Normal);
+  CommandSubmission submit_with_context(ContextCommandAction action);
+  CommandSubmission submit_with_context(
       ContextCommandAction action, const std::stop_token& stop_token,
       CommandPriority priority = CommandPriority::Normal);
   void shutdown();

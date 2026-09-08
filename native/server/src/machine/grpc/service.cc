@@ -48,44 +48,25 @@ class CommandTaskReactor final : public ::grpc::ServerUnaryReactor {
   using Submit = std::function<::grpc::Status(std::stop_token, CommandTicket*,
                                               CommandWaitPolicy*)>;
 
+  CommandTaskReactor(ActiveCallbackRegistry& registry,
+                     ExecuteCommandResponse* response, Submit submit)
+      : response_(response),
+        gate_(std::make_shared<LifetimeGate<CommandTaskReactor>>(this)) {
+    const std::weak_ptr<LifetimeGate<CommandTaskReactor>> weak_gate = gate_;
+    if (!register_shutdown(registry, weak_gate)) return;
+    run_submit(weak_gate, std::move(submit), stop_source_.get_token());
+  }
+
   CommandTaskReactor(BoundedExecutor& executor,
                      ActiveCallbackRegistry& registry,
                      ExecuteCommandResponse* response, Submit submit)
       : response_(response),
         gate_(std::make_shared<LifetimeGate<CommandTaskReactor>>(this)) {
     const std::weak_ptr<LifetimeGate<CommandTaskReactor>> weak_gate = gate_;
-    registration_ = registry.register_callback([weak_gate] {
-      if (auto gate = weak_gate.lock())
-        gate->invoke([](CommandTaskReactor& reactor) { reactor.shutdown(); });
-    });
-    if (!registration_) {
-      shutdown();
-      return;
-    }
+    if (!register_shutdown(registry, weak_gate)) return;
     if (!executor.submit([weak_gate, submit = std::move(submit),
                           stop_token = stop_source_.get_token()]() mutable {
-          CommandTicket ticket;
-          CommandWaitPolicy policy = CommandWaitPolicy::Completed;
-          ::grpc::Status status;
-          try {
-            status = submit(stop_token, &ticket, &policy);
-          } catch (const std::exception& error) {
-            status = {::grpc::StatusCode::INTERNAL, error.what()};
-          }
-          auto gate = weak_gate.lock();
-          if (!gate) return;
-          if (!status.ok()) {
-            gate->invoke([&](CommandTaskReactor& reactor) {
-              reactor.finish(std::move(status));
-            });
-            return;
-          }
-          ticket.observe(policy, [weak_gate](const CommandResult& result) {
-            auto observed_gate = weak_gate.lock();
-            if (!observed_gate) return;
-            observed_gate->invoke(
-                [&](CommandTaskReactor& reactor) { reactor.complete(result); });
-          });
+          run_submit(weak_gate, std::move(submit), stop_token);
         })) {
       finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
               "blocking work queue is full"});
@@ -111,6 +92,45 @@ class CommandTaskReactor final : public ::grpc::ServerUnaryReactor {
   }
 
  private:
+  bool register_shutdown(
+      ActiveCallbackRegistry& registry,
+      const std::weak_ptr<LifetimeGate<CommandTaskReactor>>& weak_gate) {
+    registration_ = registry.register_callback([weak_gate] {
+      if (auto gate = weak_gate.lock())
+        gate->invoke([](CommandTaskReactor& reactor) { reactor.shutdown(); });
+    });
+    if (registration_) return true;
+    shutdown();
+    return false;
+  }
+
+  static void run_submit(
+      const std::weak_ptr<LifetimeGate<CommandTaskReactor>>& weak_gate,
+      Submit submit, std::stop_token stop_token) {
+    CommandTicket ticket;
+    CommandWaitPolicy policy = CommandWaitPolicy::Completed;
+    ::grpc::Status status;
+    try {
+      status = submit(stop_token, &ticket, &policy);
+    } catch (const std::exception& error) {
+      status = {::grpc::StatusCode::INTERNAL, error.what()};
+    }
+    auto gate = weak_gate.lock();
+    if (!gate) return;
+    if (!status.ok()) {
+      gate->invoke([&](CommandTaskReactor& reactor) {
+        reactor.finish(std::move(status));
+      });
+      return;
+    }
+    ticket.observe(policy, [weak_gate](const CommandResult& result) {
+      auto observed_gate = weak_gate.lock();
+      if (!observed_gate) return;
+      observed_gate->invoke(
+          [&](CommandTaskReactor& reactor) { reactor.complete(result); });
+    });
+  }
+
   void complete(const CommandResult& result) {
     gate_->finish([&](CommandTaskReactor& reactor) {
       reactor.response_->set_command_sequence(result.accepted_sequence);
@@ -173,7 +193,6 @@ class MachineServiceImpl final : public MachineService::CallbackService,
                               AdmissionCounter& stream_admission)
       : nml_(config.nml_file, config.command_queue_capacity,
              config.command_completion_timeout),
-        control_(1, config.command_queue_capacity),
         filesystem_(1, 16, 4),
         blocking_(blocking),
         stream_admission_(stream_admission),
@@ -199,7 +218,6 @@ class MachineServiceImpl final : public MachineService::CallbackService,
     error_wakes_.close();
     callbacks_.shutdown();
     filesystem_.shutdown();
-    control_.shutdown();
     position_condition_.notify_all();
     if (position_poller_.joinable()) position_poller_.join();
   }
@@ -240,18 +258,17 @@ class MachineServiceImpl final : public MachineService::CallbackService,
       ::grpc::CallbackServerContext*, const ExecuteCommandRequest* request,
       ExecuteCommandResponse* response) override {
     auto owned_request = std::make_shared<ExecuteCommandRequest>(*request);
-    auto& executor =
-        request->command_case() == ExecuteCommandRequest::kProgramOpen
-            ? filesystem_
-            : control_;
-    return new CommandTaskReactor(
-        executor, callbacks_, response,
-        [this, owned_request = std::move(owned_request)](
-            std::stop_token stop_token, CommandTicket* ticket,
-            CommandWaitPolicy* policy) {
-          return submit_command(std::move(stop_token), owned_request.get(),
-                                ticket, policy);
-        });
+    auto submit = [this, owned_request = std::move(owned_request)](
+                      std::stop_token stop_token, CommandTicket* ticket,
+                      CommandWaitPolicy* policy) {
+      return submit_command(std::move(stop_token), owned_request.get(), ticket,
+                            policy);
+    };
+    if (request->command_case() == ExecuteCommandRequest::kProgramOpen) {
+      return new CommandTaskReactor(filesystem_, callbacks_, response,
+                                    std::move(submit));
+    }
+    return new CommandTaskReactor(callbacks_, response, std::move(submit));
   }
 
   ::grpc::Status submit_command(std::stop_token stop_token,
@@ -610,15 +627,15 @@ class MachineServiceImpl final : public MachineService::CallbackService,
       return {::grpc::StatusCode::UNAVAILABLE, validation.message};
     }
     if (!validation) return Invalid(validation.message);
-    try {
-      *ticket = nml_.submit(std::move(command), std::move(stop_token));
-    } catch (const std::exception& error) {
-      const auto message = std::string(error.what());
-      const auto code = message.find("queue is full") != std::string::npos
-                            ? ::grpc::StatusCode::RESOURCE_EXHAUSTED
-                            : ::grpc::StatusCode::INTERNAL;
-      return {code, message};
+    auto submission = nml_.submit(std::move(command), std::move(stop_token));
+    if (submission.status == CommandSubmitStatus::QueueFull) {
+      return {::grpc::StatusCode::RESOURCE_EXHAUSTED, "command queue is full"};
     }
+    if (submission.status == CommandSubmitStatus::Stopped) {
+      return {::grpc::StatusCode::UNAVAILABLE,
+              "command coordinator is stopped"};
+    }
+    *ticket = std::move(submission.ticket);
     *policy = request->wait_policy() == WAIT_POLICY_ACCEPTED
                   ? CommandWaitPolicy::Accepted
                   : CommandWaitPolicy::Completed;
@@ -1160,7 +1177,6 @@ class MachineServiceImpl final : public MachineService::CallbackService,
   }
 
   NmlAdapter nml_;
-  BoundedExecutor control_;
   BoundedExecutor filesystem_;
   BoundedExecutor& blocking_;
   AdmissionCounter& stream_admission_;
