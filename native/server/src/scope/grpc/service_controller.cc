@@ -9,13 +9,13 @@
 #include <string>
 #include <utility>
 
+#include "grpc/server/service_factories.hpp"
 #include "grpc/server/unary_task_reactor.hpp"
 #include "linuxcnc/v1/scope.grpc.pb.h"
 #include "linuxcnc_grpc/callback_runtime.hpp"
 #include "linuxcnc_grpc/daemon/config.hpp"
 #include "linuxcnc_grpc/scope/controller.hpp"
 #include "linuxcnc_grpc/scope/telemetry.hpp"
-#include "scope/grpc/service_impl.hpp"
 
 namespace linuxcnc::server::detail {
 namespace {
@@ -239,7 +239,7 @@ class ScopeServiceImpl final : public ScopeService::CallbackService,
 
 }  // namespace
 
-std::unique_ptr<ManagedGrpcService> make_scope_service_impl(
+std::unique_ptr<ManagedGrpcService> make_scope_service(
     const DaemonConfig& config, BoundedExecutor& worker,
     std::shared_ptr<ScopeTelemetry> scope_telemetry) {
   return std::make_unique<ScopeServiceImpl>(config, worker,

@@ -140,16 +140,7 @@ class CommandTaskReactor final : public ::grpc::ServerUnaryReactor {
   ActiveCallbackRegistry::Registration registration_;
 };
 
-using MachineCallbackBase =
-    ::linuxcnc::v1::MachineService::WithCallbackMethod_GetStatus<
-        MachineService::WithCallbackMethod_ExecuteCommand<
-            MachineService::WithCallbackMethod_WatchErrors<
-                MachineService::WithCallbackMethod_WatchStatus<
-                    MachineService::WithCallbackMethod_ConfigurePositionHistory<
-                        MachineService::WithCallbackMethod_ClearPositionHistory<
-                            MachineService::Service>>>>>>;
-
-class MachineServiceImpl final : public MachineCallbackBase,
+class MachineServiceImpl final : public MachineService::CallbackService,
                                  public ManagedGrpcService {
   struct WorkspaceActivation {
     explicit WorkspaceActivation(std::shared_ptr<ProgramWorkspaceStore> value)
@@ -200,9 +191,7 @@ class MachineServiceImpl final : public MachineCallbackBase,
 
   ~MachineServiceImpl() override { shutdown(); }
 
-  ::grpc::Service* service() noexcept override {
-    return static_cast<MachineCallbackBase*>(this);
-  }
+  ::grpc::Service* service() noexcept override { return this; }
 
   void shutdown() override {
     if (stopping_.exchange(true, std::memory_order_relaxed)) return;

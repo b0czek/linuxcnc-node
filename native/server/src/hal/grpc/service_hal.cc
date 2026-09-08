@@ -1,3 +1,6 @@
+#include <google/protobuf/empty.pb.h>
+#include <grpcpp/grpcpp.h>
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -15,8 +18,11 @@
 #include <utility>
 #include <vector>
 
+#include "grpc/server/service_factories.hpp"
+#include "grpc/server/unary_task_reactor.hpp"
 #include "hal/grpc/component_outbox.hpp"
-#include "hal/grpc/service_internal.hpp"
+#include "linuxcnc/v1/hal.grpc.pb.h"
+#include "linuxcnc_grpc/callback_runtime.hpp"
 #include "linuxcnc_grpc/daemon/config.hpp"
 #include "linuxcnc_grpc/hal/adapter.hpp"
 #include "linuxcnc_grpc/hal/grpc/mapping.hpp"
@@ -25,7 +31,13 @@
 namespace linuxcnc::server::detail {
 namespace {
 
+using namespace linuxcnc::v1;
+
 constexpr int kMaxHalBatchItems = 1024;
+
+::grpc::Status Invalid(const std::string& message) {
+  return {::grpc::StatusCode::INVALID_ARGUMENT, message};
+}
 
 std::string reference_key(const HalAdapterReference& reference) {
   return std::to_string(static_cast<int>(reference.kind)) + ":" +
@@ -82,7 +94,8 @@ void encode_subscription(const HalTelemetryDescriptor& source,
   }
 }
 
-class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
+class HalServiceImpl final : public HalService::CallbackService,
+                             public ManagedGrpcService {
   class TopologyReactor;
   class ComponentReactor;
   struct TopologySnapshot {
@@ -97,8 +110,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
                  AdmissionCounter& component_admission,
                  AdmissionCounter& stream_admission,
                  std::shared_ptr<HalValueTelemetry> telemetry)
-      : HalUnaryService(worker),
-        worker_(worker),
+      : worker_(worker),
         component_admission_(component_admission),
         stream_admission_(stream_admission),
         telemetry_(std::move(telemetry)),
@@ -112,13 +124,80 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
   void shutdown() override {
     if (stopping_.exchange(true)) return;
     topology_wakes_.close();
-    shutdown_callbacks();
+    callbacks_.shutdown();
     timer_condition_.notify_all();
     if (timer_.joinable()) timer_.join();
   }
 
+  ::grpc::ServerUnaryReactor* GetTopology(
+      ::grpc::CallbackServerContext*, const GetHalTopologyRequest* request,
+      GetHalTopologyResponse* response) override {
+    return task(request, response, &HalServiceImpl::do_get_topology);
+  }
+
+  ::grpc::ServerUnaryReactor* Read(::grpc::CallbackServerContext*,
+                                   const HalReadRequest* request,
+                                   HalReadResponse* response) override {
+    return cancellable_task(request, response, &HalServiceImpl::do_read);
+  }
+
+  ::grpc::ServerUnaryReactor* Write(::grpc::CallbackServerContext*,
+                                    const HalWrite* request,
+                                    HalWriteResponse* response) override {
+    return cancellable_task(request, response, &HalServiceImpl::do_write);
+  }
+
+  ::grpc::ServerUnaryReactor* CreateValueSubscription(
+      ::grpc::CallbackServerContext*,
+      const CreateHalValueSubscriptionRequest* request,
+      HalValueSubscription* response) override {
+    return task(request, response,
+                &HalServiceImpl::do_create_value_subscription);
+  }
+
+  ::grpc::ServerUnaryReactor* UpdateValueSubscription(
+      ::grpc::CallbackServerContext*,
+      const UpdateHalValueSubscriptionRequest* request,
+      HalValueSubscription* response) override {
+    return task(request, response,
+                &HalServiceImpl::do_update_value_subscription);
+  }
+
+  ::grpc::ServerUnaryReactor* DeleteValueSubscription(
+      ::grpc::CallbackServerContext*,
+      const DeleteHalValueSubscriptionRequest* request,
+      google::protobuf::Empty* response) override {
+    return task(request, response,
+                &HalServiceImpl::do_delete_value_subscription);
+  }
+
+  ::grpc::ServerUnaryReactor* CreateSignal(
+      ::grpc::CallbackServerContext*, const CreateHalSignalRequest* request,
+      CreateHalSignalResponse* response) override {
+    return task(request, response, &HalServiceImpl::do_create_signal);
+  }
+
+  ::grpc::ServerUnaryReactor* SetMessageLevel(
+      ::grpc::CallbackServerContext*, const SetHalMessageLevelRequest* request,
+      google::protobuf::Empty* response) override {
+    return task(request, response, &HalServiceImpl::do_set_message_level);
+  }
+
+  ::grpc::ServerUnaryReactor* GetWriterMetadata(
+      ::grpc::CallbackServerContext*,
+      const GetHalWriterMetadataRequest* request,
+      GetHalWriterMetadataResponse* response) override {
+    return task(request, response, &HalServiceImpl::do_get_writer_metadata);
+  }
+
+  ::grpc::ServerUnaryReactor* SetWriterReady(
+      ::grpc::CallbackServerContext*, const SetHalWriterReadyRequest* request,
+      google::protobuf::Empty* response) override {
+    return task(request, response, &HalServiceImpl::do_set_writer_ready);
+  }
+
   ::grpc::Status do_get_topology(const GetHalTopologyRequest*,
-                                 GetHalTopologyResponse* response) override {
+                                 GetHalTopologyResponse* response) {
     try {
       const auto snapshot = refresh_topology_snapshot();
       response->set_sequence(snapshot->sequence);
@@ -136,7 +215,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
   }
 
   ::grpc::Status do_read(std::stop_token token, const HalReadRequest* request,
-                         HalReadResponse* response) override {
+                         HalReadResponse* response) {
     if (request->items_size() > kMaxHalBatchItems)
       return {::grpc::StatusCode::RESOURCE_EXHAUSTED,
               "HAL read exceeds 1024 items"};
@@ -172,7 +251,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
   }
 
   ::grpc::Status do_write(std::stop_token token, const HalWrite* request,
-                          HalWriteResponse* response) override {
+                          HalWriteResponse* response) {
     if (request->writes_size() > kMaxHalBatchItems)
       return {::grpc::StatusCode::RESOURCE_EXHAUSTED,
               "HAL write exceeds 1024 items"};
@@ -212,7 +291,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
 
   ::grpc::Status do_create_value_subscription(
       const CreateHalValueSubscriptionRequest* request,
-      HalValueSubscription* response) override {
+      HalValueSubscription* response) {
     if (request->items_size() == 0)
       return Invalid("HAL value subscription requires at least one item");
     auto resolved = resolve_subscription_items(request->items(), nullptr);
@@ -230,7 +309,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
 
   ::grpc::Status do_update_value_subscription(
       const UpdateHalValueSubscriptionRequest* request,
-      HalValueSubscription* response) override {
+      HalValueSubscription* response) {
     const auto current = telemetry_->descriptor(request->subscription_id());
     if (!current)
       return {::grpc::StatusCode::NOT_FOUND,
@@ -255,7 +334,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
 
   ::grpc::Status do_delete_value_subscription(
       const DeleteHalValueSubscriptionRequest* request,
-      google::protobuf::Empty*) override {
+      google::protobuf::Empty*) {
     if (request->subscription_id().empty())
       return Invalid("HAL value subscription id is required");
     telemetry_->erase(request->subscription_id());
@@ -263,7 +342,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
   }
 
   ::grpc::Status do_create_signal(const CreateHalSignalRequest* request,
-                                  CreateHalSignalResponse* response) override {
+                                  CreateHalSignalResponse* response) {
     const auto type = decode_hal_type(request->type());
     if (request->name().empty() || !type) {
       return Invalid("signal name and type are required");
@@ -292,7 +371,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
   }
 
   ::grpc::Status do_set_message_level(const SetHalMessageLevelRequest* request,
-                                      google::protobuf::Empty*) override {
+                                      google::protobuf::Empty*) {
     if (request->level() < RTAPI_MESSAGE_LEVEL_NONE ||
         request->level() > RTAPI_MESSAGE_LEVEL_ALL) {
       return Invalid("HAL message level is required");
@@ -307,7 +386,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
 
   ::grpc::Status do_get_writer_metadata(
       const GetHalWriterMetadataRequest*,
-      GetHalWriterMetadataResponse* response) override {
+      GetHalWriterMetadataResponse* response) {
     response->mutable_metadata()->set_writer_id("linuxcnc-grpc-server");
     response->mutable_metadata()->set_ready(
         writer_ready_.load(std::memory_order_relaxed));
@@ -315,7 +394,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
   }
 
   ::grpc::Status do_set_writer_ready(const SetHalWriterReadyRequest* request,
-                                     google::protobuf::Empty*) override {
+                                     google::protobuf::Empty*) {
     writer_ready_.store(request->ready(), std::memory_order_relaxed);
     return ::grpc::Status::OK;
   }
@@ -326,6 +405,34 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
   }
 
  private:
+  template <typename Request, typename Response>
+  ::grpc::ServerUnaryReactor* task(
+      const Request* request, Response* response,
+      ::grpc::Status (HalServiceImpl::*method)(const Request*, Response*)) {
+    auto owned_request = std::make_shared<Request>(*request);
+    return new UnaryTaskReactor<Response>(
+        worker_, callbacks_, response,
+        [this, owned_request = std::move(owned_request), method](
+            const std::stop_token&, Response* task_response) {
+          return (this->*method)(owned_request.get(), task_response);
+        });
+  }
+
+  template <typename Request, typename Response>
+  ::grpc::ServerUnaryReactor* cancellable_task(
+      const Request* request, Response* response,
+      ::grpc::Status (HalServiceImpl::*method)(std::stop_token, const Request*,
+                                               Response*)) {
+    auto owned_request = std::make_shared<Request>(*request);
+    return new UnaryTaskReactor<Response>(
+        worker_, callbacks_, response,
+        [this, owned_request = std::move(owned_request), method](
+            std::stop_token token, Response* task_response) {
+          return (this->*method)(std::move(token), owned_request.get(),
+                                 task_response);
+        });
+  }
+
   static std::optional<std::chrono::milliseconds> subscription_period(
       std::uint32_t value) {
     if (value == 0) value = 100;
@@ -443,7 +550,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
       // wire. Establish every stream with a replacement snapshot.
       (void)after;
       const std::weak_ptr<LifetimeGate<TopologyReactor>> weak = gate_;
-      registration_ = service_.callback_registry().register_callback([weak] {
+      registration_ = service_.callbacks_.register_callback([weak] {
         if (auto gate = weak.lock())
           gate->invoke([](TopologyReactor& reactor) { reactor.shutdown(); });
       });
@@ -547,7 +654,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
           state_(std::make_shared<ComponentState>()),
           gate_(std::make_shared<LifetimeGate<ComponentReactor>>(this)) {
       const std::weak_ptr<LifetimeGate<ComponentReactor>> weak = gate_;
-      registration_ = service_.callback_registry().register_callback([weak] {
+      registration_ = service_.callbacks_.register_callback([weak] {
         if (auto gate = weak.lock())
           gate->invoke([](ComponentReactor& reactor) { reactor.shutdown(); });
       });
@@ -936,6 +1043,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
   std::uint64_t last_published_topology_ = 0;
   std::atomic<bool> writer_ready_{true};
   std::atomic<bool> stopping_{false};
+  ActiveCallbackRegistry callbacks_;
   std::mutex timer_mutex_;
   std::condition_variable timer_condition_;
   std::thread timer_;
@@ -943,7 +1051,7 @@ class HalServiceImpl final : public HalUnaryService, public ManagedGrpcService {
 
 }  // namespace
 
-std::unique_ptr<ManagedGrpcService> make_hal_service_impl(
+std::unique_ptr<ManagedGrpcService> make_hal_service(
     const DaemonConfig& config, BoundedExecutor& worker,
     AdmissionCounter& component_admission, AdmissionCounter& stream_admission,
     std::shared_ptr<HalValueTelemetry> telemetry) {
