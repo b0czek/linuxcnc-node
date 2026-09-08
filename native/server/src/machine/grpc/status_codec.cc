@@ -65,6 +65,8 @@ constexpr std::array<ExecuteCommandRequest::CommandCase, 51> kCommandCatalog = {
 static_assert(kCommandCatalog.size() == 51);
 static_assert(ExecuteCommandRequest::kSetRapidRate == 52);
 
+namespace {
+
 void fill_status(const NmlStatusSnapshot& source, LinuxCNCStat* target) {
   target->Clear();
   target->set_echo_serial_number(source.echo_serial_number);
@@ -281,15 +283,6 @@ void fill_status(const NmlStatusSnapshot& source, LinuxCNCStat* target) {
   }
 }
 
-bool status_equal(const NmlStatusSnapshot& left,
-                  const NmlStatusSnapshot& right) {
-  LinuxCNCStat left_wire;
-  LinuxCNCStat right_wire;
-  fill_status(left, &left_wire);
-  fill_status(right, &right_wire);
-  return left_wire.SerializeAsString() == right_wire.SerializeAsString();
-}
-
 void copy_task_delta(const TaskStat& source, TaskStatDelta* target) {
   target->set_mode(source.mode());
   target->set_state(source.state());
@@ -331,48 +324,65 @@ void copy_task_delta(const TaskStat& source, TaskStatDelta* target) {
   target->set_queued_mdi_commands(source.queued_mdi_commands());
 }
 
+}  // namespace
+
+EncodedStatus encode_status(const NmlStatusSnapshot& source) {
+  EncodedStatus encoded;
+  fill_status(source, &encoded.message);
+  encoded.serialized = encoded.message.SerializeAsString();
+  encoded.task_serialized = encoded.message.task().SerializeAsString();
+  encoded.motion_serialized = encoded.message.motion().SerializeAsString();
+  encoded.trajectory_serialized =
+      encoded.message.motion().traj().SerializeAsString();
+  encoded.io_serialized = encoded.message.io().SerializeAsString();
+  for (const auto& joint : encoded.message.motion().joint())
+    encoded.joints_serialized.push_back(joint.SerializeAsString());
+  for (const auto& axis : encoded.message.motion().axis())
+    encoded.axes_serialized.push_back(axis.SerializeAsString());
+  for (const auto& spindle : encoded.message.motion().spindle())
+    encoded.spindles_serialized.push_back(spindle.SerializeAsString());
+  for (const auto& tool : encoded.message.tool_table())
+    encoded.tools_serialized.push_back(tool.SerializeAsString());
+  return encoded;
+}
+
 std::optional<LinuxCNCStatDelta> make_status_delta(
-    const NmlStatusSnapshot& previous, const NmlStatusSnapshot& current,
+    const EncodedStatus& previous, const EncodedStatus& current,
     std::uint64_t sequence) {
-  LinuxCNCStat previous_wire;
-  LinuxCNCStat current_wire;
-  fill_status(previous, &previous_wire);
-  fill_status(current, &current_wire);
+  const auto& previous_wire = previous.message;
+  const auto& current_wire = current.message;
   LinuxCNCStatDelta delta;
   delta.set_sequence(static_cast<std::int64_t>(sequence));
   bool changed = false;
-  if (previous.rcs_status != current.rcs_status) {
-    delta.set_state(static_cast<RcsStatus>(current.rcs_status));
+  if (previous_wire.state() != current_wire.state()) {
+    delta.set_state(current_wire.state());
     changed = true;
   }
-  if (previous.echo_serial_number != current.echo_serial_number) {
-    delta.set_echo_serial_number(current.echo_serial_number);
+  if (previous_wire.echo_serial_number() != current_wire.echo_serial_number()) {
+    delta.set_echo_serial_number(current_wire.echo_serial_number());
     changed = true;
   }
-  if (previous.debug != current.debug) {
-    delta.set_debug(current.debug);
+  if (previous_wire.debug() != current_wire.debug()) {
+    delta.set_debug(current_wire.debug());
     changed = true;
   }
-  if (previous_wire.task().SerializeAsString() !=
-      current_wire.task().SerializeAsString()) {
+  if (previous.task_serialized != current.task_serialized) {
     copy_task_delta(current_wire.task(), delta.mutable_task());
     changed = true;
   }
   const auto& previous_motion = previous_wire.motion();
   const auto& current_motion = current_wire.motion();
-  if (previous_motion.SerializeAsString() !=
-      current_motion.SerializeAsString()) {
+  if (previous.motion_serialized != current.motion_serialized) {
     auto* motion = delta.mutable_motion();
-    if (previous_motion.traj().SerializeAsString() !=
-        current_motion.traj().SerializeAsString())
+    if (previous.trajectory_serialized != current.trajectory_serialized)
       *motion->mutable_traj() = current_motion.traj();
     const auto joint_count =
         std::max(previous_motion.joint_size(), current_motion.joint_size());
     for (int index = 0; index < joint_count; ++index) {
       if (index >= previous_motion.joint_size() ||
           index >= current_motion.joint_size() ||
-          previous_motion.joint(index).SerializeAsString() !=
-              current_motion.joint(index).SerializeAsString()) {
+          previous.joints_serialized[static_cast<std::size_t>(index)] !=
+              current.joints_serialized[static_cast<std::size_t>(index)]) {
         auto* item = motion->add_joint();
         item->set_index(static_cast<std::uint32_t>(index));
         if (index < current_motion.joint_size())
@@ -384,8 +394,8 @@ std::optional<LinuxCNCStatDelta> make_status_delta(
     for (int index = 0; index < axis_count; ++index) {
       if (index >= previous_motion.axis_size() ||
           index >= current_motion.axis_size() ||
-          previous_motion.axis(index).SerializeAsString() !=
-              current_motion.axis(index).SerializeAsString()) {
+          previous.axes_serialized[static_cast<std::size_t>(index)] !=
+              current.axes_serialized[static_cast<std::size_t>(index)]) {
         auto* item = motion->add_axis();
         item->set_index(static_cast<std::uint32_t>(index));
         if (index < current_motion.axis_size())
@@ -397,8 +407,8 @@ std::optional<LinuxCNCStatDelta> make_status_delta(
     for (int index = 0; index < spindle_count; ++index) {
       if (index >= previous_motion.spindle_size() ||
           index >= current_motion.spindle_size() ||
-          previous_motion.spindle(index).SerializeAsString() !=
-              current_motion.spindle(index).SerializeAsString()) {
+          previous.spindles_serialized[static_cast<std::size_t>(index)] !=
+              current.spindles_serialized[static_cast<std::size_t>(index)]) {
         auto* item = motion->add_spindle();
         item->set_index(static_cast<std::uint32_t>(index));
         if (index < current_motion.spindle_size())
@@ -435,8 +445,7 @@ std::optional<LinuxCNCStatDelta> make_status_delta(
     }
     changed = true;
   }
-  if (previous_wire.io().SerializeAsString() !=
-      current_wire.io().SerializeAsString()) {
+  if (previous.io_serialized != current.io_serialized) {
     *delta.mutable_io()->mutable_tool() = current_wire.io().tool();
     *delta.mutable_io()->mutable_coolant() = current_wire.io().coolant();
     delta.mutable_io()->set_estop(current_wire.io().estop());
@@ -446,8 +455,8 @@ std::optional<LinuxCNCStatDelta> make_status_delta(
       previous_wire.tool_table_size() != current_wire.tool_table_size();
   if (!tool_table_changed) {
     for (int index = 0; index < current_wire.tool_table_size(); ++index) {
-      if (previous_wire.tool_table(index).SerializeAsString() !=
-          current_wire.tool_table(index).SerializeAsString()) {
+      if (previous.tools_serialized[static_cast<std::size_t>(index)] !=
+          current.tools_serialized[static_cast<std::size_t>(index)]) {
         tool_table_changed = true;
         break;
       }

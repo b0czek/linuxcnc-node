@@ -323,6 +323,19 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
             -Wall -Wextra -Wpedantic)
         add_test(NAME linuxcnc-grpc-mapping-edge-tests
                  COMMAND linuxcnc-grpc-mapping-edge-tests)
+        add_executable(linuxcnc-grpc-status-codec-tests
+            tests/machine_status_codec_tests.cc
+            src/machine/grpc/status_codec.cc)
+        target_compile_features(linuxcnc-grpc-status-codec-tests PRIVATE
+            cxx_std_20)
+        target_include_directories(linuxcnc-grpc-status-codec-tests PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/src")
+        target_link_libraries(linuxcnc-grpc-status-codec-tests PRIVATE
+            linuxcnc-grpc-proto)
+        target_compile_options(linuxcnc-grpc-status-codec-tests PRIVATE
+            -Wall -Wextra -Wpedantic)
+        add_test(NAME linuxcnc-grpc-status-codec-tests
+                 COMMAND linuxcnc-grpc-status-codec-tests)
         add_executable(linuxcnc-grpc-component-outbox-tests
             tests/component_outbox_tests.cc)
         target_compile_features(linuxcnc-grpc-component-outbox-tests PRIVATE

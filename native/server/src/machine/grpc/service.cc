@@ -13,6 +13,7 @@
 #include <iterator>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -162,6 +163,13 @@ class CommandTaskReactor final : public ::grpc::ServerUnaryReactor {
 
 class MachineServiceImpl final : public MachineService::CallbackService,
                                  public ManagedGrpcService {
+  struct StatusSample {
+    std::uint64_t sequence = 0;
+    EncodedStatus encoded;
+    std::optional<LinuxCNCStatDelta> delta_from_previous;
+  };
+  using StatusSamplePtr = std::shared_ptr<const StatusSample>;
+
   struct WorkspaceActivation {
     explicit WorkspaceActivation(std::shared_ptr<ProgramWorkspaceStore> value)
         : store(std::move(value)) {}
@@ -222,30 +230,20 @@ class MachineServiceImpl final : public MachineService::CallbackService,
     if (position_poller_.joinable()) position_poller_.join();
   }
 
-  ::grpc::ServerUnaryReactor* GetStatus(::grpc::CallbackServerContext*,
+  ::grpc::ServerUnaryReactor* GetStatus(::grpc::CallbackServerContext* context,
                                         const GetStatusRequest*,
                                         GetStatusResponse* response) override {
-    return new detail::UnaryTaskReactor<GetStatusResponse>(
-        blocking_, callbacks_, response,
-        [this](const std::stop_token& stop_token,
-               GetStatusResponse* task_response) {
-          if (stop_token.stop_requested()) {
-            return ::grpc::Status(::grpc::StatusCode::CANCELLED,
-                                  "RPC cancelled");
-          }
-          return get_status(task_response);
-        });
-  }
-
-  ::grpc::Status get_status(GetStatusResponse* response) {
-    NmlStatusSnapshot snapshot;
-    std::uint64_t sequence = 0;
-    if (!read_status(&snapshot, &sequence))
-      return {::grpc::StatusCode::UNAVAILABLE,
-              "LinuxCNC NML status channel is unavailable"};
-    response->set_sequence(sequence);
-    fill_status(snapshot, response->mutable_status());
-    return ::grpc::Status::OK;
+    auto* reactor = context->DefaultReactor();
+    const auto sample = read_status();
+    if (!sample) {
+      reactor->Finish({::grpc::StatusCode::UNAVAILABLE,
+                       "LinuxCNC NML status channel is unavailable"});
+      return reactor;
+    }
+    response->set_sequence(sample->sequence);
+    *response->mutable_status() = sample->encoded.message;
+    reactor->Finish(::grpc::Status::OK);
+    return reactor;
   }
 
   ::grpc::ServerWriteReactor<WatchStatusEvent>* WatchStatus(
@@ -613,15 +611,8 @@ class MachineServiceImpl final : public MachineService::CallbackService,
       default:
         return Invalid("execute_command requires a supported command oneof");
     }
-    NmlStatusSnapshot configuration;
-    const NmlStatusSnapshot* configuration_ptr = nullptr;
-    {
-      std::lock_guard lock(status_mutex_);
-      if (have_latest_ && status_available_) {
-        configuration = latest_;
-        configuration_ptr = &configuration;
-      }
-    }
+    const auto configuration = read_native_status();
+    const auto* configuration_ptr = configuration.get();
     const auto validation = validate_nml_command(command, configuration_ptr);
     if (validation.code == NmlCommandValidationCode::StatusUnavailable) {
       return {::grpc::StatusCode::UNAVAILABLE, validation.message};
@@ -767,8 +758,8 @@ class MachineServiceImpl final : public MachineService::CallbackService,
         finish(::grpc::Status::OK);
         return;
       }
-      previous_ = std::move(writing_snapshot_);
-      cursor_ = writing_sequence_;
+      previous_ = std::move(writing_sample_);
+      cursor_ = previous_->sequence;
       initial_written_ = true;
       schedule_wake();
     }
@@ -807,42 +798,42 @@ class MachineServiceImpl final : public MachineService::CallbackService,
                 "LinuxCNC NML status snapshot is unavailable"});
         return;
       }
-      auto& latest = selection.entries.back();
+      auto latest = selection.entries.back();
       message_.Clear();
       if (!initial_written_) {
         if (after_ != 0 && selection.anchor_retained) {
-          message_.set_sequence(latest.sequence);
+          message_.set_sequence(latest->sequence);
           auto* replay = message_.mutable_replay();
           replay->set_from_sequence(after_);
-          replay->set_to_sequence(latest.sequence);
-          fill_status(selection.entries.front().snapshot,
-                      replay->mutable_snapshot());
-          auto prior = selection.entries.begin();
-          for (auto entry = std::next(prior); entry != selection.entries.end();
-               ++entry, ++prior) {
-            auto delta = make_status_delta(prior->snapshot, entry->snapshot,
-                                           entry->sequence);
-            if (delta) *replay->add_deltas() = std::move(*delta);
+          replay->set_to_sequence(latest->sequence);
+          *replay->mutable_snapshot() =
+              selection.entries.front()->encoded.message;
+          for (auto entry = std::next(selection.entries.begin());
+               entry != selection.entries.end(); ++entry) {
+            if ((*entry)->delta_from_previous)
+              *replay->add_deltas() = *(*entry)->delta_from_previous;
           }
         } else {
-          message_.set_sequence(latest.sequence);
-          fill_status(latest.snapshot, message_.mutable_snapshot());
+          message_.set_sequence(latest->sequence);
+          *message_.mutable_snapshot() = latest->encoded.message;
         }
       } else {
-        if (latest.sequence == cursor_) return;
+        if (latest->sequence == cursor_) return;
         if (!selection.anchor_retained) {
-          message_.set_sequence(latest.sequence);
-          fill_status(latest.snapshot, message_.mutable_snapshot());
+          message_.set_sequence(latest->sequence);
+          *message_.mutable_snapshot() = latest->encoded.message;
         } else {
           auto delta =
-              make_status_delta(previous_, latest.snapshot, latest.sequence);
+              previous_->sequence + 1 == latest->sequence
+                  ? latest->delta_from_previous
+                  : make_status_delta(previous_->encoded, latest->encoded,
+                                      latest->sequence);
           if (!delta) return;
-          message_.set_sequence(latest.sequence);
+          message_.set_sequence(latest->sequence);
           *message_.mutable_delta() = std::move(*delta);
         }
       }
-      writing_snapshot_ = std::move(latest.snapshot);
-      writing_sequence_ = latest.sequence;
+      writing_sample_ = std::move(latest);
       writing_ = true;
       StartWrite(&message_);
     }
@@ -860,9 +851,8 @@ class MachineServiceImpl final : public MachineService::CallbackService,
     bool initial_written_ = false;
     bool writing_ = false;
     std::uint64_t cursor_ = 0;
-    std::uint64_t writing_sequence_ = 0;
-    NmlStatusSnapshot previous_;
-    NmlStatusSnapshot writing_snapshot_;
+    StatusSamplePtr previous_;
+    StatusSamplePtr writing_sample_;
     WatchStatusEvent message_;
     std::atomic<bool> wake_scheduled_{false};
     SubscriptionHub<std::uint64_t>::Subscription subscription_;
@@ -973,22 +963,19 @@ class MachineServiceImpl final : public MachineService::CallbackService,
     ActiveCallbackRegistry::Registration registration_;
   };
 
-  struct StatusHistoryEntry {
-    std::uint64_t sequence = 0;
-    NmlStatusSnapshot snapshot;
-  };
-
   struct StatusHistorySelection {
     bool anchor_retained = false;
-    std::vector<StatusHistoryEntry> entries;
+    std::vector<StatusSamplePtr> entries;
   };
 
-  bool read_status(NmlStatusSnapshot* snapshot, std::uint64_t* sequence) {
+  StatusSamplePtr read_status() const {
     std::lock_guard lock(status_mutex_);
-    if (!have_latest_ || !status_available_) return false;
-    *snapshot = latest_;
-    if (sequence) *sequence = sequence_;
-    return true;
+    return status_available_ ? latest_ : nullptr;
+  }
+
+  std::shared_ptr<const NmlStatusSnapshot> read_native_status() const {
+    std::lock_guard lock(status_mutex_);
+    return status_available_ ? latest_native_ : nullptr;
   }
 
   bool status_available() const {
@@ -1015,7 +1002,7 @@ class MachineServiceImpl final : public MachineService::CallbackService,
     if (history_.empty()) return selection;
     const auto found = std::find_if(
         history_.begin(), history_.end(),
-        [anchor](const auto& entry) { return entry.sequence == anchor; });
+        [anchor](const auto& entry) { return entry->sequence == anchor; });
     selection.anchor_retained = found != history_.end();
     if (include_replay && anchor != 0 && selection.anchor_retained) {
       selection.entries.assign(found, history_.end());
@@ -1057,7 +1044,7 @@ class MachineServiceImpl final : public MachineService::CallbackService,
               status_available_ = true;
             }
             if (recovered) positions_->clear();
-            observe_status(snapshot, recovered);
+            observe_status(std::move(snapshot), recovered);
           }
           if (position_due) {
             PositionSample sample;
@@ -1132,8 +1119,7 @@ class MachineServiceImpl final : public MachineService::CallbackService,
     }
   }
 
-  void observe_status(const NmlStatusSnapshot& fresh,
-                      bool force_rebase = false) {
+  void observe_status(NmlStatusSnapshot fresh, bool force_rebase = false) {
     // ProgramClose may originate outside this RPC service. Reconcile the pin
     // from authoritative LinuxCNC status so TTL cleanup resumes once no file
     // is open, regardless of which client initiated the close.
@@ -1151,24 +1137,34 @@ class MachineServiceImpl final : public MachineService::CallbackService,
         if (clear_active) workspace_activation_->store->clear_active_link();
       }
     }
+    auto encoded = encode_status(fresh);
     std::uint64_t published = 0;
     std::unique_lock lock(status_mutex_);
-    if (!have_latest_) {
+    if (!latest_) {
       sequence_ = 1;
-      latest_ = fresh;
-      have_latest_ = true;
-      history_.push_back(StatusHistoryEntry{sequence_, latest_});
+      latest_native_ =
+          std::make_shared<const NmlStatusSnapshot>(std::move(fresh));
+      latest_ = std::make_shared<const StatusSample>(
+          StatusSample{sequence_, std::move(encoded), std::nullopt});
+      history_.push_back(latest_);
       published = sequence_;
     } else if (force_rebase) {
       ++sequence_;
-      latest_ = fresh;
+      latest_native_ =
+          std::make_shared<const NmlStatusSnapshot>(std::move(fresh));
+      latest_ = std::make_shared<const StatusSample>(
+          StatusSample{sequence_, std::move(encoded), std::nullopt});
       history_.clear();
-      history_.push_back(StatusHistoryEntry{sequence_, latest_});
+      history_.push_back(latest_);
       published = sequence_;
-    } else if (!status_equal(latest_, fresh)) {
+    } else if (latest_->encoded.serialized != encoded.serialized) {
       ++sequence_;
-      latest_ = fresh;
-      history_.push_back(StatusHistoryEntry{sequence_, latest_});
+      auto delta = make_status_delta(latest_->encoded, encoded, sequence_);
+      latest_native_ =
+          std::make_shared<const NmlStatusSnapshot>(std::move(fresh));
+      latest_ = std::make_shared<const StatusSample>(
+          StatusSample{sequence_, std::move(encoded), std::move(delta)});
+      history_.push_back(latest_);
       while (history_.size() > replay_capacity_) history_.pop_front();
       published = sequence_;
     }
@@ -1188,11 +1184,11 @@ class MachineServiceImpl final : public MachineService::CallbackService,
   std::chrono::milliseconds position_period_;
   const std::size_t replay_capacity_;
   mutable std::mutex status_mutex_;
-  NmlStatusSnapshot latest_;
-  bool have_latest_ = false;
+  std::shared_ptr<const NmlStatusSnapshot> latest_native_;
+  StatusSamplePtr latest_;
   bool status_available_ = false;
   std::uint64_t sequence_ = 0;
-  std::deque<StatusHistoryEntry> history_;
+  std::deque<StatusSamplePtr> history_;
   SequencedRing<NmlErrorEvent> errors_{256};
   SubscriptionHub<std::uint64_t> error_wakes_;
   SubscriptionHub<std::uint64_t> status_wakes_;

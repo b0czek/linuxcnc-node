@@ -731,13 +731,18 @@ int main(int argc, char** argv) {
   moved_tool->set_tool_no(77);
   moved_tool->set_pocket_no(43);
   (void)execute_completed(machine.get(), std::move(move_tool));
-  const auto moved_status = get_status_with_retry(machine.get());
+  const auto moved_deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(5);
   bool tool_moved = false;
-  for (const auto& tool : moved_status.status().tool_table()) {
-    if (tool.tool_no() == 77) {
-      assert(tool.pocket_no() == 43);
-      tool_moved = true;
+  while (std::chrono::steady_clock::now() < moved_deadline && !tool_moved) {
+    const auto status = get_status_with_retry(machine.get());
+    for (const auto& tool : status.status().tool_table()) {
+      if (tool.tool_no() == 77 && tool.pocket_no() == 43) {
+        tool_moved = true;
+        break;
+      }
     }
+    if (!tool_moved) std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
   assert(tool_moved);
 
@@ -762,11 +767,23 @@ int main(int argc, char** argv) {
   loaded_tool->set_diameter(8.8);
   loaded_tool->set_comment("updated while loaded");
   (void)execute_completed(machine.get(), std::move(update_loaded_tool));
-  const auto updated_loaded_status = get_status_with_retry(machine.get());
-  assert(updated_loaded_status.status().tool_table(0).tool_no() == 77);
-  assert(updated_loaded_status.status().tool_table(0).diameter() == 8.8);
-  assert(updated_loaded_status.status().tool_table(0).comment() ==
-         "updated while loaded");
+  const auto updated_loaded_deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  bool loaded_tool_updated = false;
+  while (std::chrono::steady_clock::now() < updated_loaded_deadline &&
+         !loaded_tool_updated) {
+    const auto status = get_status_with_retry(machine.get());
+    for (const auto& tool : status.status().tool_table()) {
+      if (tool.tool_no() == 77 && tool.diameter() == 8.8 &&
+          tool.comment() == "updated while loaded") {
+        loaded_tool_updated = true;
+        break;
+      }
+    }
+    if (!loaded_tool_updated)
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+  assert(loaded_tool_updated);
 
   ExecuteCommandRequest unload_created_tool;
   unload_created_tool.mutable_mdi()->set_command("T0 M6");
@@ -776,9 +793,22 @@ int main(int argc, char** argv) {
   const auto delete_response =
       execute_completed(machine.get(), std::move(delete_tool));
   assert(delete_response.command_sequence() != 0);
-  const auto deleted_status = get_status_with_retry(machine.get());
-  for (const auto& tool : deleted_status.status().tool_table())
-    assert(tool.tool_no() != 77);
+  const auto deleted_deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  bool tool_deleted = false;
+  while (std::chrono::steady_clock::now() < deleted_deadline && !tool_deleted) {
+    const auto status = get_status_with_retry(machine.get());
+    tool_deleted = true;
+    for (const auto& tool : status.status().tool_table()) {
+      if (tool.tool_no() == 77) {
+        tool_deleted = false;
+        break;
+      }
+    }
+    if (!tool_deleted)
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+  assert(tool_deleted);
 
   expect_command_error(machine.get(), ExecuteCommandRequest{},
                        grpc::StatusCode::INVALID_ARGUMENT);
