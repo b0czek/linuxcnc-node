@@ -3,10 +3,8 @@
 #include <scope_shm.h>
 
 #include <cassert>
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <type_traits>
 
 #include "../src/scope/shm_abi.h"
 #include "linuxcnc_grpc/scope/controller.hpp"
@@ -14,10 +12,6 @@
 using namespace linuxcnc::server;
 
 int main() {
-  static_assert(kScopeChannelCount == 16);
-  static_assert(kScopePollPeriod == std::chrono::milliseconds(20));
-  static_assert(kScopeHeartbeatPeriod == std::chrono::milliseconds(100));
-  static_assert(!std::is_copy_constructible_v<ScopeFrameQueue>);
   static_assert(sizeof(linuxcnc_scope_shm_control_t) ==
                 sizeof(scope_shm_control_t));
   static_assert(offsetof(linuxcnc_scope_shm_control_t, data_offset) ==

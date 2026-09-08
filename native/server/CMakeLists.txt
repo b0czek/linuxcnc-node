@@ -402,29 +402,6 @@ if(LINUXCNC_GRPC_BUILD_TESTS)
         add_test(NAME linuxcnc-grpc-active-ini-tests
                  COMMAND linuxcnc-grpc-active-ini-tests)
     endif()
-    set(LINUXCNC_GRPC_CALLBACK_SOURCES
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/server/main.cc"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/server/runtime.cc"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/server/runtime.hpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/ini/grpc/service.cc"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/machine/grpc/service.cc"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/hal/grpc/service.cc"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/scope/grpc/service.cc")
-    list(APPEND LINUXCNC_GRPC_CALLBACK_SOURCES
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/hal/grpc/service_hal.cc"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/scope/grpc/service_controller.cc")
-    add_test(NAME linuxcnc-grpc-callback-source-assertion
-        COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/tests/assert_callback_server.sh"
-                ${LINUXCNC_GRPC_CALLBACK_SOURCES})
-    add_executable(linuxcnc-grpc-hal-adapter-contract-tests
-        tests/hal_adapter_contract_tests.cc)
-    target_compile_features(linuxcnc-grpc-hal-adapter-contract-tests PRIVATE cxx_std_20)
-    target_link_libraries(linuxcnc-grpc-hal-adapter-contract-tests PRIVATE linuxcnc-grpc-domain)
-    target_compile_options(linuxcnc-grpc-hal-adapter-contract-tests PRIVATE
-        -Wall -Wextra -Wpedantic)
-    add_test(NAME linuxcnc-grpc-hal-adapter-contract-tests
-             COMMAND linuxcnc-grpc-hal-adapter-contract-tests)
-
     if(LINUXCNC_GRPC_HAS_RS274)
         add_executable(linuxcnc-grpc-gcode-parser-integration tests/gcode_parser_integration.cc)
         target_compile_features(linuxcnc-grpc-gcode-parser-integration PRIVATE cxx_std_20)

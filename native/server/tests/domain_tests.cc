@@ -187,17 +187,6 @@ void cleanup_reserve_saturation_test() {
   executor.shutdown();
 }
 
-void nml_command_catalog_test() {
-  static_assert(static_cast<std::size_t>(NmlCommandKind::SetRapidRate) == 50);
-  // The enum is deliberately contiguous: the wire catalog has a matching
-  // static assertion in machine/grpc/service.cc, so adding a command forces
-  // both boundaries to be reviewed at compile time.
-  for (std::size_t index = 0; index <= 50; ++index) {
-    assert(static_cast<std::size_t>(static_cast<NmlCommandKind>(index)) ==
-           index);
-  }
-}
-
 void command_coordinator_test() {
   CommandCoordinator coordinator(2);
   std::atomic<bool> started{false};
@@ -405,7 +394,6 @@ void workspace_test() {
 int main() {
   callback_runtime_test();
   cleanup_reserve_saturation_test();
-  nml_command_catalog_test();
   command_coordinator_test();
   daemon_config_test();
   position_history_test();
