@@ -27,7 +27,6 @@
 #include "linuxcnc_grpc/position/history.hpp"
 #include "linuxcnc_grpc/program/workspace.hpp"
 #include "linuxcnc_grpc/program/workspace_archive.hpp"
-#include "linuxcnc_grpc/scope/manager.hpp"
 
 namespace fs = std::filesystem;
 using namespace linuxcnc::server;
@@ -915,46 +914,6 @@ void workspace_traversal_quota_ttl_and_materialization_test() {
   assert(!error);
 }
 
-void scope_coalescing_and_conflict_accounting_test() {
-  ScopeManager manager;
-  assert(!manager.acquire(""));
-  assert(manager.acquire("controller-a"));
-  assert(manager.acquire("controller-a"));
-  assert(!manager.acquire("controller-b"));
-
-  const auto first = manager.publish({1, 2});
-  assert(first && first->generation == 1);
-  assert(first->payload == std::vector<std::uint8_t>({1, 2}));
-  assert(!manager.publish({3}));
-  assert(!manager.publish({4}));
-  assert(manager.skipped_frames() == 0);
-  assert(!manager.acknowledge("controller-b", first->generation));
-  assert(!manager.acknowledge("controller-a", first->generation + 1));
-
-  const auto second = manager.acknowledge("controller-a", first->generation);
-  assert(second && second->generation == 3);
-  assert(second->payload == std::vector<std::uint8_t>({4}));
-  assert(second->skipped_frames == 1);
-  assert(manager.skipped_frames() == 1);
-  assert(!manager.acknowledge("controller-a", first->generation));
-  assert(!manager.acknowledge("controller-a", second->generation));
-  assert(manager.skipped_frames() == 1);
-
-  const auto third = manager.publish({5});
-  assert(third && third->generation == 4);
-  manager.release("controller-b");
-  assert(manager.acquired());
-  manager.release("controller-a");
-  assert(!manager.acquired());
-  assert(manager.skipped_frames() == 0);
-  assert(!manager.acknowledge("controller-a", third->generation));
-  assert(!manager.publish({6}));
-  assert(manager.acquire("controller-b"));
-  const auto after_reacquire = manager.publish({7});
-  assert(after_reacquire && after_reacquire->generation == 5);
-  manager.release("controller-b");
-}
-
 }  // namespace
 
 int main() {
@@ -977,6 +936,5 @@ int main() {
   workspace_path_safety_test();
   workspace_active_parent_permissions_test();
   workspace_traversal_quota_ttl_and_materialization_test();
-  scope_coalescing_and_conflict_accounting_test();
   return 0;
 }

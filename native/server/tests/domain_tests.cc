@@ -9,11 +9,9 @@
 #include "linuxcnc_grpc/callback_runtime.hpp"
 #include "linuxcnc_grpc/command_coordinator.hpp"
 #include "linuxcnc_grpc/daemon/config.hpp"
-#include "linuxcnc_grpc/hal/repository.hpp"
 #include "linuxcnc_grpc/linuxcnc/nml_adapter.hpp"
 #include "linuxcnc_grpc/position/history.hpp"
 #include "linuxcnc_grpc/program/workspace.hpp"
-#include "linuxcnc_grpc/scope/manager.hpp"
 
 namespace fs = std::filesystem;
 using namespace linuxcnc::server;
@@ -125,15 +123,6 @@ void callback_runtime_test() {
   assert(ring.after(first_sequence).entries.size() == 1);
   ring.publish(4);
   assert(ring.after(1).behind);
-
-  OutboundPump<int> pump;
-  assert(pump.offer(1));
-  assert(!pump.offer(2));
-  assert(!pump.offer(3));
-  assert(pump.current().message == 1);
-  const auto coalesced = pump.write_complete(true);
-  assert(coalesced && coalesced->message == 3 && coalesced->skipped == 1);
-  assert(!pump.write_complete(true));
 
   struct Target {
     int calls = 0;
@@ -329,34 +318,6 @@ void position_history_test() {
   assert(history.since(history.next_sequence(), 0, generation).reset);
 }
 
-void hal_repository_test() {
-  HalRepository repository;
-  assert(repository.add_item(
-      HalItem{"u64", HalScalarType::U64, true, true, std::uint64_t{0}}));
-  const std::uint64_t value = 0xffffffffffffffffULL;
-  assert(repository.write("u64", value));
-  HalValue read;
-  assert(repository.read("u64", &read));
-  assert(std::get<std::uint64_t>(read) == value);
-  assert(!repository.write("u64", std::uint32_t{1}));
-}
-
-void scope_manager_test() {
-  ScopeManager manager;
-  assert(manager.acquire("inspector"));
-  assert(!manager.acquire("another"));
-  auto first = manager.publish({1});
-  assert(first && first->generation == 1);
-  assert(!manager.publish({2}));
-  assert(!manager.publish({3}));
-  auto next = manager.acknowledge("inspector", first->generation);
-  assert(next && next->skipped_frames == 1);
-  assert(manager.skipped_frames() == 1);
-  manager.release("inspector");
-  assert(!manager.acquired());
-  assert(manager.skipped_frames() == 0);
-}
-
 void workspace_test() {
   const auto base = fs::temp_directory_path() / "linuxcnc-grpc-domain-test";
   std::error_code error;
@@ -397,8 +358,6 @@ int main() {
   command_coordinator_test();
   daemon_config_test();
   position_history_test();
-  hal_repository_test();
-  scope_manager_test();
   workspace_test();
   return 0;
 }

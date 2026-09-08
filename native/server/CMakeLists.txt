@@ -22,13 +22,11 @@ set(LINUXCNC_GRPC_DOMAIN_SOURCES
     src/command_coordinator.cc
     src/daemon/config.cc
     src/filesystem/directory_transaction.cc
-    src/hal/repository.cc
     src/hal/value_telemetry.cc
     src/position/history.cc
     src/position/telemetry.cc
     src/program/workspace.cc
     src/program/workspace_archive.cc
-    src/scope/manager.cc
     src/scope/telemetry.cc
     src/linuxcnc/command_validation.cc
     src/linuxcnc/nml_adapter.cc
