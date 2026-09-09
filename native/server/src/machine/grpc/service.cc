@@ -749,8 +749,7 @@ class MachineServiceImpl final : public MachineService::CallbackService,
 
     void shutdown() {
       subscription_.reset();
-      request_finish(
-          {::grpc::StatusCode::UNAVAILABLE, "server shutting down"});
+      request_finish({::grpc::StatusCode::UNAVAILABLE, "server shutting down"});
     }
 
    private:
@@ -775,7 +774,7 @@ class MachineServiceImpl final : public MachineService::CallbackService,
                 reactor.wake_scheduled_.store(false);
                 reactor.wake();
               });
-      })) {
+          })) {
         wake_scheduled_.store(false);
         request_finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
                         "wire encoding queue is full"});
@@ -922,8 +921,7 @@ class MachineServiceImpl final : public MachineService::CallbackService,
 
     void shutdown() {
       subscription_.reset();
-      request_finish(
-          {::grpc::StatusCode::UNAVAILABLE, "server shutting down"});
+      request_finish({::grpc::StatusCode::UNAVAILABLE, "server shutting down"});
     }
 
    private:

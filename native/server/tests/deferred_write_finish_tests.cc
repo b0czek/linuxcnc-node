@@ -25,8 +25,7 @@ void finishes_immediately_without_a_write() {
 void defers_cancellation_until_the_write_completes() {
   DeferredWriteFinish state;
   assert(state.try_start_write());
-  state.request_finish(
-      {::grpc::StatusCode::CANCELLED, "stream cancelled"});
+  state.request_finish({::grpc::StatusCode::CANCELLED, "stream cancelled"});
   assert(state.termination_requested());
   assert(!state.try_start_write());
   assert(!state.take_finish_status());
@@ -50,8 +49,7 @@ void failed_write_requests_a_single_clean_finish() {
 void retains_the_first_of_repeated_concurrent_termination_requests() {
   DeferredWriteFinish state;
   assert(state.try_start_write());
-  state.request_finish(
-      {::grpc::StatusCode::CANCELLED, "first termination"});
+  state.request_finish({::grpc::StatusCode::CANCELLED, "first termination"});
 
   std::vector<std::thread> requests;
   for (int index = 0; index < 16; ++index) {

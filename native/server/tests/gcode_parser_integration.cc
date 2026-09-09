@@ -221,12 +221,12 @@ int main(int argc, char** argv) {
                                    std::make_move_iterator(batch.end()));
   };
   parser.parse_file(argv[6], default_unit_options);
-  const auto default_inch_move = std::find_if(
-      default_unit_operations.begin(), default_unit_operations.end(),
-      [](const auto& op) {
-        const auto* traverse = std::get_if<TraverseOp>(&op);
-        return traverse && nearly_equal(traverse->pos.x, 25.4);
-      });
+  const auto default_inch_move =
+      std::find_if(default_unit_operations.begin(),
+                   default_unit_operations.end(), [](const auto& op) {
+                     const auto* traverse = std::get_if<TraverseOp>(&op);
+                     return traverse && nearly_equal(traverse->pos.x, 25.4);
+                   });
   assert(default_inch_move != default_unit_operations.end());
 
   // A callback can cancel after a bounded batch. Cancellation is observed

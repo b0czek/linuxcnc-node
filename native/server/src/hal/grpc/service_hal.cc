@@ -600,8 +600,7 @@ class HalServiceImpl final : public HalService::CallbackService,
     }
     void shutdown() {
       subscription_.reset();
-      request_finish(
-          {::grpc::StatusCode::UNAVAILABLE, "server shutting down"});
+      request_finish({::grpc::StatusCode::UNAVAILABLE, "server shutting down"});
     }
 
    private:
@@ -712,8 +711,7 @@ class HalServiceImpl final : public HalService::CallbackService,
     }
     void shutdown() {
       request_cleanup();
-      request_finish(
-          {::grpc::StatusCode::UNAVAILABLE, "server shutting down"});
+      request_finish({::grpc::StatusCode::UNAVAILABLE, "server shutting down"});
     }
     void offer_delta(ComponentSessionMessage message) {
       if (write_finish_.termination_requested()) return;

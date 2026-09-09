@@ -837,12 +837,12 @@ int main(int argc, char** argv) {
   while (std::chrono::steady_clock::now() < updated_loaded_deadline &&
          !loaded_tool_updated) {
     const auto status = get_status_with_retry(machine.get());
-    loaded_tool_updated = status.status().io().tool().tool_in_spindle() == 77 &&
-                          status.status().tool_table_size() > 0 &&
-                          status.status().tool_table(0).tool_no() == 77 &&
-                          status.status().tool_table(0).diameter() == 8.8 &&
-                          status.status().tool_table(0).comment() ==
-                              "updated while loaded";
+    loaded_tool_updated =
+        status.status().io().tool().tool_in_spindle() == 77 &&
+        status.status().tool_table_size() > 0 &&
+        status.status().tool_table(0).tool_no() == 77 &&
+        status.status().tool_table(0).diameter() == 8.8 &&
+        status.status().tool_table(0).comment() == "updated while loaded";
     if (!loaded_tool_updated)
       std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
