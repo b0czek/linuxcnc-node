@@ -329,7 +329,8 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
         target_compile_features(linuxcnc-grpc-status-codec-tests PRIVATE
             cxx_std_20)
         target_include_directories(linuxcnc-grpc-status-codec-tests PRIVATE
-            "${CMAKE_CURRENT_SOURCE_DIR}/src")
+            "${CMAKE_CURRENT_SOURCE_DIR}/src"
+            "${CMAKE_CURRENT_SOURCE_DIR}/include")
         target_link_libraries(linuxcnc-grpc-status-codec-tests PRIVATE
             linuxcnc-grpc-proto)
         target_compile_options(linuxcnc-grpc-status-codec-tests PRIVATE
