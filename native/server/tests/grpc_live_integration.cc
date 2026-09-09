@@ -203,6 +203,70 @@ void expect_command_error(linuxcnc::v1::MachineService::Stub* machine,
   assert(status.error_code() == expected);
 }
 
+void verify_priority_admission(linuxcnc::v1::MachineService::Stub* machine) {
+  constexpr int kSubmitters = 256;
+  std::atomic<int> ready{0};
+  std::atomic<bool> start{false};
+  std::atomic<bool> stop{false};
+  std::atomic<bool> normal_capacity_exhausted{false};
+  std::atomic<bool> unexpected_failure{false};
+  std::vector<std::thread> submitters;
+  submitters.reserve(kSubmitters);
+  for (int index = 0; index < kSubmitters; ++index) {
+    submitters.emplace_back([&] {
+      ++ready;
+      while (!start.load()) std::this_thread::yield();
+      for (int attempt = 0; attempt < 20 && !stop.load(); ++attempt) {
+        ExecuteCommandRequest request;
+        request.set_wait_policy(linuxcnc::v1::WAIT_POLICY_ACCEPTED);
+        request.mutable_task_plan_synch();
+        grpc::ClientContext context;
+        context.set_deadline(std::chrono::system_clock::now() +
+                             std::chrono::seconds(2));
+        ExecuteCommandResponse response;
+        const auto status =
+            machine->ExecuteCommand(&context, request, &response);
+        if (status.error_code() == grpc::StatusCode::RESOURCE_EXHAUSTED) {
+          normal_capacity_exhausted = true;
+        } else if (!status.ok()) {
+          unexpected_failure = true;
+        }
+      }
+    });
+  }
+  while (ready.load() != kSubmitters) std::this_thread::yield();
+  start = true;
+
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (!normal_capacity_exhausted.load() &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::yield();
+  }
+
+  grpc::Status priority_status;
+  ExecuteCommandResponse priority_response;
+  if (normal_capacity_exhausted.load()) {
+    ExecuteCommandRequest abort;
+    abort.set_wait_policy(linuxcnc::v1::WAIT_POLICY_ACCEPTED);
+    abort.mutable_abort_task();
+    grpc::ClientContext context;
+    context.set_deadline(std::chrono::system_clock::now() +
+                         std::chrono::seconds(2));
+    priority_status =
+        machine->ExecuteCommand(&context, abort, &priority_response);
+  }
+  stop = true;
+  for (auto& submitter : submitters) submitter.join();
+
+  assert(normal_capacity_exhausted.load());
+  assert(!unexpected_failure.load());
+  assert(priority_status.ok());
+  assert(priority_response.status() == linuxcnc::v1::RCS_STATUS_EXEC ||
+         priority_response.status() == linuxcnc::v1::RCS_STATUS_DONE ||
+         priority_response.status() == linuxcnc::v1::RCS_STATUS_ERROR);
+}
+
 std::string read_file(const std::string& path) {
   std::ifstream input(path, std::ios::binary);
   if (!input) {
@@ -773,13 +837,12 @@ int main(int argc, char** argv) {
   while (std::chrono::steady_clock::now() < updated_loaded_deadline &&
          !loaded_tool_updated) {
     const auto status = get_status_with_retry(machine.get());
-    for (const auto& tool : status.status().tool_table()) {
-      if (tool.tool_no() == 77 && tool.diameter() == 8.8 &&
-          tool.comment() == "updated while loaded") {
-        loaded_tool_updated = true;
-        break;
-      }
-    }
+    loaded_tool_updated = status.status().io().tool().tool_in_spindle() == 77 &&
+                          status.status().tool_table_size() > 0 &&
+                          status.status().tool_table(0).tool_no() == 77 &&
+                          status.status().tool_table(0).diameter() == 8.8 &&
+                          status.status().tool_table(0).comment() ==
+                              "updated while loaded";
     if (!loaded_tool_updated)
       std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
@@ -1275,6 +1338,10 @@ int main(int argc, char** argv) {
     assert(scope->Stop(&mode_stop_context, {}, &scope_response).ok());
   }
   scope_socket.close(websocket::close_code::normal);
+
+  // Saturation deliberately pressures LinuxCNC's command channel, so keep it
+  // last while still exercising the real RPC admission boundary.
+  verify_priority_admission(machine.get());
 
   std::cout << "native LinuxCNC gRPC live integration passed\n";
   return 0;

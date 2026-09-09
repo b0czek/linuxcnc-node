@@ -34,22 +34,22 @@ IniPreviewState load_preview_state(const std::string& path) {
   const ActiveIni ini(path);
   IniPreviewState state;
   const auto units = ini.find_string("TRAJ", "LINEAR_UNITS");
-  if (!units)
-    throw std::runtime_error("[TRAJ]LINEAR_UNITS is missing from INI");
-  auto normalized_units = *units;
-  std::transform(normalized_units.begin(), normalized_units.end(),
-                 normalized_units.begin(), [](unsigned char character) {
-                   return std::tolower(character);
-                 });
-  if (normalized_units == "mm" || normalized_units == "metric")
-    state.units = CANON_UNITS_MM;
-  else if (normalized_units == "cm")
-    state.units = CANON_UNITS_CM;
-  else if (normalized_units == "inch" || normalized_units == "in" ||
-           normalized_units == "imperial")
-    state.units = CANON_UNITS_INCHES;
-  else
-    throw std::runtime_error("unsupported [TRAJ]LINEAR_UNITS: " + *units);
+  if (units) {
+    auto normalized_units = *units;
+    std::transform(normalized_units.begin(), normalized_units.end(),
+                   normalized_units.begin(), [](unsigned char character) {
+                     return std::tolower(character);
+                   });
+    if (normalized_units == "mm" || normalized_units == "metric")
+      state.units = CANON_UNITS_MM;
+    else if (normalized_units == "cm")
+      state.units = CANON_UNITS_CM;
+    else if (normalized_units == "inch" || normalized_units == "in" ||
+             normalized_units == "imperial")
+      state.units = CANON_UNITS_INCHES;
+    else
+      throw std::runtime_error("unsupported [TRAJ]LINEAR_UNITS: " + *units);
+  }
   if (const auto startup = ini.find_string("RS274NGC", "RS274NGC_STARTUP_CODE"))
     state.startup_code = *startup;
   return state;

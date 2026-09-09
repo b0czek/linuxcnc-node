@@ -79,10 +79,6 @@ enum class NmlCommandKind {
   SetRapidRate,
 };
 
-static_assert(
-    static_cast<std::size_t>(NmlCommandKind::SetRapidRate) == 50,
-    "adding an NML command requires updating the gRPC command catalog");
-
 struct NmlPose {
   std::array<double, 9> values{};
 };

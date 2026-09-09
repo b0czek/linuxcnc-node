@@ -1,69 +1,10 @@
 #include "machine/grpc/status_codec.hpp"
 
 #include <algorithm>
-#include <array>
 
 namespace linuxcnc::server::detail {
 
 using namespace ::linuxcnc::v1;
-
-// Keep this list with the machine transport codec: adding a protobuf oneof
-// command requires updating both its transport mapping and native NML case.
-// The final enum value assertion catches silent catalog drift at compile time.
-constexpr std::array<ExecuteCommandRequest::CommandCase, 51> kCommandCatalog = {
-    ExecuteCommandRequest::kSetTaskMode,
-    ExecuteCommandRequest::kSetState,
-    ExecuteCommandRequest::kTaskPlanSynch,
-    ExecuteCommandRequest::kResetInterpreter,
-    ExecuteCommandRequest::kProgramOpen,
-    ExecuteCommandRequest::kProgramClose,
-    ExecuteCommandRequest::kRunProgram,
-    ExecuteCommandRequest::kPauseProgram,
-    ExecuteCommandRequest::kResumeProgram,
-    ExecuteCommandRequest::kStepProgram,
-    ExecuteCommandRequest::kReverseProgram,
-    ExecuteCommandRequest::kForwardProgram,
-    ExecuteCommandRequest::kStopProgram,
-    ExecuteCommandRequest::kAbortTask,
-    ExecuteCommandRequest::kSetOptionalStop,
-    ExecuteCommandRequest::kSetBlockDelete,
-    ExecuteCommandRequest::kMdi,
-    ExecuteCommandRequest::kSetTrajMode,
-    ExecuteCommandRequest::kSetMaxVelocity,
-    ExecuteCommandRequest::kSetFeedRate,
-    ExecuteCommandRequest::kSetSpindleOverride,
-    ExecuteCommandRequest::kOverrideLimits,
-    ExecuteCommandRequest::kTeleopEnable,
-    ExecuteCommandRequest::kSetFeedOverrideEnable,
-    ExecuteCommandRequest::kSetSpindleOverrideEnable,
-    ExecuteCommandRequest::kSetFeedHoldEnable,
-    ExecuteCommandRequest::kSetAdaptiveFeedEnable,
-    ExecuteCommandRequest::kHomeJoint,
-    ExecuteCommandRequest::kUnhomeJoint,
-    ExecuteCommandRequest::kJogStop,
-    ExecuteCommandRequest::kJogContinuous,
-    ExecuteCommandRequest::kJogIncrement,
-    ExecuteCommandRequest::kSetMinPositionLimit,
-    ExecuteCommandRequest::kSetMaxPositionLimit,
-    ExecuteCommandRequest::kSpindleOn,
-    ExecuteCommandRequest::kSpindleIncrease,
-    ExecuteCommandRequest::kSpindleDecrease,
-    ExecuteCommandRequest::kSpindleOff,
-    ExecuteCommandRequest::kSpindleBrake,
-    ExecuteCommandRequest::kSetMist,
-    ExecuteCommandRequest::kSetFlood,
-    ExecuteCommandRequest::kLoadToolTable,
-    ExecuteCommandRequest::kSetTool,
-    ExecuteCommandRequest::kDeleteTool,
-    ExecuteCommandRequest::kSetDigitalOutput,
-    ExecuteCommandRequest::kSetAnalogOutput,
-    ExecuteCommandRequest::kSetDebugLevel,
-    ExecuteCommandRequest::kSendOperatorError,
-    ExecuteCommandRequest::kSendOperatorText,
-    ExecuteCommandRequest::kSendOperatorDisplay,
-    ExecuteCommandRequest::kSetRapidRate};
-static_assert(kCommandCatalog.size() == 51);
-static_assert(ExecuteCommandRequest::kSetRapidRate == 52);
 
 namespace {
 

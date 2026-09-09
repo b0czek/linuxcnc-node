@@ -153,6 +153,7 @@ start_server() {
     "--workspace-root=$root/workspaces" \
     "--active-program-directory=$root/active" \
     "--workspace-ttl-seconds=3600" \
+    "--command-queue-capacity=1" \
     "--gcode-batch-size=8" \
     > "$log_file" 2>&1 &
   server_pid=$!
