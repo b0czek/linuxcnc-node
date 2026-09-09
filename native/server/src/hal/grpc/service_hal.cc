@@ -215,7 +215,8 @@ class HalServiceImpl final : public HalService::CallbackService,
     return new TopologyReactor(*this, request->after_sequence());
   }
 
-  ::grpc::Status do_read(std::stop_token token, const HalReadRequest* request,
+  ::grpc::Status do_read(const std::stop_token& token,
+                         const HalReadRequest* request,
                          HalReadResponse* response) {
     if (request->items_size() > kMaxHalBatchItems)
       return {::grpc::StatusCode::RESOURCE_EXHAUSTED,
@@ -251,7 +252,7 @@ class HalServiceImpl final : public HalService::CallbackService,
     }
   }
 
-  ::grpc::Status do_write(std::stop_token token, const HalWrite* request,
+  ::grpc::Status do_write(const std::stop_token& token, const HalWrite* request,
                           HalWriteResponse* response) {
     if (request->writes_size() > kMaxHalBatchItems)
       return {::grpc::StatusCode::RESOURCE_EXHAUSTED,
@@ -422,15 +423,14 @@ class HalServiceImpl final : public HalService::CallbackService,
   template <typename Request, typename Response>
   ::grpc::ServerUnaryReactor* cancellable_task(
       const Request* request, Response* response,
-      ::grpc::Status (HalServiceImpl::*method)(std::stop_token, const Request*,
-                                               Response*)) {
+      ::grpc::Status (HalServiceImpl::*method)(const std::stop_token&,
+                                               const Request*, Response*)) {
     auto owned_request = std::make_shared<Request>(*request);
     return new UnaryTaskReactor<Response>(
         worker_, callbacks_, response,
         [this, owned_request = std::move(owned_request), method](
-            std::stop_token token, Response* task_response) {
-          return (this->*method)(std::move(token), owned_request.get(),
-                                 task_response);
+            const std::stop_token& token, Response* task_response) {
+          return (this->*method)(token, owned_request.get(), task_response);
         });
   }
 

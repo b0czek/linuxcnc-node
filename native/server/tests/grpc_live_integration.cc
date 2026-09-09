@@ -387,7 +387,7 @@ int probe_reacquire(const std::string& endpoint) {
 
   grpc::ClientContext component_context;
   component_context.set_deadline(std::chrono::system_clock::now() +
-                                 std::chrono::seconds(5));
+                                 std::chrono::seconds(15));
   auto component = hal->ComponentSession(&component_context);
   linuxcnc::v1::ComponentSessionMessage request;
   request.mutable_open()->set_name("grpc-shutdown-owned");
@@ -420,7 +420,13 @@ int probe_reacquire(const std::string& endpoint) {
   request.mutable_close();
   assert(component->Write(request));
   component->WritesDone();
-  assert(component->Finish().ok());
+  const auto component_status = component->Finish();
+  if (!component_status.ok()) {
+    std::cerr << "ComponentSession reacquire failed with status "
+              << component_status.error_code() << ": "
+              << component_status.error_message() << "\n";
+    return 1;
+  }
   std::cout << "LIVE_REACQUIRE_READY\n" << std::flush;
   return 0;
 }

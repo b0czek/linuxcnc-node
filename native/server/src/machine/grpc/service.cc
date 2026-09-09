@@ -108,12 +108,12 @@ class CommandTaskReactor final : public ::grpc::ServerUnaryReactor {
 
   static void run_submit(
       const std::weak_ptr<LifetimeGate<CommandTaskReactor>>& weak_gate,
-      Submit submit, std::stop_token stop_token) {
+      Submit&& submit, std::stop_token stop_token) {
     CommandTicket ticket;
     CommandWaitPolicy policy = CommandWaitPolicy::Completed;
     ::grpc::Status status;
     try {
-      status = submit(stop_token, &ticket, &policy);
+      status = submit(std::move(stop_token), &ticket, &policy);
     } catch (const std::exception& error) {
       status = {::grpc::StatusCode::INTERNAL, error.what()};
     }
@@ -1053,15 +1053,14 @@ class MachineServiceImpl final : public MachineService::CallbackService,
                                      ? nml_.poll_status(&snapshot)
                                      : nml_.poll_position(&position_snapshot);
         if (status_poll == NmlStatusPoll::Updated) {
+          bool recovered = false;
           if (status_due) {
-            bool recovered = false;
             {
               std::lock_guard lock(status_mutex_);
               recovered = !status_available_;
               status_available_ = true;
             }
             if (recovered) positions_->clear();
-            observe_status(std::move(snapshot), recovered);
           }
           if (position_due) {
             PositionSample sample;
@@ -1083,6 +1082,7 @@ class MachineServiceImpl final : public MachineService::CallbackService,
             if (position_enabled_ && position_config_generation_ == generation)
               positions_->append(sample);
           }
+          if (status_due) observe_status(std::move(snapshot), recovered);
         } else if (status_poll == NmlStatusPoll::Stale ||
                    status_poll == NmlStatusPoll::Disconnected) {
           bool was_available = false;

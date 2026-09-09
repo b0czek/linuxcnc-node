@@ -197,7 +197,8 @@ class ScopeServiceImpl final : public ScopeService::CallbackService,
     return new UnaryTaskReactor<ScopeControlState>(
         worker_, callbacks_, response,
         [this, operation = std::move(operation)](
-            [[maybe_unused]] std::stop_token token, ScopeControlState* output) {
+            [[maybe_unused]] const std::stop_token& token,
+            ScopeControlState* output) {
           try {
             auto& controller = ensure_controller();
             operation(controller);
