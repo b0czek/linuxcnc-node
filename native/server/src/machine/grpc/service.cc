@@ -20,6 +20,7 @@
 #include <utility>
 #include <vector>
 
+#include "grpc/server/deferred_write_finish.hpp"
 #include "grpc/server/service_factories.hpp"
 #include "grpc/server/unary_task_reactor.hpp"
 #include "linuxcnc/v1/machine.grpc.pb.h"
@@ -712,8 +713,8 @@ class MachineServiceImpl final : public MachineService::CallbackService,
         return;
       }
       if (!admitted_) {
-        finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
-                "stream admission limit reached"});
+        request_finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
+                        "stream admission limit reached"});
         return;
       }
       subscription_ =
@@ -733,7 +734,7 @@ class MachineServiceImpl final : public MachineService::CallbackService,
     void OnCancel() override {
       gate_->invoke([](StatusReactor& reactor) {
         reactor.subscription_.reset();
-        reactor.finish(
+        reactor.request_finish(
             {::grpc::StatusCode::CANCELLED, "status stream cancelled"});
       });
     }
@@ -748,23 +749,22 @@ class MachineServiceImpl final : public MachineService::CallbackService,
 
     void shutdown() {
       subscription_.reset();
-      finish({::grpc::StatusCode::UNAVAILABLE, "server shutting down"});
+      request_finish(
+          {::grpc::StatusCode::UNAVAILABLE, "server shutting down"});
     }
 
    private:
     void write_done(bool ok) {
-      writing_ = false;
-      if (!ok) {
-        finish(::grpc::Status::OK);
-        return;
-      }
+      write_finish_.complete_write(ok);
+      if (finish_if_ready() || !ok) return;
       previous_ = std::move(writing_sample_);
       cursor_ = previous_->sequence;
       initial_written_ = true;
       schedule_wake();
     }
     void schedule_wake() {
-      if (gate_->state() != LifetimeGate<StatusReactor>::State::Open ||
+      if (write_finish_.termination_requested() ||
+          gate_->state() != LifetimeGate<StatusReactor>::State::Open ||
           wake_scheduled_.exchange(true))
         return;
       const std::weak_ptr<LifetimeGate<StatusReactor>> weak_gate = gate_;
@@ -775,27 +775,28 @@ class MachineServiceImpl final : public MachineService::CallbackService,
                 reactor.wake_scheduled_.store(false);
                 reactor.wake();
               });
-          })) {
+      })) {
         wake_scheduled_.store(false);
-        finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
-                "wire encoding queue is full"});
+        request_finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
+                        "wire encoding queue is full"});
       }
     }
 
     void wake() {
-      if (writing_ ||
+      if (write_finish_.write_in_flight() ||
+          write_finish_.termination_requested() ||
           gate_->state() != LifetimeGate<StatusReactor>::State::Open)
         return;
       if (!service_.status_available()) {
-        finish({::grpc::StatusCode::UNAVAILABLE,
-                "LinuxCNC NML status snapshot is stale"});
+        request_finish({::grpc::StatusCode::UNAVAILABLE,
+                        "LinuxCNC NML status snapshot is stale"});
         return;
       }
       auto selection = service_.select_status_history(
           initial_written_ ? cursor_ : after_, !initial_written_);
       if (selection.entries.empty()) {
-        finish({::grpc::StatusCode::UNAVAILABLE,
-                "LinuxCNC NML status snapshot is unavailable"});
+        request_finish({::grpc::StatusCode::UNAVAILABLE,
+                        "LinuxCNC NML status snapshot is unavailable"});
         return;
       }
       auto latest = selection.entries.back();
@@ -834,27 +835,36 @@ class MachineServiceImpl final : public MachineService::CallbackService,
         }
       }
       writing_sample_ = std::move(latest);
-      writing_ = true;
+      if (!write_finish_.try_start_write()) return;
       StartWrite(&message_);
     }
 
-    void finish(::grpc::Status status) {
-      gate_->finish([&](StatusReactor& reactor) {
+    void request_finish(::grpc::Status status) {
+      subscription_.reset();
+      write_finish_.request_finish(std::move(status));
+      finish_if_ready();
+    }
+
+    bool finish_if_ready() {
+      auto status = write_finish_.take_finish_status();
+      if (!status) return false;
+      gate_->finish([status = std::move(*status)](StatusReactor& reactor) {
         reactor.subscription_.reset();
         reactor.Finish(status);
       });
+      return true;
     }
 
     MachineServiceImpl& service_;
     const std::uint64_t after_;
     bool admitted_ = false;
     bool initial_written_ = false;
-    bool writing_ = false;
     std::uint64_t cursor_ = 0;
     StatusSamplePtr previous_;
     StatusSamplePtr writing_sample_;
     WatchStatusEvent message_;
     std::atomic<bool> wake_scheduled_{false};
+    DeferredWriteFinish write_finish_;
     SubscriptionHub<std::uint64_t>::Subscription subscription_;
     std::shared_ptr<LifetimeGate<StatusReactor>> gate_;
     ActiveCallbackRegistry::Registration registration_;
@@ -876,8 +886,8 @@ class MachineServiceImpl final : public MachineService::CallbackService,
         return;
       }
       if (!admitted_) {
-        finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
-                "stream admission limit reached"});
+        request_finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
+                        "stream admission limit reached"});
         return;
       }
       cursor_ = after_sequence;
@@ -897,7 +907,7 @@ class MachineServiceImpl final : public MachineService::CallbackService,
     void OnCancel() override {
       gate_->invoke([](ErrorReactor& reactor) {
         reactor.subscription_.reset();
-        reactor.finish(
+        reactor.request_finish(
             {::grpc::StatusCode::CANCELLED, "error stream cancelled"});
       });
     }
@@ -912,26 +922,26 @@ class MachineServiceImpl final : public MachineService::CallbackService,
 
     void shutdown() {
       subscription_.reset();
-      finish({::grpc::StatusCode::UNAVAILABLE, "server shutting down"});
+      request_finish(
+          {::grpc::StatusCode::UNAVAILABLE, "server shutting down"});
     }
 
    private:
     void write_done(bool ok) {
-      writing_ = false;
-      if (!ok) {
-        finish(::grpc::Status::OK);
-        return;
-      }
+      write_finish_.complete_write(ok);
+      if (finish_if_ready() || !ok) return;
       cursor_ = writing_sequence_;
       wake();
     }
     void wake() {
-      if (writing_ || gate_->state() != LifetimeGate<ErrorReactor>::State::Open)
+      if (write_finish_.write_in_flight() ||
+          write_finish_.termination_requested() ||
+          gate_->state() != LifetimeGate<ErrorReactor>::State::Open)
         return;
       const auto available = service_.errors_.after(cursor_);
       if (available.behind) {
-        finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
-                "error reader fell behind retained events"});
+        request_finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
+                        "error reader fell behind retained events"});
         return;
       }
       if (available.entries.empty()) return;
@@ -941,15 +951,24 @@ class MachineServiceImpl final : public MachineService::CallbackService,
       message_.set_message(entry.event.message);
       message_.set_sequence(entry.sequence);
       writing_sequence_ = entry.sequence;
-      writing_ = true;
+      if (!write_finish_.try_start_write()) return;
       StartWrite(&message_);
     }
 
-    void finish(::grpc::Status status) {
-      gate_->finish([&](ErrorReactor& reactor) {
+    void request_finish(::grpc::Status status) {
+      subscription_.reset();
+      write_finish_.request_finish(std::move(status));
+      finish_if_ready();
+    }
+
+    bool finish_if_ready() {
+      auto status = write_finish_.take_finish_status();
+      if (!status) return false;
+      gate_->finish([status = std::move(*status)](ErrorReactor& reactor) {
         reactor.subscription_.reset();
         reactor.Finish(status);
       });
+      return true;
     }
 
     MachineServiceImpl& service_;
@@ -957,7 +976,7 @@ class MachineServiceImpl final : public MachineService::CallbackService,
     std::uint64_t cursor_ = 0;
     std::uint64_t writing_sequence_ = 0;
     LinuxCNCError message_;
-    bool writing_ = false;
+    DeferredWriteFinish write_finish_;
     SubscriptionHub<std::uint64_t>::Subscription subscription_;
     std::shared_ptr<LifetimeGate<ErrorReactor>> gate_;
     ActiveCallbackRegistry::Registration registration_;

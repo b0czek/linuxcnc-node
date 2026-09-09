@@ -18,6 +18,7 @@
 #include <utility>
 #include <vector>
 
+#include "grpc/server/deferred_write_finish.hpp"
 #include "grpc/server/service_factories.hpp"
 #include "grpc/server/unary_task_reactor.hpp"
 #include "hal/grpc/component_outbox.hpp"
@@ -559,8 +560,8 @@ class HalServiceImpl final : public HalService::CallbackService,
         return;
       }
       if (!admitted_) {
-        finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
-                "stream admission limit reached"});
+        request_finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
+                        "stream admission limit reached"});
         return;
       }
       subscription_ = service_.topology_wakes_.subscribe(
@@ -574,10 +575,8 @@ class HalServiceImpl final : public HalService::CallbackService,
     }
     void OnWriteDone(bool ok) override {
       gate_->invoke([ok](TopologyReactor& reactor) {
-        reactor.writing_ = false;
-        if (!ok)
-          reactor.finish(::grpc::Status::OK);
-        else {
+        reactor.write_finish_.complete_write(ok);
+        if (!reactor.finish_if_ready() && ok) {
           reactor.after_ = reactor.writing_sequence_;
           if (reactor.pending_) {
             auto pending = std::move(reactor.pending_);
@@ -588,7 +587,7 @@ class HalServiceImpl final : public HalService::CallbackService,
     }
     void OnCancel() override {
       gate_->invoke([](TopologyReactor& reactor) {
-        reactor.finish(
+        reactor.request_finish(
             {::grpc::StatusCode::CANCELLED, "topology stream cancelled"});
       });
     }
@@ -601,15 +600,17 @@ class HalServiceImpl final : public HalService::CallbackService,
     }
     void shutdown() {
       subscription_.reset();
-      finish({::grpc::StatusCode::UNAVAILABLE, "server shutting down"});
+      request_finish(
+          {::grpc::StatusCode::UNAVAILABLE, "server shutting down"});
     }
 
    private:
     void offer(std::shared_ptr<const TopologySnapshot> snapshot) {
       if (!snapshot || snapshot->sequence == after_ ||
+          write_finish_.termination_requested() ||
           gate_->state() != LifetimeGate<TopologyReactor>::State::Open)
         return;
-      if (writing_) {
+      if (write_finish_.write_in_flight()) {
         if (snapshot->sequence > writing_sequence_ &&
             (!pending_ || snapshot->sequence > pending_->sequence))
           pending_ = std::move(snapshot);
@@ -623,22 +624,32 @@ class HalServiceImpl final : public HalService::CallbackService,
       message_.set_sequence(snapshot->sequence);
       *message_.mutable_topology() = snapshot->topology;
       writing_sequence_ = snapshot->sequence;
-      writing_ = true;
+      if (!write_finish_.try_start_write()) return;
       StartWrite(&message_);
     }
-    void finish(::grpc::Status status) {
-      gate_->finish([&](TopologyReactor& reactor) {
+    void request_finish(::grpc::Status status) {
+      subscription_.reset();
+      pending_.reset();
+      write_finish_.request_finish(std::move(status));
+      finish_if_ready();
+    }
+    bool finish_if_ready() {
+      auto status = write_finish_.take_finish_status();
+      if (!status) return false;
+      gate_->finish([status = std::move(*status)](TopologyReactor& reactor) {
         reactor.subscription_.reset();
         reactor.Finish(status);
       });
+      return true;
     }
     HalServiceImpl& service_;
     std::uint64_t after_ = 0, writing_sequence_ = 0;
-    bool admitted_ = false, writing_ = false;
+    bool admitted_ = false;
     WatchHalTopologyEvent message_;
     std::shared_ptr<const TopologySnapshot> pending_;
     SubscriptionHub<std::shared_ptr<const TopologySnapshot>>::Subscription
         subscription_;
+    DeferredWriteFinish write_finish_;
     std::shared_ptr<LifetimeGate<TopologyReactor>> gate_;
     ActiveCallbackRegistry::Registration registration_;
   };
@@ -663,8 +674,8 @@ class HalServiceImpl final : public HalService::CallbackService,
         return;
       }
       if (!admitted_ || !stream_admitted_) {
-        finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
-                "component or stream admission limit reached"});
+        request_finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
+                        "component or stream admission limit reached"});
         return;
       }
       service_.register_component(state_, gate_);
@@ -675,11 +686,8 @@ class HalServiceImpl final : public HalService::CallbackService,
     }
     void OnWriteDone(bool ok) override {
       gate_->invoke([ok](ComponentReactor& reactor) {
-        reactor.writing_ = false;
-        if (!ok) {
-          reactor.finish(::grpc::Status::OK);
-          return;
-        }
+        reactor.write_finish_.complete_write(ok);
+        if (reactor.finish_if_ready() || !ok) return;
         if (reactor.active_response_) reactor.resume_read_when_idle_ = true;
         if (!reactor.outbox_.empty()) {
           reactor.start_write(reactor.outbox_.pop_front());
@@ -691,7 +699,7 @@ class HalServiceImpl final : public HalService::CallbackService,
     }
     void OnCancel() override {
       gate_->invoke([](ComponentReactor& reactor) {
-        reactor.finish(
+        reactor.request_finish(
             {::grpc::StatusCode::CANCELLED, "component session cancelled"});
       });
     }
@@ -704,10 +712,12 @@ class HalServiceImpl final : public HalService::CallbackService,
     }
     void shutdown() {
       request_cleanup();
-      finish({::grpc::StatusCode::UNAVAILABLE, "server shutting down"});
+      request_finish(
+          {::grpc::StatusCode::UNAVAILABLE, "server shutting down"});
     }
     void offer_delta(ComponentSessionMessage message) {
-      if (writing_) {
+      if (write_finish_.termination_requested()) return;
+      if (write_finish_.write_in_flight()) {
         outbox_.push_delta(std::move(message));
         return;
       }
@@ -716,7 +726,8 @@ class HalServiceImpl final : public HalService::CallbackService,
 
    private:
     void offer_response(ComponentSessionMessage message) {
-      if (writing_) {
+      if (write_finish_.termination_requested()) return;
+      if (write_finish_.write_in_flight()) {
         outbox_.push_response(std::move(message));
         return;
       }
@@ -725,12 +736,13 @@ class HalServiceImpl final : public HalService::CallbackService,
     void start_write(ComponentOutbox::Entry entry) {
       response_ = std::move(entry.message);
       active_response_ = entry.resume_read;
-      writing_ = true;
+      if (!write_finish_.try_start_write()) return;
       StartWrite(&response_);
     }
     void read_done(bool ok) {
+      if (write_finish_.termination_requested()) return;
       if (!ok) {
-        finish(::grpc::Status::OK);
+        request_finish(::grpc::Status::OK);
         return;
       }
       auto request = request_;
@@ -750,22 +762,22 @@ class HalServiceImpl final : public HalService::CallbackService,
             if (auto gate = weak.lock())
               gate->invoke([&](ComponentReactor& reactor) {
                 if (!status.ok()) {
-                  reactor.finish(status);
+                  reactor.request_finish(status);
                   return;
                 }
                 if (close) {
-                  reactor.finish(::grpc::Status::OK);
+                  reactor.request_finish(::grpc::Status::OK);
                   return;
                 }
                 if (response) {
                   reactor.offer_response(std::move(*response));
-                } else {
+                } else if (!reactor.write_finish_.termination_requested()) {
                   reactor.StartRead(&reactor.request_);
                 }
               });
           })) {
-        finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
-                "HAL runtime queue is full"});
+        request_finish({::grpc::StatusCode::RESOURCE_EXHAUSTED,
+                        "HAL runtime queue is full"});
       }
     }
     void request_cleanup() {
@@ -783,18 +795,29 @@ class HalServiceImpl final : public HalService::CallbackService,
         admission->release();
       }
     }
-    void finish(::grpc::Status status) {
-      gate_->finish([&](ComponentReactor& reactor) {
+    void request_finish(::grpc::Status status) {
+      request_cleanup();
+      outbox_ = {};
+      resume_read_when_idle_ = false;
+      write_finish_.request_finish(std::move(status));
+      finish_if_ready();
+    }
+    bool finish_if_ready() {
+      auto status = write_finish_.take_finish_status();
+      if (!status) return false;
+      gate_->finish([status = std::move(*status)](ComponentReactor& reactor) {
         reactor.request_cleanup();
         reactor.Finish(status);
       });
+      return true;
     }
     HalServiceImpl& service_;
     bool admitted_ = false, stream_admitted_ = false;
-    bool writing_ = false, active_response_ = false;
+    bool active_response_ = false;
     bool resume_read_when_idle_ = false;
     ComponentSessionMessage request_, response_;
     ComponentOutbox outbox_;
+    DeferredWriteFinish write_finish_;
     std::shared_ptr<ComponentState> state_;
     std::shared_ptr<LifetimeGate<ComponentReactor>> gate_;
     ActiveCallbackRegistry::Registration registration_;

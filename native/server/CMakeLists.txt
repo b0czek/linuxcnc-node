@@ -337,6 +337,18 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
             -Wall -Wextra -Wpedantic)
         add_test(NAME linuxcnc-grpc-status-codec-tests
                  COMMAND linuxcnc-grpc-status-codec-tests)
+        add_executable(linuxcnc-grpc-deferred-write-finish-tests
+            tests/deferred_write_finish_tests.cc)
+        target_compile_features(linuxcnc-grpc-deferred-write-finish-tests
+            PRIVATE cxx_std_20)
+        target_include_directories(linuxcnc-grpc-deferred-write-finish-tests
+            PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+        target_link_libraries(linuxcnc-grpc-deferred-write-finish-tests PRIVATE
+            gRPC::grpc++ Threads::Threads)
+        target_compile_options(linuxcnc-grpc-deferred-write-finish-tests PRIVATE
+            -Wall -Wextra -Wpedantic)
+        add_test(NAME linuxcnc-grpc-deferred-write-finish-tests
+                 COMMAND linuxcnc-grpc-deferred-write-finish-tests)
         add_executable(linuxcnc-grpc-component-outbox-tests
             tests/component_outbox_tests.cc)
         target_compile_features(linuxcnc-grpc-component-outbox-tests PRIVATE
