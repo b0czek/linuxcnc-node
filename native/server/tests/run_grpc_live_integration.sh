@@ -263,7 +263,7 @@ if "$linuxcnc_root/scripts/rip-environment" halcmd show pin 2>/dev/null |
 fi
 
 start_server "$root/restarted-server.log"
-if ! timeout 30s "$integration" "127.0.0.1:${grpc_port}" \
+if ! timeout 15s "$integration" "127.0.0.1:${grpc_port}" \
     "$fixture_dir/simple_linear.ngc" "127.0.0.1:${telemetry_port}" \
     --probe-reacquire \
     > "$root/reacquire.log" 2>&1; then
