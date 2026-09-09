@@ -239,6 +239,8 @@ jobs:
             -DLINUXCNC_GRPC_ENABLE_NML=ON \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
             -DCMAKE_BUILD_TYPE=Debug
+      - name: Generate native protobuf headers
+        run: cmake --build build/native-grpc-linuxcnc --target linuxcnc-grpc-proto --parallel "$(nproc)"
       - name: Lint native LinuxCNC sources
         run: ./scripts/native-lint.sh build/native-grpc-linuxcnc
         env:

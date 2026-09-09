@@ -52,6 +52,7 @@ void retains_the_first_of_repeated_concurrent_termination_requests() {
   state.request_finish({::grpc::StatusCode::CANCELLED, "first termination"});
 
   std::vector<std::thread> requests;
+  requests.reserve(16);
   for (int index = 0; index < 16; ++index) {
     requests.emplace_back([&state, index] {
       state.request_finish({::grpc::StatusCode::UNAVAILABLE,
