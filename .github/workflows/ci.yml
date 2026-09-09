@@ -72,7 +72,7 @@ jobs:
         env:
           LINUXCNC_DIR: ${{ github.workspace }}/.cache/linuxcnc/${{ steps.linuxcnc-baseline.outputs.revision }}/linuxcnc
         run: |
-          test -x "${LINUXCNC_DIR}/bin/linuxcnc"
+          test -x "${LINUXCNC_DIR}/scripts/linuxcnc"
           test -e "${LINUXCNC_DIR}/lib/liblinuxcncini.so"
       - name: Check out LinuxCNC
         if: steps.linuxcnc-cache.outputs.cache-hit != 'true'
