@@ -9,11 +9,9 @@
 #include "linuxcnc_grpc/callback_runtime.hpp"
 #include "linuxcnc_grpc/command_coordinator.hpp"
 #include "linuxcnc_grpc/daemon/config.hpp"
-#include "linuxcnc_grpc/hal/repository.hpp"
 #include "linuxcnc_grpc/linuxcnc/nml_adapter.hpp"
 #include "linuxcnc_grpc/position/history.hpp"
 #include "linuxcnc_grpc/program/workspace.hpp"
-#include "linuxcnc_grpc/scope/manager.hpp"
 
 namespace fs = std::filesystem;
 using namespace linuxcnc::server;
@@ -21,6 +19,11 @@ using namespace linuxcnc::server;
 void expect(bool condition) {
   assert(condition);
   (void)condition;
+}
+
+CommandTicket submitted(CommandSubmission submission) {
+  assert(submission.status == CommandSubmitStatus::Submitted);
+  return std::move(submission.ticket);
 }
 
 void callback_runtime_test() {
@@ -126,15 +129,6 @@ void callback_runtime_test() {
   ring.publish(4);
   assert(ring.after(1).behind);
 
-  OutboundPump<int> pump;
-  assert(pump.offer(1));
-  assert(!pump.offer(2));
-  assert(!pump.offer(3));
-  assert(pump.current().message == 1);
-  const auto coalesced = pump.write_complete(true);
-  assert(coalesced && coalesced->message == 3 && coalesced->skipped == 1);
-  assert(!pump.write_complete(true));
-
   struct Target {
     int calls = 0;
   } target;
@@ -187,26 +181,16 @@ void cleanup_reserve_saturation_test() {
   executor.shutdown();
 }
 
-void nml_command_catalog_test() {
-  static_assert(static_cast<std::size_t>(NmlCommandKind::SetRapidRate) == 50);
-  // The enum is deliberately contiguous: the wire catalog has a matching
-  // static assertion in machine/grpc/service.cc, so adding a command forces
-  // both boundaries to be reviewed at compile time.
-  for (std::size_t index = 0; index <= 50; ++index) {
-    assert(static_cast<std::size_t>(static_cast<NmlCommandKind>(index)) ==
-           index);
-  }
-}
-
 void command_coordinator_test() {
   CommandCoordinator coordinator(2);
   std::atomic<bool> started{false};
   std::atomic<bool> allow_accept{false};
-  auto ticket = coordinator.submit_with_context([&](CommandContext& context) {
-    started = true;
-    while (!allow_accept.load()) std::this_thread::yield();
-    context.mark_accepted(42);
-  });
+  auto ticket =
+      submitted(coordinator.submit_with_context([&](CommandContext& context) {
+        started = true;
+        while (!allow_accept.load()) std::this_thread::yield();
+        context.mark_accepted(42);
+      }));
   while (!started.load()) std::this_thread::yield();
   CommandResult result;
   assert(!ticket.wait_for(CommandWaitPolicy::Accepted,
@@ -285,12 +269,6 @@ void daemon_config_test() {
   fs::remove_all(base, filesystem_error);
   fs::create_directories(base / "active");
   {
-    std::ofstream ini(base / "machine.ini");
-    ini << "[DISPLAY]\nPROGRAM_PREFIX = active\n";
-  }
-  assert(
-      validate_program_prefix(base / "machine.ini", base / "active", &error));
-  {
     std::ofstream certificate(base / "server.crt");
     std::ofstream private_key(base / "server.key");
     certificate << "certificate";
@@ -340,34 +318,6 @@ void position_history_test() {
   assert(history.since(history.next_sequence(), 0, generation).reset);
 }
 
-void hal_repository_test() {
-  HalRepository repository;
-  assert(repository.add_item(
-      HalItem{"u64", HalScalarType::U64, true, true, std::uint64_t{0}}));
-  const std::uint64_t value = 0xffffffffffffffffULL;
-  assert(repository.write("u64", value));
-  HalValue read;
-  assert(repository.read("u64", &read));
-  assert(std::get<std::uint64_t>(read) == value);
-  assert(!repository.write("u64", std::uint32_t{1}));
-}
-
-void scope_manager_test() {
-  ScopeManager manager;
-  assert(manager.acquire("inspector"));
-  assert(!manager.acquire("another"));
-  auto first = manager.publish({1});
-  assert(first && first->generation == 1);
-  assert(!manager.publish({2}));
-  assert(!manager.publish({3}));
-  auto next = manager.acknowledge("inspector", first->generation);
-  assert(next && next->skipped_frames == 1);
-  assert(manager.skipped_frames() == 1);
-  manager.release("inspector");
-  assert(!manager.acquired());
-  assert(manager.skipped_frames() == 0);
-}
-
 void workspace_test() {
   const auto base = fs::temp_directory_path() / "linuxcnc-grpc-domain-test";
   std::error_code error;
@@ -405,12 +355,9 @@ void workspace_test() {
 int main() {
   callback_runtime_test();
   cleanup_reserve_saturation_test();
-  nml_command_catalog_test();
   command_coordinator_test();
   daemon_config_test();
   position_history_test();
-  hal_repository_test();
-  scope_manager_test();
   workspace_test();
   return 0;
 }

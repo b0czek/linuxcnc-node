@@ -646,7 +646,7 @@ std::optional<NmlErrorEvent> NmlAdapter::poll_error() {
 #endif
 }
 
-CommandTicket NmlAdapter::submit(
+CommandSubmission NmlAdapter::submit(
     // transfers ownership of both values into an asynchronous worker.
     // NOLINTNEXTLINE(performance-unnecessary-value-param): ownership transfer
     NmlCommand command,
@@ -1090,7 +1090,7 @@ CommandTicket NmlAdapter::submit(
 #else
   (void)command;
   (void)stop_token;
-  throw std::runtime_error("LinuxCNC NML support was not built");
+  return {CommandSubmitStatus::Stopped, {}};
 #endif
 }
 

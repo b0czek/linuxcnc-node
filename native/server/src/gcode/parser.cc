@@ -5,13 +5,13 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
-#include <fstream>
 #include <mutex>
 #include <stdexcept>
 
 #include "interp_base.hh"
 #include "interp_return.hh"
 #include "linuxcnc_grpc/gcode/canon_preview.hpp"
+#include "linuxcnc_grpc/linuxcnc/active_ini.hpp"
 #include "recordingcanon.hh"
 #include "rs274ngc_interp.hh"
 #include "tooldata.hh"
@@ -31,49 +31,27 @@ struct IniPreviewState {
 };
 
 IniPreviewState load_preview_state(const std::string& path) {
-  std::ifstream input(path);
-  if (!input) throw std::runtime_error("failed to open INI file: " + path);
+  const ActiveIni ini(path);
   IniPreviewState state;
-  std::string section;
-  std::string line;
-  while (std::getline(input, line)) {
-    const auto comment = line.find_first_of(";#");
-    if (comment != std::string::npos) line.erase(comment);
-    const auto trim = [](const std::string& value) {
-      const auto first = value.find_first_not_of(" \t\r");
-      if (first == std::string::npos) return std::string{};
-      const auto last = value.find_last_not_of(" \t\r");
-      return value.substr(first, last - first + 1);
-    };
-    line = trim(line);
-    if (line.size() >= 2 && line.front() == '[' && line.back() == ']') {
-      section = line.substr(1, line.size() - 2);
-      continue;
-    }
-    const auto equals = line.find('=');
-    if (equals == std::string::npos) continue;
-    auto key = trim(line.substr(0, equals));
-    auto value = trim(line.substr(equals + 1));
-    const auto upper = [](unsigned char value) { return std::toupper(value); };
-    std::transform(section.begin(), section.end(), section.begin(), upper);
-    std::transform(key.begin(), key.end(), key.begin(), upper);
-    if (section == "TRAJ" && key == "LINEAR_UNITS") {
-      const auto lower = [](unsigned char character) {
-        return std::tolower(character);
-      };
-      std::transform(value.begin(), value.end(), value.begin(), lower);
-      if (value == "mm" || value == "metric")
-        state.units = CANON_UNITS_MM;
-      else if (value == "cm")
-        state.units = CANON_UNITS_CM;
-      else if (value == "inch" || value == "in" || value == "imperial")
-        state.units = CANON_UNITS_INCHES;
-      else
-        throw std::runtime_error("unsupported [TRAJ]LINEAR_UNITS: " + value);
-    } else if (section == "RS274NGC" && key == "RS274NGC_STARTUP_CODE") {
-      state.startup_code = value;
-    }
+  const auto units = ini.find_string("TRAJ", "LINEAR_UNITS");
+  if (units) {
+    auto normalized_units = *units;
+    std::transform(normalized_units.begin(), normalized_units.end(),
+                   normalized_units.begin(), [](unsigned char character) {
+                     return std::tolower(character);
+                   });
+    if (normalized_units == "mm" || normalized_units == "metric")
+      state.units = CANON_UNITS_MM;
+    else if (normalized_units == "cm")
+      state.units = CANON_UNITS_CM;
+    else if (normalized_units == "inch" || normalized_units == "in" ||
+             normalized_units == "imperial")
+      state.units = CANON_UNITS_INCHES;
+    else
+      throw std::runtime_error("unsupported [TRAJ]LINEAR_UNITS: " + *units);
   }
+  if (const auto startup = ini.find_string("RS274NGC", "RS274NGC_STARTUP_CODE"))
+    state.startup_code = *startup;
   return state;
 }
 

@@ -22,13 +22,11 @@ set(LINUXCNC_GRPC_DOMAIN_SOURCES
     src/command_coordinator.cc
     src/daemon/config.cc
     src/filesystem/directory_transaction.cc
-    src/hal/repository.cc
     src/hal/value_telemetry.cc
     src/position/history.cc
     src/position/telemetry.cc
     src/program/workspace.cc
     src/program/workspace_archive.cc
-    src/scope/manager.cc
     src/scope/telemetry.cc
     src/linuxcnc/command_validation.cc
     src/linuxcnc/nml_adapter.cc
@@ -282,9 +280,6 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
         src/machine/grpc/service.cc
         src/machine/grpc/status_codec.cc
         src/program/grpc/service.cc
-        src/hal/grpc/service.cc
-        src/scope/grpc/service.cc)
-    list(APPEND LINUXCNC_GRPC_SERVER_SOURCES
         src/hal/grpc/service_hal.cc
         src/scope/grpc/service_controller.cc)
     target_sources(linuxcnc-grpc-server PRIVATE ${LINUXCNC_GRPC_SERVER_SOURCES})
@@ -299,11 +294,6 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
     target_compile_features(linuxcnc-grpc-health-check PRIVATE cxx_std_20)
     target_link_libraries(linuxcnc-grpc-health-check PRIVATE linuxcnc-grpc-proto)
     target_compile_options(linuxcnc-grpc-health-check PRIVATE -Wall -Wextra -Wpedantic)
-    add_executable(linuxcnc-grpc-integration tests/grpc_integration.cc)
-    target_compile_features(linuxcnc-grpc-integration PRIVATE cxx_std_20)
-    target_compile_definitions(linuxcnc-grpc-integration PRIVATE BOOST_ERROR_CODE_HEADER_ONLY=1)
-    target_include_directories(linuxcnc-grpc-integration PRIVATE ${Boost_INCLUDE_DIRS})
-    target_link_libraries(linuxcnc-grpc-integration PRIVATE linuxcnc-grpc-proto LibArchive::LibArchive)
     add_executable(linuxcnc-grpc-live-integration tests/grpc_live_integration.cc)
     target_compile_features(linuxcnc-grpc-live-integration PRIVATE cxx_std_20)
     target_compile_definitions(linuxcnc-grpc-live-integration PRIVATE BOOST_ERROR_CODE_HEADER_ONLY=1)
@@ -333,6 +323,32 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
             -Wall -Wextra -Wpedantic)
         add_test(NAME linuxcnc-grpc-mapping-edge-tests
                  COMMAND linuxcnc-grpc-mapping-edge-tests)
+        add_executable(linuxcnc-grpc-status-codec-tests
+            tests/machine_status_codec_tests.cc
+            src/machine/grpc/status_codec.cc)
+        target_compile_features(linuxcnc-grpc-status-codec-tests PRIVATE
+            cxx_std_20)
+        target_include_directories(linuxcnc-grpc-status-codec-tests PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/src"
+            "${CMAKE_CURRENT_SOURCE_DIR}/include")
+        target_link_libraries(linuxcnc-grpc-status-codec-tests PRIVATE
+            linuxcnc-grpc-proto)
+        target_compile_options(linuxcnc-grpc-status-codec-tests PRIVATE
+            -Wall -Wextra -Wpedantic)
+        add_test(NAME linuxcnc-grpc-status-codec-tests
+                 COMMAND linuxcnc-grpc-status-codec-tests)
+        add_executable(linuxcnc-grpc-deferred-write-finish-tests
+            tests/deferred_write_finish_tests.cc)
+        target_compile_features(linuxcnc-grpc-deferred-write-finish-tests
+            PRIVATE cxx_std_20)
+        target_include_directories(linuxcnc-grpc-deferred-write-finish-tests
+            PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+        target_link_libraries(linuxcnc-grpc-deferred-write-finish-tests PRIVATE
+            gRPC::grpc++ Threads::Threads)
+        target_compile_options(linuxcnc-grpc-deferred-write-finish-tests PRIVATE
+            -Wall -Wextra -Wpedantic)
+        add_test(NAME linuxcnc-grpc-deferred-write-finish-tests
+                 COMMAND linuxcnc-grpc-deferred-write-finish-tests)
         add_executable(linuxcnc-grpc-component-outbox-tests
             tests/component_outbox_tests.cc)
         target_compile_features(linuxcnc-grpc-component-outbox-tests PRIVATE
@@ -345,18 +361,6 @@ if(LINUXCNC_GRPC_BUILD_WIRE)
             -Wall -Wextra -Wpedantic)
         add_test(NAME linuxcnc-grpc-component-outbox-tests
                  COMMAND linuxcnc-grpc-component-outbox-tests)
-        add_executable(linuxcnc-grpc-callback-runtime-tests
-            tests/callback_runtime_tests.cc)
-        target_compile_features(linuxcnc-grpc-callback-runtime-tests PRIVATE
-            cxx_std_20)
-        target_link_libraries(linuxcnc-grpc-callback-runtime-tests PRIVATE
-            linuxcnc-grpc-proto Threads::Threads)
-        target_include_directories(linuxcnc-grpc-callback-runtime-tests PRIVATE
-            "${CMAKE_CURRENT_SOURCE_DIR}/include")
-        target_compile_options(linuxcnc-grpc-callback-runtime-tests PRIVATE
-            -Wall -Wextra -Wpedantic)
-        add_test(NAME linuxcnc-grpc-callback-runtime-tests
-                 COMMAND linuxcnc-grpc-callback-runtime-tests)
     endif()
 endif()
 
@@ -390,6 +394,16 @@ if(LINUXCNC_GRPC_BUILD_TESTS)
         -Wall -Wextra -Wpedantic)
     add_test(NAME linuxcnc-grpc-native-edge-tests
              COMMAND linuxcnc-grpc-native-edge-tests)
+    add_executable(linuxcnc-grpc-callback-runtime-tests
+        tests/callback_runtime_tests.cc)
+    target_compile_features(linuxcnc-grpc-callback-runtime-tests PRIVATE
+        cxx_std_20)
+    target_link_libraries(linuxcnc-grpc-callback-runtime-tests PRIVATE
+        linuxcnc-grpc-domain Threads::Threads)
+    target_compile_options(linuxcnc-grpc-callback-runtime-tests PRIVATE
+        -Wall -Wextra -Wpedantic)
+    add_test(NAME linuxcnc-grpc-callback-runtime-tests
+             COMMAND linuxcnc-grpc-callback-runtime-tests)
     if(LINUXCNC_GRPC_HAS_NML)
         add_executable(linuxcnc-grpc-active-ini-tests
             tests/active_ini_tests.cc)
@@ -402,29 +416,6 @@ if(LINUXCNC_GRPC_BUILD_TESTS)
         add_test(NAME linuxcnc-grpc-active-ini-tests
                  COMMAND linuxcnc-grpc-active-ini-tests)
     endif()
-    set(LINUXCNC_GRPC_CALLBACK_SOURCES
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/server/main.cc"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/server/runtime.cc"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/grpc/server/runtime.hpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/ini/grpc/service.cc"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/machine/grpc/service.cc"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/hal/grpc/service.cc"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/scope/grpc/service.cc")
-    list(APPEND LINUXCNC_GRPC_CALLBACK_SOURCES
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/hal/grpc/service_hal.cc"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/scope/grpc/service_controller.cc")
-    add_test(NAME linuxcnc-grpc-callback-source-assertion
-        COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/tests/assert_callback_server.sh"
-                ${LINUXCNC_GRPC_CALLBACK_SOURCES})
-    add_executable(linuxcnc-grpc-hal-adapter-contract-tests
-        tests/hal_adapter_contract_tests.cc)
-    target_compile_features(linuxcnc-grpc-hal-adapter-contract-tests PRIVATE cxx_std_20)
-    target_link_libraries(linuxcnc-grpc-hal-adapter-contract-tests PRIVATE linuxcnc-grpc-domain)
-    target_compile_options(linuxcnc-grpc-hal-adapter-contract-tests PRIVATE
-        -Wall -Wextra -Wpedantic)
-    add_test(NAME linuxcnc-grpc-hal-adapter-contract-tests
-             COMMAND linuxcnc-grpc-hal-adapter-contract-tests)
-
     if(LINUXCNC_GRPC_HAS_RS274)
         add_executable(linuxcnc-grpc-gcode-parser-integration tests/gcode_parser_integration.cc)
         target_compile_features(linuxcnc-grpc-gcode-parser-integration PRIVATE cxx_std_20)

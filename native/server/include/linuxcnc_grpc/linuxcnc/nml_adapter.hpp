@@ -79,10 +79,6 @@ enum class NmlCommandKind {
   SetRapidRate,
 };
 
-static_assert(
-    static_cast<std::size_t>(NmlCommandKind::SetRapidRate) == 50,
-    "adding an NML command requires updating the gRPC command catalog");
-
 struct NmlPose {
   std::array<double, 9> values{};
 };
@@ -331,7 +327,7 @@ class NmlAdapter {
   // materializing joints, axes, spindles, I/O, and the tool table.
   NmlStatusPoll poll_position(NmlPositionSnapshot* snapshot);
   std::optional<NmlErrorEvent> poll_error();
-  CommandTicket submit(NmlCommand command, std::stop_token stop_token = {});
+  CommandSubmission submit(NmlCommand command, std::stop_token stop_token = {});
 
  private:
   struct Impl;

@@ -27,12 +27,16 @@
 #include "linuxcnc_grpc/position/history.hpp"
 #include "linuxcnc_grpc/program/workspace.hpp"
 #include "linuxcnc_grpc/program/workspace_archive.hpp"
-#include "linuxcnc_grpc/scope/manager.hpp"
 
 namespace fs = std::filesystem;
 using namespace linuxcnc::server;
 
 namespace {
+
+CommandTicket submitted(CommandSubmission submission) {
+  assert(submission.status == CommandSubmitStatus::Submitted);
+  return std::move(submission.ticket);
+}
 
 class Gate {
  public:
@@ -72,23 +76,17 @@ class Gate {
 void command_queue_bounds_and_wait_test() {
   CommandCoordinator coordinator(2);
   Gate first_action;
-  auto first = coordinator.submit([&] {
+  auto first = submitted(coordinator.submit([&] {
     first_action.arrive();
     first_action.wait_until_open();
-  });
+  }));
   first_action.wait_for_arrival();
 
   // The first item is in flight, so exactly two more items fit in the queue.
-  const auto second = coordinator.submit([] {});
-  const auto third = coordinator.submit([] {});
+  const auto second = submitted(coordinator.submit([] {}));
+  const auto third = submitted(coordinator.submit([] {}));
   assert(coordinator.queued() == 2);
-  bool full = false;
-  try {
-    (void)coordinator.submit([] {});
-  } catch (const std::runtime_error& error) {
-    full = std::string(error.what()) == "command queue is full";
-  }
-  assert(full);
+  assert(coordinator.submit([] {}).status == CommandSubmitStatus::QueueFull);
   assert(first.sequence() == 1);
   assert(second.sequence() == 2);
   assert(third.sequence() == 3);
@@ -111,13 +109,7 @@ void command_queue_bounds_and_wait_test() {
   assert(coordinator.queued() == 0);
   coordinator.shutdown();
 
-  bool stopped = false;
-  try {
-    (void)coordinator.submit([] {});
-  } catch (const std::runtime_error& error) {
-    stopped = std::string(error.what()) == "command coordinator is stopped";
-  }
-  assert(stopped);
+  assert(coordinator.submit([] {}).status == CommandSubmitStatus::Stopped);
 }
 
 void command_cancellation_and_acceptance_test() {
@@ -126,14 +118,14 @@ void command_cancellation_and_acceptance_test() {
   std::stop_source stop_source;
   stop_source.request_stop();
   std::atomic<bool> cancellation_seen{false};
-  auto ticket = coordinator.submit_with_context(
+  auto ticket = submitted(coordinator.submit_with_context(
       [&](CommandContext& context) {
         cancellation_seen = context.stop_token.stop_requested();
         action.arrive();
         context.mark_accepted(101);
         action.wait_until_open();
       },
-      stop_source.get_token());
+      stop_source.get_token()));
   action.wait_for_arrival();
 
   CommandResult result;
@@ -156,20 +148,20 @@ void command_cancellation_and_acceptance_test() {
 void command_cancellation_before_worker_start_test() {
   CommandCoordinator coordinator(2);
   Gate blocker;
-  auto first = coordinator.submit([&] {
+  auto first = submitted(coordinator.submit([&] {
     blocker.arrive();
     blocker.wait_until_open();
-  });
+  }));
   blocker.wait_for_arrival();
   std::stop_source stop_source;
   stop_source.request_stop();
   std::atomic<bool> observed{false};
-  auto queued = coordinator.submit_with_context(
+  auto queued = submitted(coordinator.submit_with_context(
       [&](CommandContext& context) {
         observed = context.stop_token.stop_requested();
         context.mark_accepted(202);
       },
-      stop_source.get_token());
+      stop_source.get_token()));
   blocker.open();
   CommandResult result;
   assert(first.wait_for(std::chrono::seconds(1), &result));
@@ -181,8 +173,8 @@ void command_cancellation_before_worker_start_test() {
 
 void command_failure_wait_test() {
   CommandCoordinator coordinator(1);
-  const auto ticket =
-      coordinator.submit([] { throw std::runtime_error("synthetic failure"); });
+  const auto ticket = submitted(coordinator.submit(
+      [] { throw std::runtime_error("synthetic failure"); }));
   CommandResult result;
   assert(ticket.wait_for(std::chrono::seconds(1), &result));
   assert(result.state == CommandState::Failed);
@@ -196,31 +188,26 @@ void command_priority_and_reserved_capacity_test() {
   Gate blocker;
   std::mutex order_mutex;
   std::vector<int> order;
-  auto first = coordinator.submit([&] {
+  auto first = submitted(coordinator.submit([&] {
     blocker.arrive();
     blocker.wait_until_open();
     std::lock_guard lock(order_mutex);
     order.push_back(1);
-  });
+  }));
   blocker.wait_for_arrival();
-  auto normal = coordinator.submit([&] {
+  auto normal = submitted(coordinator.submit([&] {
     std::lock_guard lock(order_mutex);
     order.push_back(2);
-  });
-  auto safety = coordinator.submit(
+  }));
+  auto safety = submitted(coordinator.submit(
       [&] {
         std::lock_guard lock(order_mutex);
         order.push_back(3);
       },
-      CommandPriority::Safety);
+      CommandPriority::Safety));
 
-  bool safety_full = false;
-  try {
-    (void)coordinator.submit([] {}, CommandPriority::Safety);
-  } catch (const std::runtime_error& error) {
-    safety_full = std::string(error.what()) == "command queue is full";
-  }
-  assert(safety_full);
+  assert(coordinator.submit([] {}, CommandPriority::Safety).status ==
+         CommandSubmitStatus::QueueFull);
   assert(coordinator.queued() == 2);
 
   blocker.open();
@@ -236,12 +223,13 @@ void deferred_command_completion_test() {
   CommandCoordinator coordinator(1);
   std::function<void()> complete;
   std::function<void(std::string)> fail;
-  auto ticket = coordinator.submit_with_context([&](CommandContext& context) {
-    complete = context.mark_completed;
-    fail = context.mark_failed;
-    context.defer_completion();
-    context.mark_accepted(303);
-  });
+  auto ticket =
+      submitted(coordinator.submit_with_context([&](CommandContext& context) {
+        complete = context.mark_completed;
+        fail = context.mark_failed;
+        context.defer_completion();
+        context.mark_accepted(303);
+      }));
 
   CommandResult result;
   assert(ticket.wait_for(CommandWaitPolicy::Accepted, std::chrono::seconds(1),
@@ -915,46 +903,6 @@ void workspace_traversal_quota_ttl_and_materialization_test() {
   assert(!error);
 }
 
-void scope_coalescing_and_conflict_accounting_test() {
-  ScopeManager manager;
-  assert(!manager.acquire(""));
-  assert(manager.acquire("controller-a"));
-  assert(manager.acquire("controller-a"));
-  assert(!manager.acquire("controller-b"));
-
-  const auto first = manager.publish({1, 2});
-  assert(first && first->generation == 1);
-  assert(first->payload == std::vector<std::uint8_t>({1, 2}));
-  assert(!manager.publish({3}));
-  assert(!manager.publish({4}));
-  assert(manager.skipped_frames() == 0);
-  assert(!manager.acknowledge("controller-b", first->generation));
-  assert(!manager.acknowledge("controller-a", first->generation + 1));
-
-  const auto second = manager.acknowledge("controller-a", first->generation);
-  assert(second && second->generation == 3);
-  assert(second->payload == std::vector<std::uint8_t>({4}));
-  assert(second->skipped_frames == 1);
-  assert(manager.skipped_frames() == 1);
-  assert(!manager.acknowledge("controller-a", first->generation));
-  assert(!manager.acknowledge("controller-a", second->generation));
-  assert(manager.skipped_frames() == 1);
-
-  const auto third = manager.publish({5});
-  assert(third && third->generation == 4);
-  manager.release("controller-b");
-  assert(manager.acquired());
-  manager.release("controller-a");
-  assert(!manager.acquired());
-  assert(manager.skipped_frames() == 0);
-  assert(!manager.acknowledge("controller-a", third->generation));
-  assert(!manager.publish({6}));
-  assert(manager.acquire("controller-b"));
-  const auto after_reacquire = manager.publish({7});
-  assert(after_reacquire && after_reacquire->generation == 5);
-  manager.release("controller-b");
-}
-
 }  // namespace
 
 int main() {
@@ -977,6 +925,5 @@ int main() {
   workspace_path_safety_test();
   workspace_active_parent_permissions_test();
   workspace_traversal_quota_ttl_and_materialization_test();
-  scope_coalescing_and_conflict_accounting_test();
   return 0;
 }

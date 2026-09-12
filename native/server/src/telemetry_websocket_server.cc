@@ -246,7 +246,7 @@ class Session final : public std::enable_shared_from_this<Session> {
   };
 
   struct PositionSession {
-    PositionSession(asio::any_io_executor executor,
+    PositionSession(const asio::any_io_executor& executor,
                     std::shared_ptr<PositionTelemetry> source)
         : delivery_timer(executor), telemetry(std::move(source)) {}
 
@@ -350,6 +350,7 @@ class Session final : public std::enable_shared_from_this<Session> {
 
   void on_upgrade_request(beast::error_code error, std::size_t) {
     if (error || !websocket::is_upgrade(request_)) return fail();
+    if (!dependencies_) return fail();
     auto& dependencies = *dependencies_;
     const std::string target(request_.target());
     if (target == "/v1/position-history") {

@@ -41,10 +41,11 @@ bool nearly_equal(double actual, double expected) {
 }  // namespace
 
 int main(int argc, char** argv) {
-  if (argc != 7) {
+  if (argc != 8) {
     std::cerr << "usage: gcode_parser_integration <ini-path> <gcode-path> "
                  "<operations-gcode-path> <cutter-comp-gcode-path> "
-                 "<python-remap-gcode-path> <modal-free-metric-path>\n";
+                 "<python-remap-gcode-path> <modal-free-metric-path> "
+                 "<missing-linear-units-ini>\n";
     return 2;
   }
 
@@ -208,6 +209,25 @@ int main(int argc, char** argv) {
                      return traverse && nearly_equal(traverse->pos.x, 1.0);
                    });
   assert(metric_move != modal_free_operations.end());
+
+  // Preserve the pre-refactor policy: an INI without LINEAR_UNITS starts the
+  // preview canon in inches. A modal-free X1 move therefore lands at 25.4 mm.
+  std::vector<Operation> default_unit_operations;
+  ParseOptions default_unit_options;
+  default_unit_options.ini_path = argv[7];
+  default_unit_options.on_batch = [&](OperationBatch&& batch) {
+    default_unit_operations.insert(default_unit_operations.end(),
+                                   std::make_move_iterator(batch.begin()),
+                                   std::make_move_iterator(batch.end()));
+  };
+  parser.parse_file(argv[6], default_unit_options);
+  const auto default_inch_move =
+      std::find_if(default_unit_operations.begin(),
+                   default_unit_operations.end(), [](const auto& op) {
+                     const auto* traverse = std::get_if<TraverseOp>(&op);
+                     return traverse && nearly_equal(traverse->pos.x, 25.4);
+                   });
+  assert(default_inch_move != default_unit_operations.end());
 
   // A callback can cancel after a bounded batch. Cancellation is observed
   // before the next rs274 read/execute step and never removes that batch.

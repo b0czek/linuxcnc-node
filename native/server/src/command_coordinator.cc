@@ -71,43 +71,41 @@ CommandCoordinator::CommandCoordinator(std::size_t capacity,
 
 CommandCoordinator::~CommandCoordinator() { shutdown(); }
 
-CommandTicket CommandCoordinator::submit(CommandAction action,
-                                         CommandPriority priority) {
+CommandSubmission CommandCoordinator::submit(CommandAction action,
+                                             CommandPriority priority) {
   if (!action) throw std::invalid_argument("command action must not be empty");
 
   auto state = std::make_shared<CommandTicket::State>();
   std::unique_lock lock(mutex_);
-  if (stopping_) throw std::runtime_error("command coordinator is stopped");
+  if (stopping_) return {CommandSubmitStatus::Stopped, {}};
   auto& queue = priority == CommandPriority::Safety ? safety_queue_ : queue_;
   const auto capacity =
       priority == CommandPriority::Safety ? safety_capacity_ : capacity_;
-  if (queue.size() >= capacity)
-    throw std::runtime_error("command queue is full");
+  if (queue.size() >= capacity) return {CommandSubmitStatus::QueueFull, {}};
   const auto sequence = next_sequence_++;
   state->result.sequence = sequence;
   queue.push_back(Item{sequence, std::move(action), {}, state});
   lock.unlock();
   condition_.notify_one();
-  return CommandTicket(std::move(state));
+  return {CommandSubmitStatus::Submitted, CommandTicket(std::move(state))};
 }
 
-CommandTicket CommandCoordinator::submit_with_context(
+CommandSubmission CommandCoordinator::submit_with_context(
     ContextCommandAction action) {
   return submit_with_context(std::move(action), {}, CommandPriority::Normal);
 }
 
-CommandTicket CommandCoordinator::submit_with_context(
+CommandSubmission CommandCoordinator::submit_with_context(
     ContextCommandAction action, const std::stop_token& stop_token,
     CommandPriority priority) {
   if (!action) throw std::invalid_argument("command action must not be empty");
   auto state = std::make_shared<CommandTicket::State>();
   std::unique_lock lock(mutex_);
-  if (stopping_) throw std::runtime_error("command coordinator is stopped");
+  if (stopping_) return {CommandSubmitStatus::Stopped, {}};
   auto& queue = priority == CommandPriority::Safety ? safety_queue_ : queue_;
   const auto capacity =
       priority == CommandPriority::Safety ? safety_capacity_ : capacity_;
-  if (queue.size() >= capacity)
-    throw std::runtime_error("command queue is full");
+  if (queue.size() >= capacity) return {CommandSubmitStatus::QueueFull, {}};
   const auto sequence = next_sequence_++;
   state->result.sequence = sequence;
   queue.push_back(
@@ -120,7 +118,7 @@ CommandTicket CommandCoordinator::submit_with_context(
            state});
   lock.unlock();
   condition_.notify_one();
-  return CommandTicket(std::move(state));
+  return {CommandSubmitStatus::Submitted, CommandTicket(std::move(state))};
 }
 
 void CommandCoordinator::shutdown() {
